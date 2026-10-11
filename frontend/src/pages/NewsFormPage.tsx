@@ -570,7 +570,7 @@ export default function NewsFormPage() {
                 </span>
               )}
               {saveState === "error" && (
-                <span className="cs-error">自动保存失败，请检查网络（修改暂未同步）</span>
+                <span className="cs-error" role="status">自动保存失败，请检查网络（修改暂未同步）</span>
               )}
               {saveState === "idle" && <span className="cs-hint">改动会自动保存到服务器</span>}
             </div>

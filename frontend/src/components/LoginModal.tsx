@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useSitePolicy } from "../api/sitePolicy";
@@ -36,6 +36,19 @@ export default function LoginModal({
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const policy = useSitePolicy();
+
+  // Esc 关闭弹窗（与点遮罩 / 关闭按钮同语义）
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (redirectTo) navigate("/");
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, redirectTo, onClose, navigate]);
 
   // 登录接口的英文 error 串 → 中文（仅登录专用项；网络等其余错误按类型走 humanizeApiError）。
   const LOGIN_ERROR_ZH: Record<string, string> = {
@@ -134,7 +147,7 @@ export default function LoginModal({
 
         <form id="auth-form" className="modal-body" autoComplete="off" onSubmit={handleSubmit}>
           {error && (
-            <div className="alert alert-danger">
+            <div className="alert alert-danger" role="alert">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
               <span>{error}</span>
             </div>

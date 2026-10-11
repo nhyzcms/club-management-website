@@ -161,6 +161,7 @@ a.news-item:hover h3 { color: var(--brand-700); }
   cursor: pointer; text-decoration: underline;
 }
 
+.compose-title:focus { border-bottom-color: var(--brand-400); }
 .compose-title {
   width: 100%;
   border: none; border-bottom: 1px solid var(--line);

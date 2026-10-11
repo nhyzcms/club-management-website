@@ -215,7 +215,7 @@ export default function MessageThread({
           </>
         )}
       </div>
-      {error && <div className="msg-error">{error}</div>}
+      {error && <div className="msg-error" role="alert">{error}</div>}
       <div className="msg-input">
         <MentionInput
           className="input"

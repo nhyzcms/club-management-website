@@ -76,11 +76,11 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
 
   return (
     <form className="card card-pad form-stack" onSubmit={submit}>
-      {success && <div className="alert alert-success"><span>{success}</span></div>}
-      {error && <div className="alert alert-danger"><span>{error}</span></div>}
+      {success && <div className="alert alert-success" role="status"><span>{success}</span></div>}
+      {error && <div className="alert alert-danger" role="alert"><span>{error}</span></div>}
 
       <div className="avatar-upload">
-        <div className="avatar editable" onClick={() => fileRef.current?.click()} role="button">
+        <div className="avatar editable" onClick={() => fileRef.current?.click()} role="button" tabIndex={0} aria-label="更换头像" onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileRef.current?.click(); } }}>
           {avatarSrc ? <img src={avatarSrc} alt="头像" width={80} height={80} /> : <span>{initial}</span>}
           <span className="cam">✎</span>
         </div>

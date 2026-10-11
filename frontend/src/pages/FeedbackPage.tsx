@@ -106,7 +106,7 @@ export default function FeedbackPage() {
 
       <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
         {error && (
-          <div className="alert alert-danger" style={{ margin: "var(--s-6) 0 var(--s-4)" }}>
+          <div className="alert alert-danger" role="alert" style={{ margin: "var(--s-6) 0 var(--s-4)" }}>
             <span>{error}</span>
           </div>
         )}
@@ -128,7 +128,7 @@ export default function FeedbackPage() {
           {showForm && (
             <div className="fb-body">
               {fbSuccess && (
-                <div className="alert alert-success fb-done">
+                <div className="alert alert-success fb-done" role="status">
                   <span>已提交，感谢你的反馈！</span>
                 </div>
               )}
