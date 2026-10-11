@@ -140,6 +140,17 @@ class VerificationDefaultTrustMigrationTest(TransactionTestCase):
         executor.migrate(self.migrate_to)
         self.apps_after = executor.loader.project_state(self.migrate_to).apps
 
+    def tearDown(self):
+        """把 accounts 迁回最新节点（否则会污染后续测试）。
+
+        本类把 schema 停在 0004；TransactionTestCase 不回收 DDL，后续同类测试（也
+        不回滚）只要碰到 0005 之后的列就会炸——例如删委任行时 collector 必须读回
+        ``accounts_verification``（含 ``expires_at``）。
+        """
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(executor.loader.graph.leaf_nodes("accounts"))
+
     def _seed_pre_feature_users(self, apps):
         User = apps.get_model("auth", "User")
         Profile = apps.get_model("accounts", "Profile")
@@ -372,7 +383,6 @@ class AppointmentStatusEndpointTest(TestCase):
 
     def test_superuser_appointment_identifier(self):
         u = User.objects.create_superuser(username="root", password="p")
-        card = {c["channel"]: c for c in self._get(u).json()["channels"]}["appointment"]
+        card = {c["channel"]: c for c in data["channels"]}["appointment"]
         self.assertEqual(card["status"], "approved")
         self.assertEqual(card["identifier"], "superuser")
-
