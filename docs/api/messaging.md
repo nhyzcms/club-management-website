@@ -276,6 +276,7 @@
 | `comment` | `comment_replied` | 有人回复你的评论 | `comment_id`、`thread_id`、`parent_id`、`news_id` / `activity_id` / `task_id` |
 | `comment` | `comment_mentioned` | 评论中 @ 你（你能看见该宿主才通知）| 同上 |
 | `dm` | `new_message` | 收到新私信（**按会话聚合**：同会话连发多条只提示一次，直到读掉）| `type` = `dm`、`id`（会话 id）、`title`、`url`；聚合后附 `count`（累计条数）、`last_at` |
+| `validity` | `expiring_2m` / `expiring_1m` | 认证 / 管理员身份**到期前**两个月 / 一个月（到期会降权，见[身份验证指南](../guides/verification.md#到期前提醒降权预警））| `channel`、`channel_label`、`level`、`expires_on`、`days_left`、`url`（验证面板）|
 | `review` | `approved` / `rejected` / `removed` | 发布审核通过 / 驳回 / 下架（通知宿主主人）| `type`（news / activity / tutorial）、`id`、`url` |
 | `review` | `closed` | 署名意见反馈了结 | `type` = `feedback`、`id`、`url`（有 note 时附 `reason`）|
 | `discipline` | `muted` / `mute_lifted` / `mute_expired` | 全站禁言授予 / 解除 / 到期惰性解除 | `mute_id`（`muted` 另附 `reason`、`ends_at`）|

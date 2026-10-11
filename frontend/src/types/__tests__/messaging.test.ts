@@ -51,7 +51,21 @@ describe("notificationHref / notificationTitle", () => {
     ).toBe("你收到一条新私信");
   });
 
-  it("分类文案：私信有徽标文案", () => {
+  it("title：身份到期提醒带通道与到期日", () => {
+    expect(
+      notificationTitle({
+        event: "expiring_1m",
+        category: "validity",
+        payload: { channel_label: "管理员身份", expires_on: "2026-12-11" },
+      } as any),
+    ).toBe("身份有效期还剩一个月（管理员身份 · 2026-12-11 到期）");
+    expect(
+      notificationTitle({ event: "expiring_2m", category: "validity", payload: {} } as any),
+    ).toBe("身份有效期还剩两个月");
+  });
+
+  it("分类文案：私信与身份有效期有徽标文案", () => {
     expect(NOTIFICATION_CATEGORY_LABELS.dm).toBe("私信");
+    expect(NOTIFICATION_CATEGORY_LABELS.validity).toBe("身份有效期");
   });
 });

@@ -195,6 +195,7 @@ class Notification(models.Model):
     CATEGORY_ACTIVITY = "activity"
     CATEGORY_DM = "dm"
     CATEGORY_ANNOUNCEMENT = "announcement"
+    CATEGORY_VALIDITY = "validity"
     # category 与 messaging.notifications.sources 的源 key 对齐
     CATEGORY_CHOICES = [
         (CATEGORY_REVIEW, "审核"),
@@ -202,6 +203,7 @@ class Notification(models.Model):
         (CATEGORY_COMMENT, "评论"),
         (CATEGORY_DM, "私信"),
         (CATEGORY_ANNOUNCEMENT, "广播"),
+        (CATEGORY_VALIDITY, "身份有效期"),
         (CATEGORY_DISCIPLINE, "纪律"),
     ]
 

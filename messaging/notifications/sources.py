@@ -113,3 +113,23 @@ class DisciplineSource(NotificationSource):
         Event("mute_expired", "禁言到期"),
     )
     default_channels = ("site",)
+
+
+@register_source
+class ValiditySource(NotificationSource):
+    """身份有效期提醒（降权预警）：到期前两个月 / 一个月各一次。
+
+    事件名与 ``accounts.validity_notices.LEVELS`` 对齐；幂等靠那边的 ``ValidityNotice``
+    台账（同一到期时间只发一次），故本源不声明 ``dedup_identity``。
+    """
+
+    key = "validity"
+    name = "身份有效期"
+    description = "认证 / 管理员身份到期前的提醒（到期会降权）"
+    color = "#a8551b"
+    emoji = "⏳"
+    events = (
+        Event("expiring_2m", "身份有效期还剩两个月"),
+        Event("expiring_1m", "身份有效期还剩一个月"),
+    )
+    default_channels = ("site",)

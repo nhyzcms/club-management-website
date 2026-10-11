@@ -362,6 +362,46 @@ def verified_member_count():
     )
 
 
+class ValidityNotice(models.Model):
+    """身份有效期预警的发送台账（幂等 + 审计）。
+
+    通道 ``expires_at`` 到期会带来**降权**（认证通道：已验证 → 未验证；委任通道：撤销
+    ``is_staff``），故在到期前两个月 / 一个月各发一次站内提醒，见 ``accounts.validity_notices``。
+
+    唯一键含 **``expires_at`` 快照**：同一通道行换了到期时间（续期 / 过期后重新委任）
+    自然重新起算，历史台账照旧留痕——只认通道行的话，续期后就再也发不出提醒了。
+    """
+
+    LEVEL_60D = "60d"
+    LEVEL_30D = "30d"
+    LEVELS = [
+        (LEVEL_60D, "还剩两个月"),
+        (LEVEL_30D, "还剩一个月"),
+    ]
+
+    verification = models.ForeignKey(
+        Verification, verbose_name="验证通道", on_delete=models.CASCADE,
+        related_name="validity_notices",
+    )
+    expires_at = models.DateTimeField("到期时间快照")
+    level = models.CharField("档位", max_length=8, choices=LEVELS)
+    sent_at = models.DateTimeField("发送时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "身份有效期提醒"
+        verbose_name_plural = "身份有效期提醒"
+        ordering = ["-sent_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["verification", "expires_at", "level"],
+                name="unique_validity_notice_per_expiry_level",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.verification_id} · {self.expires_at:%Y-%m-%d} · {self.level}"
+
+
 class IdentityProof(models.Model):
     """身份证明材料（学生证照片等）——审计留底，永久保存（审核通过后也不删）。
 
