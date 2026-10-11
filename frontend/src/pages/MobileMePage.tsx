@@ -49,7 +49,7 @@ export default function MobileMePage() {
       <section className="m-me-card">
         {user ? (
           <>
-            <img className="m-me-avatar" src={me?.profile?.avatar || "/static/favicon.ico"} alt="" />
+            <img className="m-me-avatar" src={me?.profile?.avatar || "/static/favicon.ico"} alt="" width={56} height={56} />
             <div>
               <div className="m-me-name">{me?.profile?.nickname || user.username}</div>
               <div className="m-me-sub">

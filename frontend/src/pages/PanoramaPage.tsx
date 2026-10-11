@@ -239,7 +239,7 @@ export default function PanoramaPage() {
                 className={"pano-chip" + (p.id === activeId ? " active" : "")}
               >
                 <span className="pano-chip-art">
-                  {p.thumb_url ? <img src={p.thumb_url} alt="" /> : <span className="pano-chip-ph" />}
+                  {p.thumb_url ? <img src={p.thumb_url} alt="" width={800} height={400} loading="lazy" /> : <span className="pano-chip-ph" />}
                 </span>
                 <span className="pano-chip-text">{p.title}</span>
               </Link>

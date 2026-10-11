@@ -344,7 +344,7 @@ export default function PanoramaManagePage() {
               <div className="pano-card" key={item.id}>
                 <div className="pano-card-art">
                   {item.thumb_url ? (
-                    <img src={item.thumb_url} alt={item.title} />
+                    <img src={item.thumb_url} alt={item.title} width={800} height={400} loading="lazy" />
                   ) : (
                     <span className="pano-chip-ph" />
                   )}

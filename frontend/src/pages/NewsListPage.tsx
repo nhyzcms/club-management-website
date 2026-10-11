@@ -112,7 +112,7 @@ export default function NewsListPage() {
                  onClick={(e) => { e.preventDefault(); navigate(`/news/${featured.id}`); }}>
                 <div className={"feature-media" + (featured.cover_image_url ? "" : " ph-img")}>
                   {featured.cover_image_url ? (
-                    <img src={featured.cover_thumbnail_url || featured.cover_image_url} alt={featured.title} />
+                    <img src={featured.cover_thumbnail_url || featured.cover_image_url} alt={featured.title} width={800} height={500} />
                   ) : (
                     <>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z" /><circle cx="12" cy="13" r="3.2" /></svg>
@@ -144,7 +144,7 @@ export default function NewsListPage() {
                    onClick={(e) => { e.preventDefault(); navigate(`/news/${n.id}`); }}>
                   <div className={"thumb" + (n.cover_image_url ? "" : " ph-img")}>
                     {n.cover_image_url ? (
-                      <img src={n.cover_thumbnail_url || n.cover_image_url} alt={n.title} />
+                      <img src={n.cover_thumbnail_url || n.cover_image_url} alt={n.title} width={800} height={500} loading="lazy" />
                     ) : (
                       <>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16v12H4z" /><path d="M4 6h16M9 10h6" /></svg>

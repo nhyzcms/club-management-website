@@ -515,7 +515,7 @@ export default function ReviewQueuePage() {
                       <button key={p.id} type="button" className="desk-proof"
                               onClick={() => setLightboxUrl(p.url)}
                               aria-label="查看完整证明图">
-                        <img src={p.url} alt="身份证明" />
+                        <img src={p.url} alt="身份证明" width={1200} height={1600} />
                         <span className="desk-proof-time">
                           {new Date(p.uploaded_at).toLocaleString("zh-CN", {
                             month: "2-digit", day: "2-digit",
