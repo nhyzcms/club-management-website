@@ -6,9 +6,11 @@ test("筛选 chip：transition 为显式属性列表（不含 all）", async ({ 
   await page.goto("/#/news");
   const chip = page.locator(".chip").first();
   await expect(chip).toBeVisible();
-  const prop = await chip.evaluate((el) => getComputedStyle(el).transitionProperty);
-  expect(prop).not.toContain("all");
-  expect(prop).toContain("border-color");
+  // 用可重试的 toHaveCSS 代替一次性 evaluate：新闻列表数据到达时会重渲染，
+  // 单次读 computed style 可能撞上尚未定型的样式（实测读回空串 → main 上偶发红），
+  // 重试即稳定；语义与原来一致（含 border-color、不含 all）。
+  await expect(chip).toHaveCSS("transition-property", /border-color/);
+  await expect(chip).not.toHaveCSS("transition-property", /\ball\b/);
 });
 
 test("标题：text-wrap: balance 生效（防孤行）", async ({ page }) => {
