@@ -61,6 +61,7 @@
 | `login_protection` | 目标账号 10 分钟内在其它设备登录过，新登录处于保护期 | `retry_after` |
 | `login_throttled` | 登录尝试过于频繁 | `retry_after` |
 | `account_disabled` | 账号已停用 | — |
+| `account_expired_unverified` | 超期未认证被系统停用（登录被拒，携专属文案） | — |
 | `email_not_verified` | 邮箱未验证，登录被拒 | `email` |
 
 ### 实时通道（WebSocket）

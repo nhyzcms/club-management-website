@@ -54,6 +54,9 @@
   "comments_enabled": true,
   "comment_max_depth": 8,
   "dms_enabled": true,
+  "verification_valid_days": 365,
+  "admin_valid_days": 730,
+  "registration_verify_days": 60,
   "turnstile_enabled": false,
   "turnstile_site_key": ""
 }
@@ -88,6 +91,9 @@
 | comments_enabled | bool | `true` | 评论区开关；关闭后前端不显示评论区且无法发新评论，已有评论保留。消费方：`messaging` |
 | comment_max_depth | int | `8` | 评论最大嵌套深度（1–32；超深拒绝，不改挂） |
 | dms_enabled | bool | `true` | 私信开关；关闭后不显示入口且无法发起 / 发送，已有会话保留。消费方：`messaging` |
+| verification_valid_days | int | `365` | 认证有效期（天）：邮箱 / 人工 / 认证码通道通过后的有效期；到期后不再算已验证，需重新认证。消费方：`accounts`（通道通过时写 `expires_at`、`is_verified` 判定） |
+| admin_valid_days | int | `730` | 管理员身份有效期（天）：后台委任通道的有效期；到期后系统撤销 `is_staff`。超级管理员不受限（永久）。消费方：`accounts`（委任通道、有效期执行） |
+| registration_verify_days | int | `60` | 注册后验证宽限（天）：注册后从未验证、超期将停用账号；可被 `Profile.registration_deadline` 显式覆盖。消费方：`accounts`（有效期执行） |
 | turnstile_enabled | bool | `false` | Turnstile 是否启用；前端据此挂载挂件。校验点：注册、找回密码、重发验证信（登录不校验）、未登录匿名反馈 |
 | turnstile_site_key | string | `""` | 公开 sitekey（未启用时为空串；secret 永不下发） |
 

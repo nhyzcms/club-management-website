@@ -90,6 +90,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `django.middleware.common.CommonMiddleware` | |
 | `django.middleware.csrf.CsrfViewMiddleware` | |
 | `django.contrib.auth.middleware.AuthenticationMiddleware` | |
+| `accounts.middleware.ValidityEnforcementMiddleware` | 身份有效期惰性执行（响应后；须在 AuthenticationMiddleware 之后） |
 | `django.contrib.messages.middleware.MessageMiddleware` | |
 | `django.middleware.clickjacking.XFrameOptionsMiddleware` | |
 | `accounts.middleware.SingleSessionMiddleware` | 单会话（挤号）；内容协商：浏览器导航给 HTML 页，SPA/API 给 JSON 契约 |
@@ -168,6 +169,9 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | 字段 | 默认值 | 作用 |
 |---|---|---|
 | `verification_enabled` | `True` | 验证通道总开关 |
+| `verification_valid_days` | `365` | 认证有效期（天）：认证通过后的有效期，过期需重新认证 |
+| `admin_valid_days` | `730` | 管理员身份有效期（天）：过期自动撤销 `is_staff`；超管不受限 |
+| `registration_verify_days` | `60` | 注册后验证宽限（天）：超期未认证自动停用 |
 | `content_review_enabled` | `True` | 内容审核；关闭后新建内容直接通过 |
 | `registration_enabled` | `True` | 自助注册；关闭后接口 403 |
 | `register_per_ip_per_day` | `5` | 每 IP 每日注册次数 |
@@ -242,7 +246,7 @@ CI 另外断言 `frontend/dist/surveyjs/survey.core.min.js` 存在（`.github/wo
 |---|---|---|
 | 密钥 / 域名 / SMTP / Turnstile / 更新 token | `.env` | 重启进程（生产 `sudo systemctl restart club`） |
 | 数据库 / Redis / worker 数 | `.env`（`DB_*` / `REDIS_URL` / `GUNICORN_WORKERS`） | 重启进程；数据迁移与回滚见 deployment.md |
-| 限流额度、上传上限、评论 / 私信开关、更新窗口 | Django admin「站点策略」 | 即时（`save()` 失效缓存） |
+| 限流额度、上传上限、评论 / 私信开关、验证有效期、更新窗口 | Django admin「站点策略」 | 即时（`save()` 失效缓存） |
 | 全站维护拦截 | `uv run python manage.py maintenance on --message "..."` | 即时（文件旗标，无需重启） |
 | CORS 来源、DRF 全局配置、中间件、分页大小 | `config/settings.py` | 改代码 + 重启 |
 | 前端构建行为 | `frontend/webpack.config.js` / `package.json` / `tsconfig.json` | 重新 `npm run build` |

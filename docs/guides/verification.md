@@ -12,10 +12,10 @@
 ## 核心模型：任一通道通过即「已验证」
 
 ```
-账号「已验证」 ⇔ 至少一条验证通道 approved
+账号「已验证」 ⇔ 至少一条验证通道 approved 且未过期
 ```
 
-- `Verification(user, channel, status)`：每 `(用户, 通道)` 一行，状态 `pending / approved / rejected`，就地更新；存在 `approved` 行即 `is_verified = true`。
+- `Verification(user, channel, status)`：每 `(用户, 通道)` 一行，状态 `pending / approved / rejected`，就地更新；存在**未过期**的 `approved` 行即 `is_verified = true`——过期通道不再算数，账号回落访客、可重新认证。
 - 人工通道的证据（`IdentityProof`）**永久留底**，审核通过或重新提交都不删除。
 - 人工通道驳回后**允许重交**：通道行回到 `pending`，新证明累加。
 
@@ -29,6 +29,19 @@
 | `authcode` 认证码 | 管理员在后台生成码 → 成员在面板兑换 | 线下分发；码带有效期 + 可用次数，兑换即通过、无人工环节；过期 / 吊销不回溯已通过者（[ADR-0020](../adr/0020-authcode-verification-channel.md)） |
 
 > 管理员 / 超级管理员不走自助流程——委任本身就是一条验证通道（[ADR-0013](../adr/0013-appointment-verification-channel.md)）。注意验证轴与权限轴的「逃生舱」相互独立：超管的 `has_perm` 恒真（[ADR-0005](../adr/0005-access-control-principle.md)），而验证面板照常显示其「后台委任」通道状态。
+
+### 认证有效期与到期
+
+验证不是一劳永逸：通道通过时会记下**有效期至**（`expires_at`），到期后该通道不再算数。
+
+| 期限 | 站点设置 | 默认 | 说明 |
+|---|---|---|---|
+| 认证有效期 | `verification_valid_days` | 365 天 | 认证通道（邮箱 / 人工 / 认证码）通过后的有效期。到期后账号回落为访客，重新走任一通道即可再次认证；认证码到期后可用新码重新兑换。 |
+| 管理员身份有效期 | `admin_valid_days` | 730 天 | 后台委任通道的有效期。到期后系统自动撤销 `is_staff`（回落普通用户，需重新授予）；超级管理员不受限（永久）。 |
+| 注册后验证宽限 | `registration_verify_days` | 60 天 | 注册后**从未验证**的宽限。超期账号被自动停用（`is_active=False`），登录时收到专属提示（`account_expired_unverified`），需联系社长 / 服务器管理员处理。 |
+
+- 执行方式：登录与请求时**惰性执行**（处理当前账号）；另有 `uv run python manage.py enforce_validity [--dry-run]` 供 cron / 定时器兜底。
+- 三个期限在 Django admin「站点策略」调整；单个用户的「注册验证截止」可由持 `accounts.manage_validity` 权限者显式延 / 缩（见下「管理员视角」）。
 
 ## 用户视角
 
@@ -68,6 +81,7 @@
 - **停用账号**是账号级处置：`is_active = False` + 吊销会话，与通道状态无关。
 - 通过与驳回会发送邮件通知；所有动作在 Django Admin 中亦可操作。
 - 审核用的证明文件经带鉴权的视图读取（`/auth/identity-proof/<id>/`），**不经**公开媒体路径。
+- **有效期管理**：持 `accounts.manage_validity`（默认授予社长 / 信息组）者可对**下位**用户调整「注册验证截止」与验证通道「有效期至」（Django Admin 用户页内嵌「验证通道」表）；平级 / 上位不可改，超级管理员无人可改。
 
 ## 边界与细节
 
@@ -75,3 +89,4 @@
 - **会话相关**（单会话挤号、登录保护）属于会话层，与验证体系无关，详见 [API 总览](../api/README.md#错误格式)。
 - 验证面板**仅本人可见**。
 - 加新通道 = 加 `CHANNEL` 枚举 + 实现该通道流程，`is_verified` 判定自动纳入（[ADR-0006](../adr/0006-verification-model.md)）。
+- **超管豁免**：超级管理员的委任通道永久有效（无到期日）；已停用账号不再被有效性执行重复处理。

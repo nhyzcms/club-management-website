@@ -7,9 +7,9 @@
 ## 模块约定
 
 - **路径前缀**：`config/urls.py` 把本 app 挂在 `/auth/`，故端点形如 `/auth/login/`。
-- **认证口径**（本文件「认证」列）：公开 = 匿名可用；登录 = 仅要求已登录；已验证 = 登录且 `is_verified`（任一验证通道 `approved`，[ADR-0006](../adr/0006-verification-model.md)）。
+- **认证口径**（本文件「认证」列）：公开 = 匿名可用；登录 = 仅要求已登录；已验证 = 登录且 `is_verified`（任一验证通道 `approved` 且未过期，[ADR-0006](../adr/0006-verification-model.md)）。
 - **未登录行为分两类**：`@login_required` 的函数视图未登录时 302 重定向到 `/login/`；DRF 端点（`identity-reviews`、`inbox`）会话认证无跳转，未登录 / 无权限均返回 403 JSON（`{"detail": …}`）。
-- **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed`。
+- **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed` / `account_expired_unverified`。
 - **Session + CSRF**：登录态走 Django Session cookie；非 GET 请求须带 `X-CSRFToken`（可先 `GET /auth/csrf/` 取 cookie）。
 - **单会话与挤号**（`accounts.middleware.SingleSessionMiddleware`）：同一账号仅一个当前会话；他设备登录成功后旧会话的下一次请求返回 401 `{"detail": "您的账号在其他设备登录，您已被迫下线。", "reason": "session_superseded", "takeover": {"device_name": …, "device_type": …, "ip": …, "time": …}}`（浏览器导航 Accept 含 `text/html` 时改返 401 HTML 下线页）。
 - **登录保护与限流**：账号已有未满 10 分钟的当前会话、且本次非同一会话再认证 → 409 `login_protection`；登录失败按 IP（`login_per_ip_per_hour`）与按用户名 / 邮箱（`login_per_username_per_hour`）双维度计数（只计失败），命中返回 429 `login_throttled` + `Retry-After` 头。
@@ -63,7 +63,7 @@
 {"user": {"id": 7, "username": "zhangsan", "email": "zs@example.com"}}
 ```
 
-`email` 未绑定时为空字符串。未验证账号照常登录（登录与验证解耦），仅停用账号被拒。
+`email` 未绑定时为空字符串。未验证账号照常登录（登录与验证解耦）；停用账号被拒，普通停用与「超期未认证被系统停用」返回不同的错误提示（见下表）。
 
 **错误**
 
@@ -72,6 +72,7 @@
 | 400 | JSON 非法；`username` / `email` 均缺；`password` 缺失 |
 | 401 | 账号不存在或密码错误（统一 `{"error": "Invalid credentials"}`，不泄露账号是否存在） |
 | 403 | 账号已停用：`{"error": "账号已停用，请联系信息组。", "reason": "account_disabled"}` |
+| 403 | 超期未认证被系统停用：`{"error": "本账户超过 60 日未认证，已被系统停用。请联系社长或服务器管理员处理。", "reason": "account_expired_unverified"}` |
 | 409 | 登录保护窗口：`{"reason": "login_protection", "retry_after": <秒>}` |
 | 429 | 失败次数超限：`{"reason": "login_throttled", "retry_after": <秒>}` |
 
@@ -148,7 +149,7 @@
 }
 ```
 
-`avatar` 无头像时为 `null`；`birthday` 未填为 `null`；`gender` 可为 `""` / `M` / `F` / `O`（男 / 女 / 其他）。`profile.is_verified` 为账号总验证态（任一通道 `approved`）。`role` 四档：`superadmin` 超级管理员（`is_superuser`）＞ `admin` 管理员（`is_staff`，仅徽章展示）＞ `user` 用户（`is_verified`，后台委任通道计入）＞ `visitor` 访客（匿名或已登录未验证）。
+`avatar` 无头像时为 `null`；`birthday` 未填为 `null`；`gender` 可为 `""` / `M` / `F` / `O`（男 / 女 / 其他）。`profile.is_verified` 为账号总验证态（任一通道 `approved` 且未过期）。`role` 四档：`superadmin` 超级管理员（`is_superuser`）＞ `admin` 管理员（`is_staff`，仅徽章展示）＞ `user` 用户（`is_verified`，后台委任通道计入）＞ `visitor` 访客（匿名或已登录未验证）。
 
 ### 能力投影（`permissions.can_*`）
 
@@ -260,7 +261,7 @@
 
 `POST /auth/verification/authcode/redeem/`
 
-**认证**：登录；**权限**：—。请求体 JSON：`code`（是）。码经归一化（去空格 / 连字符、转大写）后按序校验：无效 / 已吊销 / 已过期 / 已用尽 / 每账号至多一次；通过即写 `authcode` 通道 `approved`（`identifier` = 码原文，`verified_by` = 发码人）、`used_count + 1` 并落兑换记录（审计留底）。**已通过任意通道**的账号再兑换 → 400 且不消耗任何码。
+**认证**：登录；**权限**：—。请求体 JSON：`code`（是）。码经归一化（去空格 / 连字符、转大写）后按序校验：无效 / 已吊销 / 已过期 / 已用尽 / 同一码每账号至多兑一次；通过即写 `authcode` 通道 `approved`（`identifier` = 码原文，`verified_by` = 发码人）、`used_count + 1` 并落兑换记录（审计留底），认证有效期 = 兑换日 + `verification_valid_days`（默认 365 天）。**已通过且未过期**（任一通道）的账号再兑换 → 400 `{"error": "账号已完成验证，无需使用认证码。"}` 且不消耗任何码；认证过期后可用新码重新兑换。
 
 **响应 `200 OK`**：`{"message": "认证码验证通过，账号已完成验证。"}`；**错误**：403 `verification_closed`；429 `{"error": "请求过于频繁，请稍后再试。"}`（每账号每小时失败次数超限，**只计失败**、成功不占额度）；400 `{"error": "…"}`（无效 / 已吊销 / 已过期 / 已用尽 / 账号已完成验证 / 空码 / JSON 非法）。
 

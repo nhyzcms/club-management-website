@@ -102,6 +102,7 @@ frontend/
 - **字体**：Sora + Noto Sans SC，Google Fonts `@import` 引入，中文正文 15px / line-height 1.6。
 - **域样式**：各域 CSS 与页面就近 import；移动版共享 `mobile.css` 并以 `m-` 前缀隔离。
 - **写入习惯**：新域样式尽量用 `var(--token, 兜底值)` 写法（token 改名时不会整块“无样式”，深色模式下也不会突然不可读）。
+- **深色模式**：全局主题系统（`theme.ts`）支持浅色 / 深色 / 跟随系统三态，偏好按设备存 localStorage（`cobalt:theme`）；解析结果写入 `<html data-theme>` 并同步 `color-scheme` 与页面 `<meta name="theme-color">`（地址栏配色），同时镜像到 Django admin 约定的 `theme` 键（`auto/light/dark`），使后台自动跟随。切换入口为顶栏 `ThemeToggle`（`AppShell`）；`template.html` 内联脚本在首屏前预应用主题、避免闪白；深色配色在 `styles/theme-dark.css`（覆盖 cobalt token）。
 
 ## 路由与页面
 

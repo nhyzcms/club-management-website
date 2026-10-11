@@ -39,6 +39,7 @@
 | `reviews.read_feedback` | 可查看并了结意见反馈 |
 | `reviews.handle_report` | 可处理举报案 |
 | `accounts.can_review_identity` | 可审核身份验证 |
+| `accounts.manage_validity` | 可管理账号 / 认证有效期（对下位用户延 / 缩） |
 | `messaging.manage_comment_thread` | 评论区协管 |
 | `messaging.manage_announcement` | 管理横幅公告 |
 | `messaging.mute_user` | 全站禁言 |

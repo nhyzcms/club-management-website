@@ -68,6 +68,7 @@
 | `exam_board` | 考试看板 | 批次 / 科目、误刊广播 | [API](../api/exam-board.md) |
 | `about` | 关于页 | 区块内容 | [API](../api/about.md) |
 | `attachments` | 统一附件与上传 | TUS、私有媒体 | [API](../api/attachments.md) |
+| `panorama` | 校园全景图库 | DJI 导入、瓦片切片、多级浏览 | [API](../api/panorama.md) · [ADR-0022](../adr/0022-campus-panorama-library.md) |
 
 ## 横切机制
 
@@ -112,5 +113,5 @@ Nginx（一层代理）→ Gunicorn ASGI（worker 数由 `GUNICORN_WORKERS` 控�
 
 ## 设计记录
 
-- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0021）。
+- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0023）。
 - 领域术语与项目概览：仓库根目录 [CONTEXT.md](../../CONTEXT.md)。

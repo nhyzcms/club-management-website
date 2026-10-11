@@ -282,6 +282,13 @@ uv run python manage.py maintenance off
 
 更新进行中执行 `on` 会记下 `resume_ops`，更新结束后自动恢复运维拦截；`off` 不会中止进行中的更新。
 
+身份有效期兜底（撤销过期管理员、停用超期未认证账号；登录 / 请求时的惰性执行只覆盖来访问的账号，建议用 cron / systemd timer 定期兜底）：
+
+```bash
+uv run python manage.py enforce_validity            # 执行一次
+uv run python manage.py enforce_validity --dry-run  # 只统计，不改动
+```
+
 Nginx 侧：
 
 ```bash
