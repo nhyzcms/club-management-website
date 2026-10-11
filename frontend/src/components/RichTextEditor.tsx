@@ -347,7 +347,7 @@ export default function RichTextEditor({
   content,
   onChange,
   onStats,
-  placeholder = "请输入内容...",
+  placeholder = "请输入内容…",
   editable = true,
   minHeight,
   imageUpload,

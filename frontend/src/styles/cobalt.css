@@ -103,7 +103,7 @@ ul, ol { list-style: none; }
 }
 
 /* ---------- ③ 排版 ---------- */
-h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); line-height: 1.2; font-weight: 700; }
+h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); line-height: 1.2; font-weight: 700; text-wrap: balance; }
 .tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
 .mono { font-family: var(--font-mono); }
 
@@ -327,7 +327,7 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
   padding: 7px 14px; border-radius: var(--r-pill);
   font-size: 13px; font-weight: 500; color: var(--ink-700);
   background: var(--bg); border: 1px solid var(--line-2);
-  transition: all var(--dur-1) var(--ease);
+  transition: border-color var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
 .chip:hover { border-color: var(--brand-300); color: var(--brand-700); }
 .chip[aria-pressed="true"] { background: var(--brand-700); color: #fff; border-color: var(--brand-700); }
@@ -388,7 +388,7 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 
 /* 分页 */
 .pager { display: flex; align-items: center; justify-content: center; gap: var(--s-1); }
-.pager button { min-width: 36px; height: 36px; padding: 0 10px; border-radius: var(--r-sm); font-size: 14px; color: var(--ink-700); border: 1px solid transparent; transition: all var(--dur-1) var(--ease); }
+.pager button { min-width: 36px; height: 36px; padding: 0 10px; border-radius: var(--r-sm); font-size: 14px; color: var(--ink-700); border: 1px solid transparent; transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
 .pager button:hover { background: var(--brand-50); color: var(--brand-700); }
 .pager button[aria-current="page"] { background: var(--brand-700); color: #fff; font-weight: 600; }
 .pager .ellipsis { color: var(--faint); padding: 0 var(--s-1); }

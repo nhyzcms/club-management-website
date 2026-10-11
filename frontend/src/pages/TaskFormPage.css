@@ -67,7 +67,7 @@
   background: var(--bg);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color .15s, color .15s, border-color .15s, box-shadow .15s;
 }
 
 .tag-option:hover {

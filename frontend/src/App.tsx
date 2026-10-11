@@ -52,7 +52,7 @@ const MobileActivityPage = lazy(() => import("./pages/MobileActivityPage"));
 const MobileMePage = lazy(() => import("./pages/MobileMePage"));
 
 function Loading() {
-  return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中...</div>;
+  return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中…</div>;
 }
 
 function MaybeMascot() {

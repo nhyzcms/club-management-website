@@ -78,7 +78,7 @@ export default function FeedbackDetailPage() {
     return (bytes / 1024 / 1024).toFixed(1) + " MB";
   };
 
-  if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
+  if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中…</p></div></AppShell>;
   if (error && !item) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error}</p></div></AppShell>;
   if (!item) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">反馈不存在或无权查看</p></div></AppShell>;
 

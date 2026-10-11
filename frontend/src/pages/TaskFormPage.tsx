@@ -105,7 +105,7 @@ export default function TaskFormPage() {
     }
   };
 
-  if (loading) return <div className="task-page"><div className="task-loading">加载中...</div></div>;
+  if (loading) return <div className="task-page"><div className="task-loading">加载中…</div></div>;
 
   if (blocked) {
     return (
@@ -144,7 +144,7 @@ export default function TaskFormPage() {
 
           <div className="form-field">
             <label>描述</label>
-            <RichTextEditor content={description} onChange={setDescription} placeholder="详细描述任务内容..." />
+            <RichTextEditor content={description} onChange={setDescription} placeholder="详细描述任务内容…" />
           </div>
 
           <div className="form-row">
@@ -192,7 +192,7 @@ export default function TaskFormPage() {
               取消
             </button>
             <button type="submit" className="task-btn-primary" disabled={saving}>
-              {saving ? "保存中..." : isEdit ? "保存修改" : "创建任务"}
+              {saving ? "保存中…" : isEdit ? "保存修改" : "创建任务"}
             </button>
           </div>
         </form>

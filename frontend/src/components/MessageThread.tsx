@@ -227,7 +227,7 @@ export default function MessageThread({
           onSubmit={handleSend}
         />
         <button className="btn btn-primary" onClick={handleSend} disabled={siteMuted || !input.trim() || sending}>
-          {sending ? "..." : "发送"}
+          {sending ? "发送中…" : "发送"}
         </button>
       </div>
     </>
