@@ -48,7 +48,7 @@ export default function SurveyStatsPage() {
   }, [data]);
 
   if (loading) {
-    return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
+    return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中…</p></div></AppShell>;
   }
   if (error || !data || !activity) {
     return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error || "加载失败"}</p></div></AppShell>;

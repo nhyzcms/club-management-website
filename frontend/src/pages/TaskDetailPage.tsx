@@ -195,7 +195,7 @@ export default function TaskDetailPage() {
   const can = (action: TaskAction) => availableActions.includes(action);
   const pendingClaims = task?.claim_requests.filter((c) => c.status === "pending") || [];
 
-  if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
+  if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中…</p></div></AppShell>;
   if (error && !task) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error}</p></div></AppShell>;
   if (!task) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">任务不存在</p></div></AppShell>;
 
@@ -265,7 +265,7 @@ export default function TaskDetailPage() {
             <h3 className="section-h">打回理由</h3>
             <textarea className="textarea" value={rejectReason}
                       onChange={(e) => setRejectReason(e.target.value)}
-                      placeholder="说明打回原因，告知负责人需返工的内容..." rows={3} />
+                      placeholder="说明打回原因，告知负责人需返工的内容…" rows={3} />
             <div className="detail-row">
               <button className="btn btn-primary" onClick={handleRejectCompletion} disabled={actionLoading}>
                 {actionLoading ? "处理中…" : "确认打回"}
@@ -312,7 +312,7 @@ export default function TaskDetailPage() {
             <h3 className="section-h">认领任务</h3>
             <textarea className="textarea" value={claimReason}
                       onChange={(e) => setClaimReason(e.target.value)}
-                      placeholder="说明你想认领此任务的理由..." rows={2} />
+                      placeholder="说明你想认领此任务的理由…" rows={2} />
             <button className="btn btn-primary" onClick={handleClaim} disabled={claiming}>
               {claiming ? "提交中…" : "申请认领"}
             </button>
