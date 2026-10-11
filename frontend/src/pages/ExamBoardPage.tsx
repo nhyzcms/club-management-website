@@ -354,7 +354,7 @@ function ErrataCard({
   const body = (
     <>
       {!compact && <div className="errata-kicker">题目误刊</div>}
-      {errata.image_url && <img src={errata.image_url} alt="" />}
+      {errata.image_url && <img src={errata.image_url} alt="" width={800} height={500} />}
       {errata.text && <p>{errata.text}</p>}
       {asButton && <span className="errata-zoom-hint">{compact ? "放大" : "点击空白处关闭"}</span>}
     </>

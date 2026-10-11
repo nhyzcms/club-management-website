@@ -31,7 +31,7 @@ export default function MobileHomePage() {
     <div className="m-app">
       <header className="m-topbar">
         <div className="m-brand">
-          <img src="/static/favicon.ico" alt="" />
+          <img src="/static/favicon.ico" alt="" width={26} height={26} />
           南汇一中 · 传媒社
         </div>
         <Link className="m-topbar-user" to="/m/me">我的</Link>
@@ -71,7 +71,7 @@ export default function MobileHomePage() {
       <div className="m-cards">
         {news.map((n) => (
           <Link key={`n${n.id}`} to={`/news/${n.id}`} className="m-card">
-            {n.cover_image_url && <img className="m-card-cover" src={n.cover_image_url} alt="" />}
+            {n.cover_image_url && <img className="m-card-cover" src={n.cover_image_url} alt="" width={800} height={500} loading="lazy" />}
             <div className="m-card-title">{n.title}</div>
             <div className="m-card-meta">
               <span>{n.author?.nickname || n.author?.username || "传媒社"}</span>

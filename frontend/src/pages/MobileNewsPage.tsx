@@ -34,7 +34,7 @@ export default function MobileNewsPage() {
         {items.map((n) => (
           <Link key={n.id} to={`/news/${n.id}`} className="m-card">
             {n.cover_image_url && (
-              <img className="m-card-cover" src={n.cover_thumbnail_url || n.cover_image_url} alt="" loading="lazy" />
+              <img className="m-card-cover" src={n.cover_thumbnail_url || n.cover_image_url} alt="" width={800} height={500} loading="lazy" />
             )}
             <div className="m-card-title">{n.title}</div>
             {n.summary && <p className="m-card-summary">{n.summary}</p>}

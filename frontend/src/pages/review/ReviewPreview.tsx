@@ -54,7 +54,7 @@ function surveyQuestionHint(schema: Record<string, unknown> | undefined): string
 
 function FileMedia({ file }: { file: Attachment | NewsAttachment }) {
   if (file.file_type === "image") {
-    return <img src={file.file_url} alt={file.file_name} />;
+    return <img src={file.file_url} alt={file.file_name} width={800} height={600} />;
   }
   if (file.file_type === "video") {
     return <video src={file.file_url} controls />;
@@ -79,7 +79,7 @@ function NewsBody({ news }: { news: NewsDetail }) {
       </div>
       {news.cover_image_url && (
         <div className="desk-cover">
-          <img src={news.cover_image_url} alt={news.title} />
+          <img src={news.cover_image_url} alt={news.title} width={800} height={500} />
         </div>
       )}
       {news.content ? (
