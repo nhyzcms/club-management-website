@@ -79,6 +79,7 @@ def unread_message_count(user, conversation=None):
     - 只统计该用户参与的会话（``conversation=None`` 时为全部，否则限定单个会话）；
     - 不计自己发出的消息——发送者不会为自己生成 MessageReadStatus，
       若不排除，凡是发过消息的人未读数永远 ≥1（顶栏红点会常亮）。
+    - 不计已撤回的消息（``retracted_at`` 非空）。
 
     供顶栏铃铛红点（总数）与会话列表未读徽标（单会话）共用。
     """
@@ -211,6 +212,12 @@ class Notification(models.Model):
     category = models.CharField("类别", max_length=20, choices=CATEGORY_CHOICES)
     event = models.CharField("事件", max_length=64)
     payload = models.JSONField("载荷", default=dict, blank=True)
+    # 聚合键（源:事件:事项，由 NotificationSource.dedup_key 生成）：非空时同一收件人
+    # 至多一条**未读**通知——后续同事项只并入这条（payload.count 累加），被读掉之后
+    # 才重新通知。空 = 不聚合（每条事件各自一条通知）。
+    dedup_key = models.CharField(
+        "聚合键", max_length=200, blank=True, default="", db_index=True,
+    )
     read_at = models.DateTimeField("已读时间", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -221,6 +228,14 @@ class Notification(models.Model):
         indexes = [
             models.Index(fields=["recipient", "-created_at"]),
             models.Index(fields=["recipient", "read_at"]),
+        ]
+        constraints = [
+            # 同一收件人 × 同一聚合键至多一条未读（键为空的行不参与）。
+            models.UniqueConstraint(
+                fields=["recipient", "dedup_key"],
+                condition=models.Q(read_at__isnull=True) & ~models.Q(dedup_key=""),
+                name="notification_unread_dedup_unique",
+            ),
         ]
 
     def __str__(self):

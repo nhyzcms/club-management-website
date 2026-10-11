@@ -2,8 +2,23 @@
 
 事件表必须与业务代码实际发出的 ``event`` 字符串一一对应（订阅粒度为源级，
 事件用于展示；新增事件时两处同步修改）。
+
+``dedup_identity`` 声明「同一未读事项」的身份：同键未读通知只保留一条（去重聚合），
+读掉之后下一条才重新通知；不声明 = 每条单独通知。
 """
 from .registry import Event, NotificationSource, register_source
+
+# 私信站内通知的事件名（``dm_dedup_key`` 与 DmSource 共用，避免两处格式漂移）。
+DM_EVENT = "new_message"
+
+
+def dm_dedup_key(conversation_id) -> str:
+    """私信站内通知的未读聚合键：**每个会话一条未读通知**。
+
+    ``dispatch`` 落库时用它聚合；``messaging.services.mark_conversation_read``
+    读消息时用同一个键把该会话的未读通知一并标已读——两处必须同格式，故收在这里。
+    """
+    return f"dm:{DM_EVENT}:{conversation_id}"
 
 
 @register_source
@@ -62,11 +77,16 @@ class CommentSource(NotificationSource):
 class DmSource(NotificationSource):
     key = "dm"
     name = "私信"
-    description = "收到新私信（站内提示，不复制内容）"
+    description = "收到新私信（按会话聚合，站内提示不复制内容）"
     color = "#7c5cd6"
     emoji = "✉️"
-    events = (Event("new_message", "新私信"),)
+    events = (Event(DM_EVENT, "新私信"),)
     default_channels = ("site",)
+
+    def dedup_identity(self, event: str, payload) -> str | None:
+        """同一会话的未读私信通知合成一条（键 = ``dm:new_message:<会话 id>``）。"""
+        conversation_id = payload.get("id")
+        return str(conversation_id) if conversation_id else None
 
 
 @register_source
