@@ -82,9 +82,9 @@ export default function NotificationsPage() {
           <p className="section-sub">系统投递的站内提醒，不是私信。</p>
         </div>
       </div>
-      <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
+      <div className="container" style={{ paddingTop: "var(--s-6)", paddingBottom: "var(--s-16)" }}>
         {error && (
-          <div className="alert alert-danger" style={{ margin: "var(--s-6) 0 var(--s-4)" }}>
+          <div className="alert alert-danger" style={{ margin: "0 0 var(--s-4)" }}>
             <span>{error}</span>
           </div>
         )}

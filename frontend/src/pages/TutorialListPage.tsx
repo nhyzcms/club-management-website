@@ -58,7 +58,7 @@ export default function TutorialListPage() {
           </div>
         </div>
       </div>
-      <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
+      <div className="container" style={{ paddingTop: "var(--s-6)", paddingBottom: "var(--s-16)" }}>
         {error && <div className="alert alert-danger">{error}</div>}
         {loading ? <p className="task-empty">加载中…</p> : data.length === 0 ? (
           <p className="task-empty">暂无教程。</p>
