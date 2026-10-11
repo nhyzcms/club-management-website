@@ -29,6 +29,7 @@
 | `DB_ENGINE` 等 `DB_*` | 数据库切换与连接项：`DB_ENGINE=postgresql` 时用 PostgreSQL（`DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT`） | 否 | 全部留空 = SQLite（缺省）；示例 `DB_ENGINE=postgresql`、`DB_NAME=club` |
 | `REDIS_URL` | 缓存 + Channels 频道层一并切到 Redis；多 worker 的前置条件 | 否 | 留空 = v1 行为（内存通道层、本地缓存、单 worker） |
 | `GUNICORN_WORKERS` | ASGI worker 进程数 | 否 | `1`；**只有配了 `REDIS_URL` 才允许 >1** |
+| `NOTIFICATIONS_DELIVERY_ASYNC` | 通知外发投递模式：默认异步（进程内队列 + 守护线程；失败退避自动重试）；`=0` 回退旧同步投递 | 否 | 留空 = 异步（默认）。示例 `NOTIFICATIONS_DELIVERY_ASYNC=0` |
 | `CLUB_UPDATER_PROXY` / `CLUB_UPDATER_NO_PROXY` | 更新器出站代理（只注入更新守护进程，加速 GitHub API/Release 下载） | 否 | 空 = 不注入；示例 `CLUB_UPDATER_PROXY=http://127.0.0.1:7891` |
 
 注意事项：
@@ -137,6 +138,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `EMAIL_BACKEND` | `_email_backend_for(EMAIL_HOST_USER)`：非空 → `smtp.EmailBackend`，空 → `console.EmailBackend` |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USE_SSL` | 配了 `EMAIL_HOST_USER` 才设：`smtp.163.com` / `465` / `True` |
 | `DEFAULT_FROM_EMAIL` | 配了 SMTP 时为 `EMAIL_HOST_USER` |
+| `NOTIFICATIONS_DELIVERY_ASYNC` | 环境变量；默认开。异步 = 进程内队列 + 守护线程消费（`messaging/notifications/queue.py`，失败退避重试，见 [ADR-0024](adr/0024-async-notification-delivery.md)）；`=0` 回退旧同步投递。测试期默认同步（用例可 `override_settings` 开启） |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 环境变量，默认空。两项都非空才启用（`accounts/turnstile.py::is_turnstile_enabled()`）；启用后 sitekey 经 `GET /site-policy/` 下发，secret 只留进程内 |
 | `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` | 环境变量；repo 默认 `nhyzcms/club-management-website`（空串也回退）。窗口 / 轮询等旋钮在 `SiteSettings` |
 

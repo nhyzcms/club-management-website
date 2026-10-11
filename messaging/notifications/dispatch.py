@@ -1,9 +1,10 @@
-"""分发流水线：业务事件 → 站内落库（按源的聚合键去重）+ 实时 push + 订阅匹配 → 外发通道同步投递。"""
+"""分发流水线：业务事件 → 站内落库（按源的聚合键去重）+ 实时 push + 订阅匹配 → 外发通道投递（默认入队异步；`NOTIFICATIONS_DELIVERY_ASYNC=0` 回退同步）。"""
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -29,9 +30,10 @@ def dispatch(
       已有同键**未读**通知就不再新建，只把最新载荷并进既有那条（``payload.count``
       累加、``last_at`` 刷新）并再推一次；该通知被读掉之后，下一条同事项才重新通知。
       聚合命中的不重复外发（邮件等），避免「多一条消息就多一封邮件」；
-    - 外发：按用户订阅（惰性默认）为启用的通道创建 NotificationDelivery，
-      并同步投递（失败留痕、不自动重试；在事务中调用时挂到提交后执行，
-      避免「邮件已发、数据回滚」的幽灵通知）。
+    - 外发：按用户订阅（惰性默认）为启用的通道创建 NotificationDelivery 并入队，
+      由进程内投递队列异步消费（失败按退避自动重试；见 notifications/queue.py 与 ADR-0024）；
+      事务中调用时挂到提交后执行，避免「邮件已发、数据回滚」的幽灵通知。
+      设 NOTIFICATIONS_DELIVERY_ASYNC=0 回退为提交后同步投递（失败仅留痕、不重试）。
     """
     source = get_source(source_key)
     if source is None:
@@ -231,4 +233,11 @@ def _deliver(row: Notification) -> None:
             channel_key=key,
         )
         # 事务中调用时挂到提交后投递，避免「邮件已发、数据回滚」的幽灵通知。
-        transaction.on_commit(lambda d=delivery: deliver(d))
+        if getattr(settings, "NOTIFICATIONS_DELIVERY_ASYNC", False):
+            # 异步（默认）：只入队——进程内队列 + 守护线程消费（notifications/queue.py）
+            from .queue import enqueue
+
+            transaction.on_commit(lambda d=delivery: enqueue(d.pk))
+        else:
+            # 同步（回退路径）：请求内投递，失败仅留痕、不重试
+            transaction.on_commit(lambda d=delivery: deliver(d))
