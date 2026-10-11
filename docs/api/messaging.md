@@ -14,6 +14,7 @@
 - 撤回窗口 3 分钟（评论与私信一致）；评论已有回复则不能撤回。
 - 站点策略开关：`comments_enabled` 关闭 → 发评论 403「评论功能已关闭」；`dms_enabled` 关闭 → 发 / 发起私信 403「私信功能已关闭」（`get_policy()`，ADR-0010）。
 - 未验证（`IsVerified`）与全站禁言（`IsNotMuted`）只拦**写**动作；被禁言者仍可登录、阅读、接收。
+- 通知**未读聚合**：同一「未读事项」（源 × 事件 × 事项）只保留一条通知，读掉之后才重新通知（见「通知列表与详情」）。
 
 ## 端点一览
 
@@ -31,7 +32,7 @@
 | GET | `/messaging/conversations/{id}/` | 登录 | —（仅参与者）| 会话详情 |
 | POST | `/messaging/conversations/{id}/send_message/` | 已验证 | —（仅参与者；另受全站禁言限制）| 发送私信 |
 | POST | `/messaging/conversations/{id}/retract_message/` | 登录 | —（仅发送者本人）| 撤回私信 |
-| POST | `/messaging/conversations/{id}/mark_read/` | 登录 | —（仅参与者）| 会话消息批量标已读 |
+| POST | `/messaging/conversations/{id}/mark_read/` | 登录 | —（仅参与者）| 会话消息批量标已读（联动该会话未读通知）|
 | GET | `/messaging/conversations/unread_count/` | 登录 | — | 私信未读总数（铃铛红点）|
 | GET | `/messaging/conversations/messages/?conversation_id=` | 登录 | —（仅参与者）| 会话消息倒序分页 |
 | POST | `/messaging/conversations/start_private/` | 已验证 | —（另受全站禁言限制）| 发起 / 复用 1:1 会话 |
@@ -220,6 +221,8 @@
 
 **请求体**：无。**响应 `200 OK`**：`{ "detail": "已标记为已读" }`。为会话中当前用户尚无已读记录的消息写入已读（幂等），清空该会话未读徽标。
 
+**联动**：同时把该会话的**未读私信通知**标为已读（含聚合上线前的存量行）——“读私信 ⇒ 通知也不再亮着”，不论从通知入口点进来还是直接开私信页读的。
+
 ### 私信未读总数
 `GET /messaging/conversations/unread_count/`
 
@@ -266,10 +269,13 @@
 
 `payload` 为 JSON 对象，字段随类别不同（见下表）；`actor_id` / `actor_username` 在系统自动事件（如禁言到期）中缺省。落库时按收件人订阅偏好（`/messaging/notification-preferences/`）同步投递外发通道（如邮件）；投递失败仅留痕（NotificationDelivery），不影响站内通知。
 
+**未读聚合（同一事项只提示一次）**：通知源可声明**聚合键**（``源:事件:事项``，实现见 `messaging/notifications/registry.py`）。同一聚合键在**未读**期间只保留一条通知：后续同事项不新建行，只并入既有那条（`payload.count` 累加、`last_at` 刷新），并再推一次 `notification` 事件（前端据此刷新列表与徽标）；**被读掉之后**下一条同事项才重新通知。聚合命中的不重复外发（邮件等）——“一个未读事项 = 至多一封邮件”。目前只有私信声明了聚合键（`dm:new_message:<会话 id>`），其余源每条事件各自一条通知。
+
 | category | event | 触发 | payload（公共字段之外）|
 |---|---|---|---|
 | `comment` | `comment_replied` | 有人回复你的评论 | `comment_id`、`thread_id`、`parent_id`、`news_id` / `activity_id` / `task_id` |
 | `comment` | `comment_mentioned` | 评论中 @ 你（你能看见该宿主才通知）| 同上 |
+| `dm` | `new_message` | 收到新私信（**按会话聚合**：同会话连发多条只提示一次，直到读掉）| `type` = `dm`、`id`（会话 id）、`title`、`url`；聚合后附 `count`（累计条数）、`last_at` |
 | `review` | `approved` / `rejected` / `removed` | 发布审核通过 / 驳回 / 下架（通知宿主主人）| `type`（news / activity / tutorial）、`id`、`url` |
 | `review` | `closed` | 署名意见反馈了结 | `type` = `feedback`、`id`、`url`（有 note 时附 `reason`）|
 | `discipline` | `muted` / `mute_lifted` / `mute_expired` | 全站禁言授予 / 解除 / 到期惰性解除 | `mute_id`（`muted` 另附 `reason`、`ends_at`）|
@@ -371,7 +377,7 @@
 |---|---|---|---|
 | `comment` | `thread_{id}`（需已订阅）| `thread_id`、`comment_id`；撤回附 `"retracted": true`，墓碑删除附 `"deleted": true` | 发表 / 撤回 / 删除评论 |
 | `dm` | `user_{id}`（自动，无需订阅）| `conversation_id`、`message_id`；撤回附 `"retracted": true` | 发送 / 撤回私信 |
-| `notification` | `user_{id}` | `notification_id`、`category`、`event` | 通知落库（`notify()`）后 |
+| `notification` | `user_{id}` | `notification_id`、`category`、`event` | 通知落库（`notify()`）后；聚合命中并入既有未读时也推 |
 
 推送仅作提示，前端据此重拉 HTTP；Channels 未接线时服务端静默 no-op（ADR-0015）。
 

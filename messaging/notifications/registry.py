@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 
@@ -26,6 +27,26 @@ class NotificationSource:
     default_channels: tuple = ("site",)
     color: str = "#0756a2"  # 源主色（邮件头部/标签、界面标识）
     emoji: str = "🔔"       # 源图标（邮件与界面）
+
+    def dedup_identity(self, event: str, payload: Mapping) -> str | None:
+        """同一「未读事项」的身份串；``None`` = 不聚合（每条都单独通知）。
+
+        返回非空串的源：收件人已有同键**未读**通知时不再新建，只把最新载荷并进
+        既有那条（见 ``messaging.notifications.dispatch``）；该通知被读掉之后，
+        下一条同事项才重新通知。
+        """
+        return None
+
+    def dedup_key(self, event: str, payload: Mapping) -> str:
+        """未读聚合键 ``源:事件:事项``；不聚合时返回空串。
+
+        同一 (源, 事件, 事项) 在**未读**期间只保留一条通知；事件进键，故同一对象上
+        的不同事件（如活动「发布」与「开始」）各算各的事项。
+        """
+        identity = self.dedup_identity(event, payload)
+        if not identity:
+            return ""
+        return f"{self.key}:{event}:{identity}"[:200]
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Source {self.key}>"

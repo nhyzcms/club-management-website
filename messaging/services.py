@@ -23,6 +23,7 @@ from .models import (
     CommentThread,
     Conversation,
     Message,
+    MessageReadStatus,
     Notification,
 )
 
@@ -267,7 +268,8 @@ def notify(
 
     详见 ``messaging.notifications.dispatch``；邮件等外发同步发送，失败仅留痕
     （NotificationDelivery），不自动重试。用户关闭该源的站内通道（拒绝接收）时
-    整条静默并返回 None。
+    整条静默并返回 None。源声明了聚合键时，收件人已有同键未读通知则并入那条并
+    返回它（不重复外发）——「同一未读事项只通知一次」见 ``NotificationSource``。
     """
     from .notifications.dispatch import dispatch
 
@@ -402,6 +404,29 @@ def send_dm(conversation: Conversation, sender, content: str) -> Message:
         },
     )
     return message
+
+
+def mark_conversation_read(user, conversation) -> int:
+    """把会话中他人发来的消息标为已读；并联动把该会话的未读站内通知标为已读。
+
+    返回本次**新**标记的消息数。「读私信 ⇒ 通知也已读」是产品规则：不论是从通知
+    入口点进来读的，还是直接在私信页读的，该会话的未读私信通知都不该继续亮着。
+    匹配用聚合键（``dm_dedup_key``）并兼容聚合上线前的存量行（``payload.id`` = 会话 id）。
+    """
+    from .notifications.sources import dm_dedup_key
+
+    count = 0
+    for message in conversation.messages.exclude(read_statuses__user=user):
+        _row, created = MessageReadStatus.objects.get_or_create(message=message, user=user)
+        count += int(created)
+    Notification.objects.filter(
+        recipient=user,
+        category=Notification.CATEGORY_DM,
+        read_at__isnull=True,
+    ).filter(
+        Q(dedup_key=dm_dedup_key(conversation.pk)) | Q(payload__id=conversation.pk),
+    ).update(read_at=timezone.now())
+    return count
 
 
 def retract_dm(message: Message, user) -> Message:

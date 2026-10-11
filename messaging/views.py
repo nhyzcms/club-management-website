@@ -22,7 +22,6 @@ from .models import (
     CommentThread,
     Conversation,
     Message,
-    MessageReadStatus,
     Notification,
     unread_message_count,
 )
@@ -51,6 +50,7 @@ from .services import (
     can_see_thread,
     current_banner,
     delete_comment,
+    mark_conversation_read,
     post_comment,
     retract_comment,
     retract_dm,
@@ -315,10 +315,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def mark_read(self, request, pk=None):
+        """标会话已读；并把该会话的未读站内通知一并标已读（见 mark_conversation_read）。"""
         conversation = self.get_object()
-        unread = conversation.messages.exclude(read_statuses__user=request.user)
-        for msg in unread:
-            MessageReadStatus.objects.get_or_create(message=msg, user=request.user)
+        mark_conversation_read(request.user, conversation)
         return Response({"detail": "已标记为已读"})
 
     @action(detail=False, methods=["get"])

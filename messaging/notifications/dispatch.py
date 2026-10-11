@@ -1,10 +1,10 @@
-"""分发流水线：业务事件 → 站内落库 + 实时 push + 订阅匹配 → 外发通道同步投递。"""
+"""分发流水线：业务事件 → 站内落库（按源的聚合键去重）+ 实时 push + 订阅匹配 → 外发通道同步投递。"""
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from ..models import Notification, NotificationDelivery, NotificationSubscription
@@ -25,31 +25,84 @@ def dispatch(
 
     - 站内：每条落库（Notification）并实时 push；用户可在订阅中关闭某源的站内
       （拒绝接收），关闭后该源对该用户整体静默（不落库、不推送、不外发）；
+    - 聚合：源声明了 ``dedup_key``（见 ``NotificationSource.dedup_key``）时，收件人
+      已有同键**未读**通知就不再新建，只把最新载荷并进既有那条（``payload.count``
+      累加、``last_at`` 刷新）并再推一次；该通知被读掉之后，下一条同事项才重新通知。
+      聚合命中的不重复外发（邮件等），避免「多一条消息就多一封邮件」；
     - 外发：按用户订阅（惰性默认）为启用的通道创建 NotificationDelivery，
       并同步投递（失败留痕、不自动重试；在事务中调用时挂到提交后执行，
       避免「邮件已发、数据回滚」的幽灵通知）。
     """
-    if get_source(source_key) is None:
+    source = get_source(source_key)
+    if source is None:
         raise ValueError(f"未知通知源：{source_key}")
     data = dict(payload or {})
     if actor is not None:
         data.setdefault("actor_id", getattr(actor, "pk", None))
         data.setdefault("actor_username", getattr(actor, "username", ""))
+    dedup_key = source.dedup_key(event, data)
 
     rows: list = []
     for user in recipients:
         if not site_enabled(user, source_key):
             continue  # 用户已拒绝接收该源的站内通知：整体静默
-        row = Notification.objects.create(
-            recipient=user,
-            category=source_key,
-            event=event,
-            payload=data,
-        )
-        _push(row)
-        _deliver(row)
+        row, created = _open_notification(user, source_key, event, data, dedup_key)
+        _push(row)  # 聚合命中的也推一次：前端据此刷新列表与未读徽标
+        if created:
+            _deliver(row)
         rows.append(row)
     return rows
+
+
+def _open_notification(
+    user, source_key: str, event: str, data: Mapping, dedup_key: str,
+) -> tuple[Notification, bool]:
+    """在收件人处开一条未读通知；已有同聚合键的未读通知则并入。
+
+    返回 ``(row, created)``——``created=False`` 表示并入了既有未读行。
+    """
+    if dedup_key:
+        existing = _open_by_key(user, dedup_key)
+        if existing is not None:
+            _merge_into(existing, data)
+            return existing, False
+    try:
+        # 保存点：并发下撞唯一约束时只回滚这一条 INSERT，不脏外层事务。
+        with transaction.atomic():
+            row = Notification.objects.create(
+                recipient=user,
+                category=source_key,
+                event=event,
+                payload=data,
+                dedup_key=dedup_key,
+            )
+    except IntegrityError:
+        row = _open_by_key(user, dedup_key) if dedup_key else None
+        if row is None:  # pragma: no cover - 约束只在同键未读并发落库时命中
+            raise
+        _merge_into(row, data)
+        return row, False
+    return row, True
+
+
+def _open_by_key(user, dedup_key: str):
+    """该收件人同聚合键的未读通知（有则唯一/取最早一条）。"""
+    return (
+        Notification.objects
+        .filter(recipient=user, dedup_key=dedup_key, read_at__isnull=True)
+        .order_by("pk")
+        .first()
+    )
+
+
+def _merge_into(row: Notification, data: Mapping) -> None:
+    """把新载荷并进既有未读通知：字段以最新为准，``count`` 累加、``last_at`` 记录此刻。"""
+    merged = dict(row.payload or {})
+    merged.update(data)
+    merged["count"] = int(merged.get("count") or 1) + 1
+    merged["last_at"] = timezone.now().isoformat()
+    row.payload = merged
+    row.save(update_fields=["payload"])
 
 
 def users_with_perm(perm: str) -> list:

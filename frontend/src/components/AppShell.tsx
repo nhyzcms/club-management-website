@@ -150,12 +150,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
       messagingApi.notificationUnreadCount().then((d) => setNotifCount(Number(d?.total) || 0)).catch(() => {});
     };
     const offOpen = onMessagingOpen(refreshBadges);
+    // 读私信会在服务端把该会话的未读通知一并标已读（见 mark_conversation_read），
+    // 所以 dm / unread 事件也要刷新通知徽标；通知落库（含聚合命中）同样两个都刷。
     const offEv = onMessagingEvent((ev) => {
-      if (ev.event === "dm" || ev.event === "unread") {
-        messagingApi.unreadCount().then((d) => setDmCount(Number(d?.total) || 0)).catch(() => {});
-      }
-      if (ev.event === "notification") {
-        messagingApi.notificationUnreadCount().then((d) => setNotifCount(Number(d?.total) || 0)).catch(() => {});
+      if (ev.event === "dm" || ev.event === "unread" || ev.event === "notification") {
+        refreshBadges();
       }
     });
     return () => {
@@ -417,8 +416,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <main className="page">{children}</main>
 
       {showTop && (
-        <button
-          className="back-to-top"
+        <button className="back-to-top"
           type="button"
           aria-label="回到顶部"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
