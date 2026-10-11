@@ -38,4 +38,24 @@ test.describe("移动版（登录）", () => {
     await expect(page.getByText("@e2e_info")).toBeVisible();
     await expect(page.getByText("进入后台管理")).toBeVisible();
   });
+
+  test("详情页：从列表进入新闻 / 活动详情", async ({ page }) => {
+    await page.goto("/#/m/news");
+    await page.getByText("E2E 种子新闻").first().click();
+    await expect(page).toHaveURL(/#\/m\/news\/\d+$/);
+    await expect(page.locator(".m-detail-title")).toContainText("E2E 种子新闻");
+    await expect(page.getByText("E2E 种子新闻正文，用于列表与详情页断言。")).toBeVisible();
+
+    await page.locator(".m-back").click();
+    await expect(page).toHaveURL(/#\/m\/news$/);
+
+    await page.goto("/#/m/activity");
+    await page.getByText("E2E 投票活动").first().click();
+    await expect(page).toHaveURL(/#\/m\/activity\/\d+$/);
+    await expect(page.locator(".m-detail-title")).toContainText("E2E 投票活动");
+    // 投票区兼容两态：套件里 activities.spec 先投过票且「全员投完即提前结算」，
+    // 此时本页是「已投/已结算」的结果态；单跑本文件时则是未投的选项态。
+    await expect(page.locator(".m-detail-sec h3").filter({ hasText: "投票" })).toBeVisible();
+    await expect(page.locator(".m-vote-opt, .m-vote-result").first()).toBeVisible();
+  });
 });

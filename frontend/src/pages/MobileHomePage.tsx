@@ -46,11 +46,11 @@ export default function MobileHomePage() {
       </section>
 
       <div className="m-grid">
-        <Link to="/activity" className="m-grid-item">
+        <Link to="/m/activity" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>
           <span>活动</span>
         </Link>
-        <Link to="/news" className="m-grid-item">
+        <Link to="/m/news" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><path d="M4 5h13v14H4z" /><path d="M17 8h3v9a2 2 0 0 1-2 2H4" /><path d="M7 9h7M7 12h7M7 15h4" /></svg>
           <span>新闻</span>
         </Link>
@@ -66,11 +66,11 @@ export default function MobileHomePage() {
 
       <div className="m-section-h">
         <h2>最新动态</h2>
-        <Link to="/news">更多</Link>
+        <Link to="/m/news">更多</Link>
       </div>
       <div className="m-cards">
         {news.map((n) => (
-          <Link key={`n${n.id}`} to={`/news/${n.id}`} className="m-card">
+          <Link key={`n${n.id}`} to={`/m/news/${n.id}`} className="m-card">
             {n.cover_image_url && <img className="m-card-cover" src={n.cover_image_url} alt="" width={800} height={500} loading="lazy" />}
             <div className="m-card-title">{n.title}</div>
             <div className="m-card-meta">
@@ -81,7 +81,7 @@ export default function MobileHomePage() {
           </Link>
         ))}
         {activities.map((a) => (
-          <Link key={`a${a.id}`} to={`/activity/${a.id}`} className="m-card">
+          <Link key={`a${a.id}`} to={`/m/activity/${a.id}`} className="m-card">
             <div className="m-card-title">{a.title}</div>
             <div className="m-card-meta">
               <span className="m-badge">{ACTIVITY_TYPE_META[a.type]?.emoji} {ACTIVITY_TYPE_META[a.type]?.label}</span>
