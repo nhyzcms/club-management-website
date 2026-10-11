@@ -54,11 +54,11 @@ export default function MobileHomePage() {
           <svg viewBox="0 0 24 24" {...stroke}><path d="M4 5h13v14H4z" /><path d="M17 8h3v9a2 2 0 0 1-2 2H4" /><path d="M7 9h7M7 12h7M7 15h4" /></svg>
           <span>新闻</span>
         </Link>
-        <Link to="/tutorials" className="m-grid-item">
+        <Link to="/m/tutorials" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
           <span>教程</span>
         </Link>
-        <Link to="/join" className="m-grid-item">
+        <Link to="/m/join" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><circle cx="9" cy="8" r="4" /><path d="M2 21c0-4 3.1-6 7-6s7 2 7 6" /><path d="M19 8v6M16 11h6" /></svg>
           <span>加入</span>
         </Link>

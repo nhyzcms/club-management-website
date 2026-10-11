@@ -58,4 +58,17 @@ test.describe("移动版（登录）", () => {
     await expect(page.locator(".m-detail-sec h3").filter({ hasText: "投票" })).toBeVisible();
     await expect(page.locator(".m-vote-opt, .m-vote-result").first()).toBeVisible();
   });
+
+  test("教程与加入：列表 → 详情 / 公告确认 → 问卷", async ({ page }) => {
+    await page.goto("/#/m/tutorials");
+    await page.getByText("E2E 教程：投稿指南").first().click();
+    await expect(page).toHaveURL(/#\/m\/tutorials\/\d+$/);
+    await expect(page.locator(".m-detail-title")).toContainText("E2E 教程：投稿指南");
+
+    await page.goto("/#/m/join");
+    await page.getByText("我已阅读并知晓公告内容").click();
+    await page.getByRole("button", { name: "立即加入" }).click();
+    await expect(page).toHaveURL(/#\/m\/join\/form$/);
+    await expect(page.locator(".m-detail-sec .survey-card")).toBeVisible({ timeout: 15_000 });
+  });
 });
