@@ -51,7 +51,12 @@ export interface DirectMessage {
   updated_at: string;
 }
 
-export type NotificationCategory = "comment" | "review" | "discipline" | "dm";
+export type NotificationCategory =
+  | "comment"
+  | "review"
+  | "discipline"
+  | "dm"
+  | "validity";
 
 export interface Notification {
   id: number;
@@ -97,6 +102,7 @@ export const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, string> 
   review: "审核",
   discipline: "纪律",
   dm: "私信",
+  validity: "身份有效期",
 };
 
 export const NOTIFICATION_EVENT_LABELS: Record<string, string> = {
@@ -110,6 +116,8 @@ export const NOTIFICATION_EVENT_LABELS: Record<string, string> = {
   rejected: "内容未通过审核",
   removed: "内容已下架",
   new_message: "你收到一条新私信",
+  expiring_2m: "身份有效期还剩两个月",
+  expiring_1m: "身份有效期还剩一个月",
 };
 
 export const RETRACT_WINDOW_MS = 3 * 60 * 1000;
@@ -141,8 +149,9 @@ export function notificationHref(n: Notification): string | null {
 /**
  * 通知标题：事件文案 → 分类文案 → 兜底。
  *
- * 私信是**按会话聚合**的未读通知（连发多条只提示一次），载荷里的 `count` 是
- * 累计条数，>1 时直接报条数，比「你收到一条新私信」准确。
+ * - 私信是**按会话聚合**的未读通知（连发多条只提示一次），载荷里的 `count` 是累计
+ *   条数，>1 时直接报条数，比「你收到一条新私信」准确。
+ * - 身份到期提醒带上通道与到期日（如「身份有效期还剩一个月（管理员身份 · 2026-12-11 到期）」）。
  */
 export function notificationTitle(n: Notification): string {
   const payload = n.payload || {};
@@ -150,9 +159,16 @@ export function notificationTitle(n: Notification): string {
   if (n.event === "new_message" && typeof count === "number" && count > 1) {
     return `你收到 ${count} 条新私信`;
   }
-  return NOTIFICATION_EVENT_LABELS[n.event]
+  const base = NOTIFICATION_EVENT_LABELS[n.event]
     || NOTIFICATION_CATEGORY_LABELS[n.category]
     || "通知";
+  const expiresOn = payload.expires_on;
+  if (typeof expiresOn === "string" && expiresOn) {
+    const who = payload.channel_label;
+    const whoText = typeof who === "string" && who ? `${who} · ` : "";
+    return `${base}（${whoText}${expiresOn} 到期）`;
+  }
+  return base;
 }
 
 
