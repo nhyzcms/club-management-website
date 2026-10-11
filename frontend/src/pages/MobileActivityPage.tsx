@@ -35,7 +35,7 @@ export default function MobileActivityPage() {
         {items.map((a) => {
           const meta = ACTIVITY_TYPE_META[a.type];
           return (
-            <Link key={a.id} to={`/activity/${a.id}`} className="m-card">
+            <Link key={a.id} to={`/m/activity/${a.id}`} className="m-card">
               <div className="m-card-meta" style={{ marginTop: 0, marginBottom: 8 }}>
                 <span className="m-badge">
                   {meta?.emoji} {meta?.label || a.type}

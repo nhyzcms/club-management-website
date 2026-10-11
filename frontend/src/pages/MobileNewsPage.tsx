@@ -32,7 +32,7 @@ export default function MobileNewsPage() {
 
       <div className="m-cards" style={{ marginTop: 14 }}>
         {items.map((n) => (
-          <Link key={n.id} to={`/news/${n.id}`} className="m-card">
+          <Link key={n.id} to={`/m/news/${n.id}`} className="m-card">
             {n.cover_image_url && (
               <img className="m-card-cover" src={n.cover_thumbnail_url || n.cover_image_url} alt="" width={800} height={500} loading="lazy" />
             )}
