@@ -90,6 +90,14 @@ def _copy_for(category: str, event: str, payload: dict) -> str:
             return "你的账号已被禁言，期间暂时无法发言。"
         if event in ("mute_lifted", "mute_expired"):
             return "你的禁言已解除，现在可以正常发言了。"
+    if category == "validity":
+        label = (payload.get("channel_label") or "身份").strip()
+        expires_on = (payload.get("expires_on") or "").strip()
+        when = f"（{expires_on} 到期）" if expires_on else ""
+        return (
+            f"你的{label}即将到期{when}。到期后相关权限会被收回（管理员身份被撤销、"
+            "成员验证状态回落为访客）；如仍需保留，请尽快联系社长或服务器管理员续期。"
+        )
     return "你有一条新通知，登录站点即可查看完整内容。"
 
 
