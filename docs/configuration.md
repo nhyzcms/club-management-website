@@ -90,7 +90,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `django.middleware.common.CommonMiddleware` | |
 | `django.middleware.csrf.CsrfViewMiddleware` | |
 | `django.contrib.auth.middleware.AuthenticationMiddleware` | |
-| `accounts.middleware.ValidityEnforcementMiddleware` | 身份有效期惰性执行（响应后；须在 AuthenticationMiddleware 之后） |
+| `accounts.middleware.ValidityEnforcementMiddleware` | 身份有效期惰性执行（响应后、按会话节流 300 秒；须在 AuthenticationMiddleware 之后） |
 | `django.contrib.messages.middleware.MessageMiddleware` | |
 | `django.middleware.clickjacking.XFrameOptionsMiddleware` | |
 | `accounts.middleware.SingleSessionMiddleware` | 单会话（挤号）；内容协商：浏览器导航给 HTML 页，SPA/API 给 JSON 契约 |
@@ -220,7 +220,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | loader | `ts-loader`（`onlyCompileBundledFiles`）、`css-loader` + `style-loader` | TypeScript 由 webpack 编译，`frontend/tsconfig.json`：`target ES2020`、`strict: true`、`jsx: react-jsx` |
 | `HtmlWebpackPlugin` | 模板 `./template.html`，favicon `./public/favicon.ico` | 生成 `dist/index.html` |
 | `CopyWebpackPlugin` | `vendor/live2d/` → `dist/live2d` | 看板娘静态资源 |
-| `optimization.splitChunks` | `chunks: "all"`，`vendor` 组匹配 `node_modules` 但**排除 `l2d`** | 看板娘运行时单独成块，避免大包 |
+| `optimization.splitChunks` | 三层 cacheGroups：`vendor`（同步首屏库，排除 `l2d`）、`asyncVendor`（异步共享库 ≥2 页）、`default`（应用代码 ≥2 次复用）；`defaultVendors` 关闭、`minSize` 20KB | 重库不进首屏、随页面按需加载；看板娘运行时单独成块 |
 | `devServer.port` / `hot` | `3000` / `true` | HMR |
 | `devServer.historyApiFallback.index` | `/static/index.html` | SPA 兜底 |
 | `devServer.proxy` | 两条规则 | WebSocket：`/ws/messaging`、`/ws/exam-board`（`ws: true`）；HTTP：`/auth`、`/admin`、`/media`、`/tasks`、`/messaging`、`/news`、`/attachments`、`/uploads`、`/activities`、`/reviews`、`/about`、`/exam_board`、`/tutorials`、`/recruitment`、`/site-policy` —— 目标均为 `http://localhost:8000` |

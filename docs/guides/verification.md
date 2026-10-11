@@ -40,7 +40,7 @@
 | 管理员身份有效期 | `admin_valid_days` | 730 天 | 后台委任通道的有效期。到期后系统自动撤销 `is_staff`（回落普通用户，需重新授予）；超级管理员不受限（永久）。 |
 | 注册后验证宽限 | `registration_verify_days` | 60 天 | 注册后**从未验证**的宽限。超期账号被自动停用（`is_active=False`），登录时收到专属提示（`account_expired_unverified`），需联系社长 / 服务器管理员处理。 |
 
-- 执行方式：登录与请求时**惰性执行**（处理当前账号）；另有 `uv run python manage.py enforce_validity [--dry-run]` 供 cron / 定时器兜底。
+- 执行方式：登录时即时检查；请求时**惰性执行**（处理当前账号，按会话节流、默认 5 分钟内至多一次）。另有 `uv run python manage.py enforce_validity [--dry-run]` 供 cron / 定时器兜底。
 - 三个期限在 Django admin「站点策略」调整；单个用户的「注册验证截止」可由持 `accounts.manage_validity` 权限者显式延 / 缩（见下「管理员视角」）。
 
 ## 用户视角

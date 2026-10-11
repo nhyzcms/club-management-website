@@ -31,7 +31,7 @@ npm run copy-surveyjs
 ```
 
 - **开发**：webpack-dev-server 监听 3000 端口，热更新，`historyApiFallback` 指向 `/static/index.html`；`webpack.config.js` 的 `devServer.proxy` 将 `/ws/messaging`、`/ws/exam-board`（WebSocket）与 `/auth`、`/tasks`、`/news`、`/messaging`、`/activities`、`/reviews`、`/about`、`/exam_board`、`/tutorials`、`/recruitment`、`/attachments`、`/uploads`、`/site-policy`、`/panorama`、`/media`、`/admin`（HTTP）全部代理到 `http://localhost:8000`。
-- **构建**：webpack 输出 `frontend/dist/`，JS 文件名带 `contenthash`，`publicPath` 为 `/static/`（与 Django `STATIC_URL` 对齐）；`splitChunks` 把 node_modules 拆为 `vendor` chunk（**排除 `l2d`**，看板娘运行时单独成块避免大包）；`CopyWebpackPlugin` 把 `vendor/live2d/` 整目录拷入 `dist/live2d`；`HtmlWebpackPlugin` 以 `template.html` 生成 `index.html`。
+- **构建**：webpack 输出 `frontend/dist/`，JS 文件名带 `contenthash`，`publicPath` 为 `/static/`（与 Django `STATIC_URL` 对齐）；`splitChunks` 分层拆包：首屏同步库合成 `vendor` chunk（**排除 `l2d`**，看板娘运行时单独成块）、异步页面共享的第三方库（≥2 个页面用到）抽成按需加载的独立 chunk（`defaultVendors` 关闭、`minSize` 20KB）；`CopyWebpackPlugin` 把 `vendor/live2d/` 整目录拷入 `dist/live2d`；`HtmlWebpackPlugin` 以 `template.html` 生成 `index.html`。
 
 请求链路（两种模式）：
 
@@ -47,7 +47,7 @@ npm run copy-surveyjs
 
 `frontend/dist/` 内容大致为：`index.html`、入口与懒加载的 `*.chunk.js`、`vendor.*.js`、`live2d/`（看板娘资源）、`surveyjs/`（admin 用未哈希 min 文件）、`favicon.ico`。该目录 gitignored，由 Django 的 `TEMPLATES["DIRS"]` 与 `STATICFILES_DIRS` 引用（目录缺失时安全跳过，保证全新 clone 跑测试不报静态文件警告）——细节见 `config/settings.py`。
 
-**构建接缝校验**：`copy-surveyjs.js` 把 SurveyJS 未哈希 min 文件（survey-core、creator、analytics、chart.js、中文 i18n）同时拷入仓库根 `static/surveyjs/`（本地 runserver 供 Django admin 模板 `{% static 'surveyjs/...' %}` 引用）与 `frontend/dist/surveyjs/`（生产 collectstatic / 发布包）；随后 `assert-live2d-dist.js` 与 `assert-surveyjs-dist.js` 逐文件断言产物齐全并校验 `catalog.json`，缺一即构建失败。前端目前没有单测框架，上述断言脚本即唯一的自动化质量关口（升级 survey-* / Chart.js 后需重跑 `npm run copy-surveyjs`）。
+**构建接缝校验**：`copy-surveyjs.js` 把 SurveyJS 未哈希 min 文件（survey-core、creator、analytics、chart.js、中文 i18n）同时拷入仓库根 `static/surveyjs/`（本地 runserver 供 Django admin 模板 `{% static 'surveyjs/...' %}` 引用）与 `frontend/dist/surveyjs/`（生产 collectstatic / 发布包）；随后 `assert-live2d-dist.js` 与 `assert-surveyjs-dist.js` 逐文件断言产物齐全并校验 `catalog.json`，缺一即构建失败。前端另有单元（Vitest）/ E2E（Playwright）测试（见「已知边界」）；升级 survey-* / Chart.js 后需重跑 `npm run copy-surveyjs`。
 
 **CSRF 初始化**：应用启动时（`App.tsx` 的 `useEffect`）显式 `api.getCsrf()` 调 `GET /auth/csrf/` 拉一次 `csrftoken` Cookie，同时 `fetchSitePolicy()` 拉取站点策略。开发态 webpack 直接服务模板、不经 Django 渲染，无法依赖 `{% csrf_token %}` 下发，故走显式端点。
 
