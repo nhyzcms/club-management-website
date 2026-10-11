@@ -58,13 +58,18 @@ class BaseChannel:
     key: str = ""
     name: str = ""
     description: str = ""
+    uses_shared_connection: bool = False  # 是否复用投递队列的共享外发连接（如 email 的 SMTP）
 
     def is_available(self, user) -> bool:
         """该用户当前是否可用此通道（如邮箱已验证）。"""
         return True
 
-    def deliver(self, delivery) -> None:
-        """投递一条 NotificationDelivery；失败请抛异常（worker 记录并重试）。"""
+    def deliver(self, delivery, *, connection=None) -> None:
+        """投递一条 NotificationDelivery；失败请抛异常（队列按退避重试）。
+
+        ``connection``：可选共享外发连接（如复用的 SMTP 会话），由投递队列传入；
+        为 ``None`` 时自行处理（与历史行为一致）。
+        """
         raise NotImplementedError
 
     def __repr__(self) -> str:  # pragma: no cover

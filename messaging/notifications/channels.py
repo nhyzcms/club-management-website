@@ -1,4 +1,9 @@
-"""内置投递通道：站内 / 邮件 / Webhook（预留）/ 短信（预留）。"""
+"""内置投递通道：站内 / 邮件 / Webhook（预留）/ 短信（预留）。
+
+``deliver(delivery, *, connection=None)``：投递一条投递行；失败请抛异常
+（异步模式由投递队列按退避重试；同步模式仅留痕）。``connection`` 为投递队列
+传入的共享外发连接（见 ``BaseChannel.uses_shared_connection``），``None`` 时自建。
+"""
 from __future__ import annotations
 
 import logging
@@ -109,17 +114,22 @@ class SiteChannel(BaseChannel):
     name = "站内"
     description = "站内通知列表与未读提醒"
 
-    def deliver(self, delivery) -> None:
+    def deliver(self, delivery, *, connection=None) -> None:
         return None
 
 
 @register_channel
 class EmailChannel(BaseChannel):
-    """邮件：发送带社团徽标的 HTML 通知到用户已验证邮箱（每源独立配色）。"""
+    """邮件：发送带社团徽标的 HTML 通知到用户已验证邮箱（每源独立配色）。
+
+    ``connection``：由投递队列传入的复用 SMTP 连接（批量发送共享一个会话）；
+    ``None`` 时自建连接（与历史行为一致）。
+    """
 
     key = "email"
     name = "邮件"
     description = "将通知摘要发送到邮箱（需已完成验证）"
+    uses_shared_connection = True  # 复用投递队列的 SMTP 连接
 
     def is_available(self, user) -> bool:
         from accounts.models import is_verified
@@ -132,7 +142,7 @@ class EmailChannel(BaseChannel):
         except Exception:  # pragma: no cover - 防御性
             return False
 
-    def deliver(self, delivery) -> None:
+    def deliver(self, delivery, *, connection=None) -> None:
         notification = delivery.notification
         user = notification.recipient
         email = (getattr(user, "email", None) or "").strip()
@@ -172,6 +182,7 @@ class EmailChannel(BaseChannel):
             body="\n".join(text_lines),
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
             to=[email],
+            connection=connection,
         )
         msg.attach_alternative(html, "text/html")
 
@@ -196,7 +207,7 @@ class WebhookChannel(BaseChannel):
     def is_available(self, user) -> bool:
         return False
 
-    def deliver(self, delivery) -> None:
+    def deliver(self, delivery, *, connection=None) -> None:
         raise NotImplementedError("Webhook 通道尚未开放")
 
 
@@ -211,5 +222,5 @@ class SmsChannel(BaseChannel):
     def is_available(self, user) -> bool:
         return False
 
-    def deliver(self, delivery) -> None:
+    def deliver(self, delivery, *, connection=None) -> None:
         raise NotImplementedError("短信通道尚未接入服务商")

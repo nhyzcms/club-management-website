@@ -303,8 +303,16 @@ if EMAIL_HOST_USER:
     EMAIL_PORT = 465
     EMAIL_USE_SSL = True
     DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
-    # 同步投递防呆：SMTP 卡死时最多阻塞请求 5 秒（失败留痕，不重试）。
+    # SMTP 超时防呆：单次发送 / 建连最多 5 秒（同步路径=阻塞请求上限；异步路径=单次尝试上限）。
     EMAIL_TIMEOUT = 5
+
+# ---- 通知外发投递 ----
+# 默认异步：进程内队列 + 守护线程（投递不阻塞请求、失败按退避重试、重启由扫描兜底）。
+# 设 NOTIFICATIONS_DELIVERY_ASYNC=0 回退旧的同步投递（请求内发送、失败仅留痕不重试）。
+# 测试期默认同步（断言即时、无后台线程）；异步用例用 override_settings 显式开启。
+NOTIFICATIONS_DELIVERY_ASYNC = os.environ.get(
+    "NOTIFICATIONS_DELIVERY_ASYNC", "0" if TESTING else "1",
+).lower() in ("1", "true", "yes", "on")
 
 LOGIN_URL = "/login/"
 
