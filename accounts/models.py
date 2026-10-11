@@ -6,6 +6,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
 from django.db import models
+from django.db.models import prefetch_related_objects
 from django.utils import timezone
 
 
@@ -161,6 +162,38 @@ def _unexpired_filter():
     return models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
 
 
+def _prefetched_channels(user):
+    """已预取 ``user.verifications`` 时返回内存里的通道行；未预取返回 None（走 SQL）。
+
+    下面的判定函数都先问这里：有预取缓存就纯内存判定，否则退回原来的 ``.exists()``
+    查询。两条路径语义逐字等价（同样的 status / channel / 有效期条件）。
+    """
+    cache = getattr(user, "_prefetched_objects_cache", None)
+    if not cache or "verifications" not in cache:
+        return None
+    return list(user.verifications.all())
+
+
+def prefetch_verifications_for(user):
+    """把 ``user.verifications`` 一次读进内存，使本次请求后续的验证判定零 SQL。
+
+    为什么需要它：列表序列化会对**同一行**反复判定「当前用户是否已验证」
+    （活动列表的 ``owed``、收件箱的活动债），实测 20 行 = 20 条完全相同的通道查询。
+    在取 queryset 前调一次本函数，这些判定就都走内存缓存。
+
+    幂等：同一对象只预取一次（``prefetch_related_objects`` 重复调用会再查一次库）。
+    安全性：预取缓存的生命周期只在这一个请求内，且调用点（列表 / 聚合视图）本身不写
+    验证行；各验证通道的写路径照常直接查库，不会读到陈旧状态。返回原 user，便于链式写。
+    """
+    if user is None or not getattr(user, "pk", None):
+        return user
+    if getattr(user, "_verifications_prefetched", False):
+        return user
+    prefetch_related_objects([user], "verifications")
+    user._verifications_prefetched = True
+    return user
+
+
 def has_ever_verified(user):
     """是否曾完成过任一验证（``verified_at`` 非空）。
 
@@ -169,6 +202,9 @@ def has_ever_verified(user):
     """
     if user is None or not getattr(user, "is_authenticated", False):
         return False
+    rows = _prefetched_channels(user)
+    if rows is not None:
+        return any(row.verified_at is not None for row in rows)
     return user.verifications.filter(verified_at__isnull=False).exists()
 
 
@@ -181,9 +217,20 @@ def is_verified(user):
     纯计算：不读 ``is_staff`` / ``is_superuser``（ADR-0013）。超管 / 管理员经后台委任通道
     计入（超管委任 expires_at=null 永久），不在本函数内特判标志位。权限轴逃生舱仍是
     ``has_perm`` 对超管恒真（ADR-0005 决策 9），不在本函数。
+
+    热路径：调用方预取过 ``verifications``（见 :func:`prefetch_verifications_for`）时
+    在内存判定，否则回到一次 ``EXISTS`` 查询。
     """
     if user is None or not getattr(user, "is_authenticated", False):
         return False
+    rows = _prefetched_channels(user)
+    if rows is not None:
+        now = timezone.now()
+        return any(
+            row.status == Verification.STATUS_APPROVED
+            and (row.expires_at is None or row.expires_at > now)
+            for row in rows
+        )
     return user.verifications.filter(status=Verification.STATUS_APPROVED).filter(
         _unexpired_filter()
     ).exists()
@@ -199,6 +246,15 @@ def admin_identity_valid(user):
         return False
     if not user.is_staff:
         return False
+    rows = _prefetched_channels(user)
+    if rows is not None:
+        now = timezone.now()
+        return any(
+            row.channel == Verification.CHANNEL_APPOINTMENT
+            and row.status == Verification.STATUS_APPROVED
+            and (row.expires_at is None or row.expires_at > now)
+            for row in rows
+        )
     return user.verifications.filter(
         channel=Verification.CHANNEL_APPOINTMENT,
         status=Verification.STATUS_APPROVED,

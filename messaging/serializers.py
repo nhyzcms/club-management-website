@@ -50,10 +50,22 @@ class ConversationSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
     def get_last_message(self, obj):
-        msg = obj.messages.order_by("-created_at").first()
-        if msg:
-            return MessageSerializer(msg, context=self.context).data
-        return None
+        """最后一条消息。
+
+        列表视图已 prefetch ``messages``（含 sender/profile），此时在内存里取最新一条；
+        若走 ``obj.messages.order_by(...).first()``，Django 会**绕过预取缓存重新查库**，
+        每个会话白多一条 SQL（实测私信列表的主要开销之一）。
+        单条会话路径（start_private 返回的新会话）没有预取，退回带 LIMIT 的查询。
+        """
+        cache = getattr(obj, "_prefetched_objects_cache", None)
+        if cache and "messages" in cache:
+            messages = list(obj.messages.all())
+            msg = max(messages, key=lambda m: (m.created_at, m.pk)) if messages else None
+        else:
+            msg = obj.messages.order_by("-created_at", "-pk").first()
+        if msg is None:
+            return None
+        return MessageSerializer(msg, context=self.context).data
 
     def get_unread_count(self, obj):
         request = self.context.get("request")
@@ -92,6 +104,7 @@ class CommentSerializer(serializers.ModelSerializer):
         ]
 
     def get_replies(self, obj):
+        # children_map 由视图一次查全（无子评论逐条查询），见 CommentViewSet.list。
         children_map = self.context.get("children_map")
         if children_map is None:
             return []

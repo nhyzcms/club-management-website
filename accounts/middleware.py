@@ -1,3 +1,4 @@
+import time
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -9,6 +10,19 @@ from .models import UserSession
 from .throttles import login_blocked_response
 from .utils import record_user_session
 from .validity import enforce_account_validity
+
+# 惰性有效期检查的会话级节流间隔（秒）：同一会话内至多隔这么久做一次检查。
+#
+# 为什么需要：本中间件原先**每个已登录请求**都跑一遍 enforce_account_validity，而这
+# 对普通用户就是一次 EXISTS 查询（未认证者还要再读 Profile）—— 实测每个已登录请求固定
+# 多 1~3 条 SQL，包括 /auth/csrf/ 这类空接口。但「管理员过期 / 注册超期」是慢变化事件，
+# 不值得按请求去查。
+# 语义代价：过期撤销最坏延迟一个间隔生效。可接受，因为
+#   ① 登录路径仍即时检查（accounts 登录流程直接调 enforce_account_validity）；
+#   ② 定时命令 manage.py enforce_validity 兜底；
+#   ③ 变更本身是「降权 / 停用」，延迟几分钟不会造成越权（检查的是本会话的用户）。
+VALIDITY_CHECK_INTERVAL_SECONDS = 300
+_VALIDITY_CHECKED_AT_KEY = "validity_checked_at"
 
 
 def _is_admin_login_post(request):
@@ -153,14 +167,20 @@ class SingleSessionMiddleware:
 
 
 class ValidityEnforcementMiddleware:
-    """惰性执行身份有效期（ADR-0041，请求时兜底）。
+    """惰性执行身份有效期（ADR-0041，请求时兜底；带会话级节流）。
 
     在响应后执行：撤销过期管理员 / 停用超期未认证账号。放在 AuthenticationMiddleware 之后，
     用已加载的 ``request.user`` 判定，只对「可能受影响」的用户做一次廉价检查（超管 /
     近期注册用户直接跳过）。变更在下一次请求生效，不干扰当前响应与会话。
 
+    节流（``VALIDITY_CHECK_INTERVAL_SECONDS``）：同一会话 N 秒内只检查一次，时间戳存
+    session；只在真做了检查时才写 session，所以绝大多数请求既不查库也不写库。
+    登录路径不受影响——登录流程自己会立即调一次 enforce_account_validity；定时命令
+    （manage.py enforce_validity）继续兜底。
+
     对 ``DatabaseError`` 静默跳过：迁移测试会把 schema 迁到旧状态（表缺列），此时惰性执行
-    不可用；生产 schema 恒最新不会走到这里，定时命令兜底。
+    不可用；生产 schema 恒最新不会走到这里，定时命令兜底。检查出错时不写时间戳，
+    下一个请求会重试。
     """
 
     def __init__(self, get_response):
@@ -169,9 +189,29 @@ class ValidityEnforcementMiddleware:
     def __call__(self, request):
         response = self.get_response(request)
         user = getattr(request, "user", None)
-        if user is not None and user.is_authenticated:
+        if user is not None and user.is_authenticated and self._due(request):
             try:
                 enforce_account_validity(user)
             except DatabaseError:
                 pass
+            else:
+                self._stamp(request)
         return response
+
+    @staticmethod
+    def _due(request):
+        """本会话距上次检查是否已超过节流间隔；无 session（或首次）时总检查。"""
+        session = getattr(request, "session", None)
+        if session is None:
+            return True
+        last = session.get(_VALIDITY_CHECKED_AT_KEY)
+        if not isinstance(last, (int, float)):
+            return True
+        return (time.time() - last) >= VALIDITY_CHECK_INTERVAL_SECONDS
+
+    @staticmethod
+    def _stamp(request):
+        """记下本次检查时间；会话缺失时不写（不该出现，防御式）。"""
+        session = getattr(request, "session", None)
+        if session is not None:
+            session[_VALIDITY_CHECKED_AT_KEY] = time.time()
