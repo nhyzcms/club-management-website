@@ -27,7 +27,7 @@ class ReviewSource(NotificationSource):
     name = "审核系统"
     description = "内容审核、举报与意见反馈处理、身份认证"
     color = "#0756a2"
-    emoji = "\U0001f6e1\ufe0f"
+    emoji = "🛡️"
     events = (
         # —— 待办：发给有处理权限的人（权限驱动投递）——
         Event("content_submitted", "新内容送审"),
@@ -51,7 +51,7 @@ class ActivitySource(NotificationSource):
     name = "活动生命周期"
     description = "活动发布、到点开放"
     color = "#e8833a"
-    emoji = "\U0001f4c5"
+    emoji = "📅"
     events = (
         Event("published", "活动发布"),
         Event("opened", "活动开始"),
@@ -65,7 +65,7 @@ class CommentSource(NotificationSource):
     name = "评论回复"
     description = "有人回复了你的评论或提到了你"
     color = "#2e9e6b"
-    emoji = "\U0001f4ac"
+    emoji = "💬"
     events = (
         Event("comment_replied", "评论回复"),
         Event("comment_mentioned", "@ 提及"),
@@ -79,7 +79,7 @@ class DmSource(NotificationSource):
     name = "私信"
     description = "收到新私信（按会话聚合，站内提示不复制内容）"
     color = "#7c5cd6"
-    emoji = "\u2709\ufe0f"
+    emoji = "✉️"
     events = (Event(DM_EVENT, "新私信"),)
     default_channels = ("site",)
 
@@ -95,7 +95,7 @@ class AnnouncementSource(NotificationSource):
     name = "横幅广播"
     description = "全站公告发布"
     color = "#d99a1f"
-    emoji = "\U0001f4e2"
+    emoji = "📢"
     events = (Event("published", "公告发布"),)
     default_channels = ("site",)
 
@@ -106,7 +106,7 @@ class DisciplineSource(NotificationSource):
     name = "纪律 / 处罚"
     description = "禁言生效、解除等纪律通知"
     color = "#d64545"
-    emoji = "\u2696\ufe0f"
+    emoji = "⚖️"
     events = (
         Event("muted", "禁言生效"),
         Event("mute_lifted", "禁言解除"),
@@ -127,7 +127,7 @@ class ValiditySource(NotificationSource):
     name = "身份有效期"
     description = "认证 / 管理员身份到期前的提醒（到期会降权）"
     color = "#a8551b"
-    emoji = "\u23f3"
+    emoji = "⏳"
     events = (
         Event("expiring_2m", "身份有效期还剩两个月"),
         Event("expiring_1m", "身份有效期还剩一个月"),
