@@ -383,6 +383,6 @@ class AppointmentStatusEndpointTest(TestCase):
 
     def test_superuser_appointment_identifier(self):
         u = User.objects.create_superuser(username="root", password="p")
-        card = {c["channel"]: c for c in data["channels"]}["appointment"]
+        card = {c["channel"]: c for c in self._get(u).json()["channels"]}["appointment"]
         self.assertEqual(card["status"], "approved")
         self.assertEqual(card["identifier"], "superuser")
