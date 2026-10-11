@@ -53,25 +53,29 @@ export default function VerifyEmailPendingPage() {
               <h2 style={{ marginBottom: "var(--s-5)" }}>重发验证邮件</h2>
               <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
                 {error && (
-                  <div className="alert alert-danger">
+                  <div className="alert alert-danger" role="alert">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
                     <span>{error}</span>
                   </div>
                 )}
                 {success && (
-                  <div className="alert alert-success">
+                  <div className="alert alert-success" role="status">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                     <span>{success}</span>
                   </div>
                 )}
                 <div className="field">
-                  <label className="label">注册邮箱</label>
+                  <label className="label" htmlFor="ve-email">注册邮箱</label>
                   <input
                     className="input"
+                    id="ve-email"
+                    name="email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="请输入注册时的邮箱"
+                    autoComplete="email"
+                    spellCheck={false}
                     required
                   />
                 </div>

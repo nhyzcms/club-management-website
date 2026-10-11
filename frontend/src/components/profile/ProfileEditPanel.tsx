@@ -92,24 +92,24 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
       </div>
 
       <div className="field">
-        <label className="label">昵称</label>
-        <input className="input" type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} maxLength={50} placeholder="设置昵称" />
+        <label className="label" htmlFor="pe-nickname">昵称</label>
+        <input className="input" id="pe-nickname" name="nickname" type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} maxLength={50} placeholder="设置昵称" autoComplete="nickname" />
       </div>
       <div className="form-grid">
         <div className="field">
-          <label className="label">生日</label>
-          <input className="input" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} />
+          <label className="label" htmlFor="pe-bday">生日</label>
+          <input className="input" id="pe-bday" name="bday" type="date" value={birthday} onChange={(e) => setBirthday(e.target.value)} autoComplete="bday" />
         </div>
         <div className="field">
-          <label className="label">性别</label>
-          <select className="select" value={gender} onChange={(e) => setGender(e.target.value)}>
+          <label className="label" htmlFor="pe-gender">性别</label>
+          <select className="select" id="pe-gender" name="gender" value={gender} onChange={(e) => setGender(e.target.value)}>
             {GENDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
       </div>
       <div className="field">
-        <label className="label">个人简介</label>
-        <textarea className="textarea" value={bio} onChange={(e) => setBio(e.target.value)} maxLength={500} rows={3} placeholder="介绍一下自己吧" />
+        <label className="label" htmlFor="pe-bio">个人简介</label>
+        <textarea className="textarea" id="pe-bio" name="bio" value={bio} onChange={(e) => setBio(e.target.value)} maxLength={500} rows={3} placeholder="介绍一下自己吧" />
       </div>
 
       <p className="hint">

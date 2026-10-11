@@ -137,15 +137,16 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
         )}
         <div className="verify-email-form">
           <input type="email" inputMode="email" placeholder="email@example.com"
+                 aria-label="邮箱" autoComplete="email" name="email" spellCheck={false}
                  value={emailInput} disabled={submitting}
                  onChange={(e) => setEmailInput(e.target.value)} />
           <button className="btn btn-sm btn-primary" type="button"
                   disabled={submitting || !emailInput}
-                  onClick={() => bind(emailInput)}>{primaryLabel}</button>
+                  onClick={() => bind(emailInput)}>{submitting ? "处理中…" : primaryLabel}</button>
         </div>
       </div>
-      {msg && <p className="muted verify-card-msg">{msg}</p>}
-      {err && <p className="verify-card-err">{err}</p>}
+      {msg && <p className="muted verify-card-msg" role="status">{msg}</p>}
+      {err && <p className="verify-card-err" role="alert">{err}</p>}
       {domainBlocked && (
         <NoticeModal
           message={EMAIL_DOMAIN_BLOCKED_MESSAGE}
@@ -192,9 +193,9 @@ function ManualCard({ card, onChanged, closed }: { card: ChannelCard; onChanged:
   return (
     <CardShell card={card}>
       <div className="verify-manual-form">
-        <input type="text" placeholder="真实姓名" value={realName} disabled={submitting}
+        <input type="text" placeholder="真实姓名" aria-label="真实姓名" autoComplete="name" name="name" value={realName} disabled={submitting}
                onChange={(e) => setRealName(e.target.value)} />
-        <select className="verify-manual-identity" value={identity} disabled={submitting}
+        <select className="verify-manual-identity" aria-label="身份" name="identity" value={identity} disabled={submitting}
                 onChange={(e) => setIdentity(e.target.value)}>
           <option value="" disabled>请选择身份</option>
           {IDENTITY_OPTIONS.map((o) => (
@@ -211,10 +212,10 @@ function ManualCard({ card, onChanged, closed }: { card: ChannelCard; onChanged:
         </div>
         <button className="btn btn-sm btn-primary" type="button"
                 disabled={submitting || !realName || !identity || !files || files.length === 0}
-                onClick={submit}>{label}</button>
+                onClick={submit}>{submitting ? "提交中…" : label}</button>
       </div>
-      {msg && <p className="muted verify-card-msg">{msg}</p>}
-      {err && <p className="verify-card-err">{err}</p>}
+      {msg && <p className="muted verify-card-msg" role="status">{msg}</p>}
+      {err && <p className="verify-card-err" role="alert">{err}</p>}
     </CardShell>
   );
 }
@@ -248,17 +249,17 @@ function CodeCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: (
     <CardShell card={card}>
       <div className="verify-card-actions">
         <div className="verify-email-form">
-          <input type="text" placeholder="输入认证码" value={codeInput} disabled={submitting}
+          <input type="text" placeholder="输入认证码" aria-label="认证码" name="code" value={codeInput} disabled={submitting}
                  autoComplete="off" spellCheck={false}
                  onChange={(e) => setCodeInput(e.target.value)}
                  onKeyDown={(e) => { if (e.key === "Enter") redeem(); }} />
           <button className="btn btn-sm btn-primary" type="button"
                   disabled={submitting || !codeInput.trim()}
-                  onClick={redeem}>兑换</button>
+                  onClick={redeem}>{submitting ? "兑换中…" : "兑换"}</button>
         </div>
       </div>
-      {msg && <p className="muted verify-card-msg">{msg}</p>}
-      {err && <p className="verify-card-err">{err}</p>}
+      {msg && <p className="muted verify-card-msg" role="status">{msg}</p>}
+      {err && <p className="verify-card-err" role="alert">{err}</p>}
     </CardShell>
   );
 }

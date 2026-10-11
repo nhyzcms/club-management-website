@@ -145,7 +145,7 @@ export default function LoginModal({
           </button>
         </div>
 
-        <form id="auth-form" className="modal-body" autoComplete="off" onSubmit={handleSubmit}>
+        <form id="auth-form" className="modal-body" onSubmit={handleSubmit}>
           {error && (
             <div className="alert alert-danger" role="alert">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
@@ -166,12 +166,12 @@ export default function LoginModal({
             <label className="label" htmlFor="auth-account">{accountLabel}</label>
             <div className="input-affix">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c1-3.5 4-5 7-5s6 1.5 7 5" /></svg>
-              <input className="input" id="auth-account" type={accountType} placeholder={accountPlaceholder} value={account} onChange={(e) => setAccount(e.target.value)} />
+              <input className="input" id="auth-account" name="username" type={accountType} placeholder={accountPlaceholder} value={account} onChange={(e) => setAccount(e.target.value)} autoComplete="username" spellCheck={false} />
             </div>
           </div>
           <div className="field">
             <label className="label" htmlFor="auth-password">密码</label>
-            <PasswordInput id="auth-password" placeholder="请输入密码" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <PasswordInput id="auth-password" name="password" placeholder="请输入密码" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             <div className="modal-row">
               <label className="check"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> 记住登录</label>
               <a href="#" onClick={(e) => { e.preventDefault(); handleDismiss(); navigate("/forgot-password"); }}>忘记密码？</a>

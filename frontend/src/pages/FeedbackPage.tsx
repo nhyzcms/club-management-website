@@ -135,25 +135,25 @@ export default function FeedbackPage() {
               <form onSubmit={submitFeedback}>
                 <div className="form-grid">
                   <div className="field">
-                    <label className="label">类别</label>
-                    <select className="select" value={fbCategory} onChange={(e) => setFbCategory(e.target.value as FeedbackCategory)}>
+                    <label className="label" htmlFor="fb-category">类别</label>
+                    <select className="select" id="fb-category" name="category" value={fbCategory} onChange={(e) => setFbCategory(e.target.value as FeedbackCategory)}>
                       {(Object.keys(FEEDBACK_CATEGORY_LABELS) as FeedbackCategory[]).map((k) => (
                         <option key={k} value={k}>{FEEDBACK_CATEGORY_LABELS[k]}</option>
                       ))}
                     </select>
                   </div>
                   <div className="field">
-                    <label className="label">联系方式 <span className="hint">（选填）</span></label>
-                    <input className="input" type="text" value={fbContact} onChange={(e) => setFbContact(e.target.value)} placeholder="如需回复请留下联系方式" maxLength={100} />
+                    <label className="label" htmlFor="fb-contact">联系方式 <span className="hint">（选填）</span></label>
+                    <input className="input" id="fb-contact" name="contact" type="text" value={fbContact} onChange={(e) => setFbContact(e.target.value)} placeholder="如需回复请留下联系方式" maxLength={100} />
                   </div>
                 </div>
                 <div className="field">
-                  <label className="label">标题 <span className="hint">*</span></label>
-                  <input className="input" type="text" value={fbTitle} onChange={(e) => setFbTitle(e.target.value)} placeholder="一句话概括" maxLength={200} required />
+                  <label className="label" htmlFor="fb-title">标题 <span className="hint">*</span></label>
+                  <input className="input" id="fb-title" name="title" type="text" value={fbTitle} onChange={(e) => setFbTitle(e.target.value)} placeholder="一句话概括" maxLength={200} required />
                 </div>
                 <div className="field">
-                  <label className="label">详细内容 <span className="hint">*</span></label>
-                  <textarea className="textarea" value={fbDesc} onChange={(e) => setFbDesc(e.target.value)} placeholder="详细描述你的建议或投诉…" rows={4} required />
+                  <label className="label" htmlFor="fb-desc">详细内容 <span className="hint">*</span></label>
+                  <textarea className="textarea" id="fb-desc" name="description" value={fbDesc} onChange={(e) => setFbDesc(e.target.value)} placeholder="详细描述你的建议或投诉…" rows={4} required />
                 </div>
                 {isLoggedIn && (
                   <div className="field">

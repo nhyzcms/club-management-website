@@ -60,12 +60,14 @@ export default function MuteUserPanel({ userId }: { userId: number }) {
       <p className="muted" style={{ marginTop: "-8px" }}>
         禁止其发评论、发私信；不影响登录与阅读。不是关掉某条内容的评论区。
       </p>
-      {note && <div className="alert alert-success"><span>{note}</span></div>}
-      {error && <div className="alert alert-danger"><span>{error}</span></div>}
+      {note && <div className="alert alert-success" role="status"><span>{note}</span></div>}
+      {error && <div className="alert alert-danger" role="alert"><span>{error}</span></div>}
       <div className="field">
-        <label className="label">理由</label>
+        <label className="label" htmlFor="mu-reason">理由</label>
         <textarea
           className="textarea"
+          id="mu-reason"
+          name="reason"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={2}
@@ -79,9 +81,11 @@ export default function MuteUserPanel({ userId }: { userId: number }) {
       </label>
       {!permanent && (
         <div className="field">
-          <label className="label">结束时间</label>
+          <label className="label" htmlFor="mu-ends">结束时间</label>
           <input
             className="input"
+            id="mu-ends"
+            name="ends-at"
             type="datetime-local"
             value={endsLocal}
             onChange={(e) => setEndsLocal(e.target.value)}
