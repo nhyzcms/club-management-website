@@ -6,7 +6,7 @@ import Avatar from "../../components/Avatar";
 import type { ActivityPanelProps } from "./types";
 
 function renderExFile(f: Attachment) {
-  if (f.file_type === "image") return <img key={f.id} src={f.file_url} alt={f.file_name} />;
+  if (f.file_type === "image") return <img key={f.id} src={f.file_url} alt={f.file_name} width={800} height={600} loading="lazy" />;
   if (f.file_type === "video") return <video key={f.id} src={f.file_url} controls />;
   return <a key={f.id} href={f.file_url} target="_blank" rel="noreferrer" className="muted">{f.file_name}</a>;
 }

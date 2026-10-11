@@ -4,6 +4,8 @@
 覆盖：最小注册建 User+Profile（无 Verification 行 ⇒ 访客）；带邮箱注册建 email 通道 pending
 并发验证信（User.email 保持空）；必填 real_name/identity；用户名/邮箱唯一；密码校验；
 注册限流；Turnstile 接线；证明材料落私有存储（IdentityProof 在 #38 人工通道经 ORM 造）。
+
+用例邮箱统一用白名单内域名（@163.com），否则会被后缀白名单拦下（见 tests_email_domain / ADR-0023）。
 """
 from pathlib import Path
 
@@ -74,25 +76,25 @@ class RegisterViewTest(TestCase):
 
     # ---- 带邮箱注册：建 email 通道 pending + 发信，User.email 不动 ----
     def test_register_with_email_starts_email_verification(self):
-        resp = self.post(valid_payload(email="newbie@example.com"))
+        resp = self.post(valid_payload(email="newbie@163.com"))
         self.assertEqual(resp.status_code, 201, resp.content)
 
         user = User.objects.get(username="newbie")
         self.assertEqual(user.email, "")  # 待验邮箱不住 User.email
         v = Verification.objects.get(user=user, channel=Verification.CHANNEL_EMAIL)
         self.assertEqual(v.status, Verification.STATUS_PENDING)
-        self.assertEqual(v.identifier, "newbie@example.com")
+        self.assertEqual(v.identifier, "newbie@163.com")
         # 仅 email 通道 pending（未 approved）⇒ 仍未验证
         self.assertFalse(is_verified(user))
         # 验证信发往待验地址
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("newbie@example.com", mail.outbox[0].to)
+        self.assertIn("newbie@163.com", mail.outbox[0].to)
         self.assertIn("/#/verify-email?uid=", mail.outbox[0].body)
 
     def test_register_email_normalized_lowercase(self):
-        self.post(valid_payload(email="Newbie@Example.COM"))
+        self.post(valid_payload(email="Newbie@163.COM"))
         v = Verification.objects.get(user__username="newbie", channel=Verification.CHANNEL_EMAIL)
-        self.assertEqual(v.identifier, "newbie@example.com")
+        self.assertEqual(v.identifier, "newbie@163.com")
 
     # ---- 真实姓名 / 身份（必填）----
     def test_real_name_identity_stored_on_profile(self):
@@ -121,42 +123,42 @@ class RegisterViewTest(TestCase):
     # ---- 唯一性 ----
     def test_duplicate_username_rejected(self):
         self.post(valid_payload())
-        resp = self.post(valid_payload(username="newbie", email="other@example.com"))
+        resp = self.post(valid_payload(username="newbie", email="other@163.com"))
         self.assertEqual(resp.status_code, 400)
         self.assertIn("用户名", str(resp.json()["error"]))
 
     def test_duplicate_username_case_insensitive_rejected(self):
         self.post(valid_payload())
-        resp = self.post(valid_payload(username="Newbie", email="other@example.com"))
+        resp = self.post(valid_payload(username="Newbie", email="other@163.com"))
         self.assertEqual(resp.status_code, 400)
 
     def test_duplicate_email_rejected(self):
-        self.post(valid_payload(email="user@example.com"))
-        resp = self.post(valid_payload(username="another", email="user@example.com"))
+        self.post(valid_payload(email="user@163.com"))
+        resp = self.post(valid_payload(username="another", email="user@163.com"))
         self.assertEqual(resp.status_code, 400)
         self.assertIn("邮箱", str(resp.json()["error"]))
 
     def test_duplicate_email_case_insensitive_rejected(self):
-        self.post(valid_payload(email="user@example.com"))
-        resp = self.post(valid_payload(username="another", email="USER@Example.COM"))
+        self.post(valid_payload(email="user@163.com"))
+        resp = self.post(valid_payload(username="another", email="USER@163.COM"))
         self.assertEqual(resp.status_code, 400)
 
     def test_email_taken_by_pending_identifier_rejected(self):
-        # A 正在验 user@example.com（pending identifier）；B 注册同邮箱应判重
-        self.post(valid_payload(username="a", email="user@example.com"))
-        resp = self.post(valid_payload(username="b", email="user@example.com"))
+        # A 正在验 user@163.com（pending identifier）；B 注册同邮箱应判重
+        self.post(valid_payload(username="a", email="user@163.com"))
+        resp = self.post(valid_payload(username="b", email="user@163.com"))
         self.assertEqual(resp.status_code, 400)
 
     def test_email_taken_by_verified_user_email_rejected(self):
         # 一个已验证用户 User.email 占了该地址 → 新注册判重
         u = User.objects.create_user(username="verified", password="p")
-        u.email = "taken@example.com"
+        u.email = "taken@163.com"
         u.save()
         Verification.objects.create(
             user=u, channel=Verification.CHANNEL_EMAIL, status=Verification.STATUS_APPROVED,
-            identifier="taken@example.com",
+            identifier="taken@163.com",
         )
-        resp = self.post(valid_payload(username="fresh", email="taken@example.com"))
+        resp = self.post(valid_payload(username="fresh", email="taken@163.com"))
         self.assertEqual(resp.status_code, 400)
 
     # ---- 字段校验 ----

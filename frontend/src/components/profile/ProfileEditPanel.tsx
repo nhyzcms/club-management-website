@@ -81,7 +81,7 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
 
       <div className="avatar-upload">
         <div className="avatar editable" onClick={() => fileRef.current?.click()} role="button" tabIndex={0} aria-label="更换头像" onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileRef.current?.click(); } }}>
-          {avatarSrc ? <img src={avatarSrc} alt="头像" /> : <span>{initial}</span>}
+          {avatarSrc ? <img src={avatarSrc} alt="头像" width={80} height={80} /> : <span>{initial}</span>}
           <span className="cam">✎</span>
         </div>
         <div className="au-meta">

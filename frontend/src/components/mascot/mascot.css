@@ -34,7 +34,7 @@ body.exam-board-on #waifu-tips {
   bottom: 0;
   z-index: var(--z-mascot);
   margin: 0;
-  padding: 8px 14px;
+  padding: 8px 14px calc(8px + env(safe-area-inset-bottom, 0px));
   border: 1px solid var(--line, #d5dde8);
   border-bottom: 0;
   border-left: 0;

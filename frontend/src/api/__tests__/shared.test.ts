@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  EMAIL_DOMAIN_BLOCKED_MESSAGE,
   REASON,
   classifyHttpResponse,
   createRequest,
@@ -12,7 +13,7 @@ import {
 // ---------- classifyHttpResponse：reason 串 → 类型化 kind（唯一映射点） ----------
 
 describe("classifyHttpResponse", () => {
-  it("按 reason 映射挤号 / 登录保护 / 限流 / 停用 / 邮箱未验证", () => {
+  it("按 reason 映射挤号 / 登录保护 / 限流 / 停用 / 邮箱未验证 / 邮箱后缀白名单", () => {
     expect(classifyHttpResponse(409, { reason: REASON.SESSION_SUPERSEDED, takeover: { device_name: "X" } }))
       .toEqual({ kind: "session_superseded", takeover: { device_name: "X" } });
     expect(classifyHttpResponse(409, { reason: REASON.LOGIN_PROTECTION, retry_after: 120 }))
@@ -23,6 +24,8 @@ describe("classifyHttpResponse", () => {
       .toEqual({ kind: "account_disabled" });
     expect(classifyHttpResponse(403, { reason: REASON.EMAIL_NOT_VERIFIED, email: "a@b.c" }))
       .toEqual({ kind: "email_not_verified", email: "a@b.c" });
+    expect(classifyHttpResponse(400, { reason: REASON.EMAIL_DOMAIN_NOT_ALLOWED, domain: "gmail.com" }))
+      .toEqual({ kind: "email_domain_not_allowed", domain: "gmail.com" });
   });
 
   it("无 reason 时按状态码回退（401 / 403 / 404 / 其余）", () => {
@@ -35,6 +38,11 @@ describe("classifyHttpResponse", () => {
   it("挤号缺 takeover 时兜底空对象", () => {
     expect(classifyHttpResponse(409, { reason: REASON.SESSION_SUPERSEDED }))
       .toEqual({ kind: "session_superseded", takeover: {} });
+  });
+
+  it("邮箱后缀错误缺 domain 时兜底空串", () => {
+    expect(classifyHttpResponse(400, { reason: REASON.EMAIL_DOMAIN_NOT_ALLOWED }))
+      .toEqual({ kind: "email_domain_not_allowed", domain: "" });
   });
 });
 
@@ -92,6 +100,14 @@ describe("humanizeApiError", () => {
     expect(humanizeApiError({ kind: "auth" })).toContain("重新登录");
     expect(humanizeApiError({ kind: "network" })).toContain("网络");
     expect(humanizeApiError({ kind: "http", status: 500 })).toContain("请求失败");
+  });
+
+  it("邮箱后缀被拦：逐字回固定文案（与后端一致）", () => {
+    expect(humanizeApiError({ kind: "email_domain_not_allowed", domain: "gmail.com" }))
+      .toBe(EMAIL_DOMAIN_BLOCKED_MESSAGE);
+    expect(EMAIL_DOMAIN_BLOCKED_MESSAGE).toBe(
+      "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员",
+    );
   });
 });
 
@@ -185,5 +201,28 @@ describe("createRequest", () => {
       kind: "session_superseded",
       takeover: { device_name: "iPad" },
     });
+  });
+
+  it("邮箱后缀被拦 → 抛 apiError.kind=email_domain_not_allowed（不触发挤号）", async () => {
+    const fetchMock = vi.fn(async () => ({
+      status: 400,
+      ok: false,
+      json: async () => ({
+        error: EMAIL_DOMAIN_BLOCKED_MESSAGE,
+        reason: "email_domain_not_allowed",
+        domain: "gmail.com",
+      }),
+    }) as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const handler = vi.fn();
+    setSupersedeHandler(handler);
+
+    const request = createRequest("/auth");
+    await expect(request("/verification/email/bind/", { method: "POST" })).rejects.toMatchObject({
+      status: 400,
+      apiError: { kind: "email_domain_not_allowed", domain: "gmail.com" },
+    });
+    expect(handler).not.toHaveBeenCalled();
   });
 });

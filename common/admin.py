@@ -10,7 +10,17 @@ class SiteSettingsAdmin(admin.ModelAdmin):
     """Singleton admin: one row, no add/delete, changelist jumps to the form."""
 
     fieldsets = (
-        ("验证", {"fields": ("verification_enabled",)}),
+        (
+            "验证",
+            {
+                "fields": (
+                    "verification_enabled",
+                    "verification_valid_days",
+                    "admin_valid_days",
+                    "registration_verify_days",
+                )
+            },
+        ),
         ("审核", {"fields": ("content_review_enabled",)}),
         ("评论", {"fields": ("comments_enabled", "comment_max_depth")}),
         ("私信", {"fields": ("dms_enabled",)}),

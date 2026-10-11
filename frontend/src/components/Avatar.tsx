@@ -23,7 +23,7 @@ export default function Avatar({ user, size = "sm", className }: AvatarProps) {
   return (
     <span className={cls}>
       {user.avatar ? (
-        <img src={user.avatar} alt="" />
+        <img src={user.avatar} alt="" width={size === "md" ? 32 : 24} height={size === "md" ? 32 : 24} />
       ) : (
         <span className="avatar-initial">{initial}</span>
       )}

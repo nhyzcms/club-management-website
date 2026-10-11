@@ -133,6 +133,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # 身份有效期惰性执行（ADR-0041）：须在 AuthenticationMiddleware 之后（依赖 request.user）。
+    'accounts.middleware.ValidityEnforcementMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'accounts.middleware.SingleSessionMiddleware',

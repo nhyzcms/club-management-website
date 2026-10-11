@@ -56,7 +56,7 @@ class VerificationClosedTest(_PolicyTestCase):
         self.user = User.objects.create_user(username="u", password="p", is_active=True)
         Verification.objects.create(
             user=self.user, channel=Verification.CHANNEL_EMAIL,
-            status=Verification.STATUS_PENDING, identifier="u@example.com",
+            status=Verification.STATUS_PENDING, identifier="u@163.com",
         )
 
     def _client(self):
@@ -65,20 +65,21 @@ class VerificationClosedTest(_PolicyTestCase):
         return c
 
     def test_bind_forbidden(self):
+        # 邮箱用白名单内域名：确保 403 来自「通道关闭」而非后缀白名单
         resp = self._client().post(
             "/auth/verification/email/bind/",
-            data=json.dumps({"email": "new@example.com"}),
+            data=json.dumps({"email": "new@163.com"}),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["reason"], "verification_closed")
         v = Verification.objects.get(user=self.user, channel=Verification.CHANNEL_EMAIL)
-        self.assertEqual(v.identifier, "u@example.com")  # unchanged
+        self.assertEqual(v.identifier, "u@163.com")  # unchanged
 
     def test_resend_forbidden(self):
         resp = Client().post(
             "/auth/resend-verification/",
-            data=json.dumps({"email": "u@example.com"}),
+            data=json.dumps({"email": "u@163.com"}),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 403)
@@ -118,7 +119,7 @@ class VerificationClosedTest(_PolicyTestCase):
             "password2": "StrongPass123!",
             "real_name": "张三",
             "identity": "student",
-            "email": "newbie@example.com",
+            "email": "newbie@163.com",
             "turnstile_token": "dummy",
         })
         self.assertEqual(resp.status_code, 201, resp.content)

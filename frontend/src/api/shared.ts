@@ -21,6 +21,7 @@ export type ApiError =
   | { kind: "login_throttled"; retryAfter: number }
   | { kind: "account_disabled" }            // 账号已停用（自助注册三态之一）
   | { kind: "email_not_verified"; email: string }  // 邮箱未验证，登录被拒（提示重发）
+  | { kind: "email_domain_not_allowed"; domain: string }  // 邮箱后缀不在白名单（ADR-0023）
   | { kind: "network" }              // 断网 / 超时 / 响应非 JSON
   | { kind: "auth" }                 // 401（非挤号）
   | { kind: "forbidden" }            // 403
@@ -43,7 +44,16 @@ export const REASON = {
   LOGIN_THROTTLED: "login_throttled",
   ACCOUNT_DISABLED: "account_disabled",
   EMAIL_NOT_VERIFIED: "email_not_verified",
+  EMAIL_DOMAIN_NOT_ALLOWED: "email_domain_not_allowed",
 } as const;
+
+/**
+ * 邮箱后缀不在白名单的固定文案（ADR-0023）：与后端
+ * ``accounts.email_domains.EMAIL_DOMAIN_BLOCKED_MESSAGE`` 逐字一致（契约测试钉死），
+ * 由 ``NoticeModal`` 弹窗展示。
+ */
+export const EMAIL_DOMAIN_BLOCKED_MESSAGE =
+  "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员";
 
 // ---- 纯映射：HTTP 响应 → 类型化结果 ----
 
@@ -67,6 +77,12 @@ export function classifyHttpResponse(status: number, data: any): ApiError {
   }
   if (reason === REASON.EMAIL_NOT_VERIFIED) {
     return { kind: "email_not_verified", email: typeof data?.email === "string" ? data.email : "" };
+  }
+  if (reason === REASON.EMAIL_DOMAIN_NOT_ALLOWED) {
+    return {
+      kind: "email_domain_not_allowed",
+      domain: typeof data?.domain === "string" ? data.domain : "",
+    };
   }
   if (status === 401) return { kind: "auth" };
   if (status === 403) return { kind: "forbidden" };
@@ -109,6 +125,8 @@ export function humanizeApiError(err: ApiError): string {
       return "账号已被停用，请联系信息组。";
     case "email_not_verified":
       return "请先验证邮箱后再登录。";
+    case "email_domain_not_allowed":
+      return EMAIL_DOMAIN_BLOCKED_MESSAGE;
     case "network":
       return "网络连接失败，请检查网络后重试。";
     case "auth":

@@ -4,7 +4,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
-from django.db.models import F, OuterRef, Subquery
+from django.db.models import F, OuterRef, Q, Subquery
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
@@ -12,7 +12,15 @@ from common.policy import get_policy
 
 from .authcode import generate_authcode_value, normalize_authcode
 from .identity_review import approve_manual, disable_user, reject_manual
-from .models import AuthCode, AuthCodeRedemption, IdentityProof, Profile, Verification, is_verified
+from .models import (
+    AuthCode,
+    AuthCodeRedemption,
+    IdentityProof,
+    Profile,
+    Verification,
+    can_manage_validity_for,
+    is_verified,
+)
 
 
 # ---- 审核动作（#31 / ADR-0006）----
@@ -88,7 +96,7 @@ class _IdentityReviewActionsMixin:
 
 
 class VerifiedFilter(admin.SimpleListFilter):
-    """按账号「已验证」过滤（任一 Verification 通道 approved 即已验证）。"""
+    """按账号「已验证」过滤（任一未过期 Verification 通道 approved 即已验证）。"""
 
     title = "验证状态"
     parameter_name = "verified"
@@ -97,10 +105,13 @@ class VerifiedFilter(admin.SimpleListFilter):
         return [("yes", "已验证"), ("no", "未验证")]
 
     def queryset(self, request, qs):
+        now = timezone.now()
         approved = Profile.objects.filter(
             user__pk__in=Verification.objects.filter(
                 status=Verification.STATUS_APPROVED
-            ).values_list("user_id", flat=True)
+            )
+            .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+            .values_list("user_id", flat=True)
         )
         if self.value() == "yes":
             return qs.filter(pk__in=approved)
@@ -130,7 +141,7 @@ class ManualChannelStatusFilter(admin.SimpleListFilter):
 
 
 class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
-    list_display = ("user", "real_name", "identity", "verified")
+    list_display = ("user", "real_name", "identity", "verified", "registration_deadline")
     list_filter = (VerifiedFilter, "identity")
     search_fields = ("user__username", "user__email", "real_name")
     actions = list(_IDENTITY_ACTIONS)
@@ -138,6 +149,13 @@ class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
     @admin.display(boolean=True, description="已验证")
     def verified(self, obj):
         return is_verified(obj.user)
+
+    def get_readonly_fields(self, request, obj=None):
+        # expiry_disabled_at 系统维护；registration_deadline 仅持 manage_validity 且改下位可改。
+        ro = ["expiry_disabled_at"]
+        if obj is not None and not can_manage_validity_for(request.user, obj.user):
+            ro.append("registration_deadline")
+        return ro
 
 
 class IdentityProofAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
@@ -212,13 +230,44 @@ class ProfileInline(admin.StackedInline):
     model = Profile
     fk_name = "user"  # Profile 仅 user 一个 FK→User；显式绑定，防后续新增 FK 时歧义
 
+    def get_readonly_fields(self, request, obj=None):
+        # expiry_disabled_at 系统维护；registration_deadline 仅持 manage_validity 且改下位可改。
+        ro = ["expiry_disabled_at"]
+        if not can_manage_validity_for(request.user, obj):
+            ro.append("registration_deadline")
+        return ro
+
+
+class VerificationInline(admin.TabularInline):
+    """用户详情页内嵌验证通道（ADR-0041）：expires_at 可改 = 修改有效期。
+
+    通道由系统 / 流程创建，不手建、不删除；「有效期至」仅在当前操作者持
+    accounts.manage_validity 且目标是下位权限用户时可编辑（平级 / 上位拒绝）。
+    """
+
+    model = Verification
+    fk_name = "user"  # Verification 有 user 与 verified_by 两个 User FK，显式绑定
+    extra = 0
+    can_delete = False
+    fields = ("channel", "status", "identifier", "verified_at", "expires_at")
+    readonly_fields = ("channel", "status", "identifier", "verified_at")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(self.readonly_fields)
+        if not can_manage_validity_for(request.user, obj):
+            ro.append("expires_at")
+        return ro
+
 
 class CustomUserAdmin(UserAdmin):
     list_display = ("username", "email", "first_name", "last_name", "is_staff", "is_active")
     list_filter = ("is_staff", "is_active")
     search_fields = ("username", "email", "first_name", "last_name")
     ordering = ("username",)
-    inlines = [ProfileInline]
+    inlines = [ProfileInline, VerificationInline]
     actions = ["ban_users", "mute_users"]
 
     def get_actions(self, request):

@@ -67,7 +67,7 @@ export default function TutorialListPage() {
             {data.map((item) => (
               <article key={item.id} className="tcard" onClick={() => navigate(`/tutorials/${item.id}`)}>
                 <div className="tcard-cover">
-                  {item.cover_url ? <img src={item.cover_url} alt="" /> : (item.file_type === "video" ? "▶" : "📄")}
+                  {item.cover_url ? <img src={item.cover_url} alt="" width={800} height={500} loading="lazy" /> : (item.file_type === "video" ? "▶" : "📄")}
                 </div>
                 <div className="tcard-body">
                   <h3>{item.title}</h3>

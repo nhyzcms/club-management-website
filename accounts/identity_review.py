@@ -3,7 +3,11 @@
 Admin 批量动作与 ``/auth/identity-reviews/`` API 共用本模块——政策门禁、
 ``verified_at`` / ``verified_by``、邮件、会话吊销走同一条路径。访问控制不在此
 （ADR-0005：权限由调用方的 ``permission_classes`` / admin ``get_actions`` 判定）。
+
+ADR-0041：通过时设 ``expires_at`` = 通过日 + 认证有效期；驳回清空 ``expires_at``。
 """
+from datetime import timedelta
+
 from django.conf import settings
 from django.contrib.sessions.models import Session
 from django.core.mail import send_mail
@@ -17,7 +21,7 @@ from rest_framework.response import Response
 from common.policy import get_policy
 from messaging.services import notify
 
-from .models import IdentityProof, Profile, UserSession, Verification
+from .models import IdentityProof, Profile, UserSession, Verification, verification_valid_days
 from .permissions import CanReviewIdentity
 
 
@@ -52,22 +56,25 @@ def revoke_user_sessions(user):
 
 
 def approve_manual(user, reviewer):
-    """通过身份审核：manual 通道置 approved（+ verified_at / verified_by），并发邮件。
+    """通过身份审核：manual 通道置 approved（+ verified_at / verified_by / expires_at），并发邮件。
 
-    验证态单一事实源是 Verification 行（ADR-0006）。任一通道 approved ⇒ 账号已验证。
+    验证态单一事实源是 Verification 行（ADR-0006）。任一未过期 approved 通道 ⇒ 账号已验证。
+    expires_at = 通过日 + 认证有效期（ADR-0041）。
     """
     _require_verification_open()
     now = timezone.now()
+    expires_at = now + timedelta(days=verification_valid_days())
     verification, _ = Verification.objects.get_or_create(
         user=user, channel=Verification.CHANNEL_MANUAL,
         defaults={"status": Verification.STATUS_APPROVED, "verified_at": now,
-                  "verified_by": reviewer},
+                  "verified_by": reviewer, "expires_at": expires_at},
     )
     if verification.status != Verification.STATUS_APPROVED:
         verification.status = Verification.STATUS_APPROVED
         verification.verified_at = now
         verification.verified_by = reviewer
-        verification.save(update_fields=["status", "verified_at", "verified_by"])
+        verification.expires_at = expires_at
+        verification.save(update_fields=["status", "verified_at", "verified_by", "expires_at"])
     notify(
         user,
         "review",
@@ -98,7 +105,8 @@ def reject_manual(user, reviewer):
         verification.status = Verification.STATUS_REJECTED
         verification.verified_at = None
         verification.verified_by = None
-        verification.save(update_fields=["status", "verified_at", "verified_by"])
+        verification.expires_at = None
+        verification.save(update_fields=["status", "verified_at", "verified_by", "expires_at"])
     notify(
         user,
         "review",

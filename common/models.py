@@ -2,6 +2,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from .policy import (
+    DEFAULT_ADMIN_VALID_DAYS,
     DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
     DEFAULT_AUTO_UPDATE_ENABLED,
     DEFAULT_COMMENT_MAX_DEPTH,
@@ -9,6 +10,7 @@ from .policy import (
     DEFAULT_CONTENT_REVIEW_ENABLED,
     DEFAULT_DMS_ENABLED,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
+    DEFAULT_REGISTRATION_VERIFY_DAYS,
     DEFAULT_REPORTS_PER_USER_PER_DAY,
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
     DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
@@ -25,6 +27,7 @@ from .policy import (
     DEFAULT_UPDATE_WINDOW_END_HOUR,
     DEFAULT_UPDATE_WINDOW_START_HOUR,
     DEFAULT_VERIFICATION_ENABLED,
+    DEFAULT_VERIFICATION_VALID_DAYS,
     invalidate_policy_cache,
 )
 
@@ -38,6 +41,24 @@ class SiteSettings(models.Model):
         "验证通道开启",
         default=DEFAULT_VERIFICATION_ENABLED,
         help_text="关闭后不可新开或完成任何验证通道；已通过者仍算已验证。",
+    )
+    verification_valid_days = models.PositiveIntegerField(
+        "认证有效期（天）",
+        default=DEFAULT_VERIFICATION_VALID_DAYS,
+        validators=[MinValueValidator(1)],
+        help_text="认证码 / 人工核验 / 邮箱验证通过后，认证状态的有效天数；过期需重新认证。",
+    )
+    admin_valid_days = models.PositiveIntegerField(
+        "管理员身份有效期（天）",
+        default=DEFAULT_ADMIN_VALID_DAYS,
+        validators=[MinValueValidator(1)],
+        help_text="管理员身份自授予之日起的有效天数；过期需重新授予。超级管理员不受限。",
+    )
+    registration_verify_days = models.PositiveIntegerField(
+        "注册后验证宽限（天）",
+        default=DEFAULT_REGISTRATION_VERIFY_DAYS,
+        validators=[MinValueValidator(1)],
+        help_text="注册后未完成验证的宽限天数；超期将停用该账号。",
     )
     content_review_enabled = models.BooleanField(
         "开启内容审核",

@@ -5,6 +5,14 @@ import { useEffect, useState } from "react";
 export type ThemePreference = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
+// 浏览器地址栏 / 系统 UI 主题色（meta[name=theme-color]）。
+// dark 值 = oklch(0.165 0.02 255)（--bg）的 sRGB 近似；
+// template.html 内联脚本有一份同步副本（无法 import），改动需两处一致。
+export const THEME_COLORS: Record<ResolvedTheme, string> = {
+  light: "#ffffff",
+  dark: "#080f17",
+};
+
 export const STORAGE_KEY = "cobalt:theme";
 // Django admin（4.2+ 自带 data-theme）读取的键，值域 auto|light|dark。
 const DJANGO_THEME_KEY = "theme";
@@ -43,6 +51,8 @@ function apply(pref: ThemePreference) {
   const root = document.documentElement;
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", THEME_COLORS[resolved]);
   mirrorDjango(pref);
   listeners.forEach((fn) => fn(resolved));
 }

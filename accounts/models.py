@@ -1,5 +1,6 @@
 import os
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -51,6 +52,13 @@ class Profile(models.Model):
     real_name = models.CharField("真实姓名", max_length=100, blank=True)
     identity = models.CharField("身份", max_length=10, choices=IDENTITY_CHOICES, blank=True)
 
+    # 身份有效期（ADR-0041）：注册验证宽限覆盖 + 因超期停用标记。
+    # registration_deadline 为 null = 按 date_joined + 站点「注册后验证宽限」起算；
+    # 持 manage_validity 者可对下位用户显式延/缩。
+    registration_deadline = models.DateTimeField("注册验证截止", null=True, blank=True)
+    # expiry_disabled_at 标记「因注册超期未认证被系统停用」，用于登录时给专属提示；
+    # 系统维护，不可手改。
+    expiry_disabled_at = models.DateTimeField("因超期停用时间", null=True, blank=True)
 
     def __str__(self):
         return f"{self.user.username}'s profile"
@@ -59,12 +67,14 @@ class Profile(models.Model):
 class Verification(models.Model):
     """验证通道当前状态（ADR-0006）：每 (user, channel) 一行，in-place 更新。
 
-    账号「已验证」⇔ 任一通道 ``status=approved``（见 :func:`is_verified`）。通道是一等公民：
-    邮箱、人工审批、后台委任是通道；加通道 = 加 choices + 实现该通道流程，核心判定（任一
-    approved）不动。
+    账号「已验证」⇔ 任一通道 ``status=approved`` 且未过期（见 :func:`is_verified`）。
+    通道是一等公民：邮箱、人工审批、后台委任、认证码是通道；加通道 = 加 choices + 实现
+    该通道流程，核心判定（任一 approved）不动。
 
     - ``identifier`` 是通道主体：邮箱=待验地址（验证前住此、不进 ``User.email``）；人工=空；
       后台委任=``staff`` / ``superuser``。
+    - ``expires_at``（ADR-0041）是该通道的认证有效期：认证通道 = 通过日 + 认证有效期；
+      委任通道 = 委任日 + 管理员有效期（超管 null=永久）。null=永久不过期。
     - 审计走 ``IdentityProof``（人工通道证据，永久留底）；本表不留尝试历史。
     """
 
@@ -99,6 +109,7 @@ class Verification(models.Model):
         User, verbose_name="审核人", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="verifications_reviewed",
     )
+    expires_at = models.DateTimeField("有效期至", null=True, blank=True)
 
     class Meta:
         verbose_name = "验证通道"
@@ -108,30 +119,129 @@ class Verification(models.Model):
         ]
         indexes = [models.Index(fields=["user", "status"])]
         ordering = ["user", "channel"]
+        permissions = [
+            ("manage_validity", "可以管理账号 / 认证有效期"),
+        ]
 
     def __str__(self):
         return f"{self.user.username} · {self.get_channel_display()} · {self.get_status_display()}"
 
 
-def is_verified(user):
-    """账号「已验证」单一计算源（ADR-0006）：任一验证通道 approved 即真。
+def profile_of(user):
+    """取 ``user.profile``，无则 None（防御：老数据 / 未建 Profile）。"""
+    if user is None or not getattr(user, "pk", None):
+        return None
+    try:
+        return user.profile
+    except Profile.DoesNotExist:
+        return None
 
-    驱动 写操作门禁 / 徽章 / 邮箱登录前提 / 密码重置前提 / 验证面板。无 Verification 行 ⇒
-    未验证（访客）——不再有「无 profile 视为已审核」后备（ADR-0006 决策 7）。
 
-    纯计算：不读 ``is_staff`` / ``is_superuser``。后台委任走通道行（ADR-0013）；
-    权限轴逃生舱仍是 ``has_perm`` 对超管恒真（ADR-0005 决策 9），不在本函数。
+def _policy_attr(attr):
+    from common.policy import get_policy
+
+    return getattr(get_policy(), attr)
+
+
+def verification_valid_days():
+    return _policy_attr("verification_valid_days")
+
+
+def admin_valid_days():
+    return _policy_attr("admin_valid_days")
+
+
+def registration_verify_days():
+    return _policy_attr("registration_verify_days")
+
+
+def _unexpired_filter():
+    """``(expires_at 为空 或 晚于现在)``——未过期通道的公共过滤条件。"""
+    now = timezone.now()
+    return models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
+
+
+def has_ever_verified(user):
+    """是否曾完成过任一验证（``verified_at`` 非空）。
+
+    用于区分「从未验证」（适用注册 60 天宽限停用）与「验证后过期」（不适用该停用，
+    只回落为访客、需重新认证）。
     """
     if user is None or not getattr(user, "is_authenticated", False):
         return False
-    return user.verifications.filter(status=Verification.STATUS_APPROVED).exists()
+    return user.verifications.filter(verified_at__isnull=False).exists()
+
+
+def is_verified(user):
+    """账号「已验证」单一计算源（ADR-0006 + ADR-0041）。
+
+    任一验证通道 ``approved`` 且未过期即真。``expires_at=null`` 视为永久（超管委任 /
+    后台显式延长）。过期通道不再算已验证，账号回落为访客、需重新认证。
+
+    纯计算：不读 ``is_staff`` / ``is_superuser``（ADR-0013）。超管 / 管理员经后台委任通道
+    计入（超管委任 expires_at=null 永久），不在本函数内特判标志位。权限轴逃生舱仍是
+    ``has_perm`` 对超管恒真（ADR-0005 决策 9），不在本函数。
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    return user.verifications.filter(status=Verification.STATUS_APPROVED).filter(
+        _unexpired_filter()
+    ).exists()
+
+
+def admin_identity_valid(user):
+    """管理员身份是否有效（ADR-0041）：看委任通道是否未过期。
+
+    纯计算：不读 ``is_superuser``。超管委任通道 expires_at=null 永久，故恒有效；
+    staff 委任通道 = 委任日 + 管理员有效期，过期即无效（需重新授予）。
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if not user.is_staff:
+        return False
+    return user.verifications.filter(
+        channel=Verification.CHANNEL_APPOINTMENT,
+        status=Verification.STATUS_APPROVED,
+    ).filter(_unexpired_filter()).exists()
+
+
+def rank_of(user):
+    """权限层级：超级管理员(3) > 管理员(2) > 已验证用户(1) > 未验证/访客(0)。"""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return 0
+    if user.is_superuser:
+        return 3
+    if user.is_staff:
+        return 2
+    if is_verified(user):
+        return 1
+    return 0
+
+
+def can_manage_validity_for(actor, target):
+    """actor 能否修改 target 的有效期（ADR-0041）。
+
+    双条件：actor 持 ``accounts.manage_validity``，且 target 层级严格更低（下位）。
+    平级 / 上位拒绝；超级管理员本身豁免且无人可改（target.is_superuser 恒拒）。
+    """
+    if actor is None or not getattr(actor, "is_authenticated", False):
+        return False
+    if not actor.has_perm("accounts.manage_validity"):
+        return False
+    if target is None or not getattr(target, "pk", None):
+        return False
+    if target.is_superuser:
+        return False
+    return rank_of(actor) > rank_of(target)
 
 
 def sync_appointment_channel(user):
-    """后台委任通道（ADR-0013）：管理员或超级管理员 ⇒ approved 行；否则删行。
+    """后台委任通道（ADR-0013 + ADR-0041）：管理员或超级管理员 ⇒ approved 行；否则删行。
 
     委任是后台副作用，不是用户走通道，故不受站点「验证通道开/关」约束。
     ``identifier`` 记委任档（``superuser`` 优先于 ``staff``）。``verified_by`` 空（系统）。
+    有效期：超管 null（永久）；管理员 = 委任日 + 管理员有效期；仅在「未设 / 已过期」时
+    重算（即首次授予或过期后重新授予），不因无关的 user.save 顺延。
     """
     if user is None or not getattr(user, "pk", None):
         return
@@ -143,13 +253,16 @@ def sync_appointment_channel(user):
         return
 
     ident = "superuser" if user.is_superuser else "staff"
+    now = timezone.now()
+    expires_at = None if user.is_superuser else (now + timedelta(days=admin_valid_days()))
     row, created = Verification.objects.get_or_create(
         user=user,
         channel=Verification.CHANNEL_APPOINTMENT,
         defaults={
             "status": Verification.STATUS_APPROVED,
             "identifier": ident,
-            "verified_at": timezone.now(),
+            "verified_at": now,
+            "expires_at": expires_at,
         },
     )
     if created:
@@ -162,20 +275,32 @@ def sync_appointment_channel(user):
         row.identifier = ident
         fields.append("identifier")
     if row.verified_at is None:
-        row.verified_at = timezone.now()
+        row.verified_at = now
         fields.append("verified_at")
+    if expires_at is None:
+        if row.expires_at is not None:
+            row.expires_at = None
+            fields.append("expires_at")
+    else:
+        if row.expires_at is None or row.expires_at <= now:
+            row.expires_at = expires_at
+            fields.append("expires_at")
     if fields:
         row.save(update_fields=fields)
 
 
 def verified_member_count():
-    """已验证成员数（任一通道 approved 的活跃用户）——众议「全员投完即结算」的分母。
+    """已验证成员数（任一未过期 approved 通道的活跃用户）——众议「全员投完即结算」的分母。
 
     distinct：一个用户可能有多条 approved 通道，按用户去重。后台委任会使管理员/超管计入
     （他们有 appointment 行）；本函数不另读 ``is_staff`` / ``is_superuser``。
     """
     return (
         User.objects.filter(is_active=True, verifications__status=Verification.STATUS_APPROVED)
+        .filter(
+            models.Q(verifications__expires_at__isnull=True)
+            | models.Q(verifications__expires_at__gt=timezone.now())
+        )
         .distinct()
         .count()
     )
@@ -272,7 +397,11 @@ class AuthCode(models.Model):
 
 
 class AuthCodeRedemption(models.Model):
-    """兑换记录（审计留底）：一码一账号一条；每账号至多一条（全局唯一约束）。"""
+    """兑换记录（审计留底）：一码一账号一条；同一账号可因「重新认证」多次兑换不同码。
+
+    ADR-0041：认证过期后需重新认证，故约束由「每账号一条」放宽为「每 (账号, 码) 一条」——
+    同一账号可先后兑换不同码（每次过期后重新认证留痕），但不可重复兑换同一码。
+    """
 
     authcode = models.ForeignKey(
         AuthCode, verbose_name="认证码", on_delete=models.CASCADE, related_name="redemptions"
@@ -287,7 +416,7 @@ class AuthCodeRedemption(models.Model):
         verbose_name_plural = "认证码兑换记录"
         ordering = ["-redeemed_at"]
         constraints = [
-            models.UniqueConstraint(fields=["user"], name="unique_authcode_per_user"),
+            models.UniqueConstraint(fields=["user", "authcode"], name="unique_authcode_per_user_code"),
         ]
 
     def __str__(self):

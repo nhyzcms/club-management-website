@@ -497,7 +497,7 @@ export default function NewsFormPage() {
                 {coverUploading
                   ? <span className="cc-empty">上传中…</span>
                   : coverPreview
-                    ? <img src={coverPreview} alt="封面" />
+                    ? <img src={coverPreview} alt="封面" width={48} height={30} />
                     : <span className="cc-empty"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="M21 16l-5-5L5 20" /></svg>添加封面</span>}
               </button>
               {!coverUploading && (coverPreview || coverRef) && (

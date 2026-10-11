@@ -44,6 +44,14 @@
   background: oklch(0.16 0.02 255 / .86);
 }
 
+/* 手机版外壳（/m）：顶栏 / 底部 tab 半透明白 → 半透明深 */
+:root[data-theme="dark"] .m-topbar {
+  background: oklch(0.16 0.02 255 / .92);
+}
+:root[data-theme="dark"] .m-tabbar {
+  background: oklch(0.16 0.02 255 / .95);
+}
+
 /* 首页 feed：暖/冷浅色渐变卡片 → 深色 */
 :root[data-theme="dark"] .feed-cell--activity {
   background: linear-gradient(160deg, oklch(0.26 0.035 75), var(--bg));

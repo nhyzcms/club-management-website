@@ -1,12 +1,14 @@
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.db.utils import DatabaseError
 from django.http import HttpResponse, JsonResponse
 from django.utils.html import escape
 
 from .models import UserSession
 from .throttles import login_blocked_response
 from .utils import record_user_session
+from .validity import enforce_account_validity
 
 
 def _is_admin_login_post(request):
@@ -148,3 +150,28 @@ class SingleSessionMiddleware:
                     status=401,
                 )
         return self.get_response(request)
+
+
+class ValidityEnforcementMiddleware:
+    """惰性执行身份有效期（ADR-0041，请求时兜底）。
+
+    在响应后执行：撤销过期管理员 / 停用超期未认证账号。放在 AuthenticationMiddleware 之后，
+    用已加载的 ``request.user`` 判定，只对「可能受影响」的用户做一次廉价检查（超管 /
+    近期注册用户直接跳过）。变更在下一次请求生效，不干扰当前响应与会话。
+
+    对 ``DatabaseError`` 静默跳过：迁移测试会把 schema 迁到旧状态（表缺列），此时惰性执行
+    不可用；生产 schema 恒最新不会走到这里，定时命令兜底。
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated:
+            try:
+                enforce_account_validity(user)
+            except DatabaseError:
+                pass
+        return response

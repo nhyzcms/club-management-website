@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
+import { EMAIL_DOMAIN_BLOCKED_MESSAGE } from "../../api/shared";
 import { useSitePolicy } from "../../api/sitePolicy";
 import { IDENTITY_OPTIONS } from "../../types/profile";
+import NoticeModal from "../NoticeModal";
 import "../../styles/profile.css";
 
 // 前后端契约（#36）：通道集 + 通道对象键集，与后端 /auth/verification/ 对齐
@@ -94,6 +96,8 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  // 邮箱后缀不在白名单（ADR-0023）：后端回专属 reason，这里弹窗打断（不做行内小字）。
+  const [domainBlocked, setDomainBlocked] = useState(false);
 
   if (closed) return <CardShell card={card} />;
 
@@ -108,7 +112,13 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
         setEmailInput("");
         onChanged();
       })
-      .catch((e: any) => setErr(e.message || "操作失败"))
+      .catch((e: any) => {
+        if (e?.apiError?.kind === "email_domain_not_allowed") {
+          setDomainBlocked(true);
+          return;
+        }
+        setErr(e.message || "操作失败");
+      })
       .finally(() => setSubmitting(false));
   };
 
@@ -116,6 +126,10 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
 
   return (
     <CardShell card={card}>
+      <p className="muted verify-card-hint">
+        仅支持网易邮箱（163 / 126 / yeah.net）、QQ 邮箱、微软 Outlook、苹果 iCloud（含「隐藏我的邮件」）、
+        三大运营商（移动 / 联通 / 电信）、新浪邮箱，以及中国高校校园邮箱（.edu.cn / .edu.hk / .edu.mo / .edu.tw）。
+      </p>
       <div className="verify-card-actions">
         {card.status === "pending" && (
           <button className="btn btn-sm" type="button" disabled={submitting}
@@ -132,6 +146,12 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
       </div>
       {msg && <p className="muted verify-card-msg">{msg}</p>}
       {err && <p className="verify-card-err">{err}</p>}
+      {domainBlocked && (
+        <NoticeModal
+          message={EMAIL_DOMAIN_BLOCKED_MESSAGE}
+          onClose={() => setDomainBlocked(false)}
+        />
+      )}
     </CardShell>
   );
 }
@@ -300,4 +320,3 @@ export default function VerificationPanel() {
     </div>
   );
 }
-

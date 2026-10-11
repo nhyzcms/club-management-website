@@ -2,18 +2,19 @@
 
 账号体系：注册 / 登录 / 登出 / 会话记录、验证通道（邮箱、人工审批、后台委任）、密码重置、资料与头像、能力投影（`can_*`）、用户检索，以及人工身份审核队列与待办收件箱。端点全部由 `accounts/urls.py` 暴露（前缀 `/auth/`，其中 `identity-reviews` 由 `DefaultRouter` 注册）。
 
-> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005](../adr/0005-access-control-principle.md)、[ADR-0006](../adr/0006-verification-model.md)、[ADR-0008](../adr/0008-list-pagination.md)、[ADR-0010](../adr/0010-runtime-site-policy.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)
+> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005](../adr/0005-access-control-principle.md)、[ADR-0006](../adr/0006-verification-model.md)、[ADR-0008](../adr/0008-list-pagination.md)、[ADR-0010](../adr/0010-runtime-site-policy.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0023](../adr/0023-email-domain-allowlist.md)
 
 ## 模块约定
 
 - **路径前缀**：`config/urls.py` 把本 app 挂在 `/auth/`，故端点形如 `/auth/login/`。
 - **认证口径**（本文件「认证」列）：公开 = 匿名可用；登录 = 仅要求已登录；已验证 = 登录且 `is_verified`（任一验证通道 `approved`，[ADR-0006](../adr/0006-verification-model.md)）。
 - **未登录行为分两类**：`@login_required` 的函数视图未登录时 302 重定向到 `/login/`；DRF 端点（`identity-reviews`、`inbox`）会话认证无跳转，未登录 / 无权限均返回 403 JSON（`{"detail": …}`）。
-- **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed`。
+- **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed`。
 - **Session + CSRF**：登录态走 Django Session cookie；非 GET 请求须带 `X-CSRFToken`（可先 `GET /auth/csrf/` 取 cookie）。
 - **单会话与挤号**（`accounts.middleware.SingleSessionMiddleware`）：同一账号仅一个当前会话；他设备登录成功后旧会话的下一次请求返回 401 `{"detail": "您的账号在其他设备登录，您已被迫下线。", "reason": "session_superseded", "takeover": {"device_name": …, "device_type": …, "ip": …, "time": …}}`（浏览器导航 Accept 含 `text/html` 时改返 401 HTML 下线页）。
 - **登录保护与限流**：账号已有未满 10 分钟的当前会话、且本次非同一会话再认证 → 409 `login_protection`；登录失败按 IP（`login_per_ip_per_hour`）与按用户名 / 邮箱（`login_per_username_per_hour`）双维度计数（只计失败），命中返回 429 `login_throttled` + `Retry-After` 头。
 - **站点策略门禁**：`verification_enabled=false` 时新开 / 完成通道的端点返回 403 `verification_closed`（已通过者仍算已验证）；`registration_enabled=false` 时注册 403 `registration_closed`。旋钮见[公共 API](common.md)。
+- **邮箱后缀白名单**（[ADR-0023](../adr/0023-email-domain-allowlist.md)）：仅注册带邮箱与邮箱绑定 / 换绑判定；不在白名单（`accounts/email_domains.py`）→ 400 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "<命中的域名>"}`。不回溯既有地址、重发与验证链接落地。
 
 ## 端点一览
 
@@ -92,7 +93,7 @@
 |---|---|---|---|
 | username | string | 是 | 站点内唯一（大小写不敏感） |
 | password / password2 | string | 是 | 密码（走 Django 密码校验器）与确认密码，须一致 |
-| email | string | 否 | 提供则建 `email` 通道 `pending`（`identifier`=待验地址，归一化小写）并发验证信 |
+| email | string | 否 | 提供则建 `email` 通道 `pending`（`identifier`=待验地址，归一化小写）并发验证信；**后缀须在白名单内**（[ADR-0023](../adr/0023-email-domain-allowlist.md)） |
 | real_name | string | 是 | 真实姓名，写入 `Profile.real_name`（不公开展示） |
 | identity | string | 是 | 身份，写入 `Profile.identity`；∈ `student` / `external` / `graduate` / `parent` / `teacher` |
 | turnstile_token | string | 条件 | Turnstile 启用时必填 |
@@ -105,13 +106,13 @@
 
 `User.email` 保持空（待验邮箱住通道 `identifier`，验证通过才晋升）；未提供邮箱或验证通道关闭时 `message` 为 `"注册成功。"` 且不建通道。
 
-**错误**：400 字段校验（用户名 / 邮箱占用、两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、邮箱格式，单条或数组）或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
+**错误**：400 字段校验（用户名 / 邮箱占用、两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、邮箱格式，单条或数组）、邮箱后缀不在白名单 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`，或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
 
 ### 邮箱验证与重发
 
 `GET /auth/verify-email/?uid=<uid>&token=<token>`
 
-**认证**：公开；**权限**：—。`uid` 为 urlsafe base64 的用户 pk；`token` 绑 email 通道 `identifier` + `status`（改待验邮箱或验证通过后旧令牌立即失效，不可重放）。
+**认证**：公开；**权限**：—。`uid` 为 urlsafe base64 的用户 pk；`token` 绑 email 通道 `identifier` + `status`（改待验邮箱或验证通过后旧令牌立即失效，不可重放）。不校验后缀白名单（令牌已限定既有待验地址）。
 
 **响应 `200 OK`**：`{"message": "邮箱验证成功。"}`。通过后：email 通道置 `approved` 并记 `verified_at`（`verified_by` 空），`identifier` 晋升写入 `User.email`——绑定邮箱生效，可用于邮箱登录与密码重置。
 
@@ -121,7 +122,7 @@
 
 **认证**：公开；**权限**：—。请求体 JSON：`email`（是）、`turnstile_token`（条件）。**响应 `200 OK`**：`{"message": "如果该邮箱正在验证中，验证邮件已重发。"}`。
 
-不泄露邮箱是否存在 / 是否在验；仅「存在 `email` 通道 `pending` 且账号启用」的账号真正发信（发往待验 `identifier`）。**错误**：403 `verification_closed`；429 每 IP 每小时重发次数超限；400 邮箱缺失（`{"error": "请输入邮箱。"}`）/ JSON 非法 / Turnstile 失败。
+不泄露邮箱是否存在 / 是否在验；仅「存在 `email` 通道 `pending` 且账号启用」的账号真正发信（发往待验 `identifier`）；不校验后缀白名单（只重发既有地址）。**错误**：403 `verification_closed`；429 每 IP 每小时重发次数超限；400 邮箱缺失（`{"error": "请输入邮箱。"}`）/ JSON 非法 / Turnstile 失败。
 
 ### 当前用户（`/auth/me/` 与 `/auth/profile/`）
 
@@ -237,9 +238,9 @@
 
 `POST /auth/verification/email/bind/`
 
-**认证**：登录；**权限**：—。请求体 JSON：`email`（是）。统一置 email 通道 `pending` + `identifier`=新地址并发信，`User.email` 不动，验证通过才晋升。首次绑定 / 重发同邮箱 → 建或刷新 `pending` 行；换邮箱（含已验证旧邮箱）→ 回 `pending` 且旧 `verified_at` 失效；已验证同邮箱再绑 → no-op：`{"message": "该邮箱已验证。"}`。
+**认证**：登录；**权限**：—。请求体 JSON：`email`（是）。统一置 email 通道 `pending` + `identifier`=新地址并发信，`User.email` 不动，验证通过才晋升。首次绑定 / 重发同邮箱 → 建或刷新 `pending` 行；换邮箱（含已验证旧邮箱）→ 回 `pending` 且旧 `verified_at` 失效；已验证同邮箱再绑 → no-op：`{"message": "该邮箱已验证。"}`。**后缀须在白名单内**；与既有 `identifier` 相同的重发 / 复绑不重复判定（不回溯旧地址）。
 
-**响应 `200 OK`**：`{"message": "验证邮件已发送，请查收。"}`；**错误**：403 `verification_closed`；429 每 IP 每小时重发次数超限；400 邮箱缺失 / 格式非法 / 已被占用（`{"error": "该邮箱已被占用"}`，含他人 `pending`）/ JSON 非法。
+**响应 `200 OK`**：`{"message": "验证邮件已发送，请查收。"}`；**错误**：400 邮箱缺失 / 格式非法 / 后缀不在白名单（`{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`）/ 已被占用（`{"error": "该邮箱已被占用"}`，含他人 `pending`）/ JSON 非法；403 `verification_closed`；429 每 IP 每小时重发次数超限。
 
 ### 人工通道：提交身份证明
 

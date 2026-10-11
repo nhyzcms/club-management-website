@@ -242,7 +242,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <header className={"topnav" + (drawerOpen ? " is-open" : "")}>
         <div className="topnav-inner">
           <a className="topnav-brand" role="button" tabIndex={0} onClick={() => go("/")} aria-label="传媒社 首页">
-            <img src="/static/favicon.ico" alt="传媒社社徽" />
+            <img src="/static/favicon.ico" alt="传媒社社徽" width={30} height={30} />
             <span className="brand-name"><b>传媒社</b><span>南汇一中 · 2026</span></span>
           </a>
           <nav className="topnav-items" aria-label="主导航">
@@ -392,23 +392,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
       {banner && !bannerDismissed && (
         <div className="site-banner" role="status">
-          <span className="site-banner-body">
-            {banner.link ? (
-              banner.link.startsWith("http://") || banner.link.startsWith("https://") ? (
-                <a href={banner.link} target="_blank" rel="noopener noreferrer">{banner.body}</a>
-              ) : (
-                <a href="#" onClick={(e) => { e.preventDefault(); go(banner.link.startsWith("/") ? banner.link : `/${banner.link}`); }}>{banner.body}</a>
-              )
-            ) : banner.body}
-          </span>
-          <button
-            className="site-banner-dismiss"
-            type="button"
-            aria-label="关闭横幅公告"
-            onClick={() => { dismissBanner(banner.id); setBannerDismissed(true); }}
-          >
-            ×
-          </button>
+          <div className="site-banner-inner">
+            <span className="site-banner-body">
+              {banner.link ? (
+                banner.link.startsWith("http://") || banner.link.startsWith("https://") ? (
+                  <a href={banner.link} target="_blank" rel="noopener noreferrer">{banner.body}</a>
+                ) : (
+                  <a href="#" onClick={(e) => { e.preventDefault(); go(banner.link.startsWith("/") ? banner.link : `/${banner.link}`); }}>{banner.body}</a>
+                )
+              ) : banner.body}
+            </span>
+            <button
+              className="site-banner-dismiss"
+              type="button"
+              aria-label="关闭横幅公告"
+              onClick={() => { dismissBanner(banner.id); setBannerDismissed(true); }}
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 
@@ -429,7 +431,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <div className="footer-inner">
           <div>
             <div className="footer-brand">
-              <img src="/static/favicon.ico" alt="传媒社社徽" />
+              <img src="/static/favicon.ico" alt="传媒社社徽" width={36} height={36} loading="lazy" />
               <b>传媒社</b>
             </div>
             <p className="footer-note">

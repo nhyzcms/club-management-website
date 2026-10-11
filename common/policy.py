@@ -37,6 +37,10 @@ DEFAULT_UPDATE_DB_BACKUP_KEEP = 5
 DEFAULT_COMMENT_MAX_DEPTH = 8
 DEFAULT_COMMENTS_ENABLED = True
 DEFAULT_DMS_ENABLED = True
+# 身份有效期（ADR-0041）：认证/管理员/注册宽限三档期限，天数可后台配置。
+DEFAULT_VERIFICATION_VALID_DAYS = 365
+DEFAULT_ADMIN_VALID_DAYS = 730
+DEFAULT_REGISTRATION_VERIFY_DAYS = 60
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,9 @@ class SitePolicy:
     comments_enabled: bool
     comment_max_depth: int
     dms_enabled: bool
+    verification_valid_days: int
+    admin_valid_days: int
+    registration_verify_days: int
 
     @classmethod
     def defaults(cls) -> SitePolicy:
@@ -91,6 +98,9 @@ class SitePolicy:
             comments_enabled=DEFAULT_COMMENTS_ENABLED,
             comment_max_depth=DEFAULT_COMMENT_MAX_DEPTH,
             dms_enabled=DEFAULT_DMS_ENABLED,
+            verification_valid_days=DEFAULT_VERIFICATION_VALID_DAYS,
+            admin_valid_days=DEFAULT_ADMIN_VALID_DAYS,
+            registration_verify_days=DEFAULT_REGISTRATION_VERIFY_DAYS,
         )
 
 
@@ -134,6 +144,9 @@ def _snapshot(row) -> SitePolicy:
         comments_enabled=row.comments_enabled,
         comment_max_depth=row.comment_max_depth,
         dms_enabled=row.dms_enabled,
+        verification_valid_days=row.verification_valid_days,
+        admin_valid_days=row.admin_valid_days,
+        registration_verify_days=row.registration_verify_days,
     )
 
 
