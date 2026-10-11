@@ -8,7 +8,11 @@
 
 /* ---------- ① Reset ---------- */
 .cs, .cs *, .cs *::before, .cs *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; }
+/* 触控：禁双击缩放（保留平移/捏合），消除点按判定延迟（Web Interface Guidelines） */
+a, button, input, select, textarea, label, summary { touch-action: manipulation; }
+/* 桌面（精确指针）禁页面橡皮筋；移动端保留 pull-to-refresh 等原生默认 */
+@media (pointer: fine) { html { overscroll-behavior: none; } }
 body {
   margin: 0; /* body 在 .cs 之外、无法被作用域 reset 覆盖；清掉浏览器默认 8px 外边距，否则整圈白边 */
   font-family: var(--font-body);
@@ -87,8 +91,8 @@ ul, ol { list-style: none; }
   --sh-3: 0 20px 52px oklch(0.34 0.095 256 / 0.20);
   --ring-focus: 0 0 0 3px oklch(0.72 0.145 250 / 0.40);
 
-  /* 布局 */
-  --nav-h: 64px;
+  /* 布局（--nav-h = 顶栏总高：基础 64px + 刘海屏安全区） */
+  --nav-h: calc(64px + env(safe-area-inset-top, 0px));
   --container: 1200px;
   --rail-w: 300px;
 
@@ -226,6 +230,7 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .topnav {
   position: sticky; top: 0; z-index: 100;
   height: var(--nav-h);
+  padding-top: env(safe-area-inset-top, 0px);
   background: oklch(1 0 0 / .86);
   backdrop-filter: saturate(160%) blur(12px);
   border-bottom: 1px solid var(--line);
@@ -389,9 +394,10 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .pager .ellipsis { color: var(--faint); padding: 0 var(--s-1); }
 
 /* 模态（登录/注册） */
-.modal-scrim { position: fixed; inset: 0; z-index: 200; background: oklch(0.27 0.03 255 / .45); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: var(--s-4); opacity: 0; visibility: hidden; transition: opacity var(--dur-2) var(--ease), visibility var(--dur-2); }
+/* 遮罩自身可滚（内容超高可滚达）+ 阻断滚动链；.modal 用 auto margin 居中（溢出时不裁剪顶部） */
+.modal-scrim { position: fixed; inset: 0; z-index: 200; background: oklch(0.27 0.03 255 / .45); backdrop-filter: blur(3px); display: flex; overflow-y: auto; overscroll-behavior: contain; padding: var(--s-4); opacity: 0; visibility: hidden; transition: opacity var(--dur-2) var(--ease), visibility var(--dur-2); }
 .modal-scrim.is-open { opacity: 1; visibility: visible; }
-.modal { width: 100%; max-width: 380px; background: var(--bg); border-radius: var(--r-xl); box-shadow: var(--sh-3); overflow: hidden; transform: translateY(12px) scale(.98); transition: transform var(--dur-3) var(--ease-out); }
+.modal { margin: auto; width: 100%; max-width: 380px; background: var(--bg); border-radius: var(--r-xl); box-shadow: var(--sh-3); overflow: hidden; transform: translateY(12px) scale(.98); transition: transform var(--dur-3) var(--ease-out); }
 .modal-scrim.is-open .modal { transform: translateY(0) scale(1); }
 .modal-head { padding: var(--s-6) var(--s-6) var(--s-2); display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-4); }
 .modal-head h3 { font-size: 20px; }
@@ -432,7 +438,7 @@ body.is-authed .topnav-actions .act-user  { display: inline-flex; }
   display: inline-flex; align-items: center; justify-content: center;
 }
 .back-to-top {
-  position: fixed; right: 22px; bottom: 22px; z-index: 80;
+  position: fixed; right: 22px; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 80;
   width: 40px; height: 40px; border-radius: var(--r-pill);
   background: var(--bg); color: var(--ink-700); border: 1px solid var(--line);
   box-shadow: var(--sh-2); font-size: 16px; font-weight: 700;
@@ -563,6 +569,7 @@ body:not(.is-authed) .sheet-user { display: none; }
     display: none; position: fixed; top: var(--nav-h); left: 0; right: 0; z-index: 99;
     background: var(--bg); border-bottom: 1px solid var(--line); box-shadow: var(--sh-2);
     padding: var(--s-3); flex-direction: column; gap: 2px; max-height: calc(100vh - var(--nav-h)); overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .topnav.is-open .mobile-sheet { display: flex; }
   .mobile-sheet a, .mobile-sheet button.sheet-item {
