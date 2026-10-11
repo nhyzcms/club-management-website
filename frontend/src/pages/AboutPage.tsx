@@ -38,6 +38,7 @@ export default function AboutPage() {
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinnedInit = useRef(false);
 
   const load = () => aboutApi.get().then(setPage);
 
@@ -63,6 +64,14 @@ export default function AboutPage() {
   };
 
   useEffect(() => () => clearHoverTimer(), []);
+
+  // 首次加载完成后默认展开第一块（访客第一眼即可看到正文）
+  useEffect(() => {
+    if (page && !pinnedInit.current) {
+      pinnedInit.current = true;
+      setPinnedKey((prev) => prev ?? page.blocks[0]?.key ?? null);
+    }
+  }, [page]);
 
   useEffect(() => {
     document.title = "关于我们 · 南汇一中传媒社";
@@ -143,7 +152,7 @@ export default function AboutPage() {
             <span>关于我们</span>
           </nav>
           <h1 className="detail-title">关于我们</h1>
-          <p className="section-sub">{blocks.map((b) => b.title).join(" / ")}</p>
+          <p className="section-sub">了解传媒社、南汇一中，以及这个网站本身。</p>
         </div>
       </div>
 

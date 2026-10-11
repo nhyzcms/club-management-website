@@ -126,7 +126,7 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 
 /* 顶栏为 sticky（占文档流），内容自然紧随其后，无需额外 padding */
 .page { min-height: 70vh; }
-.page-head { padding: var(--s-12) 0 var(--s-8); border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--brand-50), transparent); }
+.page-head { padding: var(--s-8) 0 var(--s-6); border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--brand-50), transparent); }
 .page-head h1 { font-size: clamp(26px, 3.4vw, 36px); }
 .breadcrumb { display: flex; gap: var(--s-2); align-items: center; font-size: 13px; color: var(--faint); margin-bottom: var(--s-3); }
 .breadcrumb a { color: var(--muted); }

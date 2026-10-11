@@ -392,23 +392,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
       {banner && !bannerDismissed && (
         <div className="site-banner" role="status">
-          <span className="site-banner-body">
-            {banner.link ? (
-              banner.link.startsWith("http://") || banner.link.startsWith("https://") ? (
-                <a href={banner.link} target="_blank" rel="noopener noreferrer">{banner.body}</a>
-              ) : (
-                <a href="#" onClick={(e) => { e.preventDefault(); go(banner.link.startsWith("/") ? banner.link : `/${banner.link}`); }}>{banner.body}</a>
-              )
-            ) : banner.body}
-          </span>
-          <button
-            className="site-banner-dismiss"
-            type="button"
-            aria-label="关闭横幅公告"
-            onClick={() => { dismissBanner(banner.id); setBannerDismissed(true); }}
-          >
-            ×
-          </button>
+          <div className="site-banner-inner">
+            <span className="site-banner-body">
+              {banner.link ? (
+                banner.link.startsWith("http://") || banner.link.startsWith("https://") ? (
+                  <a href={banner.link} target="_blank" rel="noopener noreferrer">{banner.body}</a>
+                ) : (
+                  <a href="#" onClick={(e) => { e.preventDefault(); go(banner.link.startsWith("/") ? banner.link : `/${banner.link}`); }}>{banner.body}</a>
+                )
+              ) : banner.body}
+            </span>
+            <button
+              className="site-banner-dismiss"
+              type="button"
+              aria-label="关闭横幅公告"
+              onClick={() => { dismissBanner(banner.id); setBannerDismissed(true); }}
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 

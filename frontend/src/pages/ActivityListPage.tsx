@@ -142,18 +142,20 @@ export default function ActivityListPage() {
                       {REVIEW_STATUS_LABELS[a.review_status] ?? a.review_status}
                     </span>
                   )}
-                  {a.creator && (
-                    <span className="who">
-                      <Avatar user={a.creator} />
-                      {a.creator.nickname || a.creator.username}
-                    </span>
-                  )}
-                  {a.status === "scheduled" && a.start_at ? (
-                    <span>⏱ 距开始 {formatCountdown(a.start_at)}</span>
-                  ) : a.end_at ? (
-                    <span>截止 {new Date(a.end_at).toLocaleDateString("zh-CN")}</span>
-                  ) : null}
-                  <span className="tnum">{new Date(a.created_at).toLocaleDateString("zh-CN")}</span>
+                  <span className="pc-meta-right">
+                    {a.creator && (
+                      <span className="who">
+                        <Avatar user={a.creator} />
+                        {a.creator.nickname || a.creator.username}
+                      </span>
+                    )}
+                    {a.status === "scheduled" && a.start_at ? (
+                      <span>⏱ 距开始 {formatCountdown(a.start_at)}</span>
+                    ) : a.end_at ? (
+                      <span>截止 {new Date(a.end_at).toLocaleDateString("zh-CN")}</span>
+                    ) : null}
+                    <span className="tnum">{new Date(a.created_at).toLocaleDateString("zh-CN")}</span>
+                  </span>
                 </div>
               </a>
             );

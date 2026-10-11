@@ -74,6 +74,7 @@ a.prop-card { color: inherit; }
 .prop-card:hover .pc-title { color: var(--brand-700); }
 .pc-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); margin-top: 8px; font-size: 12.5px; color: var(--faint); }
 .pc-meta .badge { font-size: 11.5px; padding: 1px 8px; }
+.pc-meta-right { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); margin-left: auto; }
 .type-tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--r-xs); font-size: 11.5px; font-weight: 600; background: var(--surface-2); color: var(--ink-700); }
 .type-tag.fb { background: var(--warning-bg); color: var(--warning); }
 .remain { color: var(--warning); font-weight: 600; font-family: var(--font-mono); }
