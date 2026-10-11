@@ -94,7 +94,7 @@ export default function JoinPage() {
                 imageUpload={(f: File) => newsApi.uploadImage(f).then((d) => d.url)}
                 minHeight={280}
               />
-              {saveError && <div className="alert alert-danger" style={{ marginTop: 12 }}>{saveError}</div>}
+              {saveError && <div className="alert alert-danger" role="alert" style={{ marginTop: 12 }}>{saveError}</div>}
               <div className="form-actions" style={{ marginTop: 12 }}>
                 <button className="btn btn-ghost" type="button" onClick={() => { setEditing(false); setSaveError(""); }}>取消</button>
                 <button className="btn btn-primary" type="button" disabled={saving} onClick={save}>{saving ? "保存中…" : "保存"}</button>

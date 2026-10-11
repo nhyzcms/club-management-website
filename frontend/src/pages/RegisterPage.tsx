@@ -120,25 +120,30 @@ export default function RegisterPage() {
                     style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}
                   >
                     {error && (
-                      <div className="alert alert-danger">
+                      <div className="alert alert-danger" role="alert">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
                         <span>{error}</span>
                       </div>
                     )}
                     <div className="field">
-                      <label className="label">用户名</label>
+                      <label className="label" htmlFor="reg-username">用户名</label>
                       <input
                         className="input"
+                        id="reg-username"
+                        name="username"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         placeholder="登录用用户名"
                         autoComplete="username"
+                        spellCheck={false}
                         required
                       />
                     </div>
                     <div className="field">
-                      <label className="label">密码</label>
+                      <label className="label" htmlFor="reg-password">密码</label>
                       <PasswordInput
+                        id="reg-password"
+                        name="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="至少 8 位"
@@ -146,8 +151,10 @@ export default function RegisterPage() {
                       />
                     </div>
                     <div className="field">
-                      <label className="label">确认密码</label>
+                      <label className="label" htmlFor="reg-password2">确认密码</label>
                       <PasswordInput
+                        id="reg-password2"
+                        name="confirm-password"
                         value={password2}
                         onChange={(e) => setPassword2(e.target.value)}
                         placeholder="再输一次"
@@ -155,9 +162,11 @@ export default function RegisterPage() {
                       />
                     </div>
                     <div className="field">
-                      <label className="label">真实姓名</label>
+                      <label className="label" htmlFor="reg-realname">真实姓名</label>
                       <input
                         className="input"
+                        id="reg-realname"
+                        name="name"
                         value={realName}
                         onChange={(e) => setRealName(e.target.value)}
                         placeholder="用于身份核验，不公开展示"
@@ -167,9 +176,11 @@ export default function RegisterPage() {
                       />
                     </div>
                     <div className="field">
-                      <label className="label">身份</label>
+                      <label className="label" htmlFor="reg-identity">身份</label>
                       <select
                         className="input"
+                        id="reg-identity"
+                        name="identity"
                         value={identity}
                         onChange={(e) => setIdentity(e.target.value)}
                         required

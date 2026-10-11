@@ -51,14 +51,14 @@ export default function ResetPasswordPage() {
                   <h2 style={{ marginBottom: "var(--s-5)" }}>重置密码</h2>
                   <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
                     {error && (
-                      <div className="alert alert-danger">
+                      <div className="alert alert-danger" role="alert">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
                         <span>{error}</span>
                       </div>
                     )}
                     <div className="field">
-                      <label className="label">新密码</label>
-                      <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 个字符" required />
+                      <label className="label" htmlFor="rp-password">新密码</label>
+                      <PasswordInput id="rp-password" name="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 个字符" autoComplete="new-password" required />
                     </div>
                     <button className="btn btn-primary btn-block" type="submit" disabled={loading}>
                       {loading ? "重置中…" : "重置密码"}

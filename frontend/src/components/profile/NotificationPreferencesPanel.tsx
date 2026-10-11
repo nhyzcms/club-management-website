@@ -51,9 +51,9 @@ export default function NotificationPreferencesPanel() {
         选择想接收的通知来源与通道。关闭某来源的站内通道后，将不再接收该来源的通知。
         {emailCh && !emailReady && " 邮件通道需先绑定邮箱（见「资料编辑」）。"}
       </p>
-      {saveState === "saving" && <p className="hint">保存中…</p>}
-      {saveState === "ok" && <p className="hint">已保存 ✓</p>}
-      {saveState === "err" && <div className="alert alert-danger"><span>{error}</span></div>}
+      {saveState === "saving" && <p className="hint" role="status">保存中…</p>}
+      {saveState === "ok" && <p className="hint" role="status">已保存 ✓</p>}
+      {saveState === "err" && <div className="alert alert-danger" role="alert"><span>{error}</span></div>}
 
       <div className="notif-matrix">
         {prefs.sources.map((src) => (
