@@ -21,7 +21,7 @@ export default function ProfileHero({ profile, onEdit }: Props) {
       <div className="profile-hero-cover" />
       <div className="profile-hero-body container">
         <div className="profile-hero-avatar">
-          {p.avatar ? <img src={p.avatar} alt="" /> : <span>{initial}</span>}
+          {p.avatar ? <img src={p.avatar} alt="" width={96} height={96} /> : <span>{initial}</span>}
         </div>
         <div className="profile-hero-meta">
           <h1 className="profile-hero-name">

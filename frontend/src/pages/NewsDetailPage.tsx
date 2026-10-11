@@ -131,6 +131,7 @@ export default function NewsDetailPage() {
             <div className={"article-hero" + (news.cover_image_url ? "" : " ph-img")}>
               {news.cover_image_url ? (
                 <img src={news.cover_image_url} alt={news.title}
+                     width={800} height={500} fetchPriority="high"
                      onClick={() => setLightboxUrl(news.cover_image_url || "")} />
               ) : (
                 <>
@@ -221,7 +222,7 @@ export default function NewsDetailPage() {
                    onClick={(e) => { e.preventDefault(); navigate(`/news/${r.id}`); }}>
                   <div className={"card-media" + (r.cover_image_url ? "" : " ph-img")}>
                     {r.cover_image_url ? (
-                      <img src={r.cover_thumbnail_url || r.cover_image_url} alt={r.title} />
+                      <img src={r.cover_thumbnail_url || r.cover_image_url} alt={r.title} width={800} height={450} loading="lazy" />
                     ) : (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8" /><path d="M4 12h16" /></svg>
                     )}

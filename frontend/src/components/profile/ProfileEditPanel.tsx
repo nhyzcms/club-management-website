@@ -81,7 +81,7 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
 
       <div className="avatar-upload">
         <div className="avatar editable" onClick={() => fileRef.current?.click()} role="button">
-          {avatarSrc ? <img src={avatarSrc} alt="头像" /> : <span>{initial}</span>}
+          {avatarSrc ? <img src={avatarSrc} alt="头像" width={80} height={80} /> : <span>{initial}</span>}
           <span className="cam">✎</span>
         </div>
         <div className="au-meta">
