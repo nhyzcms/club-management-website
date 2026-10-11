@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hostQuery,
+  NOTIFICATION_CATEGORY_LABELS,
   notificationHref,
   notificationTitle,
   withinRetractWindow,
@@ -39,5 +40,18 @@ describe("notificationHref / notificationTitle", () => {
     expect(notificationTitle({ event: "approved", category: "review" } as any)).toBe("内容已通过审核");
     expect(notificationTitle({ event: "unknown_x", category: "review" } as any)).toBe("审核");
     expect(notificationTitle({ event: "unknown_x", category: "weird" } as any)).toBe("通知");
+  });
+
+  it("title：聚合后的私信通知报累计条数", () => {
+    expect(
+      notificationTitle({ event: "new_message", category: "dm", payload: { count: 3 } } as any),
+    ).toBe("你收到 3 条新私信");
+    expect(
+      notificationTitle({ event: "new_message", category: "dm", payload: {} } as any),
+    ).toBe("你收到一条新私信");
+  });
+
+  it("分类文案：私信有徽标文案", () => {
+    expect(NOTIFICATION_CATEGORY_LABELS.dm).toBe("私信");
   });
 });
