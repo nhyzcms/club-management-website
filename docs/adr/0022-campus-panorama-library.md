@@ -2,6 +2,17 @@
 
 日期：2026-10-10 · 与站管协作
 
+> **修订（2026-10-12）：每级改为一整幅层级图，取消 512px 网格切片。**
+> 决策 2 原按 512px 网格切片（`<z>/<y>/<x>.jpg`）并配 `{z}/{y}/{x}` 取片模板。实测
+> Marzipano `EquirectGeometry` 的取片单位是「一层一整张等距柱状图」——`EquirectTile`
+> 只携带 `z`，URL 模板只认 `{z}` 占位符（marzipano 0.10.2 源码
+> `src/geometries/Equirect.js` / `src/sources/ImageUrl.js`）；网格记法下 `{y}`/`{x}`
+> 被替换为空串（请求形态 `…/1//.jpg`），线上取片全量 404。现改为每级落一张
+> `<z>.jpg`，模板只含 `{z}`；`tile_size` 字段与 `cols`/`rows` 网格元数据随之下线。
+> 首屏与渐进加载行为不变；立方体重采样路线维持「被否的方案」原判（不引入 numpy）。
+> **运维补充**：既有记录需经「重新切片」（管理页 / `reprocess` 接口 /
+> `import_static_panoramas --force`）重建为新的产物形态。
+
 ## 背景与问题
 
 「校园一览」下方的「校园全景图」按钮原先指向一个手写静态页 `static/panorama/index.html`：7 个 Marzipano 场景，每个直接加载 `pano_N.jpg`（4.7–8.7MB，合计约 50MB），并用 `EquirectGeometry([{ width: 10000, height: 5000 }])` 声明一个与源图实际尺寸未必相符的**单层**几何。实测慢、移动端白屏，根因三条：

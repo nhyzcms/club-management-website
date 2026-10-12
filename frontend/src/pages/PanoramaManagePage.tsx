@@ -117,7 +117,7 @@ export default function PanoramaManagePage() {
       } else {
         setNotice(
           `已导入「${created.title}」：原图 ${created.width}×${created.height}，` +
-            `切出 ${created.tile_levels.length} 级瓦片，可以浏览了。`,
+            `切出 ${created.tile_levels.length} 级层次图，可以浏览了。`,
         );
       }
       setFile(null);

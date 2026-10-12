@@ -2,8 +2,9 @@
  * 校园全景图浏览页（`/#/panorama[?id=N]`）。
  *
  * 与旧静态页的差别：不再把 5~8MB 原图整张餵给 WebGL，而是取服务端切好的
- * 多级瓦片（`tile_url_template`）+ `pinFirstLevel` 让最小层常驻打底 ——
- * 首屏只需最小层两张瓦片（百 KB 量级），细节随视野按需补齐。
+ * 多级层级图（`tile_url_template`，每级一整幅、仅 `{z}` 占位符）+
+ * `pinFirstLevel` 让最小层常驻打底 —— 首屏只需最小层一幅（百 KB 量级），
+ * 细节随视野按需补齐。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -130,7 +131,8 @@ export default function PanoramaPage() {
           viewer = new Marzipano.Viewer(stageEl, { stageType: "css" });
         }
 
-        const levels = current.tile_levels.map((l) => ({ width: l.width, tileSize: l.tile_size }));
+        // EquirectGeometry 每层一整幅图：只需 width（tileSize 是立方体贴图的参数）。
+        const levels = current.tile_levels.map((l) => ({ width: l.width }));
         const source = Marzipano.ImageUrlSource.fromString(current.tile_url_template);
         const geometry = new Marzipano.EquirectGeometry(levels);
         const limiter = Marzipano.RectilinearView.limit.traditional(current.width, 100 * DEG);

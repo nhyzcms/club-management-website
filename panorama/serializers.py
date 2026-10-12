@@ -12,10 +12,10 @@ def _absolute(context, url: str | None) -> str | None:
 
 
 def _absolute_raw(context, url: str | None) -> str | None:
-    """绝对化但**不做百分号转义**——取片模板里的 ``{z}`` / ``{y}`` / ``{x}`` 必须原样保留。
+    """绝对化但**不做百分号转义**——取片模板里的 ``{z}`` 必须原样保留。
 
     ``Request.build_absolute_uri`` 会对路径做 URL quoting（`{` → `%7B`），
-    Marzipano 却是按字面量替换占位符的：转义后一个都换不上，线上瓦片全 404。
+    Marzipano 却是按字面量替换占位符的：转义后一个都换不上，线上取片全 404。
     故模板单独走这条“拼前缀”路径（已是绝对 URL 的原样返回）。
     """
     if not url:
@@ -54,7 +54,7 @@ class PanoramaDetailSerializer(serializers.ModelSerializer):
     """详情：额外给出取片模板、层级表与原始参数（前端据此建 Marzipano 场景）。
 
     可写字段只有「人调得着」的那些（标题 / 描述 / 排序 / 公开 / 初始视角）；
-    尺寸、元数据、瓦片产物一律只读——它们由切片流水线写。
+    尺寸、元数据、取片产物一律只读——它们由切片流水线写。
     """
 
     thumb_url = serializers.SerializerMethodField()
@@ -69,14 +69,14 @@ class PanoramaDetailSerializer(serializers.ModelSerializer):
             "status", "error", "origin", "device_model", "metadata",
             "width", "height", "projection", "source_name", "source_bytes",
             "initial_yaw", "initial_pitch", "initial_fov", "capture_heading",
-            "tile_size", "tile_levels", "tile_url_template",
+            "tile_levels", "tile_url_template",
             "preview_url", "thumb_url", "source_url",
             "created_by", "created_at", "updated_at",
         ]
         read_only_fields = [
             "status", "error", "origin", "device_model", "metadata",
             "width", "height", "projection", "source_name", "source_bytes",
-            "capture_heading", "tile_size", "tile_levels", "tile_url_template",
+            "capture_heading", "tile_levels", "tile_url_template",
             "preview_url", "thumb_url", "source_url",
             "created_by", "created_at", "updated_at",
         ]

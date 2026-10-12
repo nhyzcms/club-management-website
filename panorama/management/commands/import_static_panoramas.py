@@ -96,7 +96,7 @@ class Command(BaseCommand):
                 imported += 1
                 self.stdout.write(self.style.SUCCESS(
                     f"已导入：{path.name} → #{panorama.pk}"
-                    f"（{panorama.width}×{panorama.height}，{len(panorama.tile_levels)} 级瓦片）"
+                    f"（{panorama.width}×{panorama.height}，{len(panorama.tile_levels)} 级层次图）"
                 ))
             else:
                 failed += 1

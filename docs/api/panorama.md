@@ -1,23 +1,25 @@
 # 校园全景图 API
 
-校园全景图库：把等距柱状（equirectangular）全景图入库，导入时自动切成多级瓦片 + 低清预览，浏览侧只吃瓦片。支持直接上传 DJI（DJI Fly / DJI GO 4）合成的球面全景，也支持上传装着全景图的 **zip**（解包挑图后即丢弃压缩包）。
+校园全景图库：把等距柱状（equirectangular）全景图入库，导入时自动切出多级层级图 + 低清预览，浏览侧只吃层级图。支持直接上传 DJI（DJI Fly / DJI GO 4）合成的球面全景，也支持上传装着全景图的 **zip**（解包挑图后即丢弃压缩包）。
 
 > 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0022](../adr/0022-campus-panorama-library.md)（瓦片化浏览 · DJI 导入）、[ADR-0005](../adr/0005-access-control-principle.md)（`has_perm` 判权）
 
 挂载：`config/urls.py` 的 `panorama/` + app 内 router 前缀 `panoramas`，路径均为 `/panorama/panoramas/…`。列表响应为 DRF 分页信封（`PAGE_SIZE=20`）。
 
-## 为什么是瓦片
+## 为什么分层取片
 
 原静态全景页把 5~8MB 的整张原图交给 WebGL，移动端 GPU 纹理上限（4096 / 8192）直接超限。现在导入即切出：
 
 | 产物 | 位置 | 用途 |
 |---|---|---|
 | 原图（存档） | `/media/panorama/sources/<uuid>.jpg` | 重切片输入；**不在浏览路径上**，仅管理者可见 `source_url` |
-| 瓦片 | `/media/panorama/tiles/<uuid>/<z>/<y>/<x>.jpg` | 浏览主体，512px 一格，`z` 从 0（最小层）递增 |
+| 层级图 | `/media/panorama/tiles/<uuid>/<z>.jpg` | 浏览主体，每级一整幅等距柱状图，`z` 从 0（最小层）递增 |
 | 预览图 | `/media/panorama/assets/preview-<uuid>.jpg` | 最小层整幅（~1024×512），首屏兜底 / 分享图 |
 | 缩略图 | `/media/panorama/assets/thumb-<uuid>.jpg` | 列表卡片（~640×320） |
 
-后台规则：层级宽度取 2 的幂（1024 / 2048 / 4096 / 8192）且不超过源图宽度，比 1024 还窄的源图就用原宽；瓦片阶段封顶 8192（更宽的源图降采样切片，原图仍完整存档）。
+后台规则：层级宽度取 2 的幂（1024 / 2048 / 4096 / 8192）且不超过源图宽度，比 1024 还窄的源图就用原宽；分层阶段封顶 8192（更宽的源图降采样，原图仍完整存档）。
+
+每级落**一整幅**等距柱状图（而不是 512px 网格）：Marzipano `EquirectGeometry` 的取片单位就是「一层一张图」——`EquirectTile` 只携带 `z`，取片模板只认 `{z}` 占位符；网格记法（`{z}/{y}/{x}`）属立方体贴图，套用会让 `{y}`/`{x}` 被替换为空串（请求形态 `…/1//.jpg`）而全量 404。详见 [ADR-0022 修订](../adr/0022-campus-panorama-library.md)。
 
 ## 端点一览
 
@@ -132,14 +134,13 @@
   "initial_pitch": -8.0,
   "initial_fov": 75.0,
   "capture_heading": 128.5,
-  "tile_size": 512,
   "tile_levels": [
-    {"z": 0, "width": 1024, "height": 512, "cols": 2, "rows": 1, "tile_size": 512},
-    {"z": 1, "width": 2048, "height": 1024, "cols": 4, "rows": 2, "tile_size": 512},
-    {"z": 2, "width": 4096, "height": 2048, "cols": 8, "rows": 4, "tile_size": 512},
-    {"z": 3, "width": 8192, "height": 4096, "cols": 16, "rows": 8, "tile_size": 512}
+    {"z": 0, "width": 1024, "height": 512},
+    {"z": 1, "width": 2048, "height": 1024},
+    {"z": 2, "width": 4096, "height": 2048},
+    {"z": 3, "width": 8192, "height": 4096}
   ],
-  "tile_url_template": "https://8.153.145.175/media/panorama/tiles/9c31d0e8/{z}/{y}/{x}.jpg",
+  "tile_url_template": "https://8.153.145.175/media/panorama/tiles/9c31d0e8/{z}.jpg",
   "preview_url": "https://8.153.145.175/media/panorama/assets/preview-5b7e21.jpg",
   "thumb_url": "https://8.153.145.175/media/panorama/assets/thumb-1f3c9a.jpg",
   "source_url": "https://8.153.145.175/media/panorama/sources/4d2a77be.jpg",
@@ -165,7 +166,7 @@
 **认证**：公开；**权限**：—
 
 未发布或未就绪的条目对公众返回 `404`；管理者可正常读取（用于管理列表）。
-取片模板中的 `{z}` / `{y}` / `{x}` 由前端替换——与 Marzipano `EquirectGeometry` 的多层取片约定一致。
+取片模板中的 `{z}`（层级索引）由前端替换——与 Marzipano `EquirectGeometry` 的取片约定一致：每层一整幅图，模板只认 `{z}`。
 
 **响应 `200 OK`**：同创建响应结构。
 
@@ -210,7 +211,7 @@
 服务端只提供事实（层级表 + 模板），场景搭建在前端：
 
 ```js
-const levels = pano.tile_levels.map((l) => ({ width: l.width, tileSize: l.tile_size }));
+const levels = pano.tile_levels.map((l) => ({ width: l.width }));
 const source = Marzipano.ImageUrlSource.fromString(pano.tile_url_template);
 const geometry = new Marzipano.EquirectGeometry(levels);
 const limiter = Marzipano.RectilinearView.limit.traditional(pano.width, 100 * Math.PI / 180);
@@ -222,7 +223,7 @@ const view = new Marzipano.RectilinearView({
 viewer.createScene({ source, geometry, view, pinFirstLevel: true });
 ```
 
-`pinFirstLevel: true` 把最小层（`z=0`，两张瓦片）常驻打底——这就是「秒出画面、细节渐进」的那一半；`preview_url` 可用于列表 / `og:image` / 加载前占位。
+`pinFirstLevel: true` 把最小层（`z=0`，一幅整图）常驻打底——这就是「秒出画面、细节渐进」的那一半；`preview_url` 可用于列表 / `og:image` / 加载前占位。
 
 ## 后台与运维
 
