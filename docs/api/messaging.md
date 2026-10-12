@@ -267,7 +267,7 @@
   "read_at": null, "created_at": "2026-09-19T03:06:00Z" }
 ```
 
-`payload` 为 JSON 对象，字段随类别不同（见下表）；`actor_id` / `actor_username` 在系统自动事件（如禁言到期）中缺省。落库时按收件人订阅偏好（`/messaging/notification-preferences/`）同步投递外发通道（如邮件）；投递失败仅留痕（NotificationDelivery），不影响站内通知。
+`payload` 为 JSON 对象，字段随类别不同（见下表）；`actor_id` / `actor_username` 在系统自动事件（如禁言到期）中缺省。落库时按收件人订阅偏好（`/messaging/notification-preferences/`）投递外发通道（如邮件）：默认**异步**（进程内队列 + 守护线程，失败按退避重试至多 5 次、超限落 `failed` 留痕，不影响站内通知；重启残漏由周期扫描补投）；`NOTIFICATIONS_DELIVERY_ASYNC=0` 可回退旧同步投递。见 [ADR-0024](../adr/0024-async-notification-delivery.md)。
 
 **未读聚合（同一事项只提示一次）**：通知源可声明**聚合键**（``源:事件:事项``，实现见 `messaging/notifications/registry.py`）。同一聚合键在**未读**期间只保留一条通知：后续同事项不新建行，只并入既有那条（`payload.count` 累加、`last_at` 刷新），并再推一次 `notification` 事件（前端据此刷新列表与徽标）；**被读掉之后**下一条同事项才重新通知。聚合命中的不重复外发（邮件等）——“一个未读事项 = 至多一封邮件”。目前只有私信声明了聚合键（`dm:new_message:<会话 id>`），其余源每条事件各自一条通知。
 

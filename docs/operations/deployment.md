@@ -245,6 +245,7 @@ sudo systemctl restart club
 | `ALLOWED_HOSTS` | 允许的 Host，逗号分隔 | **必填**；`install.sh` 会写 |
 | `FRONTEND_URL` | 邮件链接来源 | 建议填站点域名 |
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | 163 邮箱账号与 **SMTP 授权码** | 按需；不配则邮件走 console 后端 |
+| `NOTIFICATIONS_DELIVERY_ASYNC` | 通知外发投递模式 | 默认异步（进程内队列，失败自动退避重试）；`=0` 回退同步投递（见 [ADR-0024](../adr/0024-async-notification-delivery.md)） |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile | 按需；两项都空 = 关闭，只填一半也视为关闭 |
 | `UPDATE_GITHUB_TOKEN` | 读 Release 用的 GitHub PAT | **必填**（自动更新依赖） |
 | `UPDATE_GITHUB_REPO` | `owner/repo` | 默认 `nhyzcms/club-management-website` |
@@ -288,6 +289,13 @@ uv run python manage.py maintenance off
 uv run python manage.py enforce_validity                 # 执行一次（含到期前提醒）
 uv run python manage.py enforce_validity --dry-run       # 只统计，不改动（提醒也不落库）
 uv run python manage.py enforce_validity --skip-notices  # 只做降权 / 停用，不发提醒
+```
+
+通知外发（邮件）默认**异步**投递（进程内队列 + 守护线程，失败自动退避重试、重启不丢，见 [ADR-0024](../adr/0024-async-notification-delivery.md)）——手动补投 / 排障入口：
+
+```bash
+uv run python manage.py flush_notifications              # 排空内存队列 + 补投到期的待投递行
+uv run python manage.py flush_notifications --limit 500  # 限量（默认 200）
 ```
 
 Nginx 侧：

@@ -112,8 +112,14 @@ frontend/
 |------|--------------|:---:|------|
 | `/` | `HomePage` |  | 首页；`HomeRoute` 对手机 UA 渲染 `<Navigate to="/m" replace />` |
 | `/m` | `MobileHomePage` |  | 手机版首页 |
-| `/m/news` | `MobileNewsPage` |  | 手机版新闻 |
-| `/m/activity` | `MobileActivityPage` |  | 手机版活动 |
+| `/m/news` | `MobileNewsPage` |  | 手机版新闻列表 |
+| `/m/news/:id` | `MobileNewsDetailPage` |  | 手机版新闻详情 |
+| `/m/activity` | `MobileActivityPage` |  | 手机版活动列表 |
+| `/m/activity/:id` | `MobileActivityDetailPage` |  | 手机版活动详情（众议投票 / 调研作答 / 展示画廊） |
+| `/m/tutorials` | `MobileTutorialsPage` |  | 手机版教程列表 |
+| `/m/tutorials/:id` | `MobileTutorialDetailPage` |  | 手机版教程详情（视频 / 文档 / 收藏） |
+| `/m/join` | `MobileJoinPage` |  | 手机版加入（公告 + 阅读确认） |
+| `/m/join/form` | `MobileJoinFormPage` |  | 手机版加入问卷 |
 | `/m/me` | `MobileMePage` |  | 手机版「我的」 |
 | `/about` | `AboutPage` |  | 关于我们 |
 | `/panorama` | `PanoramaPage` |  | 校园全景浏览（`?id=N` 选场景；Marzipano 多级瓦片 + 首层常驻） |
@@ -268,10 +274,13 @@ try {
 | 路由 | 页面 | 内容 |
 |------|------|------|
 | `/m` | `MobileHomePage` | 顶栏 + hero + 四宫格快捷入口 + 新闻/活动卡片流 |
-| `/m/news` | `MobileNewsPage` | 新闻列表（移动卡片样式） |
-| `/m/activity` | `MobileActivityPage` | 活动列表 |
+| `/m/news` · `/m/news/:id` | `MobileNewsPage` · `MobileNewsDetailPage` | 新闻列表与详情（头图 / 正文 / 相关阅读 / 图片大图） |
+| `/m/activity` · `/m/activity/:id` | `MobileActivityPage` · `MobileActivityDetailPage` | 活动列表与详情（信息徽章 / 众议投票 / 调研作答 / 展示画廊；受限活动给登录入口） |
+| `/m/tutorials` · `/m/tutorials/:id` | `MobileTutorialsPage` · `MobileTutorialDetailPage` | 教程列表与详情（视频播放 / 文档下载 / 收藏） |
+| `/m/join` · `/m/join/form` | `MobileJoinPage` · `MobileJoinFormPage` | 加入公告（阅读确认）与自我介绍问卷（SurveyJS） |
 | `/m/me` | `MobileMePage` | 「我的」：资料卡 + 服务入口 + 登录/退出 |
 
+- 手机版内闭环：首页快捷格、列表卡片与「更多」一律指向 `/m/*`——列表进详情、教程、加入都不跳出手机版。
 - 共享外壳：样式 `styles/mobile.css`（`.m-app` 作用域：topbar / 渐变 hero / 四宫格快捷入口 / 卡片流 / 固定底部 tab），每个页面自渲染 `<MobileTabBar />`（`components/MobileTabBar.tsx`，四个 tab：首页/活动/新闻/我的，`NavLink` 指向 `/m/*`，首页用 `end` 精确匹配）。
 - 自动改道：`HomeRoute` 在根路径用 `utils/device.ts::isMobileDevice()`（UA 正则命中 iPhone/Android/Windows Phone 等）判断手机浏览器，渲染 `<Navigate to="/m" replace />`；深链接、桌面端与「请求桌面站点」模式不受影响。
 - `/m/me` 按真实契约 `{user, role, profile}` 渲染：显示名与头像取 `profile`、身份徽章取 `role.label`；`role.variant ∈ {admin, superadmin}` 时显示「进入后台管理」行（`window.location.href = "/admin/"`）；匿名显示登录 CTA；退出登录 = `api.logout()` + 刷新。
