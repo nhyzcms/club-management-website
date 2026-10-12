@@ -1,7 +1,7 @@
 """panorama 应用测试：DJI 元数据解析、瓦片切片、导入准入、权限与可见性。
 
 素材全部现场合成（PIL 画一张小图 + 手写 XMP APP1 段），不依赖任何仓库内大文件，
-切片规模按 1024×512 起（单层两张瓦片）以保持测试毫秒级。
+分层规模按 1024 起（单层一整幅）以保持测试毫秒级。
 """
 import io
 import os
@@ -158,7 +158,7 @@ class ImportValidationTest(_MediaRootMixin, TestCase):
 
 
 class TilingTest(_MediaRootMixin, TestCase):
-    """切片产物：层级表、瓦片文件、预览 / 缩略图、以及回收。"""
+    """分层产物：层级表、层级图文件、预览 / 缩略图、以及回收。"""
 
     def test_single_level_pyramid(self):
         panorama = import_panorama(
@@ -168,10 +168,10 @@ class TilingTest(_MediaRootMixin, TestCase):
         self.assertEqual(panorama.error, "")
         self.assertEqual((panorama.width, panorama.height), (1024, 512))
         self.assertEqual([level["z"] for level in panorama.tile_levels], [0])
-        self.assertEqual(panorama.tile_levels[0]["cols"], 2)
-        self.assertEqual(panorama.tile_levels[0]["rows"], 1)
-        self.assertTrue(default_storage.exists(f"{panorama.tile_dir}/0/0/0.jpg"))
-        self.assertTrue(default_storage.exists(f"{panorama.tile_dir}/0/0/1.jpg"))
+        self.assertEqual(
+            panorama.tile_levels[0], {"z": 0, "width": 1024, "height": 512},
+        )
+        self.assertTrue(default_storage.exists(f"{panorama.tile_dir}/0.jpg"))
         self.assertTrue(default_storage.exists(panorama.preview_name))
         self.assertTrue(default_storage.exists(panorama.thumb_name))
 
@@ -181,23 +181,26 @@ class TilingTest(_MediaRootMixin, TestCase):
         )
         self.assertEqual([level["width"] for level in panorama.tile_levels], [1024, 2048])
         self.assertEqual([level["z"] for level in panorama.tile_levels], [0, 1])
-        self.assertEqual(panorama.tile_levels[1]["cols"], 4)
-        self.assertEqual(panorama.tile_levels[1]["rows"], 2)
+        # 每级一整幅层级图（EquirectGeometry 一层一图）：z=1 的整图必须真实落盘。
+        for z in (0, 1):
+            self.assertTrue(default_storage.exists(f"{panorama.tile_dir}/{z}.jpg"))
 
     def test_tile_url_template_shape(self):
         panorama = import_panorama(
             upload=_upload(_equirect_jpeg(1024, 512), "pano.jpg"), title="操场"
         )
-        self.assertEqual(
-            panorama.tile_url_template,
-            f"/media/{panorama.tile_dir}/{{z}}/{{y}}/{{x}}.jpg",
-        )
+        template = panorama.tile_url_template
+        self.assertEqual(template, f"/media/{panorama.tile_dir}/{{z}}.jpg")
+        # EquirectGeometry 每层一整幅图，模板只能有 {z}；混入 {y}/{x}（立方体贴图记法）
+        # 会被替换为空串 → `…/1//.jpg` 全量 404（2026-10 线上事故的回归守卫）。
+        self.assertNotIn("{y}", template)
+        self.assertNotIn("{x}", template)
 
     def test_delete_assets_purges_tiles(self):
         panorama = import_panorama(
             upload=_upload(_equirect_jpeg(1024, 512), "pano.jpg"), title="操场"
         )
-        tile_path = f"{panorama.tile_dir}/0/0/0.jpg"
+        tile_path = f"{panorama.tile_dir}/0.jpg"
         self.assertTrue(default_storage.exists(tile_path))
         panorama.delete()
         self.assertFalse(default_storage.exists(tile_path))
@@ -272,7 +275,10 @@ class PanoramaApiTest(_MediaRootMixin, TestCase):
         self.assertEqual(response.status_code, 201)
         body = response.json()
         self.assertEqual(body["status"], "ready")
-        self.assertIn("{z}/{y}/{x}.jpg", body["tile_url_template"])
+        self.assertIn("{z}.jpg", body["tile_url_template"])
+        self.assertNotIn("{y}", body["tile_url_template"])
+        # 网格时代的字段随修复下线：tile_size 不再出现在契约里。
+        self.assertNotIn("tile_size", body)
         self.assertEqual(len(body["tile_levels"]), 1)
 
         self.client.logout()
@@ -300,7 +306,7 @@ class PanoramaApiTest(_MediaRootMixin, TestCase):
         self.client.force_login(self.manager)
         created = self._create().json()
         panorama = Panorama.objects.get(pk=created["id"])
-        tile_path = f"{panorama.tile_dir}/0/0/0.jpg"
+        tile_path = f"{panorama.tile_dir}/0.jpg"
         self.assertTrue(default_storage.exists(tile_path))
 
         response = self.client.delete(f"/panorama/panoramas/{panorama.pk}/")
@@ -315,7 +321,7 @@ class PanoramaApiTest(_MediaRootMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         after = Panorama.objects.get(pk=created["id"]).tile_dir
         self.assertNotEqual(before, after)
-        self.assertFalse(default_storage.exists(f"{before}/0/0/0.jpg"))
+        self.assertFalse(default_storage.exists(f"{before}/0.jpg"))
 
 
 class ImportStaticPanoramasCommandTest(_MediaRootMixin, TestCase):

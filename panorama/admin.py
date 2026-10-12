@@ -21,7 +21,7 @@ class PanoramaAdmin(admin.ModelAdmin):
     readonly_fields = (
         "source", "source_name", "source_bytes", "width", "height",
         "projection", "origin", "device_model", "metadata", "capture_heading",
-        "tile_dir", "tile_levels", "tile_size", "preview_name", "thumb_name",
+        "tile_dir", "tile_levels", "preview_name", "thumb_name",
         "status", "error", "created_by", "created_at", "updated_at",
     )
     fieldsets = (
@@ -35,7 +35,7 @@ class PanoramaAdmin(admin.ModelAdmin):
         }),
         ("切片产物", {
             "fields": (
-                "status", "error", "tile_dir", "tile_levels", "tile_size",
+                "status", "error", "tile_dir", "tile_levels",
                 "preview_name", "thumb_name",
             ),
         }),

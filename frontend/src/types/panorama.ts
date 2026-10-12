@@ -10,14 +10,11 @@ export type PanoramaStatus = "processing" | "ready" | "failed";
 /** 来源：手动上传 / DJI 全景图导入 / 静态素材导入。 */
 export type PanoramaOrigin = "upload" | "dji" | "import";
 
-/** 一层瓦片（z=0 最小、越大越清晰）；与后端 `tile_levels` 单项同形。 */
+/** 一个层级（z=0 最小、越大越清晰；每级一整幅图）；与后端 `tile_levels` 单项同形。 */
 export interface PanoramaTileLevel {
   z: number;
   width: number;
   height: number;
-  cols: number;
-  rows: number;
-  tile_size: number;
 }
 
 /** 列表项（`GET /panorama/panoramas/`）。 */
@@ -48,9 +45,8 @@ export interface PanoramaDetail extends PanoramaListItem {
   initial_yaw: number;
   initial_pitch: number;
   initial_fov: number;
-  tile_size: number;
   tile_levels: PanoramaTileLevel[];
-  /** Marzipano 取片模板，含 `{z}/{y}/{x}` 占位符；未切片完成为 null。 */
+  /** Marzipano 取片模板，含 `{z}`（层级索引）占位符；未切片完成为 null。 */
   tile_url_template: string | null;
   /** 存档原图地址；仅持管理权限者可见，其余为 null。 */
   source_url: string | null;

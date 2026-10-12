@@ -1,12 +1,17 @@
-"""等距柱状全景图的瓦片金字塔生成（纯 Pillow，无外部二进制依赖）。
+"""等距柱状全景图的层级图生成（纯 Pillow，无外部二进制依赖）。
 
-产物布局（相对 MEDIA_ROOT，与 Marzipano ``EquirectGeometry`` 取片约定一致）：
+产物布局（相对 MEDIA_ROOT，**必须与 Marzipano ``EquirectGeometry`` 的取片模型一致**）：
 
-    panorama/tiles/<uuid>/<z>/<y>/<x>.jpg   瓦片，z=0 是最小层，512×512 一格
-    panorama/assets/*.jpg                   预览图（最小层整幅）与缩略图（列表用）
+    panorama/tiles/<uuid>/<z>.jpg   层级图，z=0 是最小层，每级一整幅等距柱状图
+    panorama/assets/*.jpg           预览图（最小层整幅）与缩略图（列表用）
 
-为什么切片：原静态全景页把 8MB 原图整张交给 WebGL，手机 GPU 纹理上限（4096 / 8192）
-直接超限 → 白屏或极慢。切片后首屏只需最小层两张瓦片（~90KB），细节层随视野按需补齐。
+为什么分层：原静态全景页把 8MB 原图整张交给 WebGL，手机 GPU 纹理上限（4096 / 8192）
+直接超限 → 白屏或极慢。分层后首屏只需最小层（~90KB），细节层随视野按需补齐。
+
+为什么每级是**一整幅**而不是 512px 网格：Marzipano 的 ``EquirectGeometry`` 以
+「一层一张等距柱状图」为取片单位（其 ``EquirectTile`` 只携带 ``z``），URL 模板
+只认 ``{z}`` 占位符；``{z}/{y}/{x}`` 网格是立方体贴图的记法，套在 equirect 上
+会让 ``{y}``/``{x}`` 替换为空串、全量 404（2026-10-12 修复——见 ADR-0022 修订）。
 """
 from __future__ import annotations
 
@@ -18,7 +23,6 @@ from PIL import Image
 
 # 层级宽度（2 的幂）。源图更宽时在切片阶段降采样到 MAX_LEVEL_WIDTH——原图仍完整存档。
 LEVEL_WIDTHS = (1024, 2048, 4096, 8192)
-TILE_SIZE = 512
 PREVIEW_WIDTH = 1024
 THUMB_WIDTH = 640
 JPEG_QUALITY = 82
@@ -47,12 +51,13 @@ def _resized(source: Image.Image, width: int) -> Image.Image:
     return source.resize((width, height), Image.LANCZOS)
 
 
-def build_tiles(rgb: Image.Image, tile_dir: str, *, tile_size: int = TILE_SIZE) -> list[dict]:
-    """切出全部层级，返回层级描述（写进 ``Panorama.tile_levels``）。
+def build_level_images(rgb: Image.Image, level_dir: str) -> list[dict]:
+    """生成全部层级的整幅层级图，返回层级描述（写进 ``Panorama.tile_levels``）。
 
-    逐级**减半**（从最大层往最小层走），每级只留一份位图在手，峰值内存可控。
-    返回形如 ``[{"z": 0, "width": 1024, "height": 512, "cols": 2, "rows": 1, ...}]``，
-    ``z`` 从 0（最小 / 最模糊）递增。
+    逐级**减半**（从最大层往最小层走），每级只留一份位图在手，峰值内存可控；
+    每级编码为 ``<level_dir>/<z>.jpg``——与 ``EquirectGeometry`` 一层一图的
+    取片单位对齐（取片模板只含 ``{z}``）。
+    返回形如 ``[{"z": 0, "width": 1024, "height": 512}, ...]``，``z`` 从 0（最小 / 最模糊）递增。
     """
     levels = plan_levels(rgb.width)
     records: list[dict] = []
@@ -65,28 +70,13 @@ def build_tiles(rgb: Image.Image, tile_dir: str, *, tile_size: int = TILE_SIZE) 
         else:
             level_image = _resized(level_image, target_width)
 
-        width, height = level_image.size
-        cols = max(1, -(-width // tile_size))
-        rows = max(1, -(-height // tile_size))
-        for y in range(rows):
-            for x in range(cols):
-                box = (
-                    x * tile_size,
-                    y * tile_size,
-                    min((x + 1) * tile_size, width),
-                    min((y + 1) * tile_size, height),
-                )
-                default_storage.save(
-                    f"{tile_dir}/{z}/{y}/{x}.jpg",
-                    ContentFile(_encode_jpeg(level_image.crop(box))),
-                )
+        default_storage.save(
+            f"{level_dir}/{z}.jpg", ContentFile(_encode_jpeg(level_image))
+        )
         records.append({
             "z": z,
-            "width": width,
-            "height": height,
-            "cols": cols,
-            "rows": rows,
-            "tile_size": tile_size,
+            "width": level_image.width,
+            "height": level_image.height,
         })
 
     records.reverse()

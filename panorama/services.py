@@ -6,7 +6,7 @@
 2. **zip 压缩包**——只作传输外壳：抽出包内最合适的那张图落进 media，**压缩包本身
    从不持久化**（解压完即丢弃），并防 zip-slip / zip bomb。
 
-切片是**同步**的（不引入队列与后台任务框架）：本项目部署规模下 8192×4096 全量切片
+切片是**同步**的（不引入队列与后台任务框架）：本项目部署规模下 8192×4096 全量分层
 约数秒，换来「失败如实回报、无悬挂状态」。切片失败不丢记录——置 ``status=failed``
 + ``error``，可经 ``POST /panorama/panoramas/{id}/reprocess/`` 或管理命令重来。
 """
@@ -36,9 +36,8 @@ from .dji import (
 from .models import Panorama, new_tile_dir
 from .tiling import (
     MAX_SOURCE_PIXELS,
-    TILE_SIZE,
+    build_level_images,
     build_preview_and_thumb,
-    build_tiles,
 )
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -248,7 +247,7 @@ def import_panorama(
 
 
 def process_panorama(panorama: Panorama) -> Panorama:
-    """（重新）切片：读存档原图 → 瓦片金字塔 + 预览 + 缩略图 → ``status=ready``。"""
+    """（重新）切片：读存档原图 → 多级层级图 + 预览 + 缩略图 → ``status=ready``。"""
     if not panorama.source:
         raise ValueError("该条目没有可用的原图")
 
@@ -257,12 +256,11 @@ def process_panorama(panorama: Panorama) -> Panorama:
         with Image.open(handle) as img:
             rgb = img.convert("RGB")
             tile_dir = new_tile_dir()
-            levels = build_tiles(rgb, tile_dir)
+            levels = build_level_images(rgb, tile_dir)
             preview_bytes, thumb_bytes = build_preview_and_thumb(rgb)
 
     panorama.tile_dir = tile_dir
     panorama.tile_levels = levels
-    panorama.tile_size = TILE_SIZE
     panorama.preview_name = default_storage.save(
         f"panorama/assets/preview-{uuid.uuid4().hex}.jpg", ContentFile(preview_bytes),
     )
@@ -272,7 +270,7 @@ def process_panorama(panorama: Panorama) -> Panorama:
     panorama.status = Panorama.STATUS_READY
     panorama.error = ""
     panorama.save(update_fields=[
-        "tile_dir", "tile_levels", "tile_size", "preview_name", "thumb_name",
+        "tile_dir", "tile_levels", "preview_name", "thumb_name",
         "status", "error", "updated_at",
     ])
     return panorama

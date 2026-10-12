@@ -1,11 +1,12 @@
-"""校园全景图：等距柱状原图 + 多级瓦片（切片产物落 media，浏览侧只吃瓦片）。
+"""校园全景图：等距柱状原图 + 多级层级图（切片产物落 media，浏览侧只吃层级图）。
 
 设计要点（见 docs/adr/0022-campus-panorama-library.md）：
 
 - ``source`` 原图仅作存档与重切片的输入，**永不出现在浏览路径上**——首屏只加载
-  预览图与当前视野的瓦片，把单个场景从 5~8MB 整图降到几百 KB；
-- 瓦片落 ``MEDIA_ROOT/panorama/tiles/<uuid>/<z>/<y>/<x>.jpg``，由 nginx 直供并长缓存；
-- 记录删除时连瓦片一起回收（``post_delete`` 信号 + ``delete_assets()``）。
+  预览图与当前视野的层级图，把单个场景从 5~8MB 整图降到几百 KB；
+- 层级图落 ``MEDIA_ROOT/panorama/tiles/<uuid>/<z>.jpg``（每级一整幅，Marzipano
+  ``EquirectGeometry`` 一层一图的取片单位），由 nginx 直供并长缓存；
+- 记录删除时连产物一起回收（``post_delete`` 信号 + ``delete_assets()``）。
 """
 import os
 import uuid
@@ -88,7 +89,6 @@ class Panorama(models.Model):
     # ── 切片产物（值均为相对 MEDIA_ROOT 的路径）──────────────────────────
     tile_dir = models.CharField("瓦片目录", max_length=160, blank=True, default="")
     tile_levels = models.JSONField("瓦片层级", default=list, blank=True)
-    tile_size = models.PositiveSmallIntegerField("瓦片边长", default=512)
     preview_name = models.CharField("预览图", max_length=255, blank=True, default="")
     thumb_name = models.CharField("缩略图", max_length=255, blank=True, default="")
 
@@ -135,10 +135,15 @@ class Panorama(models.Model):
 
     @property
     def tile_url_template(self) -> str | None:
-        """Marzipano 取片模板，``{z}`` / ``{y}`` / ``{x}`` 由前端替换。"""
+        """Marzipano 取片模板，``{z}`` 由前端按层级索引替换。
+
+        只含 ``{z}``：``EquirectGeometry`` 的每层是一整幅图（``EquirectTile``
+        仅携带 ``z``），``{y}`` / ``{x}`` 属立方体贴图的记法——写上会被替换为
+        空串（``…/1//.jpg``）导致全量 404（见 ADR-0022 修订）。
+        """
         if not self.tile_dir:
             return None
-        return f"{default_storage.url(self.tile_dir)}/{{z}}/{{y}}/{{x}}.jpg"
+        return f"{default_storage.url(self.tile_dir)}/{{z}}.jpg"
 
     def delete_assets(self) -> None:
         """回收瓦片目录 + 预览 / 缩略图，并就地清空对应字段值（幂等）。"""

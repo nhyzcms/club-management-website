@@ -37,13 +37,15 @@ async function makePanoramaJpeg(page: Page): Promise<Buffer> {
 }
 
 /**
- * 校园全景图冒烟：管理页导入 → 瓦片真能取到 → 浏览页能起来。
+ * 校园全景图冒烟：管理页导入 → 层级图真能取到 → 浏览页能起来且取片 URL 正确。
  *
  * 断言分层（避免把用例绑在不确定的东西上）：
  * 1. **确定性**：走 UI 导入一张图，然后直接按接口给的 `tile_url_template`
- *    把 z=0 的瓦片取一次，断言 200 且模板未被百分号转义 —— 不依赖 WebGL / 绘制。
+ *    把 z=0 的层级图取一次，断言 200 且模板未被百分号转义 —— 不依赖 WebGL / 绘制。
  * 2. **结构性**：浏览页能打开、标题正确、渲染器脚本能加载（`window.Marzipano`）。
- *    不断言「瓦片请求数 > 0」：headless 下有无 WebGL 会走不同舞台，不稳定。
+ * 3. **回归守卫**：查看器真实发出的取片必须 200，且 URL 不得含空路径段
+ *    （`…/1//.jpg` 即 2026-10 线上 404 的畸形形态：模板混入 `{y}/{x}` 被替换为空串）。
+ *    WebGL 不可用时走 CSS 舞台，同样会取图。
  *
  * 注意：全站是 hash 路由，页面地址必须写 `/#/...`；写成 `/panorama/...` 会被
  * Django 的 `panorama/` 路由接走（config/urls.py 已把该前缀从 SPA catch-all 排除）。
@@ -52,7 +54,7 @@ async function makePanoramaJpeg(page: Page): Promise<Buffer> {
  * E2E 每个 run 重建数据库，库内初始为空，导入的那张就是浏览页的唯一场景。
  */
 test.describe("校园全景图", () => {
-  test("导入后瓦片可访问（200），且取片模板未被百分号转义", async ({ page }) => {
+  test("导入后层级图可访问（200），且取片模板未被百分号转义", async ({ page }) => {
     // 本用例比其它 UI 用例重：传图 → 服务端同步切片。默认 30s 只是「点几下」的预算。
     test.setTimeout(90_000);
 
@@ -85,7 +87,7 @@ test.describe("校园全景图", () => {
       await expect(page.getByText(/已导入/)).toBeVisible({ timeout: 30_000 });
       await expect(page.locator(".pano-card-head strong")).toHaveText(title, { timeout: 10_000 });
 
-      // ── 2. 接口层：瓦片必须真能取到 200 ────────────────────────
+      // ── 2. 接口层：层级图必须真能取到 200 ──────────────────────
       const origin = new URL(page.url()).origin;
       const listed = await (await page.request.get(`${origin}/panorama/panoramas/`)).json();
       expect(listed.count, `列表：${JSON.stringify(listed).slice(0, 300)}`).toBeGreaterThan(0);
@@ -94,22 +96,31 @@ test.describe("校园全景图", () => {
       expect(detail.status, `切片状态：${detail.status} / ${detail.error}`).toBe("ready");
 
       const template: string = detail.tile_url_template;
-      // {z}/{y}/{x} 必须原样保留：build_absolute_uri 会把 { 转成 %7B，
-      // Marzipano 按字面量替换占位符 → 一旦转义，线上瓦片全 404。
-      expect(template, `取片模板被百分号转义：${template}`).toContain("{z}/{y}/{x}.jpg");
+      // {z} 必须原样保留：build_absolute_uri 会把 { 转成 %7B，
+      // Marzipano 按字面量替换占位符 → 一旦转义，线上取片全 404。
+      // 且模板只能有 {z}：EquirectGeometry 每层一整幅图，{y}/{x}（立方体贴图记法）
+      // 会被替换为空串 → `…/1//.jpg` 404（2026-10 线上事故；请求级回归守卫见第 3 步）。
+      expect(template, `取片模板被百分号转义：${template}`).toContain("{z}.jpg");
       expect(template).not.toContain("%7B");
+      expect(template).not.toContain("{y}");
+      expect(template).not.toContain("{x}");
 
-      const tileUrl = template.replace("{z}", "0").replace("{y}", "0").replace("{x}", "0");
+      const tileUrl = template.replace("{z}", "0");
       const tileRes = await page.request.get(tileUrl);
-      expect(tileRes.status(), `瓦片应 200：${tileUrl}`).toBe(200);
-      expect((await tileRes.body()).length, `瓦片不应为空：${tileUrl}`).toBeGreaterThan(0);
+      expect(tileRes.status(), `层级图应 200：${tileUrl}`).toBe(200);
+      expect((await tileRes.body()).length, `层级图不应为空：${tileUrl}`).toBeGreaterThan(0);
 
       // 预览图 / 缩略图同样要真的能取到
       for (const url of [detail.preview_url, detail.thumb_url]) {
         if (url) expect((await page.request.get(url)).status(), url).toBe(200);
       }
 
-      // ── 3. 浏览页能打开、标题正确、渲染器可加载 ──────────────────
+      // ── 3. 浏览页：打开、渲染器可加载、取片请求正确且成功（回归守卫）──
+      // waitForResponse 必须在 goto 前挂上：渲染器请求在页面加载后很快发出。
+      const tileResponse = page.waitForResponse(
+        (res) => res.url().includes("/media/panorama/tiles/"),
+        { timeout: 25_000 },
+      );
       await page.goto("/#/panorama");
       await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 15_000 });
       await expect(page.locator(".pano-stage")).toBeVisible();
@@ -118,6 +129,20 @@ test.describe("校园全景图", () => {
       await page.waitForFunction(() => Boolean((window as any).Marzipano), undefined, {
         timeout: 20_000,
       });
+
+      // 首条取片必须成功：旧病形态是 `…/<uuid>/1//.jpg` 404（{y}/{x} 被替换为空串）。
+      const firstTile = await tileResponse;
+      expect(firstTile.status(), `查看器首条取片：${firstTile.url()}`).toBe(200);
+
+      // 再给渲染器一点时间把首屏取片发完，然后断言：没有畸形 URL、没有失败响应。
+      await page.waitForTimeout(2500);
+      const malformed = watched.filter((w) => new URL(w.url).pathname.includes("//"));
+      expect(
+        malformed,
+        `查看器发出畸形取片 URL：${JSON.stringify(malformed.slice(0, 3))}`,
+      ).toEqual([]);
+      const failedTiles = watched.filter((w) => w.status >= 400);
+      expect(failedTiles, `取片失败：${JSON.stringify(failedTiles.slice(0, 3))}`).toEqual([]);
     } catch (err) {
       // 把现场带出 CI（标注可匿名读取，无需仓库日志权限）
       const text = await page.locator("body").innerText().catch(() => "");
