@@ -68,7 +68,7 @@
 | `exam_board` | 考试看板 | 批次 / 科目、误刊广播 | [API](../api/exam-board.md) |
 | `about` | 关于页 | 区块内容 | [API](../api/about.md) |
 | `attachments` | 统一附件与上传 | TUS、私有媒体 | [API](../api/attachments.md) |
-| `panorama` | 校园全景图库 | DJI 导入、瓦片切片、多级浏览 | [API](../api/panorama.md) · [ADR-0022](../adr/0022-campus-panorama-library.md) |
+| `panorama` | 校园全景图库 | DJI 导入、分层切片、多级浏览 | [API](../api/panorama.md) · [ADR-0022](../adr/0022-campus-panorama-library.md) |
 
 ## 横切机制
 

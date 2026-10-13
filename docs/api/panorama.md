@@ -29,7 +29,7 @@
 | POST | /panorama/panoramas/ | 登录 | `panorama.manage_panoramas` | 导入全景图（multipart：图片或 zip） |
 | GET | /panorama/panoramas/{id}/ | 公开 | — | 详情（含取片模板 / 层级表 / 初始视角） |
 | PUT / PATCH | /panorama/panoramas/{id}/ | 登录 | `panorama.manage_panoramas` | 改标题 / 描述 / 排序 / 公开 / 初始视角 |
-| DELETE | /panorama/panoramas/{id}/ | 登录 | `panorama.manage_panoramas` | 删除，连瓦片一起回收 |
+| DELETE | /panorama/panoramas/{id}/ | 登录 | `panorama.manage_panoramas` | 删除，连层级图一起回收 |
 | POST | /panorama/panoramas/{id}/reprocess/ | 登录 | `panorama.manage_panoramas` | 用存档原图重新切片 |
 
 **可见性**（读走「身份 + 可见性」，不门禁权限，[ADR-0005](../adr/0005-access-control-principle.md) 决策 8）：公开侧只返回 `is_published=true` **且** `status=ready` 的条目；持 `panorama.manage_panoramas` 者可见全部（含 `processing` / `failed`）。
@@ -176,7 +176,7 @@
 **认证**：登录；**权限**：`panorama.manage_panoramas`
 
 **可写字段**：`title` / `description` / `order` / `is_published` / `initial_yaw` / `initial_pitch` / `initial_fov`。
-其余字段（尺寸、元数据、瓦片产物、`status`、`origin`、`source_*`）均只读——它们由切片流水线写。
+其余字段（尺寸、元数据、切片产物、`status`、`origin`、`source_*`）均只读——它们由切片流水线写。
 
 `initial_*` 可写是故意的：DJI 素材的初始朝向已在服务端按 XMP 折算，若真机核对后发现偏了，管理者可直接改这三个值，**无需重传原图**。
 
@@ -187,7 +187,7 @@
 
 **认证**：登录；**权限**：`panorama.manage_panoramas`
 
-**响应 `204 No Content`**。级联回收磁盘产物：瓦片目录 + 预览图 + 缩略图（`post_delete` 信号，无定时任务）；原图同时删除。
+**响应 `204 No Content`**。级联回收磁盘产物：层级图目录 + 预览图 + 缩略图（`post_delete` 信号，无定时任务）；原图同时删除。
 
 ### 重新切片
 `POST /panorama/panoramas/{id}/reprocess/`
@@ -229,4 +229,4 @@ viewer.createScene({ source, geometry, view, pinFirstLevel: true });
 
 - **Django 后台**（`校园全景图 → 校园全景图`）：**不可新增**（后台表单不跑切片流水线），可查看全部字段并微调标题 / 描述 / 排序 / 公开 / 初始视角。上传入口在门户。
 - **既有静态素材导入**：`uv run python manage.py import_static_panoramas [--dry-run] [--force] [--source-dir ...]`——幂等（按原文件名 + 来源跳过）。
-- **nginx 侧**：瓦片与预览走 `/media/`，建议对 `/media/panorama/` 下 `Cache-Control: public, max-age=31536000, immutable`；`client_max_body_size` 不得低于站点「同步上传单文件上限」。
+- **nginx 侧**：层级图与预览走 `/media/`，建议对 `/media/panorama/` 下 `Cache-Control: public, max-age=31536000, immutable`；`client_max_body_size` 不得低于站点「同步上传单文件上限」。

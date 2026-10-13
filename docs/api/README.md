@@ -93,7 +93,7 @@
 | 招聘与加入 | [recruitment](recruitment.md) | 招生公告与加入流程 |
 | 考试看板 | [exam-board](exam-board.md) | 批次 / 科目 / 误刊广播 |
 | 关于页 | [about](about.md) | 关于页区块内容 |
-| 校园全景图 | [panorama](panorama.md) | 全景图库、DJI 导入、瓦片取片 |
+| 校园全景图 | [panorama](panorama.md) | 全景图库、DJI 导入、分层取片 |
 | 附件与上传 | [attachments](attachments.md) | 统一附件模型 + TUS 断点续传 |
 | 公共 | [common](common.md) | 站点策略等公共接口 |
 

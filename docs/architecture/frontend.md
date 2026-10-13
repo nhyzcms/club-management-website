@@ -122,7 +122,7 @@ frontend/
 | `/m/join/form` | `MobileJoinFormPage` |  | 手机版加入问卷 |
 | `/m/me` | `MobileMePage` |  | 手机版「我的」 |
 | `/about` | `AboutPage` |  | 关于我们 |
-| `/panorama` | `PanoramaPage` |  | 校园全景浏览（`?id=N` 选场景；Marzipano 多级瓦片 + 首层常驻） |
+| `/panorama` | `PanoramaPage` |  | 校园全景浏览（`?id=N` 选场景；Marzipano 多级层级图 + 首层常驻） |
 | `/panorama/manage` | `PanoramaManagePage` | ✅ | 全景图管理（导入 / 编辑 / 重切 / 删除），需 `can_manage_panoramas` |
 | `/news` | `NewsListPage` |  | 新闻列表 |
 | `/news/new` | `NewsFormPage` | ✅ | 新建/编辑共用表单 |
@@ -299,7 +299,7 @@ Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?emb
 
 - **SurveyJS 全家桶**（survey-core / survey-react-ui / survey-creator-core / survey-creator-react / survey-analytics + chart.js）：SPA 内 `SurveyFill`（填写，`utils/survey.ts` 统一响应式宽度与 `onComplete` 接后端，`utils/surveyLocale.ts` 中文 locale）、`SurveyCreatorPage`（编辑器，`saveSurveyFunc` 直连后端保存）、`SurveyResponsesPage` / `SurveyStatsPage`（答复与 analytics 仪表盘）。构建时另将未哈希 min 文件拷到 `static/surveyjs/` 与 `dist/surveyjs/`，专供 Django admin 的问卷编辑器/结果页模板使用——升级 survey-* 后必须重跑 `npm run copy-surveyjs`。
 - **看板娘（Live2D）**：`vendor/live2d/`（runtime + widget + 模型 + `catalog.json`）构建时拷到 `/static/live2d/`，运行时经 `l2d` npm 包渲染 Cubism 2/6 模型。`MascotHost` 分三态：`widget`（完整挂件，独立懒加载 chunk `mascot/loadWidget`）/ `chip`（「看板娘」小按钮）/ `none`（窄屏 ≤1024px、系统 `prefers-reduced-motion`、考试看板且关闭偏好）。开关存 localStorage（`mascot.enabled`）；考试看板经 `examBoard/prefs.ts` 与 `mascot/speak.ts` 让看板娘播报考试提示与倒计时语音。
-- **Marzipano（校园全景）**：**不是 npm 依赖**——它是服务端瓦片方案（[ADR-0022](../adr/0022-campus-panorama-library.md)）的渲染端，运行时由 `utils/marzipano.ts::loadMarzipano()` 从自托管静态资源 `/static/panorama/marzipano.js` 注入脚本（幂等、失败可重试、不发任何第三方请求）。该文件与旧静态全景页共用，并已被 `scripts/pack-release.sh` 与 `scripts/check_panorama_static.py` 纳入发布完整性校验；**退役 `static/panorama/` 前必须先把 `marzipano.js` 迁到新位置并同步 `constants.ts::PANORAMA_RENDERER_URL`**。
+- **Marzipano（校园全景）**：**不是 npm 依赖**——它是服务端多级分层方案（[ADR-0022](../adr/0022-campus-panorama-library.md)）的渲染端，运行时由 `utils/marzipano.ts::loadMarzipano()` 从自托管静态资源 `/static/panorama/marzipano.js` 注入脚本（幂等、失败可重试、不发任何第三方请求）。该文件与旧静态全景页共用，并已被 `scripts/pack-release.sh` 与 `scripts/check_panorama_static.py` 纳入发布完整性校验；**退役 `static/panorama/` 前必须先把 `marzipano.js` 迁到新位置并同步 `constants.ts::PANORAMA_RENDERER_URL`**。
 - **Cloudflare Turnstile**：`turnstile.ts` 在注册/找回密码/重发验证邮件/匿名反馈处按需注入脚本（未启用时零请求）；`turnstile_enabled` 与 sitekey 由 `/site-policy/` 下发，`useTurnstile` 负责渲染、重置与卸载组件。
 - **富文本**：Tiptap 3 编辑器（`RichTextEditor.tsx`），自定义原子节点 `rte/VideoNode.ts`（本地上传视频）与 `rte/IframeNode.ts`（仅 https iframe 嵌入，sandbox 属性与后端 `common/rich_text.py` 保持一致）；`utils/iframeEmbed.ts` 解析用户粘贴的 embed HTML（仅取首个 iframe 的 src/title，安全边界仍在服务端 sanitize）。工具栏扩展高亮 / 文字颜色 / 对齐 / 上下标 / 字数统计与选区气泡菜单、空行浮动菜单；新闻编辑页（`NewsFormPage`）为文档式布局，编辑内容自动保存至服务端草稿区（已发布稿存 `draft_*`，未发布稿直写正文；读写弃均须 `news.manage_news`），详情页提供「编辑 / 继续编辑」入口。
 - **文档处理**：`DocxPreview`（docx-preview 保真渲染 Word 原件）与 mammoth（Word 导入转富文本）。
@@ -323,7 +323,7 @@ Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?emb
 
 - 前端测试：单元 / 组件测试用 Vitest + React Testing Library（测试文件在 `src/**/__tests__/*.test.ts(x)`，`cd frontend && npm test`）；浏览器 E2E 用 Playwright（chromium，用例在 `frontend/e2e/`，`cd frontend && npx playwright test` 自动起独立测试库与服务）。自动化关口另有构建断言脚本（`assert-*-dist.js`）与 TypeScript 编译；页面质量仍依赖逐页预览与人工验收。
 - `user.permissions` 与 `available_actions` 等能力投影是 **UI 预判**，不是安全边界：任何被隐藏的操作在后端仍会做权限校验（403 已由类型化错误统一接住）。
-- **全景浏览页依赖自托管渲染器**：Marzipano 走 `/static/panorama/marzipano.js`（非 npm 包），故「静态资源缺失 / 改名」会让全景页报「全景渲染器加载失败」；两者必须同步变更（见「静态资源与第三方库」）。全景瓦片走 `/media/panorama/...`，开发态由 `devServer.proxy` 的 `/media` 代理覆盖。
+- **全景浏览页依赖自托管渲染器**：Marzipano 走 `/static/panorama/marzipano.js`（非 npm 包），故「静态资源缺失 / 改名」会让全景页报「全景渲染器加载失败」；两者必须同步变更（见「静态资源与第三方库」）。全景层级图走 `/media/panorama/...`，开发态由 `devServer.proxy` 的 `/media` 代理覆盖。
 - 移动版是独立布局站点：`/m` 页面与桌面页面**不共享**同一组件实现（共享的只有 `api/`、`types/`、`utils/`），桌面端的改动不会自动出现在手机版，反之亦然。
 - 路由采用 hash 模式（`/#/...`）的代价：URL 中可见 `#`、SEO 不友好、`?embed=1` 等查询参数必须写在 `#` 之后；换来的是 Django 端无需任何 rewrite 配置即可服务 SPA。
 - 开发态依赖 `devServer.proxy` 的前缀清单与后端 `config/urls.py` 双向保持同步；新增 API 前缀时两处都要登记。
