@@ -57,7 +57,20 @@ npx playwright test                        # Browser E2E: auto-starts Django (:8
 
 详见 `docs/adr/0005-access-control-principle.md`。
 
-## Agent skills
+## 工具链与改动流程（助手 / 新人必读）
+
+- **写入与推送的载荷上限已解除**（2026-10-14 实测，见 `nhyzcms/app` 的 `docs/ENGINEERING-ENV.md`）：
+  2 MiB 二进制文件可以**一次 `git push`** 落地；单次写入调用可以生成 1.1 万+ 字符的文档且逐字节无损。
+  → 大文件、长文档**直接整文件写、直接推**；**不要**再为了体积拆片，**不要**再使用"补丁分片 + 一次性工作流"之类的临时通道。
+- **改动一律走分支 + PR**（`feature/…` / `fix/…` / `docs/…`），不要直推 `main`；PR 被合并后若还要继续改，**另开分支/PR**。
+- **不要在生产服务器上跑测试或构建**：该机为 **2 核 / 2 GB 内存 / 3 MB 带宽**，跑测试会拖垮在线服务。
+  测试交 CI（四个作业：backend / frontend / frontend-test / e2e）；需要本机验证时用 SQLite 跑 `manage.py test`。
+  生产应用目录 `/opt/club` 是**发布包解压目录、不是 git 仓库**，不要在它上面切分支。
+- **前端无法在服务器构建**：本机与生产服务器都**没有 node/npm**，`npm run build` 只能在 CI 或你自己的机器上跑；
+  改前端后不重建 `frontend/dist`，线上不会生效。
+- **数据库迁移**：新增 `Meta.permissions` 等模型选项时**必须**同时生成 `AlterModelOptions` 迁移，
+  否则权限不落库（历史踩坑）。
+- **推送后自检**：CI 状态 + 关键接口/页面人工确认；涉及前端构建的改动，确认 `frontend/dist` 真的重建了。
 
 ### Issue tracker
 

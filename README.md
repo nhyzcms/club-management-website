@@ -94,6 +94,7 @@ club-management-website/
 ## 5. 文档导航
 
 - 完整文档索引：[`docs/README.md`](docs/README.md)
+- 协作者 / AI 助手指引：[`CLAUDE.md`](CLAUDE.md)（改动流程、环境限制、工具链）
 - 快速开始：[`docs/getting-started.md`](docs/getting-started.md) · 配置参考：[`docs/configuration.md`](docs/configuration.md)
 - API 参考：[`docs/api/README.md`](docs/api/README.md)（各模块分册见 `docs/api/`）
 - 架构：[`docs/architecture/overview.md`](docs/architecture/overview.md) · [`docs/architecture/frontend.md`](docs/architecture/frontend.md)
@@ -145,6 +146,11 @@ sudo ./scripts/install.sh                # 一键部署生产环境
 - 如果你需要给别人上手使用，优先为管理员配一份后台操作手册和一份运维手册，避免直接让运维/运营人员碰源码。
 - 日常更新走 GitHub Release + 更新守护进程（或 `scripts/updater.py --apply-now`），不要在生产机 `git pull` 再手工构建。
 - 代码需保持 DRF API 与前端能力一致，改动接口时同步更新文档和前端调用逻辑。
+- **协作者 / AI 助手请先读 [`CLAUDE.md`](CLAUDE.md)**：里面写了改动流程（分支 + PR）、
+  环境限制（生产机 2 核 2 GB，**不要在生产服务器跑测试或构建**、前端无法在服务器构建），
+  以及"写入与推送的载荷上限已解除（大文件/长文档不必再拆片）"这条工具链事实。
+- **不要在生产服务器上跑测试或构建**：生产机只有 2 核 / 2 GB 内存 / 3 MB 带宽，
+  测试与构建一律交 CI（`backend` / `frontend` / `frontend-test` / `e2e` 四个作业）。
 
 如果你是第一次接手这个项目，建议先读：
 
