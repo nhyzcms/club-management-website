@@ -320,14 +320,22 @@ LOGIN_URL = "/login/"
 # verify-email email). Override via the FRONTEND_URL env var in production.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
+# ── 数据根 ──────────────────────────────────────────────────────────────
+# 统一存放持久数据（媒体等；结构与章程见 docs/operations/data-root.md）。
+# CLUB_DATA_DIR 可配置为任意路径（换盘 / 换位置只改这一处；相对值按安装目录锚定）。
+# 缺省 = 安装目录本身 —— 未配置时维持历史布局（<BASE_DIR>/media 等），行为零变化。
+DATA_DIR = Path(os.environ.get("CLUB_DATA_DIR") or BASE_DIR)
+if not DATA_DIR.is_absolute():
+    DATA_DIR = BASE_DIR / DATA_DIR
+
 # Media files (公开用户上传：头像等)
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = DATA_DIR / "media"
 
 # 私有媒体（身份证明等审计留底）：绝不经公开 MEDIA_URL 暴露，由带鉴权的视图服务。
 # 注意：DEBUG 下 config/urls.py 会用 static(MEDIA_URL) 公开服务整个 MEDIA_ROOT，
 # 故私有存储必须落在 MEDIA_ROOT 之外（见 #31 / ADR 0002）。
-PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
+PRIVATE_MEDIA_ROOT = DATA_DIR / "private_media"
 
 # ---- Cloudflare Turnstile（人机校验，自助注册用）----
 # 两项都空 → 功能关闭。都配了才启用：sitekey 经 GET /site-policy/ 下发，secret 只留进程内。

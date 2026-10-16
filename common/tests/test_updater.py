@@ -199,6 +199,9 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
         (self.root / "media" / "photo.jpg").write_text("pic", encoding="utf-8")
         (self.root / "private_media").mkdir()
         (self.root / "private_media" / "id.png").write_text("id", encoding="utf-8")
+        (self.root / "data").mkdir()
+        (self.root / "data" / "media").mkdir()
+        (self.root / "data" / "media" / "photo.jpg").write_text("pic", encoding="utf-8")
         (self.root / "run").mkdir(exist_ok=True)
         (self.root / "run" / "gunicorn.sock").write_text("sock", encoding="utf-8")
         (self.root / "backups").mkdir(exist_ok=True)
@@ -278,6 +281,9 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
         self.assertEqual(
             (self.root / "private_media" / "id.png").read_text(encoding="utf-8"), "id"
         )
+        self.assertEqual(
+            (self.root / "data" / "media" / "photo.jpg").read_text(encoding="utf-8"), "pic"
+        )
         self.assertTrue((self.root / "run" / "gunicorn.sock").exists())
         self.assertTrue((self.root / "backups" / "keep.txt").exists())
         self.assertTrue((self.root / ".venv" / "pyvenv.cfg").exists())
@@ -289,6 +295,7 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
             "db.sqlite3",
             "media",
             "private_media",
+            "data",
             "run",
             "backups",
             ".venv",

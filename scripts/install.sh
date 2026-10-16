@@ -299,6 +299,7 @@ server {
         alias $DIR/staticfiles/;
         expires 7d;
     }
+    # 统一数据根（docs/operations/data-root.md）：采用 data/ 布局时改为 alias $DIR/data/media/;
     location /media/ {
         alias $DIR/media/;
         expires 7d;
