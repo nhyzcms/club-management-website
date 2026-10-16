@@ -66,6 +66,9 @@ RELEASE_TAG_PREFIX = "club-"
 
 # Live-tree names that must never be replaced or deleted by a release unpack.
 # ``.git`` is extra to the plan's list: a clone-based install still has one.
+# ``data`` is the unified data root (media / private_media staged inside it;
+# see docs/operations/data-root.md); the flat ``media`` / ``private_media``
+# entries stay as defence for pre-migration layouts and rollback windows.
 SYNC_EXCLUDES = frozenset(
     {
         ".env",
@@ -75,6 +78,7 @@ SYNC_EXCLUDES = frozenset(
         "db.sqlite3-shm",
         "media",
         "private_media",
+        "data",
         "run",
         "backups",
         ".venv",

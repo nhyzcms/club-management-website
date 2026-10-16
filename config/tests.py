@@ -54,6 +54,13 @@ class SettingsHygieneTest(TestCase):
         self.assertNotEqual(private, media.parent)  # 不能恰好是 media 的父目录
         self.assertFalse(private.is_relative_to(media))
 
+    def test_media_roots_derive_from_data_dir(self):
+        # 统一数据根：媒体路径全部派生自 DATA_DIR（CLUB_DATA_DIR 可配置；见 docs/operations/data-root.md）。
+        self.assertEqual(Path(settings.MEDIA_ROOT), Path(settings.DATA_DIR) / "media")
+        self.assertEqual(
+            Path(settings.PRIVATE_MEDIA_ROOT), Path(settings.DATA_DIR) / "private_media"
+        )
+
     def test_email_backend_helper(self):
         from config import settings as cfg
 
@@ -109,5 +116,6 @@ class SettingsHygieneTest(TestCase):
             "TURNSTILE_SECRET_KEY",
             "UPDATE_GITHUB_TOKEN",
             "UPDATE_GITHUB_REPO",
+            "CLUB_DATA_DIR",
         ):
             self.assertIn(key, text, f".env.example 缺少 {key}")

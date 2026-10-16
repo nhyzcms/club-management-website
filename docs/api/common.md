@@ -137,7 +137,7 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 
 - **预取**：下载 `club-{sha}.tar.gz` + `.sha256` 到 `backups/releases/`，支持断点续传（HTTP Range）、校验失败重下、最多 8 次指数退避重试；未完成的 `.part` 绝不参与应用。
 - **应用条件**：`auto_update_enabled=true` 且处于应用窗口 `[update_window_start_hour, update_window_end_hour)`、距窗口结束还有 `update_apply_cutoff_minutes_before_end` 分钟以上；手动 `--apply-now` 跳过窗口判断。
-- **应用流程**：写维护旗标 → 备份数据库快照（SQLite `backups/db-{时间戳}.sqlite3` / PostgreSQL `db-{时间戳}.pg.sql`，按 `update_db_backup_keep` 裁剪）→ 解包到临时 staging → 替换代码树（`.env` / `db.sqlite3` / `media` / `private_media` / `run` / `backups` / `.venv` 等排除在外）→ `uv sync --frozen` → `migrate` → `collectstatic` → 重载服务并健康检查；成功后记 `run/applied-release`、按 `update_release_keep` 裁剪发行包。
+- **应用流程**：写维护旗标 → 备份数据库快照（SQLite `backups/db-{时间戳}.sqlite3` / PostgreSQL `db-{时间戳}.pg.sql`，按 `update_db_backup_keep` 裁剪）→ 解包到临时 staging → 替换代码树（`.env` / `db.sqlite3` / `media` / `private_media` / `data` / `run` / `backups` / `.venv` 等排除在外）→ `uv sync --frozen` → `migrate` → `collectstatic` → 重载服务并健康检查；成功后记 `run/applied-release`、按 `update_release_keep` 裁剪发行包。
 - **失败处理**：任一步失败或窗口关闭 → 自动回滚（恢复上一发行包代码树 + 应用前的数据库快照 + 重载），回滚后服务不健康则保留维护页。
 - 手动回滚（`--rollback`，可指定 SHA / tag / 本地包）：只换代码树、**不动站点数据**——与应用失败时的回滚（含 DB 快照恢复）不同。
 

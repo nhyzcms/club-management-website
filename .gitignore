@@ -63,6 +63,8 @@ db.sqlite3-journal
 # 用户上传：公开媒体（头像等）与私有媒体（身份证明等审计留底）均不入库
 media/
 private_media/
+# 统一数据根（docs/operations/data-root.md）：CLUB_DATA_DIR 指向仓库内时同样不入库
+data/
 # 生产运行期产物：gunicorn unix socket 目录、updater 的 DB 快照与 Release 包
 run/
 backups/

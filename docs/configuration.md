@@ -31,6 +31,7 @@
 | `GUNICORN_WORKERS` | ASGI worker 进程数 | 否 | `1`；**只有配了 `REDIS_URL` 才允许 >1** |
 | `NOTIFICATIONS_DELIVERY_ASYNC` | 通知外发投递模式：默认异步（进程内队列 + 守护线程；失败退避自动重试）；`=0` 回退旧同步投递 | 否 | 留空 = 异步（默认）。示例 `NOTIFICATIONS_DELIVERY_ASYNC=0` |
 | `CLUB_UPDATER_PROXY` / `CLUB_UPDATER_NO_PROXY` | 更新器出站代理（只注入更新守护进程，加速 GitHub API/Release 下载） | 否 | 空 = 不注入；示例 `CLUB_UPDATER_PROXY=http://127.0.0.1:7891` |
+| `CLUB_DATA_DIR` | 统一数据根：媒体等持久数据的存放位置（`MEDIA_ROOT` / `PRIVATE_MEDIA_ROOT` 由它派生） | 否 | 空 = 安装目录（历史布局，行为不变）；示例 `<安装目录>/data`。见[统一数据根](../operations/data-root.md) |
 
 注意事项：
 
@@ -39,6 +40,7 @@
 - 模板里 `SECRET_KEY=` 是**空字符串**，而 `os.environ.get` 会把「键存在但为空」当成已设置——`config/settings.py::_secret_key()` 专门处理这种情况：空 / 纯空白视为未设置，DEBUG 下回退占位、生产直接报错。`config/tests.py::SettingsHygieneTest` 有对应断言。
 - `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` 也支持 `GITHUB_TOKEN` / `GITHUB_REPO` 作为 `install.sh` 的入参别名。
 - 新增的 `DB_*` / `REDIS_URL` / `GUNICORN_WORKERS` 遵守「缺省中性」：全部留空时行为与 v1 完全一致，开与关只动 `.env`（见 [ADR-0021](adr/0021-postgresql-redis-and-multiworker.md)）。
+- `CLUB_DATA_DIR` 同样「缺省中性」：缺省 = 安装目录 → 历史布局；媒体路径全部由它派生，启用统一数据根（或换盘 / 换位置）只需改这一个键。
 
 ### 其他环境变量（不在 `.env.example`，代码中真实读取）
 
@@ -118,8 +120,9 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `STATIC_URL` | `static/` | |
 | `STATIC_ROOT` | `BASE_DIR / "staticfiles"` | `collectstatic` 输出（生产由 nginx 服务） |
 | `STATICFILES_DIRS` | `[frontend/dist, static]` 中**存在**的目录 | `frontend/dist` 是 webpack 产物（gitignored）；目录缺失时自动跳过，保证全新 clone 跑测试不触发 `staticfiles.W004` |
-| `MEDIA_URL` / `MEDIA_ROOT` | `/media/` / `BASE_DIR / "media"` | 公开用户上传（头像等）。注意 DEBUG 下 `config/urls.py` 会用 `static(MEDIA_URL)` 公开服务整个 `MEDIA_ROOT` |
-| `PRIVATE_MEDIA_ROOT` | `BASE_DIR / "private_media"` | 私有媒体（身份证明等审计留底），**必须落在 `MEDIA_ROOT` 之外**，由带鉴权的视图服务；有测试断言其隔离性 |
+| `DATA_DIR` | `CLUB_DATA_DIR` 环境变量；缺省 `BASE_DIR`，相对值按 `BASE_DIR` 锚定 | 统一数据根（见[统一数据根](../operations/data-root.md)）；下列媒体路径全部由它派生 |
+| `MEDIA_URL` / `MEDIA_ROOT` | `/media/` / `DATA_DIR / "media"` | 公开用户上传（头像等）。注意 DEBUG 下 `config/urls.py` 会用 `static(MEDIA_URL)` 公开服务整个 `MEDIA_ROOT` |
+| `PRIVATE_MEDIA_ROOT` | `DATA_DIR / "private_media"` | 私有媒体（身份证明等审计留底），**必须落在 `MEDIA_ROOT` 之外**，由带鉴权的视图服务；有测试断言其隔离性 |
 
 ### 2.5 CORS / CSRF
 
@@ -253,4 +256,4 @@ CI 另外断言 `frontend/dist/surveyjs/survey.core.min.js` 存在（`.github/wo
 | CORS 来源、DRF 全局配置、中间件、分页大小 | `config/settings.py` | 改代码 + 重启 |
 | 前端构建行为 | `frontend/webpack.config.js` / `package.json` / `tsconfig.json` | 重新 `npm run build` |
 
-`config/tests.py::SettingsHygieneTest` 钉住了若干结构不变量：限流额度不得回到 `REST_FRAMEWORK`、`NUM_PROXIES == 1`、私有媒体与公开 `MEDIA_ROOT` 隔离、邮件后端选择函数的分支、`.env.example` 必须入库且含全部必要键。改动上述配置时这些测试会给出反馈。
+`config/tests.py::SettingsHygieneTest` 钉住了若干结构不变量：限流额度不得回到 `REST_FRAMEWORK`、`NUM_PROXIES == 1`、私有媒体与公开 `MEDIA_ROOT` 隔离、媒体路径统一派生自 `DATA_DIR`、邮件后端选择函数的分支、`.env.example` 必须入库且含全部必要键。改动上述配置时这些测试会给出反馈。

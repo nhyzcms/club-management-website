@@ -2,7 +2,7 @@
 
 生产环境是 **Nginx + Gunicorn（ASGI / `UvicornWorker`）+ systemd**，Django 直接托管 React 构建产物。数据库缺省 SQLite 单文件，可切 PostgreSQL；ASGI worker 缺省 1，配置 Redis 频道层后可由 `GUNICORN_WORKERS` 提高（[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)）。本文覆盖安装、更新、回滚、备份与排障。
 
-> 相关：[ADR-0015](../adr/0015-channels-without-redis.md)（缺省单 worker · 内存通道层）、[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)（PostgreSQL / Redis / 多 worker）、[快速开始](../getting-started.md)（本地开发）、[配置参考](../configuration.md)（环境变量与站点策略逐项说明）
+> 相关：[ADR-0015](../adr/0015-channels-without-redis.md)（缺省单 worker · 内存通道层）、[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)（PostgreSQL / Redis / 多 worker）、[统一数据根](data-root.md)（数据目录结构与换根）、[快速开始](../getting-started.md)（本地开发）、[配置参考](../configuration.md)（环境变量与站点策略逐项说明）
 
 ## 1. 运行架构
 
@@ -91,6 +91,8 @@ server {
 }
 ```
 
+> 采用统一数据根（`data/` 布局）的机器：`/media/` 与 `/app-update/` 的 `alias` 以 `<安装目录>/data/` 前缀为准——初始化与换根操作见[统一数据根](data-root.md)。
+
 已上 HTTPS 的机器：**更新器不会改 Nginx**。需要在 443 的 `server` 里补同一套反代头、`server_tokens off` 与 HSTS，改完 `nginx -t && systemctl reload nginx`：
 
 ```nginx
@@ -150,7 +152,7 @@ server {
 | 数据库 | 缺省 SQLite（`db.sqlite3`）；可选 PostgreSQL 17+ | PostgreSQL 由 `DB_ENGINE=postgresql` 启用（只监听 `127.0.0.1`）；留空即 v1 行为（[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)） |
 | 缓存 / 频道层 | 缺省无；可选 Redis 6+ | 配 `REDIS_URL` 同时供缓存与 Channels 跨进程扇出；多 worker 前置条件 |
 | 其他 | nginx、curl、tar、gzip、git、sqlite3、编译链 | 由 `install.sh` 按包管理器安装；`--skip-deps` 可跳过 |
-| 磁盘 | 预留 `backups/` 空间 | 发行包（默认保留 3 份）+ DB 快照（默认保留 5 份）+ media |
+| 磁盘 | 预留 `backups/` 空间 | 发行包（默认保留 3 份）+ DB 快照（默认保留 5 份）+ 数据根（媒体等） |
 
 端口与网络：Gunicorn 只监听 unix socket（`run/gunicorn.sock`），对外仅 Nginx 的 80/443。生产不需要开放其他端口。
 
@@ -315,7 +317,7 @@ sudo systemctl reload nginx
 
 - **轮询**：按站点策略 `update_poll_interval_seconds`（默认 900 秒）查 GitHub Release，下载 `club-<sha>.tar.gz` + `.sha256` 到 `backups/releases/`，支持 HTTP Range 断点续传、校验失败重下、最多 8 次指数退避重试；未完成的 `.part` 绝不参与应用。首次启动还会预取当前 `run/applied-release` 对应包，作为回滚保险。
 - **应用窗口**：`auto_update_enabled` 为真、当前处于 `[update_window_start_hour, update_window_end_hour)`（`update_timezone`，默认 `Asia/Shanghai` 01:00–03:00）、且距窗口结束还有 `update_apply_cutoff_minutes_before_end`（默认 30）分钟以上，才会开始应用。
-- **应用步骤**：写维护旗标（`drain` 拦截访问）→ 备份数据库（SQLite `.backup` 或 PostgreSQL `pg_dump --clean`，写到 `backups/db-<时间戳>.sqlite3` / `.pg.sql`，按 `update_db_backup_keep` 裁剪）→ 解包到 `backups/staging-*` → 替换代码树（`.env`、`db.sqlite3*`、`media`、`private_media`、`run`、`backups`、`.venv`、`.git` 一律排除）→ `uv sync --frozen` → `migrate` → `collectstatic` → 重载服务并健康检查（`systemctl is-active`）。
+- **应用步骤**：写维护旗标（`drain` 拦截访问）→ 备份数据库（SQLite `.backup` 或 PostgreSQL `pg_dump --clean`，写到 `backups/db-<时间戳>.sqlite3` / `.pg.sql`，按 `update_db_backup_keep` 裁剪）→ 解包到 `backups/staging-*` → 替换代码树（`.env`、`db.sqlite3*`、`media`、`private_media`、`data`、`run`、`backups`、`.venv`、`.git` 一律排除）→ `uv sync --frozen` → `migrate` → `collectstatic` → 重载服务并健康检查（`systemctl is-active`）。
 - **成功后**：写 `run/applied-release`，按 `update_release_keep` 裁剪旧包，撤下维护页。
 - **失败 / 窗口关闭**：自动回滚——恢复上一发行包代码树 + 应用前的 DB 快照 + 重载；若回滚后服务不健康，保留维护页。
 
@@ -387,12 +389,15 @@ cat /opt/club/run/applied-release
 |---|---|---|
 | 数据库（SQLite） | `<安装目录>/db.sqlite3` | 缺省部署的全部业务数据 |
 | 数据库（PostgreSQL） | 本机 `club` 库（与站点同机） | `DB_ENGINE=postgresql` 时的全部业务数据 |
-| 公开媒体 | `<安装目录>/media/` | 头像、新闻封面、活动图片、教程、附件、考试误刊等 |
-| 私有媒体 | `<安装目录>/private_media/` | 身份证明（`IdentityProof`），**不在** `MEDIA_ROOT` 内，由鉴权视图服务 |
+| 公开媒体 | `<数据根>/media/` | 头像、新闻封面、活动图片、教程、附件、考试误刊等 |
+| 私有媒体 | `<数据根>/private_media/` | 身份证明（`IdentityProof`），**不在** `MEDIA_ROOT` 内，由鉴权视图服务 |
+| App 分发 | `<数据根>/app-update/` | App 更新产物（manifest.json / latest.apk），nginx `/app-update/` 只读服务 |
 | 发行包 | `<安装目录>/backups/releases/` | 更新器缓存，也是回滚依据 |
 | DB 快照 | `<安装目录>/backups/db-*.sqlite3`（或 `db-*.pg.sql`） | 更新器每次应用前自动生成（按引擎分派） |
 
-更新器**不会**碰 `media` / `private_media` / `backups`（在同步排除清单里），因此这两处需要自行备份。
+> 数据根（`<数据根>`）：缺省 = 安装目录本身；启用统一数据根后为 `<安装目录>/data`（见[统一数据根](data-root.md)）。
+
+更新器**不会**碰 `data` / `media` / `private_media` / `backups`（在同步排除清单里，见[统一数据根](data-root.md)），因此这些数据需要自行备份。
 
 ### 7.2 手动备份
 
@@ -401,7 +406,7 @@ SQLite 用 `.backup` 而不是 `cp`（运行中的库可能有未落盘事务）
 ```bash
 cd /opt/club
 sqlite3 db.sqlite3 ".backup '/opt/club/backups/db-manual-$(date +%Y%m%d-%H%M%S).sqlite3'"
-tar -czf backups/media-$(date +%Y%m%d).tar.gz media private_media
+tar -czf backups/data-$(date +%Y%m%d).tar.gz data/media data/private_media   # 未启用数据根的旧布局：去掉 data/ 前缀
 ```
 
 PostgreSQL 用 `pg_dump`（普通 SQL 格式，可直接 `psql -f` 还原）：
@@ -410,7 +415,7 @@ PostgreSQL 用 `pg_dump`（普通 SQL 格式，可直接 `psql -f` 还原）：
 cd /opt/club
 PGPASSWORD='<DB_PASSWORD>' pg_dump -h 127.0.0.1 -U club --clean --if-exists --no-owner --no-acl \
   -f "backups/db-manual-$(date +%Y%m%d-%H%M%S).pg.sql" club
-tar -czf backups/media-$(date +%Y%m%d).tar.gz media private_media
+tar -czf backups/data-$(date +%Y%m%d).tar.gz data/media data/private_media   # 未启用数据根的旧布局：去掉 data/ 前缀
 ```
 
 建议保留最近 7–30 天版本，并同步到对象存储或 NAS。快照裁剪由站点策略 `update_db_backup_keep`（默认 5）控制，只作用于更新器自己生成的 `db-*.sqlite3`。
@@ -438,7 +443,7 @@ PGPASSWORD='<DB_PASSWORD>' psql -h 127.0.0.1 -U club -v ON_ERROR_STOP=1 \
 sudo systemctl start club
 ```
 
-**媒体**：解包归档到安装目录对应位置，属主保持服务用户。
+**媒体**：解包归档到数据根对应位置（`<数据根>/media`、`<数据根>/private_media`），属主保持服务用户。
 
 **代码**：优先用 `--rollback <sha>`（见 6.3），而不是手工解包——它会一并跑 `uv sync` / `collectstatic` 与重载。
 
@@ -476,7 +481,7 @@ set -a; . ./.env; set +a
 uv run python manage.py collectstatic --noinput
 ```
 
-再检查 `STATIC_ROOT`（`staticfiles/`）、`MEDIA_ROOT`（`media/`）与 Nginx 的 `location /static/`、`location /media/` 别名是否与安装目录一致。前端产物缺失时首页模板渲染会失败——确认 `frontend/dist/index.html` 存在。
+再检查 `STATIC_ROOT`（`staticfiles/`）、`MEDIA_ROOT`（数据根下 `media/`，见[统一数据根](data-root.md)）与 Nginx 的 `location /static/`、`location /media/` 别名是否与安装目录 / 数据根一致。前端产物缺失时首页模板渲染会失败——确认 `frontend/dist/index.html` 存在。
 
 ### 8.4 `database is locked`
 
@@ -537,7 +542,7 @@ sudo tail -f /var/log/nginx/error.log      # Nginx 错误
 
 定期（建议每周）：
 
-- [ ] 手工备份 `db.sqlite3` 与 `media` / `private_media`，并验证归档可解
+- [ ] 手工备份数据库与数据根（`data/`，含 `media` / `private_media`），并验证归档可解
 - [ ] 检查 `backups/` 磁盘占用与 `update_release_keep` / `update_db_backup_keep` 设置
 - [ ] 复核 `/admin/` 后台账号与组成员（离职 / 换届后及时回收）
 - [ ] 查看站点策略是否仍符合当前运营需要（注册开关、限流额度、更新窗口）
