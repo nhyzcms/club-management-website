@@ -100,7 +100,7 @@
 ### 附件与文件存储
 
 - 全站图片 / 文件引用统一走附件模型（[ADR-0001](../adr/0001-unified-attachment-nullable-fks.md)、[ADR-0002](../adr/0002-unified-attachment-endpoint-and-permission.md)）；大文件走 TUS（[ADR-0004](../adr/0004-feedback-media-tus-resumable-upload.md)）。
-- 公开媒体在 `media/`；**私有媒体**（身份证明等审计材料）在 `private_media/`，不经任何公开 URL 暴露。
+- 公开媒体在数据根的 `media/` 下（缺省即安装目录；统一数据根见 [data-root](../operations/data-root.md)）；**私有媒体**（身份证明等审计材料）在 `private_media/`，不经任何公开 URL 暴露。
 
 ## 数据与存储
 

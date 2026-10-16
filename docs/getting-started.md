@@ -221,7 +221,7 @@ club-management-website/
 - 构建前端时若 webpack 报内存不足（`ERR_WORKER_OUT_OF_MEMORY`），用 `NODE_OPTIONS="--max-old-space-size=4096" npm run build` 重试——这是机器内存压力，不是代码问题。
 - **未配 Redis 时不要把生产 ASGI worker 调到 1 以上**：内存 channel layer 无法跨进程扇出（`docs/adr/0015-channels-without-redis.md`）；配置 `REDIS_URL` 后由 `GUNICORN_WORKERS` 控制（`docs/adr/0021-postgresql-redis-and-multiworker.md`）。
 - 生产升级走 GitHub Release + 更新守护进程，不要在服务器上 `git pull` 再手工构建。
-- `frontend/dist/`、`media/`、`private_media/`、`db.sqlite3`、`.env` 均不入库，全新 clone 缺这些是正常的。
+- `frontend/dist/`、`media/`、`private_media/`、`data/`、`db.sqlite3`、`.env` 均不入库，全新 clone 缺这些是正常的。
 
 ## 进一步阅读（仓库内已有文档）
 
