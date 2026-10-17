@@ -21,5 +21,5 @@ test("登录弹窗：错误密码给出提示，正确密码进入登录态", as
   await dialog.getByPlaceholder("请输入密码").fill(E2E_PASSWORD);
   await dialog.getByRole("button", { name: "登录" }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("banner").getByRole("button", { name: /e2e_plain|E2E 普通成员/ })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: "打开用户菜单" })).toBeVisible();
 });

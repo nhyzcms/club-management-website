@@ -506,37 +506,47 @@ body.is-authed .topnav-actions .act-user  { display: inline-flex; }
 .bell-foot { display: block; padding: var(--s-3); text-align: center; font-size: 13px; font-weight: 600; color: var(--brand-700); background: var(--surface-2); }
 .bell-foot:hover { background: var(--brand-50); }
 
-/* 头像菜单（保留原本 GitHub/B站 式下拉） */
-.user-chip-wrap { position: relative; }
-.user-chip {
-  display: inline-flex; align-items: center; gap: var(--s-2); padding: 4px 6px 4px 4px;
-  border-radius: var(--r-pill); transition: background var(--dur-1) var(--ease);
+/* 头像菜单（GitHub 式：纯头像触发器 + 分组菜单，2026-10 重做） */
+.usermenu-wrap { position: relative; }
+.usermenu-trigger {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: var(--r-pill);
+  transition: background var(--dur-1) var(--ease);
 }
-.user-chip:hover, .user-chip[aria-expanded="true"] { background: var(--brand-50); }
-.user-chip .uc-name { font-size: 13px; font-weight: 600; color: var(--ink-700); max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.user-chip .uc-caret { width: 14px; height: 14px; color: var(--faint); transition: transform var(--dur-2) var(--ease); }
-.user-chip[aria-expanded="true"] .uc-caret { transform: rotate(180deg); }
+.usermenu-trigger:hover,
+.usermenu-trigger[aria-expanded="true"] { background: var(--brand-50); }
+.usermenu-trigger:focus-visible { border-radius: var(--r-pill); }
+.usermenu-trigger .avatar { transition: box-shadow var(--dur-1) var(--ease); }
+.usermenu-trigger:hover .avatar,
+.usermenu-trigger[aria-expanded="true"] .avatar { box-shadow: 0 0 0 2px var(--brand-100); }
 
 .user-menu {
   position: absolute; top: calc(100% + 8px); right: 0; width: 240px; z-index: 120;
   background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-3); padding: var(--s-2);
-  opacity: 0; visibility: hidden; transform: translateY(-6px);
-  transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--ease), visibility var(--dur-2);
 }
-.user-menu.is-open { opacity: 1; visibility: visible; transform: translateY(0); }
+.user-menu.is-open { animation: um-drop var(--dur-2) var(--ease) both; }
+@keyframes um-drop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .um-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3) var(--s-3); border-bottom: 1px solid var(--line); margin-bottom: var(--s-2); }
+.um-head .avatar { width: 40px; height: 40px; font-size: 15px; }
+.um-ident { min-width: 0; }
 .um-name { font-family: var(--font-display); font-weight: 700; font-size: 14px; color: var(--fg); }
 .um-sub { font-size: 12px; color: var(--faint); font-family: var(--font-mono); margin-top: 1px; }
 .user-menu-item {
-  display: flex; align-items: center; gap: var(--s-3); width: 100%; padding: 9px var(--s-3);
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px var(--s-3);
   border-radius: var(--r-sm); font-size: 14px; color: var(--ink-700); font-weight: 500; text-align: left;
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
 .user-menu-item svg { width: 16px; height: 16px; color: var(--faint); flex-shrink: 0; }
 .user-menu-item:hover { background: var(--brand-50); color: var(--brand-700); }
 .user-menu-item:hover svg { color: var(--brand-600); }
+.user-menu-item:focus-visible { background: var(--brand-50); color: var(--brand-700); }
+.user-menu-item:focus-visible svg { color: var(--brand-600); }
 .user-menu-item.danger, .user-menu-item.danger svg { color: var(--danger); }
 .user-menu-item.danger:hover { background: var(--danger-bg); }
+.user-menu-item.danger:focus-visible { background: var(--danger-bg); color: var(--danger); }
 .um-sep { height: 1px; background: var(--line); margin: var(--s-1) 0; }
 
 /* 分段控件（视图切换 / 登录方式） */

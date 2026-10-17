@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { messagingApi } from "../api/messaging";
@@ -7,8 +7,9 @@ import { useSitePolicy } from "../api/sitePolicy";
 import { useEmbedMode } from "../embed";
 import { useLoginModal } from "./LoginModalProvider";
 import type { Banner } from "../types/messaging";
-import { THEME_OPTIONS, useTheme } from "../theme";
+import { useTheme } from "../theme";
 import ThemeToggle from "./ThemeToggle";
+import UserMenu from "./UserMenu";
 import "./AppShell.css";
 
 interface AppShellUser {
@@ -39,16 +40,6 @@ const NAV: { label: string; path: string }[] = [
   { label: "反馈", path: "/feedback" },
   { label: "任务", path: "/tasks" },
 ];
-const USER_MENU: { label: string; path: string; needVerified?: boolean }[] = [
-  { label: "个人中心", path: "/profile" },
-  { label: "私信", path: "/messages", needVerified: true },
-  { label: "通知", path: "/notifications" },
-  { label: "待办", path: "/inbox", needVerified: true },
-  { label: "任务管理", path: "/tasks" },
-  { label: "活动", path: "/activity" },
-  { label: "意见反馈", path: "/feedback" },
-  { label: "后台管理", path: "/admin/" },
-];
 
 const BANNER_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -76,12 +67,6 @@ function formatBadge(n: number): string {
   return String(n);
 }
 
-const Caret = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M6 9l6 6 6-6" />
-  </svg>
-);
-
 export default function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -89,14 +74,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<AppShellProfile>({});
   const [roleVariant, setRoleVariant] = useState<string>("");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [userOpen, setUserOpen] = useState(false);
   const [inboxCount, setInboxCount] = useState(0);
   const [dmCount, setDmCount] = useState(0);
   const [notifCount, setNotifCount] = useState(0);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [showTop, setShowTop] = useState(false);
-  const userWrap = useRef<HTMLDivElement>(null);
   const { openLogin, authNonce, notifyAuthChange } = useLoginModal();
   const policy = useSitePolicy();
   const embed = useEmbedMode();
@@ -199,32 +182,20 @@ export default function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, [location.pathname]);
 
-  // 点击外部关闭下拉
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (userWrap.current && !userWrap.current.contains(t)) setUserOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
-
   const go = (path: string) => {
-    setDrawerOpen(false); setUserOpen(false);
+    setDrawerOpen(false);
     if (path.startsWith("http") || path === "/admin/") window.location.href = path;
     else navigate(path);
   };
   const isActive = (p: string) =>
     p === "/" ? location.pathname === "/" : location.pathname.startsWith(p);
   const logout = async () => {
-    setDrawerOpen(false); setUserOpen(false);
+    setDrawerOpen(false);
     try { await api.logout(); } finally {
       notifyAuthChange();
       navigate("/");
     }
   };
-  const name = profile.nickname || user?.username || "";
-  const initial = (user?.username || "?").charAt(0).toUpperCase();
   const showReviewQueue = !!(
     user?.permissions?.can_review_content
     || user?.permissions?.can_review_identity
@@ -279,58 +250,19 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   {notifCount > 0 && <span className="inbox-badge tnum">{formatBadge(notifCount)}</span>}
                 </button>
               )}
-              <div className="user-chip-wrap" ref={userWrap}>
-                <button className="user-chip" type="button" aria-expanded={userOpen}
-                        onClick={() => setUserOpen((v) => !v)}>
-                  <span className="avatar">{initial}</span>
-                  <span className="uc-name">{name}</span>
-                  <Caret className="uc-caret" />
-                </button>
-                {userOpen && (
-                  <div className="user-menu is-open" role="menu">
-                    <div className="um-head">
-                      <span className="avatar lg">{initial}</span>
-                      <div>
-                        <div className="um-name">{name}</div>
-                        <div className="um-sub">@{user?.username}</div>
-                      </div>
-                    </div>
-                    {USER_MENU.filter((m) => {
-                      if (m.path === "/messages" && !policy.dms_enabled) return false;
-                      if (m.needVerified) return showInbox;
-                      return true;
-                    }).map((m) => (
-                      <button key={m.path} className="user-menu-item" type="button" onClick={() => go(m.path)}>
-                        {m.label}
-                      </button>
-                    ))}
-                    {showReviewQueue && (
-                      <button className="user-menu-item" type="button" onClick={() => go("/reviews")}>
-                        审核队列
-                      </button>
-                    )}
-                    <div className="um-sep" />
-                    <div className="um-theme">
-                      <span className="um-theme-label">外观</span>
-                      {THEME_OPTIONS.map((o) => (
-                        <button
-                          key={o.value}
-                          className={"user-menu-item theme-opt" + (themePref === o.value ? " is-current" : "")}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={themePref === o.value}
-                          onClick={() => setThemePref(o.value)}
-                        >
-                          <span className="theme-dot" aria-hidden="true" />
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="um-sep" />
-                    <button className="user-menu-item danger" type="button" onClick={logout}>退出登录</button>
-                  </div>
-                )}
-              </div>
+              {user && (
+                <UserMenu
+                  user={{ id: user.id, username: user.username }}
+                  profile={{ nickname: profile.nickname, avatar: profile.avatar ?? null }}
+                  verified={showInbox}
+                  dmsEnabled={policy.dms_enabled}
+                  canReview={showReviewQueue}
+                  themePref={themePref}
+                  onThemeSelect={setThemePref}
+                  onNavigate={go}
+                  onLogout={logout}
+                />
+              )}
             </div>
             <button className="topnav-toggle" type="button" aria-label="打开菜单"
                     aria-expanded={drawerOpen} onClick={() => setDrawerOpen((v) => !v)}>
