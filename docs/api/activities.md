@@ -237,20 +237,33 @@
 
 **认证**：登录；**权限**：—。发起人或持 `activities.manage_activity` 者看全部作答（`is_manager=true`）；其他登录用户只看自己的；未登录 403；非调研活动 400。
 
+**查询参数**
+
+| 名称 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| q | string | 否 | 检索作答内容（模糊、大小写不敏感、全角半角等价）。只匹配用户填写的值，不匹配作答者身份与提交时间；选择题按**选项展示文本**匹配（存 `news` 也能用「新闻」搜到），文件题匹配文件名与链接。空串 / 纯空白 = 不检索。长度上限 100 字符 |
+
 **响应 `200 OK`**（整列返回，无分页；按提交时间倒序）
 
 ```json
 {
   "schema": {"title": "", "pages": [{"name": "page1", "elements": []}]},
   "is_manager": true,
+  "total": 2,
+  "query": "摄影",
   "results": [
-    {"id": 5, "user_label": "zhangsan", "answers": {"grade": "高一", "intro": "你好"}, "submitted_at": "2026-09-26T10:00:00+08:00"},
-    {"id": 6, "user_label": "访客 · 1a2b3c4d", "answers": {"grade": "高二"}, "submitted_at": "2026-09-26T11:00:00+08:00"}
+    {"id": 5, "user_label": "zhangsan", "answers": {"grade": "高一", "intro": "你好"},
+     "submitted_at": "2026-09-26T10:00:00+08:00",
+     "matches": [{"name": "intro", "title": "自我介绍", "snippet": "…喜欢摄影和剪辑…"}]},
+    {"id": 6, "user_label": "访客 · 1a2b3c4d", "answers": {"grade": "高二"},
+     "submitted_at": "2026-09-26T11:00:00+08:00", "matches": []}
   ]
 }
 ```
 
 `schema` 为该调研的问卷 Schema；`user_label`：登录用户为 `username`，访客为 `访客 · {设备标识前 8 位}`（无标识则「访客」）。
+`total` 是**未过滤**的可见份数（检索时用于显示「匹配 N / 共 M」）；`query` 回显生效的检索词（空串 = 未检索）；
+`matches` 是命中字段（最多 3 条，含题目标题与前后文片段），未检索或未命中时为空数组。
 
 **错误**
 

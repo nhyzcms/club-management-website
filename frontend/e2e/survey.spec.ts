@@ -38,6 +38,15 @@ test("调研活动：结果页与统计页", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "问卷结果", level: 1 })).toBeVisible();
   await expect(page.getByText("暂无作答。")).toHaveCount(0);
 
+  // 检索作答内容：命中选择题选项文本 → 1 份；无命中 → 空态；清空 → 回到全部
+  const searchBox = page.getByRole("searchbox", { name: "搜索作答内容" });
+  await searchBox.fill("新闻");
+  await expect(page.getByText(/匹配 1 份/)).toBeVisible({ timeout: 10_000 });
+  await searchBox.fill("绝对不存在的答案");
+  await expect(page.getByText("没有匹配的作答。")).toBeVisible({ timeout: 10_000 });
+  await searchBox.fill("");
+  await expect(page.getByText(/共 1 份作答/)).toBeVisible({ timeout: 10_000 });
+
   // 查看统计
   await page.goto("/#/activity");
   await page.getByText("E2E 调研活动").first().click();

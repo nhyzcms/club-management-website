@@ -106,16 +106,26 @@ export interface ActivityDetail {
 }
 
 // ---- 问卷作答查看 ----
+/** 检索命中字段（?q= 时后端回传，用于提示「哪道题命中了」）。 */
+export interface SurveyResponseMatch {
+  name: string;
+  title: string;
+  snippet: string;
+}
+
 export interface SurveyResponseRow {
   id: number;
   user_label: string;
   answers: Record<string, unknown>;
   submitted_at: string;
+  matches: SurveyResponseMatch[]; // 未检索时为空数组
 }
 
 export interface SurveyResponsesPayload {
   schema: Record<string, unknown>;
   is_manager: boolean;
+  total: number; // 未过滤的可见份数（检索时用于「匹配 N / 共 M」）
+  query: string; // 已生效的检索词（空串 = 未检索）
   results: SurveyResponseRow[];
 }
 

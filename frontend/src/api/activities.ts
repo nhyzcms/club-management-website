@@ -46,8 +46,11 @@ export const activityApi = {
     }),
 
   // 问卷作答查看（发起人/管理 → 全部；其他登录用户 → 自己的）
-  responses: (id: number): Promise<SurveyResponsesPayload> =>
-    request(`/activities/${id}/responses/`),
+  // query：对作答内容做模糊检索（后端 ?q=，只匹配用户填写的值）
+  responses: (id: number, query?: string): Promise<SurveyResponsesPayload> => {
+    const qs = query ? "?" + new URLSearchParams({ q: query }).toString() : "";
+    return request(`/activities/${id}/responses/${qs}`);
+  },
 
   // 众议 / 展示 / 征集 / 调研：提前关闭（众议/展示/调研立即结算；征集结束收件进入复审或归档）
   close: (id: number): Promise<ActivityDetail> =>
