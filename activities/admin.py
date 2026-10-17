@@ -17,9 +17,9 @@ from .models import (
 class ActivityAdmin(admin.ModelAdmin):
     list_display = [
         "title", "type", "status", "audience", "questionnaire_link",
-        "creator", "end_at", "created_at",
+        "creator", "end_at", "is_permanent", "created_at",
     ]
-    list_filter = ["type", "status", "audience"]
+    list_filter = ["type", "status", "audience", "is_permanent"]
     search_fields = ["title", "body"]
     autocomplete_fields = ["questionnaire", "creator"]
     date_hierarchy = "created_at"

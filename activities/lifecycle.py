@@ -4,6 +4,7 @@
 
 - 众议 / 调研：open → closed；到 ``end_at`` 惰性结算。
 - 征集：collecting → reviewing → archived；满 ``max_submissions`` 自动 collecting→reviewing。
+- 长期活动（``is_permanent``）：``end_at`` 为空，永不自动结算，仅能手动 close。
 """
 
 from django.utils import timezone
@@ -210,10 +211,15 @@ def transition_overdue():
 
     在 list/get/vote/rate/respond 入口调用。逐行条件更新保证每条活动只被一个请求流转（并发安全；
     Django 无内置调度，此惰性方式无需 cron）。征集另有满额流转（``maybe_close_collection_on_cap``）。
+
+    长期活动（``is_permanent=True``，``end_at=None``）不参与结算——SQL 的 ``end_at__lte`` 本就
+    不会命中 NULL，这里显式 ``end_at__isnull=False`` 把该契约写进查询，避免将来改用别的判定方式时误伤。
+    长期活动只能由发起人 / 管理员通过 close（can_close）手动终结。
     """
     now = timezone.now()
     overdue = Activity.objects.filter(
-        type__in=("deliberation", "exhibition", "survey"), status=OPEN, end_at__lte=now,
+        type__in=("deliberation", "exhibition", "survey"), status=OPEN,
+        end_at__isnull=False, end_at__lte=now,
     )
     closed_pks = []
     for activity in overdue:

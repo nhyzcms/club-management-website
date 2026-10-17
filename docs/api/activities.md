@@ -12,6 +12,7 @@
   - 征集 `collection`：`scheduled` → `collecting`（收件中）→ `reviewing`（复审中）→ `archived`；`review_enabled=false` 时跳过复审，收件结束直接 `archived`
   - 展示 `exhibition`：`scheduled` → `open`（展示中）→ `closed`；调研 `survey`：`scheduled` → `open`（征答中）→ `closed`
   - 设未来的 `start_at` 即进入 `scheduled`，到点自动开放（征集→`collecting`，其余→`open`）；到 `end_at` 自动结算众议 / 展示 / 调研。征集无 `end_at` 惰性结算，由「提前关闭」或满 `max_submissions` 收口。
+  - **长期活动**（`is_permanent=true`）：不设截止，`end_at` 恒为 `null`，永不被时间自动结算；只能由发起人或持 `activities.manage_activity` 者调用 `close` 手动终结。`is_permanent` 与 `end_at` 二选一（勾选长期时传 `end_at` 会 400）。征集的 `max_submissions` 满额自动收口仍然生效（数量上限是显式配置，与时间无关）。
 - **审核轴**（`reviews` app，[ADR-0017](../adr/0017-unified-moderation-system.md)）：`review_status` ∈ `pending` / `approved` / `rejected` / `removed` / `null`（尚无审核行），只门控「公开展示」，不阻断活动自身状态机。列表 / 详情只出已过审（或无审核行）的活动；自己发起的全部活动（含待审 / 驳回 / 下架）走 `mine` 预览。
 - **`owed`**（列表 / 详情字段）：`vote` / `submit` / `null`——已验证成员在「投票中且未投」「收件中且未投」「展示中启用投票且未投」时欠的行动；仅对已验证成员计算。
 - **`X-Device-Id`**：访客调研作答 / 公开受众投票的设备标识（门户写入 localStorage 的 UUID）；缺失或非法按无标识处理。
@@ -71,7 +72,7 @@
     {"id": 12, "type": "deliberation", "status": "open", "title": "运动会口号征集",
      "creator": {"id": 3, "username": "zhangsan", "nickname": "张三", "avatar": "/media/avatars/zs.png"},
      "audience": "members", "review_status": "approved", "owed": "vote",
-     "start_at": null, "end_at": "2026-10-02T12:00:00+08:00",
+     "start_at": null, "end_at": "2026-10-02T12:00:00+08:00", "is_permanent": false,
      "created_at": "2026-09-25T09:00:00+08:00", "updated_at": "2026-09-26T10:00:00+08:00"}
   ]
 }
@@ -93,7 +94,8 @@
 | title | string | 是 | ≤200 字符 |
 | body | string | 否 | 富文本 HTML，写入时消毒（与新闻同级） |
 | start_at | datetime | 否 | 排期；未来时间则创建为 `scheduled`，到点自动开放 |
-| end_at | datetime | 否 | 截止时间；缺省 = 起点 +3 天（众议）/ +7 天（其余）；须晚于 `start_at` |
+| end_at | datetime | 否 | 截止时间；缺省 = 起点 +3 天（众议）/ +7 天（其余）；须晚于 `start_at`。`is_permanent=true` 时必须省略或为 `null` |
+| is_permanent | bool | 否 | 长期有效（不设截止）：默认 false。为 true 时 `end_at` 恒为 `null`、永不自动结算，只能手动 `close` |
 | max_choices_per_voter | int | 否 | 众议：1..选项数；展示启用投票时 ≥1；默认 1 |
 | is_secret_ballot | bool | 否 | 众议 / 展示投票：秘密票的个人明细仅超管可见；默认 false |
 | option_texts | string[] | 众议必填 | 选项文本（≥2、≤50 个，写侧专用；读侧见 `options`） |
@@ -116,7 +118,7 @@
 | 状态码 | 场景 |
 |---|---|
 | 403 | 未登录；或账号未验证（`IsVerified`） |
-| 400 | 字段校验失败：`option_texts`「众议至少需要 2 个选项」「众议选项不超过 50 个」；`max_choices_per_voter`「每人最多选几项须在 1..选项数 之间」；`start_at`「开始时间须早于截止时间」；`schema`「Schema 须包含 pages」 |
+| 400 | 字段校验失败：`option_texts`「众议至少需要 2 个选项」「众议选项不超过 50 个」；`max_choices_per_voter`「每人最多选几项须在 1..选项数 之间」；`start_at`「开始时间须早于截止时间」；`end_at`「已勾选「长期有效」，不能再设截止时间」；`schema`「Schema 须包含 pages」 |
 
 ### 活动详情
 
@@ -132,7 +134,7 @@
   "title": "运动会口号征集", "body": "<p>投出你的一票</p>",
   "creator": {"id": 3, "username": "zhangsan", "nickname": "张三", "avatar": "/media/avatars/zs.png"},
   "review_status": "approved", "review_comment": "", "owed": "vote",
-  "start_at": null, "end_at": "2026-10-02T12:00:00+08:00",
+  "start_at": null, "end_at": "2026-10-02T12:00:00+08:00", "is_permanent": false,
   "max_choices_per_voter": 2, "is_secret_ballot": false,
   "allowed_extensions": "", "max_file_size": null,
   "max_files_per_submission": 5, "max_submissions": null,
@@ -152,6 +154,7 @@
 字段语义（写侧专用字段 `option_texts`、`comment_thread_status` 不出现在响应中）：
 
 - `review_comment`：审核评语，仅发起人或 `reviews.moderate` 持有者可见，其余为空串。
+- `is_permanent`：长期活动标记（不设截止）。为 true 时 `end_at` 恒为 `null`，只能由发起人 / 管理员手动终结；为 false 时由 `end_at` 驱动自动结算。
 - `options`：仅众议返回数组（`VoteOptionSerializer`：`id` / `text` / `order` / `vote_count`）；其余类型为 `null`。
 - `ballots` / `my_selections` / `total_ballots`：无投票轴（非众议、或展示未启用投票）为 `null`；秘密投票下 `ballots` 仅超管可见（其余为 `null`）；`my_selections` 为当前身份已投的 option id 列表（登录按用户、访客按设备标识；未投 `null`）；公开受众下游客票的 `voter` 为 `null`。
 - `my_submission` / `submissions`：仅征集返回。`my_submission` 是本人作品（无则 `null`）；`submissions` 复审者（发起人 / `activities.manage_activity` / `activities.review_collection`）见全部作品，其余登录成员只见 `review_status=accepted` 的作品；`review_enabled=false` 时全部作品公开。作品结构：`id` / `submitter` / `files`（附件：`id` / `file_url` / `file_type` / `file_name` / `file_size` / `uploaded_by` / `uploaded_at`）/ `review_status`（`pending` / `accepted` / `rejected`）/ `review_comment` / `reviewed_at` / `created_at`。
@@ -165,7 +168,9 @@
 
 **认证**：登录；**权限**：发起人或 `activities.manage_activity`（对象级）。
 
-**请求体**：可写字段与创建相同（`title` / `body` / `start_at` / `end_at` / 各类型配置 / `option_texts` / `schema` / `comment_thread_status`；序列化器未把 `type` 设为只读，但对变更类型无专门支持与校验）。
+**请求体**：可写字段与创建相同（`title` / `body` / `start_at` / `end_at` / `is_permanent` / 各类型配置 / `option_texts` / `schema` / `comment_thread_status`；序列化器未把 `type` 设为只读，但对变更类型无专门支持与校验）。
+
+`is_permanent` 可在待开始期间切换：`true` 会清空既有 `end_at`（不传也清）；改回 `false` 必须同时给 `end_at`，否则 400（避免产生「非长期却无截止」的隐性永久）。
 
 **门禁**（`views.perform_update` + `lifecycle`）
 

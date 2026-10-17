@@ -97,6 +97,53 @@ class ActivityCreateReadTest(TestCase):
         self.assertIn("https://example.com/a", resp.data["body"])
         self.assertNotIn("evil.com", resp.data["body"])
 
+    # ---- 长期活动（不设截止）----
+
+    def test_permanent_activity_has_no_default_end(self):
+        # 勾选「长期」→ 不填默认截止（征集默认 +7d 的兜底必须让路）
+        resp = _json(self.client, "post", "/activities/activities/", self.author,
+                     {"type": "collection", "title": "长期征集", "is_permanent": True})
+        self.assertEqual(resp.status_code, 201)
+        self.assertTrue(resp.data["is_permanent"])
+        self.assertIsNone(resp.data["end_at"])
+
+    def test_permanent_with_end_at_rejected(self):
+        resp = _json(self.client, "post", "/activities/activities/", self.author,
+                     {"type": "collection", "title": "x", "is_permanent": True,
+                      "end_at": (timezone.now() + timedelta(days=3)).isoformat()})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("end_at", resp.data)
+
+    def test_switching_to_permanent_clears_end_at(self):
+        # 待开始期间可改：勾选长期即清空既有截止
+        a = Activity.objects.create(
+            type="collection", status="scheduled", title="s", creator=self.author,
+            start_at=timezone.now() + timedelta(days=1),
+            end_at=timezone.now() + timedelta(days=3),
+        )
+        self.client.force_authenticate(self.author)
+        resp = self.client.patch(
+            f"/activities/activities/{a.pk}/",
+            data=json.dumps({"is_permanent": True}), content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["is_permanent"])
+        self.assertIsNone(resp.data["end_at"])
+
+    def test_unsetting_permanent_requires_end_at(self):
+        # 由「长期」改回限期时必须补截止时间，否则会变成隐性永久
+        a = Activity.objects.create(
+            type="collection", status="scheduled", title="s", creator=self.author,
+            is_permanent=True, start_at=timezone.now() + timedelta(days=1),
+        )
+        self.client.force_authenticate(self.author)
+        resp = self.client.patch(
+            f"/activities/activities/{a.pk}/",
+            data=json.dumps({"is_permanent": False}), content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("end_at", resp.data)
+
     # ---- 读 ----
 
     def test_list_returns_activities(self):

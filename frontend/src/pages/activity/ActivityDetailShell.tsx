@@ -52,20 +52,26 @@ export default function ActivityDetailShell({
   const memberDebt = owesVote || owesSubmit;
   const phase = activityPhase(a.type, a.status);
 
-  const closeLabel = isDeliberation
-    ? "提前结束投票"
-    : isCollection
-      ? "提前结束收件"
-      : isSurvey
-        ? "提前结束征答"
-        : "提前结束展示";
-  const closeConfirm = isDeliberation
-    ? "提前结束投票并结算？"
-    : isCollection
-      ? (a.review_enabled ? "提前结束收件、进入复审？" : "提前结束收件并归档？")
-      : isSurvey
-        ? "提前结束征答？"
-        : "提前结束展示并结算？";
+  const closeLabel = a.is_permanent
+    ? "终结活动"
+    : isDeliberation
+      ? "提前结束投票"
+      : isCollection
+        ? "提前结束收件"
+        : isSurvey
+          ? "提前结束征答"
+          : "提前结束展示";
+  const closeConfirm = a.is_permanent
+    ? isCollection
+      ? (a.review_enabled ? "终结这个长期活动？将结束收件并进入复审。" : "终结这个长期活动？将结束收件并归档。")
+      : "终结这个长期活动？终结后不可再参与，且不可恢复。"
+    : isDeliberation
+      ? "提前结束投票并结算？"
+      : isCollection
+        ? (a.review_enabled ? "提前结束收件、进入复审？" : "提前结束收件并归档？")
+        : isSurvey
+          ? "提前结束征答？"
+          : "提前结束展示并结算？";
 
   const fmtTime = (d: string | null) =>
     d ? new Date(d).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
@@ -76,19 +82,23 @@ export default function ActivityDetailShell({
       ns.push({
         key: "open",
         label: isExhibition ? "展示中" : isSurvey ? "征答中" : "投票中",
-        time: a.start_at ? null : fmtTime(a.created_at),
+        time: a.is_permanent ? "长期有效" : a.start_at ? null : fmtTime(a.created_at),
       });
-      ns.push({ key: "closed", label: "已结束", time: fmtTime(a.end_at) });
+      ns.push({ key: "closed", label: "已结束", time: a.is_permanent ? null : fmtTime(a.end_at) });
       return ns;
     }
     const ns = [];
     if (a.start_at) ns.push({ key: "scheduled", label: "待开始", time: fmtTime(a.start_at) });
-    ns.push({ key: "collecting", label: "收件中", time: a.start_at ? null : fmtTime(a.created_at) });
+    ns.push({
+      key: "collecting",
+      label: "收件中",
+      time: a.is_permanent ? "长期有效" : a.start_at ? null : fmtTime(a.created_at),
+    });
     if (a.review_enabled) {
-      ns.push({ key: "reviewing", label: "复审中", time: fmtTime(a.end_at) });
+      ns.push({ key: "reviewing", label: "复审中", time: a.is_permanent ? null : fmtTime(a.end_at) });
       ns.push({ key: "archived", label: "已归档", time: null });
     } else {
-      ns.push({ key: "archived", label: "已归档", time: fmtTime(a.end_at) });
+      ns.push({ key: "archived", label: "已归档", time: a.is_permanent ? null : fmtTime(a.end_at) });
     }
     return ns;
   })();
@@ -168,6 +178,7 @@ export default function ActivityDetailShell({
                 {AUDIENCE_LABELS[a.audience]}
               </span>
             )}
+            {a.is_permanent && <span className="badge badge-neutral">长期有效</span>}
           </div>
           <h1 style={{ margin: "0 0 var(--s-4)" }}>{a.title}</h1>
           {!embed && (

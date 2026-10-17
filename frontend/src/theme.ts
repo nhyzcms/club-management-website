@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isAppShell } from "./utils/device";
 
 // 颜色主题：浅色 / 深色 / 跟随系统。偏好存 localStorage（按设备，游客亦可用），
 // 并镜像到 Django 后台约定的 `theme` 键（auto/light/dark），使 /admin/ 自动跟随。
@@ -57,14 +58,40 @@ function apply(pref: ThemePreference) {
   listeners.forEach((fn) => fn(resolved));
 }
 
+const APP_MIGRATION_KEY = "cobalt:theme:app-default-v2";
+
+/** App 壳内的一次性迁移（template.html 的内联脚本有一份等价实现，改逻辑要两处同步）。
+ *
+ * 旧版壳没有任何主题切换入口，localStorage 里存下来的 "light" 基本都不是用户的有意选择，
+ * 因此壳内首次运行新版本时改判为「跟随系统」；迁移标记保证只做一次，
+ * 用户此后主动选的浅色/深色不会被覆盖。
+ */
+function migrateAppDefaultOnce() {
+  if (!isAppShell()) return;
+  try {
+    if (localStorage.getItem(APP_MIGRATION_KEY)) return;
+    localStorage.setItem(APP_MIGRATION_KEY, "1");
+    if (localStorage.getItem(STORAGE_KEY) === "light") {
+      localStorage.setItem(STORAGE_KEY, "system");
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function getTheme(): ThemePreference {
+  migrateAppDefaultOnce();
   try {
     const v = localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark" || v === "system") return v;
   } catch {
     /* ignore */
   }
-  return "light";
+  // 没有存过偏好时的默认值：
+  //  - App 壳内跟随系统（用户反馈「App 深色模式不能跟随系统」——壳的 WebView
+  //    会把系统的 uiMode 反映成 prefers-color-scheme，默认 light 就永远跟不上了）；
+  //  - 浏览器保持原来的浅色默认。
+  return isAppShell() ? "system" : "light";
 }
 
 export function setTheme(pref: ThemePreference) {

@@ -242,3 +242,55 @@
 }
 .m-check-row input { width: 18px; height: 18px; accent-color: var(--brand-700); flex: none; margin-top: 1px; }
 .m-video { width: 100%; border-radius: 12px; background: #000; display: block; }
+
+/* ---------- 未读角标 / 消息入口（2026-10-17） ----------
+   背景：手机版走 /m，不用桌面 AppShell，所以顶栏徽标与底部 tab 角标都没有，
+   用户看不到"有私信/通知"。这里补齐一条 首页 -> 我的 -> 私信/通知 的红点引导链。 */
+
+.m-topbar-actions { display: flex; align-items: center; gap: 2px; }
+
+/* 顶栏铃铛：未读时挂一个数字红点 */
+.m-topbar-bell { position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: var(--r-sm); color: var(--ink-700); }
+.m-topbar-bell svg { width: 20px; height: 20px; }
+.m-topbar-bell:active { background: var(--bg-soft); }
+
+/* 红点：数字版（1~99 / 99+），与桌面 .inbox-badge 的语义保持一致 */
+.m-dot, .m-tab-badge, .m-count-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--r-pill); background: var(--danger); color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 1; letter-spacing: 0;
+}
+.m-dot { position: absolute; top: 3px; right: 1px; box-shadow: 0 0 0 2px var(--bg); }
+
+/* 底部 tab：图标右上角挂数字 */
+.m-tab-icon { position: relative; display: inline-flex; }
+.m-tab-badge { position: absolute; top: -6px; left: 12px; height: 16px; min-width: 16px;
+  padding: 0 4px; font-size: 10px; box-shadow: 0 0 0 2px var(--bg); }
+
+/* 首页「有未读」提示条：把用户从首页直接引到目的页 */
+.m-notice-strip {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 12px 16px 0; padding: 11px 14px; border-radius: 14px;
+  background: var(--brand-50); border: 1px solid var(--brand-100);
+  color: var(--brand-900); font-size: 13px; font-weight: 600;
+}
+.m-notice-strip-text { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.m-notice-strip-go { flex: none; color: var(--brand-700); font-weight: 700; }
+
+/* 「我的」列表：左侧文字占满，右侧数字 + 箭头 */
+.m-list-item { gap: 8px; }
+.m-list-label { flex: 1 1 auto; min-width: 0; }
+.m-list-item .m-count-badge { flex: none; }
+
+/* 外观（主题切换）：手机上原本完全没有入口 */
+.m-theme-card { padding: 4px 14px; }
+.m-theme-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 2px; }
+.m-theme-label { font-size: 15px; color: var(--fg); }
+.m-theme-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-pill); background: var(--bg-soft); }
+.m-theme-btn {
+  padding: 6px 11px; border-radius: var(--r-pill); border: none; background: none;
+  font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap;
+}
+.m-theme-btn.is-current { background: var(--bg); color: var(--brand-700); box-shadow: var(--sh-1); }

@@ -6,6 +6,8 @@ import type { NewsListItem } from "../types/news";
 import type { ActivityListItem } from "../types/activities";
 import { ACTIVITY_TYPE_META, ACTIVITY_STATUS_LABELS } from "../types/activities";
 import MobileTabBar from "../components/MobileTabBar";
+import ThemeToggle from "../components/ThemeToggle";
+import { formatUnreadCount, useUnreadCounts } from "../api/unreadBadges";
 import "../styles/mobile.css";
 
 const stroke = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -20,6 +22,10 @@ function fmtDate(iso: string | null): string {
 export default function MobileHomePage() {
   const [news, setNews] = useState<NewsListItem[]>([]);
   const [activities, setActivities] = useState<ActivityListItem[]>([]);
+  // 未读角标（2026-10-17）：手机版没有桌面顶栏的徽标，首页必须自己给出「去消息」的引导。
+  const counts = useUnreadCounts();
+  const total = counts.signedIn ? counts.dm + counts.notif : 0;
+  const unreadTarget = counts.dm > 0 ? "/messages" : "/notifications";
 
   useEffect(() => {
     document.title = "南汇一中 · 传媒社";
@@ -34,7 +40,23 @@ export default function MobileHomePage() {
           <img src="/static/favicon.ico" alt="" width={26} height={26} />
           南汇一中 · 传媒社
         </div>
-        <Link className="m-topbar-user" to="/m/me">我的</Link>
+        <div className="m-topbar-actions">
+          <ThemeToggle />
+          {counts.signedIn && (
+            <Link
+              className="m-topbar-bell"
+              to={unreadTarget}
+              aria-label={total > 0 ? `消息，${total} 条未读` : "消息"}
+            >
+              <svg viewBox="0 0 24 24" {...stroke}>
+                <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+              </svg>
+              {total > 0 && <span className="m-dot tnum">{formatUnreadCount(total)}</span>}
+            </Link>
+          )}
+          <Link className="m-topbar-user" to="/m/me">我的</Link>
+        </div>
       </header>
 
       <section className="m-hero">
@@ -44,6 +66,17 @@ export default function MobileHomePage() {
         </h1>
         <p>校园影像与新媒体作品的策展窗口</p>
       </section>
+
+      {total > 0 && (
+        <Link className="m-notice-strip" to={unreadTarget}>
+          <span className="m-notice-strip-text">
+            {counts.dm > 0 && <>{counts.dm} 条未读私信</>}
+            {counts.dm > 0 && counts.notif > 0 && " · "}
+            {counts.notif > 0 && <>{counts.notif} 条未读通知</>}
+          </span>
+          <span className="m-notice-strip-go">去看看</span>
+        </Link>
+      )}
 
       <div className="m-grid">
         <Link to="/m/activity" className="m-grid-item">

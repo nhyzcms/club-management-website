@@ -42,6 +42,7 @@ export default function ActivityFormPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [endAt, setEndAt] = useState(defaultEnd(3));
+  const [permanent, setPermanent] = useState(false); // 长期有效：不设截止
   const [startAt, setStartAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -85,6 +86,28 @@ export default function ActivityFormPage() {
   const setOption = (i: number, v: string) =>
     setOptions((opts) => opts.map((o, idx) => (idx === i ? v : o)));
 
+  // 截止时间 + 「长期」复选框：长期活动不设截止，只有发起人/管理员能手动终结。
+  const endAtField = (label: string) => (
+    <div className="field">
+      <label className="label">{label}</label>
+      <input
+        className="input"
+        type="datetime-local"
+        value={endAt}
+        disabled={permanent}
+        onChange={(e) => setEndAt(e.target.value)}
+      />
+      <label className="fb-attrib" style={{ marginTop: 8 }}>
+        <input
+          type="checkbox"
+          checked={permanent}
+          onChange={(e) => setPermanent(e.target.checked)}
+        />
+        <span>长期有效 —— 不设截止期限，直到发起人或管理员手动终结</span>
+      </label>
+    </div>
+  );
+
   // 编辑模式：载入现有活动回填
   useEffect(() => {
     if (!editId) return;
@@ -93,6 +116,7 @@ export default function ActivityFormPage() {
       setTitle(a.title);
       setBody(a.body);
       setStartAt(toLocalInput(a.start_at));
+      setPermanent(!!a.is_permanent);
       setEndAt(toLocalInput(a.end_at) || defaultEnd(a.type === "deliberation" ? 3 : 7));
       if (a.type === "collection") {
         setAllowedExt(a.allowed_extensions || "");
@@ -142,6 +166,10 @@ export default function ActivityFormPage() {
         return;
       }
     }
+    if (!permanent && !endAt) {
+      setError("请选择截止时间，或勾选「长期有效」");
+      return;
+    }
     // 展示:创建/编辑只带标量(展品在详情页布展);K>=1 由后端序列化器把关
 
     setSubmitting(true);
@@ -156,7 +184,8 @@ export default function ActivityFormPage() {
           is_secret_ballot: secret,
           audience,
           start_at: toIso(startAt),
-          end_at: toIso(endAt),
+          end_at: permanent ? null : (toIso(endAt) ?? null),
+          is_permanent: permanent,
           option_texts: options.map((o) => o.trim()).filter(Boolean),
           comment_thread_status: commentThreadStatus,
         };
@@ -174,7 +203,8 @@ export default function ActivityFormPage() {
           max_submissions: maxSub.trim() ? parseInt(maxSub, 10) : null,
           review_enabled: reviewEnabled,
           start_at: toIso(startAt),
-          end_at: toIso(endAt),
+          end_at: permanent ? null : (toIso(endAt) ?? null),
+          is_permanent: permanent,
           comment_thread_status: commentThreadStatus,
         };
         saved = editId
@@ -191,7 +221,8 @@ export default function ActivityFormPage() {
           is_secret_ballot: secret,
           audience,
           start_at: toIso(startAt),
-          end_at: toIso(endAt),
+          end_at: permanent ? null : (toIso(endAt) ?? null),
+          is_permanent: permanent,
           comment_thread_status: commentThreadStatus,
         };
         saved = editId
@@ -204,7 +235,8 @@ export default function ActivityFormPage() {
           body,
           audience,
           start_at: toIso(startAt),
-          end_at: toIso(endAt),
+          end_at: permanent ? null : (toIso(endAt) ?? null),
+          is_permanent: permanent,
           comment_thread_status: commentThreadStatus,
         };
         saved = editId
@@ -296,10 +328,7 @@ export default function ActivityFormPage() {
                   <input className="input" type="number" min={1} value={k} onChange={(e) => setK(parseInt(e.target.value, 10) || 1)} />
                   <div className="hint">K=1 即一人一票；K&gt;1 即一人多票（最多选 K 项）。</div>
                 </div>
-                <div className="field">
-                  <label className="label">投票截止</label>
-                  <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
-                </div>
+                {endAtField("投票截止")}
               </div>
 
               <div className="field">
@@ -332,10 +361,7 @@ export default function ActivityFormPage() {
                   <input className="input" type="number" min={1} value={maxSub} onChange={(e) => setMaxSub(e.target.value)} placeholder="不限" />
                 </div>
               </div>
-              <div className="field">
-                <label className="label">收件截止</label>
-                <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
-              </div>
+              {endAtField("收件截止")}
               <div className="field">
                 <label className="fb-attrib">
                   <input type="checkbox" checked={reviewEnabled} onChange={(e) => setReviewEnabled(e.target.checked)} />
@@ -346,10 +372,7 @@ export default function ActivityFormPage() {
           ) : type === "exhibition" ? (
             <>
               {/* 展示：截止 + 启用投票开关（展品在详情页布展） */}
-              <div className="field">
-                <label className="label">展示截止</label>
-                <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
-              </div>
+              {endAtField("展示截止")}
               <div className="field">
                 <label className="fb-attrib">
                   <input
@@ -384,10 +407,7 @@ export default function ActivityFormPage() {
           ) : (
             <>
               {audienceField("公开：访客可列出、打开、提交；仅成员：须登录。创建后不可改。问卷在创建后于详情页编辑。")}
-              <div className="field">
-                <label className="label">征答截止</label>
-                <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
-              </div>
+              {endAtField("征答截止")}
             </>
           )}
 

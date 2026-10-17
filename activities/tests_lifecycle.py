@@ -127,6 +127,16 @@ class TransitionOverdueTest(TestCase):
         transition_overdue()
         self.assertEqual(Activity.objects.get(pk=c.pk).status, COLLECTING)
 
+    def test_permanent_activity_never_closes(self):
+        # 长期活动（end_at 为空）不参与惰性结算，只能手动 close
+        a = Activity.objects.create(
+            type="deliberation", status=OPEN, title="p", max_choices_per_voter=1,
+            is_permanent=True, end_at=None,
+        )
+        closed = transition_overdue()
+        self.assertNotIn(a.pk, closed)
+        self.assertEqual(Activity.objects.get(pk=a.pk).status, OPEN)
+
     def test_overdue_survey_flips_to_closed(self):
         a = Activity.objects.create(
             type="survey", status=OPEN, title="s",

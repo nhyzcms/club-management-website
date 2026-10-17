@@ -12,8 +12,20 @@
       (function () {
         var k = "cobalt:theme";
         var v = null;
+        var isApp = /NhyzClubApp\//.test(navigator.userAgent || "");
         try { v = localStorage.getItem(k); } catch (e) {}
+        // App 壳内的一次性迁移（与 theme.ts 的同名逻辑保持一致）：
+        // 旧版壳没有任何切换入口，存下来的 "light" 基本都不是有意选择 —— 改判为「跟随系统」。
+        // 用户此后主动选浅色/深色会写回 k，迁移标记保证不会再被改回去。
+        try {
+          if (isApp && !localStorage.getItem("cobalt:theme:app-default-v2")) {
+            localStorage.setItem("cobalt:theme:app-default-v2", "1");
+            if (v === "light") { v = "system"; localStorage.setItem(k, "system"); }
+          }
+        } catch (e) {}
         var pref = (v === "light" || v === "dark" || v === "system") ? v : "light";
+        // 与 theme.ts 的 getTheme 保持一致：App 壳内没存过偏好时默认「跟随系统」。
+        if (!v && isApp) pref = "system";
         var resolved = pref === "system"
           ? ((window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light")
           : pref;
