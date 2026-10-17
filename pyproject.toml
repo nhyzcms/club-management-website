@@ -3,6 +3,7 @@ name = "backend"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
+license = "BSD-3-Clause"
 requires-python = ">=3.14"
 dependencies = [
     "bleach>=6.4.0",
