@@ -24,6 +24,7 @@
 | 任务 | [tasks](api/tasks.md) | 考试看板 | [exam-board](api/exam-board.md) |
 | 教程 | [tutorials](api/tutorials.md) | 关于页 | [about](api/about.md) |
 | 附件与上传 | [attachments](api/attachments.md) | 公共 | [common](api/common.md) |
+| 校园全景图 | [panorama](api/panorama.md) |  |  |
 
 ## 指南
 
@@ -35,6 +36,7 @@
 ## 运维
 
 - [部署与运维](operations/deployment.md) —— 安装、更新、备份、排障
+- [统一数据根](operations/data-root.md) —— 数据目录结构、开目录规则与换根剧本
 - [管理后台指南](operations/admin-guide.md) —— Django Admin 使用
 
 ## 设计记录

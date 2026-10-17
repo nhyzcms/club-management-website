@@ -99,7 +99,7 @@ club-management-website/
 - API 参考：[`docs/api/README.md`](docs/api/README.md)（各模块分册见 `docs/api/`）
 - 架构：[`docs/architecture/overview.md`](docs/architecture/overview.md) · [`docs/architecture/frontend.md`](docs/architecture/frontend.md)
 - 指南：`docs/guides/`（访问控制 / 身份验证 / 审核系统 / 问卷）
-- 运维：[`docs/operations/deployment.md`](docs/operations/deployment.md) · [`docs/operations/admin-guide.md`](docs/operations/admin-guide.md)
+- 运维：[`docs/operations/deployment.md`](docs/operations/deployment.md) · [`docs/operations/data-root.md`](docs/operations/data-root.md) · [`docs/operations/admin-guide.md`](docs/operations/admin-guide.md)
 - ADR 设计记录：[`docs/adr/`](docs/adr/)
 - GitHub Wiki（对外入口）：<https://github.com/nhyzcms/club-management-website/wiki>
 

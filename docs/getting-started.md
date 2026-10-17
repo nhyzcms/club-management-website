@@ -231,8 +231,8 @@ club-management-website/
 | `CLAUDE.md` | 命令速查与访问控制原则（权限词汇、能力投影） |
 | `docs/architecture/frontend.md` | SPA 的路由表、API 客户端约定、构建与产物细节 |
 | `docs/api/` | 各 app 的接口文档 |
-| `docs/admin-guide.md` | 后台使用手册 |
-| `docs/deployment.md` | 运维与部署指南（现行版） |
+| `docs/operations/admin-guide.md` | 后台使用手册 |
+| `docs/operations/deployment.md` | 运维与部署指南 |
 | `docs/adr/` | 架构决策记录 |
 
 ## 下一步
