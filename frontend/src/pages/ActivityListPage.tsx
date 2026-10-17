@@ -151,6 +151,8 @@ export default function ActivityListPage() {
                     )}
                     {a.status === "scheduled" && a.start_at ? (
                       <span>⏱ 距开始 {formatCountdown(a.start_at)}</span>
+                    ) : a.is_permanent ? (
+                      <span>长期有效</span>
                     ) : a.end_at ? (
                       <span>截止 {new Date(a.end_at).toLocaleDateString("zh-CN")}</span>
                     ) : null}
