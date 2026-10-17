@@ -168,6 +168,24 @@ sudo ./scripts/install.sh                # 一键部署生产环境
 4. [docs/operations/deployment.md](docs/operations/deployment.md)
 5. [docs/operations/admin-guide.md](docs/operations/admin-guide.md)
 
+## 9. 许可证
+
+本项目代码采用 **BSD 3-Clause License**（三条款 BSD 许可证），全文见 [LICENSE](LICENSE)。
+
+简单说：你可以自由使用、修改、再分发，包括商用，但必须
+
+1. 在源码中保留版权声明、条款与免责声明；
+2. 在二进制分发时于文档或其他材料中复现上述内容；
+3. **不得**用本社团或贡献者的名义为你的衍生品背书（未经书面许可）。
+
+软件按「现状」提供，不附带任何担保。
+
+**第三方素材不受本许可证覆盖**，它们各自保留原许可，再分发时请遵守对应条款：
+
+- Live2D 运行时与模型：`frontend/vendor/live2d/runtime/LICENSE.txt`、`frontend/vendor/live2d/models/*/LICENSE`
+- Noto Sans SC 字体：`activities/fonts/OFL.txt`（SIL Open Font License 1.1）
+- 站内内容（新闻、活动作品、照片、全景图、社徽等）的著作权归原作者或社团所有，不属于代码许可的授权范围。
+
 ---
 
 维护：**Echo**
