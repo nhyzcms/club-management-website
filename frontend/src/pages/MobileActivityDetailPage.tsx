@@ -131,7 +131,11 @@ export default function MobileActivityDetailPage() {
         <div className="m-detail-meta">
           <span>{a.creator?.nickname || a.creator?.username || "—"}</span>
           {a.start_at && (<><span className="dot">·</span><span>{fmtDate(a.start_at)} 起</span></>)}
-          {a.end_at && (<><span className="dot">·</span><span>至 {fmtDate(a.end_at)}</span></>)}
+          {a.is_permanent ? (
+            <><span className="dot">·</span><span>长期有效</span></>
+          ) : a.end_at && (
+            <><span className="dot">·</span><span>至 {fmtDate(a.end_at)}</span></>
+          )}
         </div>
 
         {a.body ? (

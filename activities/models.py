@@ -7,6 +7,7 @@
 调研活动以外键指向问卷，门户调研页与加入页只作投影入口。
 """
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
@@ -191,6 +192,10 @@ class Activity(models.Model):
     start_at = models.DateTimeField("开始时间", null=True, blank=True)
     # 窗口截止时间：众议=投票截止、征集=收件截止。到点由 lifecycle 惰性流转。
     end_at = models.DateTimeField("截止时间", null=True, blank=True)
+    # 长期活动：不设截止期限，``end_at`` 恒为 None，永不被 lifecycle 惰性结算；
+    # 只能由发起人 / 持 activities.manage_activity 者手动「结束」（close 动作）终结。
+    # 与 end_at 的关系是「要么有截止，要么长期」——序列化器保证 is_permanent=True 时 end_at=None。
+    is_permanent = models.BooleanField("长期有效（不设截止）", default=False)
 
     # 众议专属：每人最多选几项（K）；K=1 即一人一票。征集忽略此字段。
     max_choices_per_voter = models.PositiveIntegerField("每人最多选几项", default=1)
@@ -257,6 +262,14 @@ class Activity(models.Model):
             return
         self.questionnaire.schema = value
         self.questionnaire.save(update_fields=["schema", "updated_at"])
+
+    def clean(self):
+        """长期活动与截止时间互斥（admin / ModelForm 路径的安全网；API 侧由序列化器先拦）。"""
+        super().clean()
+        if self.is_permanent and self.end_at is not None:
+            raise ValidationError(
+                {"end_at": "长期活动不能设截止时间；请清空截止时间或取消「长期有效」"}
+            )
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)

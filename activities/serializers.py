@@ -122,7 +122,8 @@ class ActivityListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "type", "status", "title", "creator",
             "audience",
-            "review_status", "owed", "start_at", "end_at", "created_at", "updated_at",
+            "review_status", "owed", "start_at", "end_at", "is_permanent",
+            "created_at", "updated_at",
         ]
 
     def get_review_status(self, obj):
@@ -176,7 +177,7 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
         fields = [
             "id", "type", "status", "title", "body", "creator",
             "review_status", "review_comment", "owed",
-            "start_at", "end_at",
+            "start_at", "end_at", "is_permanent",
             "max_choices_per_voter", "is_secret_ballot",
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
             "review_enabled", "voting_enabled",
@@ -230,7 +231,27 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
             attrs.pop("audience", None)
         # 开始 < 截止（两者都给时；update 取实例现值兜底 partial）
         start_at = attrs.get("start_at", getattr(self.instance, "start_at", None))
-        end_at = attrs.get("end_at", getattr(self.instance, "end_at", None))
+        # 长期活动（不设截止）：is_permanent 与 end_at 二选一——
+        # 勾选长期时拒绝同时给截止时间；由长期改回限期时必须补截止时间。
+        permanent = attrs.get("is_permanent", getattr(self.instance, "is_permanent", False))
+        if permanent:
+            if attrs.get("end_at") is not None:
+                raise serializers.ValidationError({"end_at": "已勾选「长期有效」，不能再设截止时间"})
+            # 只在本次显式改 is_permanent 时清空既有截止，避免无关 partial 更新（如改评论开关）
+            # 把 end_at 塞进 validated_data 而触发 perform_update 的「开放后锁定」守卫。
+            if self.instance is not None and attrs.get("is_permanent") and self.instance.end_at is not None:
+                attrs["end_at"] = None
+        end_at = None if permanent else attrs.get("end_at", getattr(self.instance, "end_at", None))
+        # 只在本次显式取消「长期」时索要截止时间；其余 partial 更新不受历史数据影响。
+        if (
+            not permanent
+            and self.instance is not None
+            and "is_permanent" in attrs
+            and end_at is None
+        ):
+            raise serializers.ValidationError(
+                {"end_at": "非长期活动须填写截止时间（不设截止请勾选「长期有效」）"}
+            )
         if start_at and end_at and start_at >= end_at:
             raise serializers.ValidationError({"start_at": "开始时间须早于截止时间"})
         # 众议选项与 K 值校验
@@ -267,8 +288,11 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
         schema = validated_data.pop("schema", None)
         activity_type = validated_data["type"]
         # 截止默认相对开始时间：有 start_at 则从其起算，否则从现在；众议 +3 天 / 其余（含调研）+7 天。
+        # 长期活动（is_permanent）不设截止，直接留空。
         start_at = validated_data.get("start_at")
-        if not validated_data.get("end_at"):
+        if validated_data.get("is_permanent"):
+            validated_data["end_at"] = None
+        elif not validated_data.get("end_at"):
             base = start_at or timezone.now()
             days = 3 if activity_type == "deliberation" else 7
             validated_data["end_at"] = base + timedelta(days=days)

@@ -25,6 +25,7 @@ export interface ActivityListItem {
   owed?: "vote" | "submit" | null;
   start_at: string | null;
   end_at: string | null;
+  is_permanent: boolean; // 长期有效：不设截止，仅能由发起人/管理员手动终结
   created_at: string;
   updated_at: string;
 }
@@ -77,6 +78,7 @@ export interface ActivityDetail {
   owed?: "vote" | "submit" | null;
   start_at: string | null;
   end_at: string | null;
+  is_permanent: boolean; // 长期有效：不设截止，仅能由发起人/管理员手动终结
   // 众议
   max_choices_per_voter: number;
   is_secret_ballot: boolean;
@@ -128,7 +130,8 @@ export interface DeliberationFormData {
   is_secret_ballot: boolean;
   audience: SurveyAudience;
   start_at?: string;
-  end_at?: string;
+  end_at?: string | null;
+  is_permanent?: boolean;
   option_texts: string[];
   comment_thread_status?: ThreadStatus;
 }
@@ -143,7 +146,8 @@ export interface CollectionFormData {
   max_submissions: number | null;
   review_enabled: boolean;
   start_at?: string;
-  end_at?: string;
+  end_at?: string | null;
+  is_permanent?: boolean;
   comment_thread_status?: ThreadStatus;
 }
 
@@ -156,7 +160,8 @@ export interface ExhibitionFormData {
   is_secret_ballot: boolean;
   audience: SurveyAudience;
   start_at?: string;
-  end_at?: string;
+  end_at?: string | null;
+  is_permanent?: boolean;
   comment_thread_status?: ThreadStatus;
 }
 
@@ -166,7 +171,8 @@ export interface SurveyFormData {
   body: string;
   audience: SurveyAudience;
   start_at?: string;
-  end_at?: string;
+  end_at?: string | null;
+  is_permanent?: boolean;
   comment_thread_status?: ThreadStatus;
 }
 
