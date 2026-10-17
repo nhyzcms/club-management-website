@@ -13,7 +13,9 @@
 - 活动管理：活动、众议、征集、展示、公开投票、审核
 - 问卷系统：SurveyJS 问卷（编辑 / 作答 / 统计与导出）
 - 招聘与审批：招聘信息、面试/审核流程
-- 移动端：独立的手机版站点（`/#/m`）
+- 移动端：独立的手机版站点（`/#/m`）。底部 tab 与首页铃铛带未读数字红点（私信 + 通知），
+  「我的」页列出带未读数的私信/通知入口，并提供**外观**切换（浅色 / 深色 / 跟随系统）；
+  Android 壳内默认跟随系统深色（壳的 UA 标记见 `frontend/src/utils/device.ts` 的 `isAppShell`）
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA
 - 运维能力：一键部署脚本（`scripts/install.sh`）、GitHub Release 自动更新（维护页 / 回滚）、systemd + Nginx + Gunicorn（ASGI / 单 worker），适合内部低门槛生产环境
 
@@ -151,6 +153,12 @@ sudo ./scripts/install.sh                # 一键部署生产环境
   以及"写入与推送的载荷上限已解除（大文件/长文档不必再拆片）"这条工具链事实。
 - **不要在生产服务器上跑测试或构建**：生产机只有 2 核 / 2 GB 内存 / 3 MB 带宽，
   测试与构建一律交 CI（`backend` / `frontend` / `frontend-test` / `e2e` 四个作业）。
+- 手机版未读红点的数据源在 `frontend/src/api/unreadBadges.ts`：30 s 轮询 + 窗口可见/聚焦时刷新，
+  并监听 App 壳派发的 `club:unread` 事件（壳在原生的 WS 收到新消息时发一个**不带数据**的常量事件）。
+  改这条链路时注意：/m 页面**不用** `AppShell`，桌面顶栏那套徽标与它们无关。
+- App 壳与网站的契约：UA 标记 `NhyzClubApp/<versionName> (Android; <versionCode>)`。
+  修改壳的 UA 必须同步 `frontend/src/utils/device.ts`，否则「App 内默认跟随系统深色」等
+  App 专属行为会静默失效。
 
 如果你是第一次接手这个项目，建议先读：
 

@@ -58,3 +58,40 @@ describe("theme.ts 主题切换与地址栏主题色", () => {
     expect(() => setTheme("dark")).not.toThrow();
   });
 });
+
+describe("App 壳内的深色默认值（2026-10-17）", () => {
+  const UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 NhyzClubApp/0.2.0 (Android; 2)";
+  const original = window.navigator.userAgent;
+
+  const setUA = (ua: string) =>
+    Object.defineProperty(window.navigator, "userAgent", { value: ua, configurable: true });
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockMatchMedia(true);
+  });
+
+  afterEach(() => {
+    setUA(original);
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it("没有存过偏好时默认「跟随系统」（系统深色 -> dark）", () => {
+    setUA(UA);
+    expect(getTheme()).toBe("system");
+  });
+
+  it("旧的 light 会被一次性迁移成 system，迁移后用户再选 light 不会被改回", () => {
+    setUA(UA);
+    localStorage.setItem("cobalt:theme", "light");
+    expect(getTheme()).toBe("system");
+    setTheme("light");
+    expect(getTheme()).toBe("light");
+  });
+
+  it("普通浏览器仍默认浅色（不受影响）", () => {
+    setUA("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36");
+    expect(getTheme()).toBe("light");
+  });
+});

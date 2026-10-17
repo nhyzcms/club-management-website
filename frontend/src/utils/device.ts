@@ -9,3 +9,14 @@ export function isMobileDevice(): boolean {
     navigator.userAgent,
   );
 }
+
+/** 是否运行在自家 Android 壳里（UA 标记由壳注入，见 app 仓库 AppConfig.uaMarker）。
+ *
+ * 用途：让 App 专属行为只在壳里生效 —— 例如「首次启动默认跟随系统深色」
+ * （见 theme.ts 的 getTheme）。浏览器（含手机浏览器）不受影响。
+ * 标记格式固定为 `NhyzClubApp/<versionName> (Android; <versionCode>)`。
+ */
+export function isAppShell(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /NhyzClubApp\//.test(navigator.userAgent);
+}
