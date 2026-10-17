@@ -1,69 +1,53 @@
-import { useEffect, useRef, useState } from "react";
-import { THEME_OPTIONS, useTheme } from "../theme";
+import { useTheme } from "../theme";
 import "./ThemeToggle.css";
 
-function SunIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-    </svg>
-  );
-}
+/** 4 角闪光星形路径（与 WPF 参考实现同源的星形几何）。 */
+const SPARKLE_PATH =
+  "M100,50 C72.38589,50 50,72.38589 50,100 C50,72.38589 27.61411,50 0,50 C27.61411,50 50,27.61411 50,0 C50,27.61411 72.38589,50 100,50 Z";
 
-function MoonIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-    </svg>
-  );
-}
+/** 星星位置与大小（220×90 基准坐标系）。 */
+const SPARKLES = [
+  { x: 32, y: 16, size: 16 },
+  { x: 68, y: 54, size: 10 },
+  { x: 97, y: 30, size: 13 },
+  { x: 52, y: 68, size: 9 },
+  { x: 14, y: 58, size: 8 },
+];
 
+/**
+ * 昼夜切换开关（顶栏 / 手机版顶栏）。
+ *
+ * 复刻 jh3y《Night && Day Toggle ☀️/🌙》的经典拟物开关（参照 chokcoco 的
+ * 「单标签」CSS 版）：凸面外框、太阳⇄月亮滑动、云朵淡出、星空亮起、
+ * 天空由昼转夜。纯 CSS 绘制，无图片素材、无新依赖。
+ *
+ * 点击在浅色/深色之间显式切换；「跟随系统」仍可在外观菜单里选择。
+ */
 export default function ThemeToggle() {
-  const { pref, resolved, setPref } = useTheme();
-  const [open, setOpen] = useState(false);
-  const wrap = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
+  const { resolved, setPref } = useTheme();
+  const dark = resolved === "dark";
 
   return (
-    <div className="theme-toggle-wrap" ref={wrap}>
-      <button
-        className="theme-toggle-btn"
-        type="button"
-        aria-label={resolved === "dark" ? "切换为浅色模式" : "切换为深色模式"}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {resolved === "dark" ? <MoonIcon /> : <SunIcon />}
-      </button>
-      {open && (
-        <div className="theme-menu is-open" role="menu" aria-label="颜色模式">
-          {THEME_OPTIONS.map((o) => (
-            <button
-              key={o.value}
-              className={"theme-menu-item" + (pref === o.value ? " is-current" : "")}
-              type="button"
-              role="menuitemradio"
-              aria-checked={pref === o.value}
-              onClick={() => {
-                setPref(o.value);
-                setOpen(false);
-              }}
-            >
-              <span className="theme-dot" aria-hidden="true" />
-              {o.label}
-            </button>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={dark}
+      aria-label="深色模式"
+      className="dn-switch"
+      onClick={() => setPref(dark ? "light" : "dark")}
+    >
+      <span className="dn-box" aria-hidden="true">
+        <span className="dn-glow" />
+        <span className="dn-clouds" />
+        <span className="dn-sparkles">
+          {SPARKLES.map((s, i) => (
+            <svg key={i} viewBox="0 0 100 100" width={s.size} height={s.size} style={{ left: s.x, top: s.y }}>
+              <path d={SPARKLE_PATH} />
+            </svg>
           ))}
-        </div>
-      )}
-    </div>
+        </span>
+        <span className="dn-disc" />
+      </span>
+    </button>
   );
 }

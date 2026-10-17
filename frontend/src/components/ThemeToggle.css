@@ -1,49 +1,257 @@
-/* 顶栏主题切换：图标按钮 + 三选项弹层；个人中心下拉「外观」分组复用 .theme-dot */
-.theme-toggle-wrap { position: relative; }
-.theme-toggle-btn {
-  width: 38px; height: 38px; border-radius: var(--r-sm);
-  display: inline-flex; align-items: center; justify-content: center;
-  color: var(--ink-700);
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+/* ============================================================
+   昼夜切换开关（顶栏 / 手机版顶栏）
+   ------------------------------------------------------------
+   复刻 jh3y《Night && Day Toggle ☀️/🌙》的经典设计（参照
+   chokcoco「单标签」版 CSS，并按 WPF 参考实现的观感微调色温）：
+   拟物凸框、太阳⇄月亮滑动、云朵淡出、星空淡入。
+   纯 CSS 绘制，无图片素材、无新依赖。
+   几何基准 220×90，通过 --dn-scale 等比缩放。
+   ============================================================ */
+.dn-switch {
+  --dn-scale: 0.4;
+  position: relative;
+  flex-shrink: 0;
+  width: calc(220px * var(--dn-scale));
+  height: calc(90px * var(--dn-scale));
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 999px;
 }
-.theme-toggle-btn:hover,
-.theme-toggle-btn[aria-expanded="true"] { background: var(--brand-50); color: var(--brand-700); }
-.theme-toggle-btn svg { width: 20px; height: 20px; }
-
-.theme-menu {
-  position: absolute; top: calc(100% + 8px); right: 0; width: 168px; z-index: 120;
-  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg);
-  box-shadow: var(--sh-3); padding: var(--s-2);
-  opacity: 0; visibility: hidden; transform: translateY(-6px);
-  transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--ease), visibility var(--dur-2);
+.dn-switch:focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 2px;
 }
-.theme-menu.is-open { opacity: 1; visibility: visible; transform: translateY(0); }
 
-.theme-menu-item {
-  display: flex; align-items: center; gap: var(--s-3); width: 100%;
-  padding: 8px var(--s-3); border-radius: var(--r-sm);
-  font-size: 14px; color: var(--ink-700); font-weight: 500; text-align: left;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+.dn-box {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 220px;
+  height: 90px;
+  transform: scale(var(--dn-scale));
+  transform-origin: 0 0;
+  border-radius: 90px;
+  overflow: hidden;
+  cursor: pointer;
+  /* 天空：左半=夜空（深蓝），右半=白天（蓝）；background-position 滑动切换 */
+  background-image: linear-gradient(90deg, #1a2032, #232a40 50%, #6598cd 50%, #6598cd);
+  background-repeat: no-repeat;
+  background-size: 200% 100%;
+  background-position: 100% 0;
+  /* 拟物凸框：浅色圈口 + 上暗下亮的外阴影 + 内凹槽（蓝灰，不压黑） */
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 -2px 3px rgba(120, 132, 155, 0.5),
+    inset 0 3px 5px rgba(30, 40, 65, 0.5),
+    0 4px 4px rgba(255, 255, 255, 0.45),
+    inset 0 -3px 5px #ddd;
+  transition: background-position 0.55s ease;
 }
-.theme-menu-item:hover { background: var(--brand-50); color: var(--brand-700); }
+[aria-checked="true"] .dn-box {
+  background-position: 0 0;
+}
 
+/* 光晕（日/月背后的柔光），随圆盘移动 */
+.dn-glow {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  box-shadow:
+    -10px 0 0 50px rgba(255, 255, 255, 0.2),
+    15px 0 0 50px rgba(255, 255, 255, 0.15),
+    40px 0 0 50px rgba(255, 255, 255, 0.21);
+  transition: translate 0.6s cubic-bezier(0.34, 1.28, 0.64, 1), box-shadow 0.55s ease;
+}
+[aria-checked="true"] .dn-glow {
+  translate: 130px 0;
+  box-shadow:
+    10px 0 0 50px rgba(255, 255, 255, 0.2),
+    -15px 0 0 50px rgba(255, 255, 255, 0.15),
+    -40px 0 0 50px rgba(255, 255, 255, 0.21);
+}
+
+/* 云朵（多层 box-shadow 圆）：白天可见；夜晚颜色过渡到透明
+   （保留影子结构而不是删除，以获得平滑的淡出动画） */
+.dn-clouds {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  box-shadow:
+    10px 60px 0 10px #fff,
+    65px 60px 0 5px #fff,
+    95px 70px 0 10px #fff,
+    135px 45px 0 5px #fff,
+    170px 35px 0 10px #fff,
+    195px -5px 0 10px #fff,
+    10px 40px 0 10px #abc1d9,
+    70px 35px 0 10px #abc1d9,
+    95px 40px 0 10px #abc1d9,
+    135px 20px 0 10px #abc1d9,
+    155px 15px 0 10px #abc1d9,
+    190px -20px 0 10px #abc1d9;
+  transition: translate 0.6s cubic-bezier(0.34, 1.28, 0.64, 1), box-shadow 0.55s ease;
+}
+[aria-checked="true"] .dn-clouds {
+  translate: 130px 0;
+  box-shadow:
+    10px 60px 0 10px transparent,
+    65px 60px 0 5px transparent,
+    95px 70px 0 10px transparent,
+    135px 45px 0 5px transparent,
+    170px 35px 0 10px transparent,
+    195px -5px 0 10px transparent,
+    10px 40px 0 10px transparent,
+    70px 35px 0 10px transparent,
+    95px 40px 0 10px transparent,
+    135px 20px 0 10px transparent,
+    155px 15px 0 10px transparent,
+    190px -20px 0 10px transparent;
+}
+
+/* 星空（4 角闪光 SVG + 小圆点星，黑夜淡入） */
+.dn-sparkles {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.5s ease 0.16s;
+}
+[aria-checked="true"] .dn-sparkles {
+  opacity: 1;
+}
+.dn-sparkles svg {
+  position: absolute;
+  fill: #fff;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.9));
+}
+.dn-sparkles::before {
+  content: "";
+  position: absolute;
+  left: 44px;
+  top: 22px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    30px 40px 0 -0.5px #fff,
+    76px -8px 0 -1px #fff,
+    12px 52px 0 -1px #fff;
+  filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.9));
+}
+
+/* 圆盘：太阳⇄月亮（双层交叉淡化 + 位移，带轻微过冲回稳） */
+.dn-disc {
+  position: absolute;
+  left: 7.5px;
+  top: 7.5px;
+  width: 75px;
+  height: 75px;
+  border-radius: 50%;
+  z-index: 1;
+  box-shadow: 0 1px 4px rgba(15, 25, 45, 0.5);
+  transition: translate 0.6s cubic-bezier(0.34, 1.28, 0.64, 1), scale 0.3s ease, filter 0.3s ease;
+}
+[aria-checked="true"] .dn-disc {
+  translate: 130px 0;
+}
+
+.dn-disc::before,
+.dn-disc::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  transition: opacity 0.45s ease;
+}
+/* 太阳：金黄球体（暖色高光 + 暖色暗缘） */
+.dn-disc::before {
+  background: #eecb44;
+  box-shadow: inset 2px 2px 3px #fbf0c4, inset -2px -2px 3px #b08e20;
+}
+/* 月亮：灰白球体 + 三处陨石坑（radial-gradient 绘制） */
+.dn-disc::after {
+  background:
+    radial-gradient(circle at 50% 20px, #8b93a1, #8b93a1 6.5px, transparent 7px, transparent),
+    radial-gradient(circle at 35% 45px, #8b93a1, #8b93a1 11.5px, transparent 12px, transparent),
+    radial-gradient(circle at 72% 50px, #8b93a1, #8b93a1 8.5px, transparent 9px, transparent),
+    radial-gradient(#cbcdda, #cbcdda);
+  box-shadow: inset 2px 2px 4px #fbfcff, inset -3px -3px 5px rgba(85, 95, 115, 0.6);
+  opacity: 0;
+}
+[aria-checked="true"] .dn-disc::before {
+  opacity: 0;
+  transition-delay: 0.08s;
+}
+[aria-checked="true"] .dn-disc::after {
+  opacity: 1;
+  transition-delay: 0.1s;
+}
+
+/* 悬停/聚焦：圆盘微放大 + 提亮（原作细节） */
+.dn-switch:hover .dn-disc,
+.dn-switch:focus-visible .dn-disc {
+  scale: 1.05;
+  filter: contrast(90%) brightness(110%);
+}
+
+/* 手机版顶栏：略微缩小 */
+.m-topbar-actions .dn-switch {
+  --dn-scale: 0.34;
+}
+
+/* 减少动效偏好：直接落位，不做过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .dn-box,
+  .dn-box *,
+  .dn-box *::before,
+  .dn-box *::after {
+    transition-duration: 0.01s !important;
+    transition-delay: 0s !important;
+  }
+}
+
+/* ---- 以下为「外观」选项复用样式（个人中心菜单等） ---- */
 .theme-dot {
-  width: 14px; height: 14px; border-radius: var(--r-pill);
-  border: 2px solid var(--line-2); display: inline-flex;
-  align-items: center; justify-content: center; flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--r-pill);
+  border: 2px solid var(--line-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.theme-menu-item.is-current .theme-dot,
-.user-menu-item.theme-opt.is-current .theme-dot { border-color: var(--brand-600); }
-.theme-menu-item.is-current .theme-dot::after,
+.user-menu-item.theme-opt.is-current .theme-dot {
+  border-color: var(--brand-600);
+}
 .user-menu-item.theme-opt.is-current .theme-dot::after {
-  content: ""; width: 6px; height: 6px; border-radius: var(--r-pill); background: var(--brand-600);
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--brand-600);
 }
-.theme-menu-item.is-current,
-.user-menu-item.theme-opt.is-current { color: var(--brand-700); font-weight: 600; }
+.user-menu-item.theme-opt.is-current {
+  color: var(--brand-700);
+  font-weight: 600;
+}
 
 /* 个人中心下拉里的外观分组 */
-.um-theme { padding: var(--s-1) 0; }
+.um-theme {
+  padding: var(--s-1) 0;
+}
 .um-theme-label {
-  display: block; padding: var(--s-1) var(--s-3);
-  font-size: 12px; font-weight: 600; color: var(--faint); letter-spacing: .04em;
+  display: block;
+  padding: var(--s-1) var(--s-3);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--faint);
+  letter-spacing: 0.04em;
 }
