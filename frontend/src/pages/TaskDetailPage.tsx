@@ -11,6 +11,7 @@ import RichTextEditor from "../components/RichTextEditor";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
 import CommentSection from "../components/CommentSection";
+import { ICONS } from "../components/icons";
 import "../styles/detail.css";
 
 export default function TaskDetailPage() {
@@ -221,9 +222,9 @@ export default function TaskDetailPage() {
             </div>
             <div className="detail-head-actions">
               {task.status === "pending" && (
-                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/tasks/${task.id}/edit`)}>编辑</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/tasks/${task.id}/edit`)}><span className="ico">{ICONS.edit}</span>编辑</button>
               )}
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/tasks")}>返回列表</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/tasks")}><span className="ico">{ICONS.arrowLeft}</span>返回列表</button>
             </div>
           </div>
           <p className="detail-sub">
@@ -344,7 +345,7 @@ export default function TaskDetailPage() {
         <div className="card card-pad detail-section">
           <div className="section-head-row">
             <h3 className="section-h">附件 ({task.attachments.length})</h3>
-            <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={attUploading}>+ 上传</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={attUploading}><span className="ico">{ICONS.upload}</span>上传</button>
             <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: "none" }} />
           </div>
           {attUploading && (

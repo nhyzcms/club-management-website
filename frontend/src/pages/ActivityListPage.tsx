@@ -13,6 +13,7 @@ import { REVIEW_STATUS_LABELS } from "../types/reviews";
 import { usePagedList } from "../hooks/usePagedList";
 import Pagination from "../components/Pagination";
 import Avatar from "../components/Avatar";
+import { ICONS } from "../components/icons";
 import AppShell from "../components/AppShell";
 import "../styles/list.css";
 
@@ -113,7 +114,7 @@ export default function ActivityListPage() {
         ) : activities.length === 0 ? (
           <div className="prop-empty">
             <p>暂无活动</p>
-            <button className="btn btn-primary" onClick={() => navigate("/activity/new")}>发起第一个活动</button>
+            <button className="btn btn-primary" onClick={() => navigate("/activity/new")}><span className="ico">{ICONS.plus}</span>发起第一个活动</button>
           </div>
         ) : (
           activities.map((a) => {
