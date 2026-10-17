@@ -10,6 +10,9 @@ import { SURVEY_LOCALE } from "../utils/surveyLocale";
 import "../styles/detail.css";
 import "../styles/survey.css";
 
+/** 检索输入 → 生效检索词的防抖间隔（ms）。 */
+const SEARCH_DEBOUNCE_MS = 300;
+
 /** 单份作答：display 模式（与 admin 查看作答同款）。 */
 function ResponseDetail({
   schema, answers,
@@ -41,24 +44,51 @@ export default function SurveyResponsesPage() {
   const [activity, setActivity] = useState<ActivityDetail | null>(null);
   const [data, setData] = useState<SurveyResponsesPayload | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<number | null>(null);
+  // 检索：输入框即时回显，query 防抖后生效（每次变更都重打 responses 端点，
+  // 过滤与命中提示都由后端算——前端不重复实现一套匹配口径）
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQuery(search.trim()), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     if (!activityId) return;
-    setLoading(true);
-    Promise.all([activityApi.get(activityId), activityApi.responses(activityId)])
-      .then(([a, r]) => { setActivity(a); setData(r); })
-      .catch((e: any) => setError(e?.message || "加载失败"))
-      .finally(() => setLoading(false));
+    let alive = true;
+    activityApi.get(activityId)
+      .then((a) => { if (alive) setActivity(a); })
+      .catch((e: any) => { if (alive) setError(e?.message || "加载失败"); });
+    return () => { alive = false; };
   }, [activityId]);
 
-  if (loading) {
+  useEffect(() => {
+    if (!activityId) return;
+    let alive = true;
+    setSearching(true);
+    activityApi.responses(activityId, query)
+      .then((r) => {
+        if (!alive) return;
+        setData(r);
+        setError("");
+        setOpenId(null);
+      })
+      .catch((e: any) => { if (alive) setError(e?.message || "加载失败"); })
+      .finally(() => { if (alive) setSearching(false); });
+    return () => { alive = false; };
+  }, [activityId, query]);
+
+  if (error && !data) {
+    return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error}</p></div></AppShell>;
+  }
+  if (!activity || !data) {
     return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中…</p></div></AppShell>;
   }
-  if (error || !data || !activity) {
-    return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error || "加载失败"}</p></div></AppShell>;
-  }
+
+  const hasQuery = data.query !== "";
 
   return (
     <AppShell>
@@ -79,10 +109,33 @@ export default function SurveyResponsesPage() {
             </div>
           </div>
           <p className="detail-sub">
-            {data.is_manager ? `共 ${data.results.length} 份作答（你可见全部）。` : "你可见自己的作答。"}
+            {hasQuery
+              ? `匹配 ${data.results.length} 份 / 共 ${data.total} 份作答。`
+              : (data.is_manager ? `共 ${data.total} 份作答（你可见全部）。` : "你可见自己的作答。")}
           </p>
+          <div className="survey-search">
+            <div className="input-affix">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
+              <input
+                className="input"
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜索作答内容…"
+                aria-label="搜索作答内容"
+              />
+              {searching && <span className="hint">搜索中…</span>}
+            </div>
+          </div>
+          {error && (
+            <div className="alert alert-danger" style={{ margin: "var(--s-3) 0" }}>
+              <span>{error}</span>
+            </div>
+          )}
           {data.results.length === 0 ? (
-            <div className="prop-empty"><p>暂无作答。</p></div>
+            <div className="prop-empty">
+              <p>{hasQuery ? "没有匹配的作答。" : "暂无作答。"}</p>
+            </div>
           ) : (
             <div className="card card-pad">
               <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
@@ -98,6 +151,15 @@ export default function SurveyResponsesPage() {
                         {openId === row.id ? "收起" : "查看作答"}
                       </button>
                     </div>
+                    {row.matches.length > 0 && (
+                      <div className="survey-matches">
+                        {row.matches.map((m) => (
+                          <span key={m.name} className="survey-match">
+                            <b>{m.title}</b>：{m.snippet}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {openId === row.id && (
                       <div style={{ paddingBottom: 12 }}>
                         <ResponseDetail schema={data.schema} answers={row.answers} />

@@ -25,7 +25,7 @@ from reviews.lifecycle import open_review
 from reviews.models import Review
 from reviews.visibility import status_of, visible_queryset
 
-from . import exhibition, voting
+from . import exhibition, survey_search, voting
 from .debt import annotate_activity_debt
 from .device import client_ip_from_request, device_id_from_request
 from .lifecycle import (
@@ -294,21 +294,37 @@ class ActivityViewSet(viewsets.ModelViewSet):
             if is_manager
             else questionnaire.responses.filter(user=user)
         )
+        # 检索作答内容（?q=）：口径与实现见 activities/survey_search.py——
+        # JSONField 跨库无法可靠地做中文模糊匹配，故在 Python 侧逐行扫描；
+        # 本端点本来就要把整份作答下发，扫描不额外增加查询。
+        query = survey_search.clean_query(request.query_params.get("q"))
+        rows = list(rows)
+        results = []
+        for row in rows:
+            answers = row.answers or {}
+            if query:
+                matched, matches = survey_search.search_answers(questionnaire.schema, answers, query)
+                if not matched:
+                    continue
+            else:
+                matches = []
+            results.append({
+                "id": row.pk,
+                "user_label": (
+                    row.user.username if row.user_id
+                    else (f"访客 · {row.device_id[:8]}" if row.device_id else "访客")
+                ),
+                "answers": answers,
+                "submitted_at": row.submitted_at,
+                "matches": matches,
+            })
         return Response({
             "schema": questionnaire.schema,
             "is_manager": is_manager,
-            "results": [
-                {
-                    "id": row.pk,
-                    "user_label": (
-                        row.user.username if row.user_id
-                        else (f"访客 · {row.device_id[:8]}" if row.device_id else "访客")
-                    ),
-                    "answers": row.answers or {},
-                    "submitted_at": row.submitted_at,
-                }
-                for row in rows
-            ],
+            # total 是「未过滤的可见份数」，供前端显示「匹配 N / 共 M」
+            "total": len(rows),
+            "query": query,
+            "results": results,
         })
 
     # ── 征集投稿（一次性多文件、提交即锁定、一人一作品）──

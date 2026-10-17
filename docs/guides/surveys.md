@@ -112,13 +112,21 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 
 | 入口 | 路由 | 内容 |
 |---|---|---|
-| 查看结果 | `/activity/{id}/survey-responses` | 逐份作答列表，展开即 display 模式阅读 |
+| 查看结果 | `/activity/{id}/survey-responses` | 逐份作答列表（可按作答内容检索），展开即 display 模式阅读 |
 | 查看统计 | `/activity/{id}/survey-stats` | survey-analytics 图表看板 + 份数 |
 
-两者都走 `GET /activities/activities/{id}/responses/`，返回 `{schema, is_manager, results[]}`：
+两者都走 `GET /activities/activities/{id}/responses/`，返回 `{schema, is_manager, total, query, results[]}`：
 
 - `is_manager`（发起人 或 `activities.manage_activity`）→ 看**全部**作答；
 - 其他登录用户 → 只看**自己**的那一份（页面文案相应变成「你可见自己的作答」）。
+
+**结果页支持按作答内容检索**（`?q=`）：输入框在份数说明下方，停止输入 300 ms 后生效（防抖），命中项会标出「哪道题命中了」的片段，份数变成「匹配 N / 共 M 份」。
+
+- 匹配范围是**用户填写的值**，不含作答者用户名 / 提交时间；
+- 选择题按**选项展示文本**匹配（SurveyJS 的 `value` 与 `text` 可以不同，库里存 `item1`、界面写「新闻」，用户搜「新闻」必须命中）；
+- 文件题匹配文件名与链接，多选逐项匹配，评分 / 数字按字符串匹配；
+- 归一化：NFKC（全角「ＮＥＷＳ」= `news`）+ 折叠空白 + 大小写不敏感；
+- 过滤在服务端 Python 侧做（`activities/survey_search.py`）：`answers` 是 JSONField，Django 写 SQLite 时中文会被 `ensure_ascii` 成 `\uXXXX`，直接 `icontains` 搜不到中文；该端点本来就要下发整份作答，逐行扫描不额外增加查询。数据量到万份级再考虑落检索列。
 
 门户**没有**「谁答了什么」的公开列表，也不给未登录者看结果。
 

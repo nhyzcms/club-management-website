@@ -13,3 +13,14 @@
 .survey-card .sd-body.sd-body--static {
   max-width: none;
 }
+
+/* 问卷结果 · 作答内容检索（SurveyResponsesPage） */
+.survey-search { max-width: 380px; margin: var(--s-4) 0 var(--s-2); }
+.survey-search .input-affix { gap: var(--s-2); }
+.survey-search .hint { white-space: nowrap; }
+.survey-matches {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 0 0 var(--s-2); font-size: 12.5px; color: var(--muted);
+}
+.survey-match { line-height: 1.55; word-break: break-word; }
+.survey-match b { color: var(--brand-700); font-weight: 600; margin-right: 2px; }
