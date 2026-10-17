@@ -13,6 +13,6 @@ setup("登录信息组账号并保存会话", async ({ page }) => {
   await dialog.getByPlaceholder("请输入密码").fill(E2E_PASSWORD);
   await dialog.getByRole("button", { name: "登录" }).click();
 
-  await expect(page.getByRole("banner").getByRole("button", { name: /e2e_info|E2E 信息员/ })).toBeVisible();
+  await expect(page.getByRole("banner").getByRole("button", { name: "打开用户菜单" })).toBeVisible();
   await page.context().storageState({ path: AUTH_FILE });
 });
