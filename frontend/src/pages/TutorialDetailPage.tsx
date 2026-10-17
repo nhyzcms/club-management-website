@@ -6,6 +6,7 @@ import { tutorialApi, type TutorialItem } from "../api/tutorials";
 import { useEmbedMode } from "../embed";
 import AuthorReviewBanner from "../components/AuthorReviewBanner";
 import ReportButton from "../components/ReportButton";
+import { ICONS } from "../components/icons";
 import "../styles/detail.css";
 
 export default function TutorialDetailPage() {
@@ -98,7 +99,7 @@ export default function TutorialDetailPage() {
             <a href={item.file_url} download={item.file_name}>下载原件</a> 本地播放。
           </p>
         ) : item.file_url ? (
-          <p><a className="btn btn-primary" href={item.file_url} download={item.file_name}>下载文档（{item.file_name}）</a></p>
+          <p><a className="btn btn-primary" href={item.file_url} download={item.file_name}><span className="ico">{ICONS.download}</span>下载文档（{item.file_name}）</a></p>
         ) : null}
       </div>
       <div className="container detail-container">

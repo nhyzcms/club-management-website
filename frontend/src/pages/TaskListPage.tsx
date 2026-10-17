@@ -15,6 +15,7 @@ import TaskTimeline from "../components/TaskTimeline";
 import TaskGantt from "../components/TaskGantt";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
+import { ICONS } from "../components/icons";
 import { useLoginModal } from "../components/LoginModalProvider";
 
 const PAGE_SIZE = 20;
@@ -147,7 +148,7 @@ export default function TaskListPage() {
           tasks.length === 0 ? (
             <div className="task-empty">
               <p>暂无任务</p>
-              <button className="btn btn-primary" onClick={() => navigate("/tasks/new")}>创建第一个任务</button>
+              <button className="btn btn-primary" onClick={() => navigate("/tasks/new")}><span className="ico">{ICONS.plus}</span>创建第一个任务</button>
             </div>
           ) : (
             <>

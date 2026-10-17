@@ -442,9 +442,14 @@ body.is-authed .topnav-actions .act-user  { display: inline-flex; }
 .avatar.sm { width: 26px; height: 26px; font-size: 11px; }
 .avatar.lg { width: 44px; height: 44px; font-size: 16px; }
 
+/* 统一图标容器（尺寸可被场景覆盖，见 .inbox-entry/.mobile-sheet 等） */
+.ico { display: inline-flex; width: 16px; height: 16px; flex: none; vertical-align: -0.18em; }
+.ico svg { width: 100%; height: 100%; display: block; }
+
 /* 待办入口（替换铃铛） */
 .inbox-entry {
-  position: relative; height: 38px; padding: 0 12px; border-radius: var(--r-sm);
+  position: relative; height: 38px; min-width: 38px; padding: 0 9px; border-radius: var(--r-sm);
+  justify-content: center;
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 14px; font-weight: 600; color: var(--ink-700);
   transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
@@ -455,6 +460,11 @@ body.is-authed .topnav-actions .act-user  { display: inline-flex; }
   background: var(--danger); color: #fff; font-size: 11px; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center;
 }
+.inbox-entry .ico { width: 19px; height: 19px; }
+.inbox-entry .inbox-badge {
+  position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px;
+  font-size: 10px; box-shadow: 0 0 0 2px var(--bg);
+}
 .back-to-top {
   position: fixed; right: 22px; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 80;
   width: 40px; height: 40px; border-radius: var(--r-pill);
@@ -462,6 +472,7 @@ body.is-authed .topnav-actions .act-user  { display: inline-flex; }
   box-shadow: var(--sh-2); font-size: 16px; font-weight: 700;
 }
 .back-to-top:hover { background: var(--brand-50); color: var(--brand-700); }
+.back-to-top .ico { width: 18px; height: 18px; }
 
 .article-toc {
   border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-4);
@@ -606,6 +617,7 @@ body:not(.is-authed) .sheet-user { display: none; }
   }
   .mobile-sheet a:hover, .mobile-sheet button.sheet-item:hover { background: var(--brand-50); color: var(--brand-700); }
   .mobile-sheet .sheet-sep { height: 1px; background: var(--line); margin: var(--s-2) var(--s-4); }
+  .mobile-sheet .ico { width: 18px; height: 18px; opacity: 0.85; }
 }
 @media (max-width: 768px) {
   .section { padding: var(--s-12) 0; }

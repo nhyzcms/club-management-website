@@ -9,6 +9,7 @@ import { useLoginModal } from "./LoginModalProvider";
 import type { Banner } from "../types/messaging";
 import { useTheme } from "../theme";
 import ThemeToggle from "./ThemeToggle";
+import { ICONS } from "./icons";
 import UserMenu from "./UserMenu";
 import "./AppShell.css";
 
@@ -40,6 +41,15 @@ const NAV: { label: string; path: string }[] = [
   { label: "反馈", path: "/feedback" },
   { label: "任务", path: "/tasks" },
 ];
+
+const NAV_ICONS: Record<string, ReactNode> = {
+  "/": ICONS.home,
+  "/about": ICONS.info,
+  "/news": ICONS.news,
+  "/activity": ICONS.activity,
+  "/feedback": ICONS.feedback,
+  "/tasks": ICONS.tasks,
+};
 
 const BANNER_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -233,9 +243,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   className={"inbox-entry" + (isActive("/messages") ? " is-current" : "")}
                   type="button"
                   aria-label={dmCount > 0 ? `私信，${dmCount} 条未读` : "私信"}
+                  title="私信"
                   onClick={() => go("/messages")}
                 >
-                  私信
+                  <span className="ico">{ICONS.mail}</span>
                   {dmCount > 0 && <span className="inbox-badge tnum">{formatBadge(dmCount)}</span>}
                 </button>
               )}
@@ -244,9 +255,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   className={"inbox-entry" + (isActive("/notifications") ? " is-current" : "")}
                   type="button"
                   aria-label={notifCount > 0 ? `通知，${notifCount} 条未读` : "通知"}
+                  title="通知"
                   onClick={() => go("/notifications")}
                 >
-                  通知
+                  <span className="ico">{ICONS.bell}</span>
                   {notifCount > 0 && <span className="inbox-badge tnum">{formatBadge(notifCount)}</span>}
                 </button>
               )}
@@ -274,37 +286,39 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <div className="mobile-sheet">
           {NAV.map((n) => (
             <a key={n.path} className={isActive(n.path) ? "active" : ""} href="#"
-               onClick={(e) => { e.preventDefault(); go(n.path); }}>{n.label}</a>
+               onClick={(e) => { e.preventDefault(); go(n.path); }}>
+              <span className="ico">{NAV_ICONS[n.path]}</span>{n.label}
+            </a>
           ))}
           <div className="sheet-sep" />
           {user ? (
             <>
-              <button className="sheet-item" type="button" onClick={() => go("/profile")}>个人中心</button>
+              <button className="sheet-item" type="button" onClick={() => go("/profile")}><span className="ico">{ICONS.profile}</span>个人中心</button>
               {showDm && (
                 <button className="sheet-item" type="button" onClick={() => go("/messages")}>
-                  私信{dmCount > 0 ? `（${dmCount}）` : ""}
+                  <span className="ico">{ICONS.mail}</span>私信{dmCount > 0 ? `（${dmCount}）` : ""}
                 </button>
               )}
               {showNotif && (
                 <button className="sheet-item" type="button" onClick={() => go("/notifications")}>
-                  通知{notifCount > 0 ? `（${notifCount}）` : ""}
+                  <span className="ico">{ICONS.bell}</span>通知{notifCount > 0 ? `（${notifCount}）` : ""}
                 </button>
               )}
               {showInbox && (
                 <button className="sheet-item" type="button" onClick={() => go("/inbox")}>
-                  待办{inboxCount > 0 ? `（${inboxCount}）` : ""}
+                  <span className="ico">{ICONS.todo}</span>待办{inboxCount > 0 ? `（${inboxCount}）` : ""}
                 </button>
               )}
-              <button className="sheet-item" type="button" onClick={() => go("/tasks")}>任务管理</button>
-              <button className="sheet-item" type="button" onClick={() => go("/activity")}>活动</button>
-              <button className="sheet-item" type="button" onClick={() => go("/feedback")}>意见反馈</button>
+              <button className="sheet-item" type="button" onClick={() => go("/tasks")}><span className="ico">{ICONS.tasks}</span>任务管理</button>
+              <button className="sheet-item" type="button" onClick={() => go("/activity")}><span className="ico">{ICONS.activity}</span>活动</button>
+              <button className="sheet-item" type="button" onClick={() => go("/feedback")}><span className="ico">{ICONS.feedback}</span>意见反馈</button>
               {showReviewQueue && (
-                <button className="sheet-item" type="button" onClick={() => go("/reviews")}>审核队列</button>
+                <button className="sheet-item" type="button" onClick={() => go("/reviews")}><span className="ico">{ICONS.review}</span>审核队列</button>
               )}
-              <button className="sheet-item" type="button" onClick={logout}>退出登录</button>
+              <button className="sheet-item" type="button" onClick={logout}><span className="ico">{ICONS.logout}</span>退出登录</button>
             </>
           ) : (
-            <button className="sheet-item" type="button" onClick={() => openLogin()}>登录</button>
+            <button className="sheet-item" type="button" onClick={() => openLogin()}><span className="ico">{ICONS.login}</span>登录</button>
           )}
         </div>
       </header>
@@ -353,7 +367,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           aria-label="回到顶部"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         >
-          ↑
+          <span className="ico">{ICONS.arrowUp}</span>
         </button>
       )}
 

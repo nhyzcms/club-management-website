@@ -6,6 +6,7 @@ import { usePagedList } from "../hooks/usePagedList";
 import { api } from "../api/client";
 import { tutorialApi, type TutorialItem } from "../api/tutorials";
 import { REVIEW_STATUS_LABELS } from "../types/reviews";
+import { ICONS } from "../components/icons";
 import "../styles/list.css";
 import "../styles/about.css";
 
@@ -52,7 +53,7 @@ export default function TutorialListPage() {
                 </button>
               )}
               {canUpload && (
-                <button className="btn btn-primary" onClick={() => navigate("/tutorials/new")}>上传教程</button>
+                <button className="btn btn-primary" onClick={() => navigate("/tutorials/new")}><span className="ico">{ICONS.upload}</span>上传教程</button>
               )}
             </div>
           </div>
