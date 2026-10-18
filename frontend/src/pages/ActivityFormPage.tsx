@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { activityApi } from "../api/activities";
 import { messagingApi } from "../api/messaging";
@@ -8,7 +8,11 @@ import AppShell from "../components/AppShell";
 import CommentThreadStatusField from "../components/CommentThreadStatusField";
 import type { ActivityType, ExhibitionFormData, SurveyAudience, SurveyFormData } from "../types/activities";
 import type { ThreadStatus } from "../types/messaging";
+import { EMPTY_SURVEY_SCHEMA, countSurveyQuestions, summarizeSurveySchema, type SurveySchema } from "../utils/surveySchema";
 import "../styles/form.css";
+
+// 问卷设计器体积大（survey-creator-*），只在打开弹层时按需加载。
+const SurveyDesignerModal = lazy(() => import("../components/SurveyDesignerModal"));
 
 // 默认截止时间：当前 + N 天，格式 datetime-local 取值（yyyy-MM-ddThh:mm）
 function defaultEnd(days: number): string {
@@ -65,6 +69,14 @@ export default function ActivityFormPage() {
 
   // 调研字段：受众（创建后不可改）
   const [audience, setAudience] = useState<SurveyAudience>("members");
+  // 调研问卷：发起前就能设计（随活动一起提交）；编辑态沿用后端 schema_editable 判断能否改。
+  const [schema, setSchema] = useState<SurveySchema | null>(null);
+  const [schemaDirty, setSchemaDirty] = useState(false);
+  const [schemaEditable, setSchemaEditable] = useState(true);
+  const [designerOpen, setDesignerOpen] = useState(false);
+  // 新建时始终可设计；编辑时看后端生命周期判断（待开始 / 开放且零作答）。
+  const surveyDesignEditable = !editId || schemaEditable;
+  const surveyQuestionCount = countSurveyQuestions(schema ?? EMPTY_SURVEY_SCHEMA);
 
   const switchType = (t: ActivityType) => {
     setType(t);
@@ -136,6 +148,8 @@ export default function ActivityFormPage() {
         setAudience(a.audience || "members");
       } else if (a.type === "survey") {
         setAudience(a.audience || "members");
+        setSchema((a.schema as SurveySchema) || null);
+        setSchemaEditable(!!a.schema_editable);
       }
       messagingApi.getThread({ activity: a.id })
         .then((t) => setCommentThreadStatus(t.status))
@@ -239,6 +253,9 @@ export default function ActivityFormPage() {
           is_permanent: permanent,
           comment_thread_status: commentThreadStatus,
         };
+        // 新建：设计过就随创建请求一起带上；编辑：只在设计稿有改动时带上
+        // （避免与「问卷已锁定」的门禁硬撞）。
+        if (schema && (!editId || schemaDirty)) payload.schema = schema;
         saved = editId
           ? await activityApi.update(editId, payload as unknown as Record<string, unknown>)
           : await activityApi.create(payload);
@@ -262,7 +279,7 @@ export default function ActivityFormPage() {
             <span>{editId ? "编辑活动" : "发起活动"}</span>
           </nav>
           <h1>{editId ? "编辑活动" : "发起活动"}</h1>
-          <p className="section-sub">{editId ? "修改待开始活动的时间与内容（开放后即锁定）。" : "发起一场众议、征集、展示或调研。调研问卷在创建后再编辑。"}</p>
+          <p className="section-sub">{editId ? "修改待开始活动的时间与内容（开放后即锁定）。" : "发起一场众议、征集、展示或调研。调研可在发起前直接把问卷设计好。"}</p>
         </div>
       </div>
 
@@ -406,7 +423,36 @@ export default function ActivityFormPage() {
             </>
           ) : (
             <>
-              {audienceField("公开：访客可列出、打开、提交；仅成员：须登录。创建后不可改。问卷在创建后于详情页编辑。")}
+              <div className="field">
+                <label className="label">
+                  问卷题目
+                  <span className="hint">
+                    （{surveyDesignEditable ? "发起前即可设计，之后仍可补题" : "已收到作答，问卷已锁定"}）
+                  </span>
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={!surveyDesignEditable}
+                    onClick={() => setDesignerOpen(true)}
+                  >
+                    {surveyQuestionCount > 0 ? "编辑问卷" : "设计问卷"}
+                  </button>
+                  <span className="hint">{summarizeSurveySchema(schema ?? EMPTY_SURVEY_SCHEMA)}</span>
+                </div>
+                {!surveyDesignEditable && (
+                  <div className="alert alert-warning" style={{ marginTop: 8 }}>
+                    <span>该问卷已收到作答，无法再修改题目；需要调整请结束本场调研后重新发起。</span>
+                  </div>
+                )}
+                <div className="hint">
+                  {editId
+                    ? "在弹层里增删题目，点「完成」后回填本页，再点「保存修改」落库。"
+                    : "在弹层里增删题目，点「完成」后回填本页，题目会随「发起活动」一起创建。"}
+                </div>
+              </div>
+              {audienceField("公开：访客可列出、打开、提交；仅成员：须登录。创建后不可改。问卷题目可在本页设计。")}
               {endAtField("征答截止")}
             </>
           )}
@@ -418,6 +464,39 @@ export default function ActivityFormPage() {
             <button className="btn btn-ghost" type="button" onClick={() => navigate("/activity")}>取消</button>
           </div>
         </form>
+
+        {designerOpen && (
+          <Suspense
+            fallback={
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 10000,
+                  background: "rgba(0,0,0,0.5)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#fff",
+                  fontSize: 14,
+                }}
+              >
+                问卷编辑器加载中…
+              </div>
+            }
+          >
+            <SurveyDesignerModal
+              initial={schema}
+              title={editId ? "编辑问卷" : "设计问卷"}
+              onCancel={() => setDesignerOpen(false)}
+              onApply={(next) => {
+                setSchema(next);
+                setSchemaDirty(true);
+                setDesignerOpen(false);
+              }}
+            />
+          </Suspense>
+        )}
       </div>
     </AppShell>
   );

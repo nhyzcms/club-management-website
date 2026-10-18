@@ -106,7 +106,7 @@
 | review_enabled | bool | 否 | 征集：默认 true；false = 提交即公开、跳过复审 |
 | voting_enabled | bool | 否 | 展示：默认 false；true = 每展品绑定一个投票选项（创建后不可改） |
 | audience | string | 否 | 受众：`public` / `members`，默认 `members`；调研=作答资格，众议 / 展示=投票资格（`public` 时未登录游客也可投，按设备标识判重）。创建后不可改；征集忽略此字段 |
-| schema | object | 否 | 调研：SurveyJS Schema，须含 `pages`；非调研类型忽略 |
+| schema | object | 否 | 调研：SurveyJS Schema，须含 `pages`；非调研类型忽略。可在创建时一并提交（表单里的「设计问卷」弹层就是走这条路），也可创建后再 `PATCH` |
 | comment_thread_status | string | 否 | 评论区状态 `open` / `muted` / `closed`，缺省 `open` |
 
 创建后状态由后端计算：无排期 → 征集 `collecting`，其余 `open`；`start_at` 在未来 → `scheduled`。同时自动打开一条审核行（持 `reviews.force_publish` 或站点关闭内容审核时直接 `approved`，否则 `pending`）并建好评论区。
