@@ -11,6 +11,7 @@ from django.core import mail
 from django.core.cache import cache
 from django.test import Client, TestCase
 
+from accounts import stepup
 from accounts.email_domains import (
     ALLOWED_EMAIL_DOMAINS,
     EDU_DOMAIN_SUFFIXES,
@@ -122,9 +123,10 @@ class EmailBindWhitelistTest(TestCase):
         c.force_login(self.user)
         return c
 
-    def _bind(self, email):
+    def _bind(self, email, grant=""):
+        headers = {"HTTP_X_STEPUP_GRANT": grant} if grant else {}
         return self._client().post(
-            BIND, data=json.dumps({"email": email}), content_type="application/json",
+            BIND, data=json.dumps({"email": email}), content_type="application/json", **headers
         )
 
     def test_bind_rejects_disallowed_domain_with_fixed_message(self):
@@ -160,7 +162,7 @@ class EmailBindWhitelistTest(TestCase):
             user=self.user, channel=Verification.CHANNEL_EMAIL,
             status=Verification.STATUS_APPROVED, identifier="member@163.com",
         )
-        resp = self._bind("member@gmail.com")
+        resp = self._bind("member@gmail.com", grant=stepup.issue_grant(self.user, "change_email"))
         self.assertEqual(resp.status_code, 400)
         v = Verification.objects.get(user=self.user, channel=Verification.CHANNEL_EMAIL)
         self.assertEqual(v.status, Verification.STATUS_APPROVED)

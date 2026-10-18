@@ -106,7 +106,7 @@ club-management-website/
 - 快速开始：[`docs/getting-started.md`](docs/getting-started.md) · 配置参考：[`docs/configuration.md`](docs/configuration.md)
 - API 参考：[`docs/api/README.md`](docs/api/README.md)（各模块分册见 `docs/api/`）
 - 架构：[`docs/architecture/overview.md`](docs/architecture/overview.md) · [`docs/architecture/frontend.md`](docs/architecture/frontend.md)
-- 指南：`docs/guides/`（访问控制 / 身份认证 / 审核系统 / 问卷）
+- 指南：`docs/guides/`（访问控制 / 身份认证 / 安全验证 / 审核系统 / 问卷）
 - 运维：[`docs/operations/deployment.md`](docs/operations/deployment.md) · [`docs/operations/data-root.md`](docs/operations/data-root.md) · [`docs/operations/admin-guide.md`](docs/operations/admin-guide.md)
 - ADR 设计记录：[`docs/adr/`](docs/adr/)
 - GitHub Wiki（对外入口）：<https://github.com/nhyzcms/club-management-website/wiki>

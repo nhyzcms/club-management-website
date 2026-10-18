@@ -107,6 +107,30 @@ class MemberCheckThrottle(_IPLimitThrottle):
         return f"{get_policy().member_check_per_ip_per_hour}/hour"
 
 
+class StepUpEmailUserThrottle(_IPLimitThrottle):
+    """安全验证发码节流：每账号每小时 N 次（N 来自 get_policy()）。"""
+
+    scope = "stepup_email_user"
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False) or not user.pk:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": f"u{user.pk}"}
+
+    def get_rate(self):
+        return f"{get_policy().stepup_email_per_user_per_hour}/hour"
+
+
+class StepUpEmailIpThrottle(_IPLimitThrottle):
+    """安全验证发码节流：每 IP 每小时 N 次（N 来自 get_policy()）。"""
+
+    scope = "stepup_email_ip"
+
+    def get_rate(self):
+        return f"{get_policy().stepup_email_per_ip_per_hour}/hour"
+
+
 class LoginIpThrottle(_IPLimitThrottle):
     """登录失败节流：每个 IP 每小时 N 次（N 来自 get_policy()）。"""
 

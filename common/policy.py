@@ -29,6 +29,9 @@ DEFAULT_MEMBER_CLAIM_ENABLED = True
 DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR = 5
 DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY = 20
 DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR = 60
+# 安全验证（ADR-0026）：邮箱验证码每小时上限（按账号 / 按 IP）
+DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR = 5
+DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR = 10
 DEFAULT_SYNC_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 DEFAULT_TUS_MEDIA_MAX_BYTES = 500 * 1024 * 1024
 DEFAULT_AUTO_UPDATE_ENABLED = True
@@ -64,6 +67,8 @@ class SitePolicy:
     member_claim_per_user_per_hour: int
     member_claim_per_ip_per_day: int
     member_check_per_ip_per_hour: int
+    stepup_email_per_user_per_hour: int
+    stepup_email_per_ip_per_hour: int
     sync_upload_max_bytes: int
     tus_media_max_bytes: int
     auto_update_enabled: bool
@@ -98,6 +103,8 @@ class SitePolicy:
             member_claim_per_user_per_hour=DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
             member_claim_per_ip_per_day=DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
             member_check_per_ip_per_hour=DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+            stepup_email_per_user_per_hour=DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
+            stepup_email_per_ip_per_hour=DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
             sync_upload_max_bytes=DEFAULT_SYNC_UPLOAD_MAX_BYTES,
             tus_media_max_bytes=DEFAULT_TUS_MEDIA_MAX_BYTES,
             auto_update_enabled=DEFAULT_AUTO_UPDATE_ENABLED,
@@ -153,6 +160,12 @@ def _snapshot(row) -> SitePolicy:
         ),
         member_check_per_ip_per_hour=getattr(
             row, "member_check_per_ip_per_hour", DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+        ),
+        stepup_email_per_user_per_hour=getattr(
+            row, "stepup_email_per_user_per_hour", DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
+        ),
+        stepup_email_per_ip_per_hour=getattr(
+            row, "stepup_email_per_ip_per_hour", DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
         ),
         sync_upload_max_bytes=row.sync_upload_max_bytes,
         tus_media_max_bytes=row.tus_media_max_bytes,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
+import { redirectToStepUp, stepupHeaders } from "../../api/stepup";
 import { EMAIL_DOMAIN_BLOCKED_MESSAGE } from "../../api/shared";
 import { useSitePolicy } from "../../api/sitePolicy";
 import { IDENTITY_OPTIONS } from "../../types/profile";
@@ -106,13 +107,18 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
     setSubmitting(true);
     setErr("");
     setMsg("");
-    api.verificationEmailBind(email)
+    api.verificationEmailBind(email, stepupHeaders("change_email"))
       .then(() => {
         setMsg("认证邮件已发送，请查收。");
         setEmailInput("");
         onChanged();
       })
       .catch((e: any) => {
+        if (e?.status === 403) {
+          // 换绑需安全验证（ADR-0026）：跳验证页，完成后回本面板重试。
+          redirectToStepUp("change_email", "/profile?tab=verification");
+          return;
+        }
         if (e?.apiError?.kind === "email_domain_not_allowed") {
           setDomainBlocked(true);
           return;

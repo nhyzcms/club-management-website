@@ -9,7 +9,7 @@
 - **路径前缀**：`config/urls.py` 把本 app 挂在 `/auth/`，故端点形如 `/auth/login/`。
 - **认证口径**（本文件「认证」列）：公开 = 匿名可用；登录 = 仅要求已登录；已认证 = 登录且 `is_verified`（任一认证通道 `approved` 且未过期，[ADR-0006](../adr/0006-verification-model.md)）。
 - **未登录行为分两类**：`@login_required` 的函数视图未登录时 302 重定向到 `/login/`；DRF 端点（`identity-reviews`、`inbox`）会话认证无跳转，未登录 / 无权限均返回 403 JSON（`{"detail": …}`）。
-- **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed` / `account_expired_unverified`。
+- **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed` / `account_expired_unverified` / `step_up_required`。
 - **Session + CSRF**：登录态走 Django Session cookie；非 GET 请求须带 `X-CSRFToken`（可先 `GET /auth/csrf/` 取 cookie）。
 - **单会话与挤号**（`accounts.middleware.SingleSessionMiddleware`）：同一账号仅一个当前会话；他设备登录成功后旧会话的下一次请求返回 401 `{"detail": "您的账号在其他设备登录，您已被迫下线。", "reason": "session_superseded", "takeover": {"device_name": …, "device_type": …, "ip": …, "time": …}}`（浏览器导航 Accept 含 `text/html` 时改返 401 HTML 下线页）。
 - **登录保护与限流**：账号已有未满 10 分钟的当前会话、且本次非同一会话再认证 → 409 `login_protection`；登录失败按 IP（`login_per_ip_per_hour`）与按用户名 / 邮箱（`login_per_username_per_hour`）双维度计数（只计失败），命中返回 429 `login_throttled` + `Retry-After` 头。
@@ -40,6 +40,11 @@
 | GET | `/auth/member/` | 登录 | — | 本人社员身份 + 可认领候选（[ADR-0025](../adr/0025-member-identity.md)） |
 | POST | `/auth/member/claim/` | 登录 | — | 自助认领（身份 + 手机号后四位） |
 | GET | `/auth/member/check/` | 公开 | — | 扫码校验（签名；最小公开字段） |
+| GET | `/auth/stepup/` | 登录 | — | 安全验证方式总览（[ADR-0026](../adr/0026-stepup-verification.md)） |
+| POST | `/auth/stepup/email/send/` | 登录 | — | 发送邮箱验证码（60s 冷却 / 小时限） |
+| POST | `/auth/stepup/verify/` | 登录 | — | 验证并签发 grant（10 分钟） |
+| GET/POST | `/auth/stepup/questions/` | 登录 | — | 题库 / 设置与更换安全问题 |
+| GET | `/auth/stepup/events/` | 登录 | — | 本人最近验证记录 |
 | GET | `/auth/identity-proof/{pk}/` | 登录 | 本人或 `accounts.can_review_identity` | 身份证明文件（鉴权下载） |
 | GET | `/auth/identity-reviews/` | 登录 | `accounts.can_review_identity` | 人工身份审核队列 |
 | GET | `/auth/identity-reviews/{pk}/` | 登录 | `accounts.can_review_identity` | 单条审核记录 |
@@ -422,3 +427,17 @@
 ```
 
 **绝不含**电话 / 学号 / 邮箱；按 IP 限流（60 次/时，计全部请求）→ `429`。签名 = HMAC-SHA256（密钥默认由 `SECRET_KEY` 派生，`MEMBER_QR_SECRET` 可覆盖）截断 16 位 hex——二维码内容如 `https://<站点>/#/v/26020001?s=70758f5d88e74a0f`。
+
+### 安全验证（Step-up，[ADR-0026](../adr/0026-stepup-verification.md)）
+
+`GET /auth/stepup/`：**认证**登录。方式总览：`email`（可用性 / 打码地址 / 冷却剩余秒）、`questions`（已设否 / 题数）、`scopes`（作用域 → 名称）、`grant_ttl`。
+
+`POST /auth/stepup/email/send/`：**认证**登录。发 6 位验证码到**已认证邮箱**。`400 email_unavailable`（无已认证邮箱）；`429`：60 秒冷却（`reason: cooldown` + `retry_after`）或账号 / IP 小时上限；成功 `{"message": "验证码已发送，请查收邮件。"}`。
+
+`POST /auth/stepup/verify/`：**认证**登录。`{"method": "email"|"question", "scope", "code"? | "question_id" + "answer"?}` → `{"grant", "expires_in": 600, "message"}`；错误统一 `400`（「验证码错误或已过期。」；答案错为「答案不正确。」）。grant 是签名令牌（账号 + scope + 时间戳、10 分钟）；**受保护端点**凭请求头 `X-StepUp-Grant` 复用。
+
+`GET/POST /auth/stepup/questions/`：**认证**登录。GET 返回 `{bank, mine}`（题库 + 本人已设，只出题干）；POST `{"items": [{"key","answer"}], "password"?}`：**首次设置需 `password`（登录密码）**，之后更换 / 清除（`items: []`）需 grant（缺 → `403 step_up_required`）。
+
+`GET /auth/stepup/events/`：**认证**登录。本人最近 20 条验证记录（`scope` / `scope_label` / `method` / `result` / `ip` / `created_at`）。
+
+**受保护端点契约**：`POST /auth/profile/change-password/`（原密码 ＋ grant `change_password`）与 `POST /auth/verification/email/bind/`（换绑 grant `change_email`；**首次绑定不拦**）缺令牌时返回 `403 {"error": "需要先完成安全验证。", "reason": "step_up_required", "scope": …}`——前端按 reason 跳 `/#/verify?action=<scope>&next=…`，完成后回跳重试。

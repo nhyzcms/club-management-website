@@ -17,6 +17,8 @@ from common.policy import (
     DEFAULT_MEMBER_CLAIM_ENABLED,
     DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
     DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
+    DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
+    DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_REPORTS_PER_USER_PER_DAY,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
@@ -63,6 +65,8 @@ class SitePolicyDefaultsTest(TestCase):
         self.assertEqual(p.member_claim_per_user_per_hour, DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR)
         self.assertEqual(p.member_claim_per_ip_per_day, DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY)
         self.assertEqual(p.member_check_per_ip_per_hour, DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR)
+        self.assertEqual(p.stepup_email_per_user_per_hour, DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR)
+        self.assertEqual(p.stepup_email_per_ip_per_hour, DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR)
         self.assertEqual(p.sync_upload_max_bytes, DEFAULT_SYNC_UPLOAD_MAX_BYTES)
         self.assertEqual(p.tus_media_max_bytes, DEFAULT_TUS_MEDIA_MAX_BYTES)
         self.assertEqual(p.auto_update_enabled, DEFAULT_AUTO_UPDATE_ENABLED)
@@ -143,6 +147,8 @@ class SitePolicyDefaultsTest(TestCase):
                 "member_claim_per_user_per_hour",
                 "member_claim_per_ip_per_day",
                 "member_check_per_ip_per_hour",
+                "stepup_email_per_user_per_hour",
+                "stepup_email_per_ip_per_hour",
             ),
         )
 

@@ -36,6 +36,8 @@ from .models import (
     IdentityProof,
     MemberIdentity,
     Profile,
+    SecurityQuestion,
+    StepUpEvent,
     Verification,
     can_manage_validity_for,
     is_verified,
@@ -791,3 +793,31 @@ class IdentityImportBatchAdmin(admin.ModelAdmin):
 
 admin.site.register(MemberIdentity, MemberIdentityAdmin)
 admin.site.register(IdentityImportBatch, IdentityImportBatchAdmin)
+
+
+# ---- 安全验证（Step-up，ADR-0026）----
+
+
+@admin.register(SecurityQuestion)
+class SecurityQuestionAdmin(admin.ModelAdmin):
+    """安全问题（安全验证）：供信息组排查 / 重置；答案只存哈希（后台不可见明文）。"""
+
+    list_display = ("user", "question_text", "created_at", "updated_at")
+    search_fields = ("user__username", "user__email", "question_text")
+    ordering = ("-created_at",)
+
+
+@admin.register(StepUpEvent)
+class StepUpEventAdmin(admin.ModelAdmin):
+    """安全验证记录（审计，只读）：谁 / 何时 / 哪方式 / 成败 / IP。"""
+
+    list_display = ("user", "scope", "method", "result", "ip", "created_at")
+    list_filter = ("scope", "method", "result")
+    search_fields = ("user__username",)
+    ordering = ("-created_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

@@ -18,8 +18,8 @@ export const api = {
   verificationStatus: () =>
     request("/verification/"),
 
-  verificationEmailBind: (email: string) =>
-    request("/verification/email/bind/", { method: "POST", body: JSON.stringify({ email }) }),
+  verificationEmailBind: (email: string, stepup?: Record<string, string>) =>
+    request("/verification/email/bind/", { method: "POST", body: JSON.stringify({ email }), headers: stepup }),
 
   verificationManualSubmit: (data: FormData) =>
     request("/verification/manual/submit/", { method: "POST", body: data }),
@@ -79,8 +79,12 @@ export const api = {
   updateProfile: (data: FormData) =>
     request("/profile/update/", { method: "POST", body: data }),
 
-  changePassword: (old_password: string, new_password: string) =>
-    request("/profile/change-password/", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
+  changePassword: (old_password: string, new_password: string, stepup?: Record<string, string>) =>
+    request("/profile/change-password/", {
+      method: "POST",
+      body: JSON.stringify({ old_password, new_password }),
+      headers: stepup,
+    }),
 
   listUsers: () =>
     request("/users/"),

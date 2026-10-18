@@ -33,6 +33,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from about.models import AboutBlock, AboutPage
+from accounts import stepup
 from accounts.member_codes import make_signature
 from accounts.models import IdentityProof, MemberIdentity, Profile, UserSession, Verification
 from activities.models import Activity, Questionnaire, VoteOption, default_join_schema
@@ -44,7 +45,7 @@ from reviews.models import Feedback, ReportCase, ReportFiling, Review
 from tasks.models import Tag, Task
 from tutorials.models import Tutorial
 
-E2E_USERS = ("e2e_info", "e2e_plain")
+E2E_USERS = ("e2e_info", "e2e_plain", "e2e_stepup")
 DEFAULT_PASSWORD = "e2e-pass-123"
 
 
@@ -93,7 +94,15 @@ class Command(BaseCommand):
         plain.set_password(password)
         plain.save()
 
-        for user, nickname in ((info, "E2E 信息员"), (plain, "E2E 普通成员")):
+        # 改密全流程专属：改密会轮换 session key（见 ADR-0026），不能拿共享 storageState 的 e2e_info 做改密。
+        stepup_user, _ = User.objects.get_or_create(username="e2e_stepup", defaults={"email": "e2e_stepup@example.test"})
+        stepup_user.is_superuser = False
+        stepup_user.is_staff = False
+        stepup_user.is_active = True
+        stepup_user.set_password(password)
+        stepup_user.save()
+
+        for user, nickname in ((info, "E2E 信息员"), (plain, "E2E 普通成员"), (stepup_user, "E2E 安全验证成员")):
             Profile.objects.update_or_create(user=user, defaults={"nickname": nickname})
 
         # 登录保护：清掉旧会话，保证每次运行的首次登录都被放行
@@ -120,6 +129,11 @@ class Command(BaseCommand):
         fixture_path = Path(settings.BASE_DIR) / "frontend" / "e2e" / ".member-qr.json"
         fixture_path.parent.mkdir(parents=True, exist_ok=True)
         fixture_path.write_text(json.dumps(qr_fixture, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 安全验证（ADR-0026）：预置安全问题（答案 e2e-answer，归一化比对）
+        # ——info 供「安全验证」面板查看用例；e2e_stepup 供改密全流程用例。
+        for user in (info, stepup_user):
+            stepup.set_security_questions(user, [{"key": "primary_school", "answer": "e2e-answer"}])
 
         tag_notice, _ = Tag.objects.get_or_create(name="E2E公告")
         tag_event, _ = Tag.objects.get_or_create(name="E2E活动")
