@@ -2,7 +2,7 @@
 
 只提醒会导致**降权**的到期（需求范围）：
 
-- 认证通道有效期到 → 账号从「已验证」回落「未验证」；
+- 认证通道有效期到 → 账号从「已认证」回落「未认证」；
 - 管理员委任有效期到 → 撤销 ``is_staff``（回落普通用户）。
 
 超管委任 ``expires_at=null``（永久）永不提醒；「注册后未认证会被停用」不在本模块范围
@@ -133,7 +133,7 @@ def send_expiry_notices(now=None, dry_run=False) -> dict:
 
 
 def _payload(verification, level, now) -> dict:
-    """通知载荷：通道、到期日、剩余天数、跳转（验证面板）。"""
+    """通知载荷：通道、到期日、剩余天数、跳转（认证面板）。"""
     expires_on = timezone.localtime(verification.expires_at).date().isoformat()
     return {
         "channel": verification.channel,

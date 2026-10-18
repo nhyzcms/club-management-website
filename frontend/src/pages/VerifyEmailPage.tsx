@@ -5,7 +5,7 @@ import AppShell from "../components/AppShell";
 import { useLoginModal } from "../components/LoginModalProvider";
 
 /**
- * 邮箱验证页（#29）：点邮件链接落地（#/verify-email?uid=&token=）。
+ * 邮箱认证页（#29）：点邮件链接落地（#/verify-email?uid=&token=）。
  * 镜像 ResetPasswordPage：挂载即调 verify 接口，显成功 / 失败，失败可去重发。
  */
 export default function VerifyEmailPage() {
@@ -48,15 +48,15 @@ export default function VerifyEmailPage() {
             <div className="card card-pad">
               {status === "loading" && (
                 <>
-                  <h2 style={{ marginBottom: "var(--s-4)" }}>正在验证邮箱…</h2>
+                  <h2 style={{ marginBottom: "var(--s-4)" }}>正在认证邮箱…</h2>
                   <p className="muted">请稍候。</p>
                 </>
               )}
               {status === "success" && (
                 <>
-                  <h2 style={{ marginBottom: "var(--s-4)" }}>邮箱验证成功</h2>
+                  <h2 style={{ marginBottom: "var(--s-4)" }}>邮箱认证成功</h2>
                   <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
-                    你的邮箱已验证，现在可以登录了。
+                    你的邮箱已认证，现在可以登录了。
                   </p>
                   <button className="btn btn-primary btn-block" type="button" onClick={goLogin}>
                     去登录
@@ -65,16 +65,16 @@ export default function VerifyEmailPage() {
               )}
               {status === "error" && (
                 <>
-                  <h2 style={{ marginBottom: "var(--s-4)" }}>验证失败</h2>
+                  <h2 style={{ marginBottom: "var(--s-4)" }}>认证失败</h2>
                   <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
-                    该验证链接无效或已过期。可以重新发送一封验证邮件。
+                    该认证链接无效或已过期。可以重新发送一封认证邮件。
                   </p>
                   <button
                     className="btn btn-primary btn-block"
                     type="button"
                     onClick={() => navigate("/verify-email-pending")}
                   >
-                    重新发送验证邮件
+                    重新发送认证邮件
                   </button>
                   <div className="hint center" style={{ marginTop: "var(--s-4)" }}>
                     <a href="#" onClick={(e) => { e.preventDefault(); goLogin(); }}>返回登录</a>

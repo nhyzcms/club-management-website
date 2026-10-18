@@ -27,7 +27,7 @@
 | GET | `/reviews/feedbacks/` | 登录 | `reviews.read_feedback` | 意见反馈列表 |
 | GET | `/reviews/feedbacks/{id}/` | 登录 | 署名创建人本人或 `reviews.read_feedback` | 反馈详情 |
 | POST | `/reviews/feedbacks/{id}/close/` | 登录 | `reviews.read_feedback` | 了结反馈 |
-| POST | `/reviews/reports/` | 已验证 | — | 提交举报（附到进行中案或开新案） |
+| POST | `/reviews/reports/` | 已认证 | — | 提交举报（附到进行中案或开新案） |
 | GET | `/reviews/reports/` | 登录 | `reviews.handle_report` | 举报案列表 |
 | GET | `/reviews/reports/{id}/` | 登录 | `reviews.handle_report` | 举报案详情 |
 | POST | `/reviews/reports/{id}/dismiss/` | 登录 | `reviews.handle_report` | 驳回举报案 |
@@ -258,7 +258,7 @@
 
 `POST /reviews/reports/`
 
-**认证**：已验证（登录且任一验证通道通过）；**权限**：—
+**认证**：已认证（登录且任一认证通道通过）；**权限**：—
 
 对**作为普通读者可见、且非自己**的新闻 / 活动 / 教程 / 评论 / 用户提交。同一对象同一时刻至多一张**进行中**案：第二人举报会作为新的一份举报附到该案上；同一人重复举报同一对象、或对象不可见 / 属于自己，都会被拒。
 
@@ -287,7 +287,7 @@
 | 状态码 | 场景 |
 |---|---|
 | 400 | `请填写举报理由` / `不支持的举报对象`（类型不在列表、`target_id` 非整数）/ `不能举报该对象`（对象不存在或对举报人不可见）/ `不能举报自己的内容` / `你已举报过该对象`（均为 `{"detail": …}`） |
-| 403 | 未登录或未完成账号验证 |
+| 403 | 未登录或未完成账号认证 |
 | 429 | 举报节流：每用户每天 N 条（N 由站点策略 `reports_per_user_per_day` 决定，默认 10） |
 
 ### 举报案列表

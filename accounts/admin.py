@@ -44,15 +44,15 @@ from .models import (
 
 # ---- 审核动作（#31 / ADR-0006）----
 # 同时挂在 ProfileAdmin 与 IdentityProofAdmin：queryset 元素都有 .user，按 user 操作其
-# manual 验证通道。仅持 accounts.can_review_identity 者可用（get_actions 收口 + 动作内二次校验）。
+# manual 认证通道。仅持 accounts.can_review_identity 者可用（get_actions 收口 + 动作内二次校验）。
 # 业务路径在 identity_review（与 /auth/identity-reviews/ API 共用）。
 
 
 def approve_identity(modeladmin, request, queryset):
-    """通过身份审核：manual 验证通道置 approved（+ verified_at / verified_by），并发邮件。"""
+    """通过身份审核：manual 认证通道置 approved（+ verified_at / verified_by），并发邮件。"""
     if not get_policy().verification_enabled:
         modeladmin.message_user(
-            request, "验证通道已关闭，无法通过身份审核。", level=messages.ERROR,
+            request, "认证通道已关闭，无法通过身份审核。", level=messages.ERROR,
         )
         return
     count = 0
@@ -71,7 +71,7 @@ def reject_identity(modeladmin, request, queryset):
     """驳回身份审核：manual 通道置 rejected，并发邮件提示可在面板重交（#38）。"""
     if not get_policy().verification_enabled:
         modeladmin.message_user(
-            request, "验证通道已关闭，无法驳回身份审核。", level=messages.ERROR,
+            request, "认证通道已关闭，无法驳回身份审核。", level=messages.ERROR,
         )
         return
     count = 0
@@ -115,13 +115,13 @@ class _IdentityReviewActionsMixin:
 
 
 class VerifiedFilter(admin.SimpleListFilter):
-    """按账号「已验证」过滤（任一未过期 Verification 通道 approved 即已验证）。"""
+    """按账号「已认证」过滤（任一未过期 Verification 通道 approved 即已认证）。"""
 
-    title = "验证状态"
+    title = "认证状态"
     parameter_name = "verified"
 
     def lookups(self, request, model_admin):
-        return [("yes", "已验证"), ("no", "未验证")]
+        return [("yes", "已认证"), ("no", "未认证")]
 
     def queryset(self, request, qs):
         now = timezone.now()
@@ -165,7 +165,7 @@ class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
     search_fields = ("user__username", "user__email", "real_name")
     actions = list(_IDENTITY_ACTIONS)
 
-    @admin.display(boolean=True, description="已验证")
+    @admin.display(boolean=True, description="已认证")
     def verified(self, obj):
         return is_verified(obj.user)
 
@@ -258,7 +258,7 @@ class ProfileInline(admin.StackedInline):
 
 
 class VerificationInline(admin.TabularInline):
-    """用户详情页内嵌验证通道（ADR-0041）：expires_at 可改 = 修改有效期。
+    """用户详情页内嵌认证通道（ADR-0041）：expires_at 可改 = 修改有效期。
 
     通道由系统 / 流程创建，不手建、不删除；「有效期至」仅在当前操作者持
     accounts.manage_validity 且目标是下位权限用户时可编辑（平级 / 上位拒绝）。
@@ -335,7 +335,7 @@ admin.site.register(IdentityProof, IdentityProofAdmin)
 # ---- 认证码（ADR-0020，生成侧）----
 # 生成 / 吊销全在 Django 后台（不建前端管理页）；权限 = 标准 CRUD
 # （accounts.add_authcode / view / change / delete，由 0012 授权迁移授给 社长 / 信息组；
-# 后台操作需 is_staff）。生成 / 吊销不受站点「验证通道」开关约束（可先备码）；
+# 后台操作需 is_staff）。生成 / 吊销不受站点「认证通道」开关约束（可先备码）；
 # 兑换侧受约束（见 views.verification_authcode_redeem_view）。
 
 
@@ -387,7 +387,7 @@ class AuthCodeAdminForm(forms.ModelForm):
 
 @admin.action(description="吊销认证码（不回溯已通过者）")
 def revoke_authcodes(modeladmin, request, queryset):
-    """软吊销：只停后续兑换，不改已通过用户的验证状态。"""
+    """软吊销：只停后续兑换，不改已通过用户的认证状态。"""
     if not request.user.has_perm("accounts.change_authcode"):
         modeladmin.message_user(request, "没有吊销认证码的权限。", level=messages.ERROR)
         return

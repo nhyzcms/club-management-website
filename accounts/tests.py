@@ -676,7 +676,7 @@ class RoleForTest(TestCase):
     """_role_for 按身份态派生徽章（ADR-0005 决策 7 / ADR-0006）：超管 > 管理员 > 用户 > 访客。
 
     与组、权限解耦——纯 is_superuser / is_staff / is_verified 判定；「用户 / 访客」分界读
-    is_verified（任一验证通道 approved 即用户，否则访客）。
+    is_verified（任一认证通道 approved 即用户，否则访客）。
     """
 
     def setUp(self):

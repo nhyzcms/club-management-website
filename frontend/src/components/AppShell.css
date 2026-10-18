@@ -15,7 +15,7 @@
 @media (max-width: 1024px) { .footer-inner { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 640px) { .footer-inner { grid-template-columns: 1fr; gap: var(--s-6); } }
 
-/* Tier-2 待审核提示条（#30）：邮箱已验证、身份未审核。琥珀色常驻条，置顶栏下。 */
+/* Tier-2 待审核提示条（#30）：邮箱已认证、身份未审核。琥珀色常驻条，置顶栏下。 */
 .identity-banner {
   display: flex; align-items: center; gap: var(--s-3);
   background: oklch(0.95 0.07 75); color: oklch(0.32 0.09 60);

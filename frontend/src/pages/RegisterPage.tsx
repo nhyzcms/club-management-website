@@ -11,8 +11,8 @@ import { IDENTITY_OPTIONS } from "../types/profile";
 import type { MemberIdentityStatus } from "../types/member";
 
 /**
- * 注册页（ADR-0006 注册↔验证分离，2026-09 修订）：建登录身份（用户名 + 双密码 + Turnstile）
- * + 真实姓名 / 身份（必填，写入 Profile）；邮箱 / 身份证明仍在登录后的「账号验证」面板。
+ * 注册页（ADR-0006 注册↔认证分离，2026-09 修订）：建登录身份（用户名 + 双密码 + Turnstile）
+ * + 真实姓名 / 身份（必填，写入 Profile）；邮箱 / 身份证明仍在登录后的「账号认证」面板。
  *
  * 2026-10（ADR-0025）：注册成功即登录（服务端建会话），并进入「以下身份是否是你」的
  * 社员身份认领阶段（可跳过，之后在个人中心「社员身份」补办）。
@@ -145,7 +145,7 @@ export default function RegisterPage() {
               : memberErr
                 ? "名册核对暂时失败，可稍后在个人中心「社员身份」里重试。"
                 : "如果社员名单已导入，可稍后在个人中心「社员身份」里试试认领。"}
-          在个人中心「账号验证」完成验证（绑定邮箱或提交身份证明），
+          在个人中心「账号认证」完成认证（绑定邮箱或提交身份证明），
           即可解锁发帖、发消息、建申报等全部功能。
         </p>
         <button className="btn btn-primary btn-block" type="button" onClick={() => navigate("/")}>

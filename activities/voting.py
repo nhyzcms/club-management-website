@@ -44,10 +44,10 @@ def ballots_visible_to(activity, user):
 
 
 def maybe_close_deliberation_on_full_vote(activity):
-    """全员投完即提前结算：众议 open 状态下，若已验证成员已投数 ≥ 已验证成员数，翻 closed。
+    """全员投完即提前结算：众议 open 状态下，若已认证成员已投数 ≥ 已认证成员数，翻 closed。
 
-    分母 = 已验证成员数（``accounts.verified_member_count``）。
-    分子只数**已验证成员**的票——公开受众下游客票与未验证用户票不参与提前结算
+    分母 = 已认证成员数（``accounts.verified_member_count``）。
+    分子只数**已认证成员**的票——公开受众下游客票与未认证用户票不参与提前结算
     （否则会虚增票数提前关闭）。在 ``cast_ballot`` 里调用（只有投票会改变票数）。
     逐行条件更新保证并发安全。
     """
@@ -58,7 +58,7 @@ def maybe_close_deliberation_on_full_vote(activity):
     total = verified_member_count()
     if total <= 0:
         return False
-    # 绕开预取缓存：用 Ballot 模型直接计票（仅已验证成员的票，按人去重）。
+    # 绕开预取缓存：用 Ballot 模型直接计票（仅已认证成员的票，按人去重）。
     if Ballot.objects.filter(
         activity_id=activity.pk, voter__verifications__status="approved",
     ).values("voter_id").distinct().count() >= total:

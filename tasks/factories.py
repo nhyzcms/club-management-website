@@ -11,7 +11,7 @@ from accounts.test_helpers import grant_verification
 def make_president(user):
     """把用户加入「社长」组（默认组已由迁移授予 manage_tasks / assign_task 等权限）。
 
-    社长亦是已验证成员（通过 IsVerified 写门禁需 approved 通道）——测试夹具一并满足。
+    社长亦是已认证成员（通过 IsVerified 写门禁需 approved 通道）——测试夹具一并满足。
     """
     group, _ = Group.objects.get_or_create(name="社长")
     user.groups.add(group)

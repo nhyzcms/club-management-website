@@ -1,6 +1,6 @@
 """邮箱后缀白名单（ADR-0023）：域名判定 + 绑定 / 注册两处闸门 + 祖父条款 + 文案契约。
 
-不回溯是刻意的：白名单上线前留下的地址（含非白名单后缀）仍可重发、仍可完成验证；
+不回溯是刻意的：白名单上线前留下的地址（含非白名单后缀）仍可重发、仍可完成认证；
 只有「新地址」会被拦。
 """
 import json
@@ -167,7 +167,7 @@ class EmailBindWhitelistTest(TestCase):
         self.assertEqual(v.identifier, "member@163.com")
 
     def test_existing_disallowed_pending_identifier_may_resend(self):
-        # 祖父条款：白名单上线前留下的 pending 地址（非白名单后缀）仍可重发完成验证
+        # 祖父条款：白名单上线前留下的 pending 地址（非白名单后缀）仍可重发完成认证
         Verification.objects.create(
             user=self.user, channel=Verification.CHANNEL_EMAIL,
             status=Verification.STATUS_PENDING, identifier="old@gmail.com",

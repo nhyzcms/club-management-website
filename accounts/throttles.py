@@ -43,7 +43,7 @@ class RegisterThrottle(_IPLimitThrottle):
 
 
 class ResendVerificationThrottle(_IPLimitThrottle):
-    """重发邮箱验证邮件节流：每个 IP 每小时 N 次（N 来自 get_policy()）。"""
+    """重发邮箱认证邮件节流：每个 IP 每小时 N 次（N 来自 get_policy()）。"""
 
     scope = "resend_verification"
 

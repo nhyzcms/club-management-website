@@ -4,7 +4,7 @@
 - 超级管理员豁免（直接 no-op）。
 - 管理员身份过期（委任通道 expires_at 已到）→ 撤销 ``is_staff``（触发 post_save 删除
   委任通道，回落普通用户，需重新授予）。
-- 从未验证、注册超期（date_joined + 宽限，或 Profile.registration_deadline 覆盖）→
+- 从未认证、注册超期（date_joined + 宽限，或 Profile.registration_deadline 覆盖）→
   停用账号（is_active=False）+ 标记 expiry_disabled_at（登录时给专属提示）。
 
 幂等：已处理（is_active=False / is_staff=False）后重复调用为 no-op。
@@ -25,7 +25,7 @@ from .models import (
 
 
 def _registration_deadline(user, profile):
-    """未认证账号的验证宽限截止：Profile 显式覆盖 > date_joined + 站点配置。"""
+    """未认证账号的认证宽限截止：Profile 显式覆盖 > date_joined + 站点配置。"""
     if profile is not None and profile.registration_deadline is not None:
         return profile.registration_deadline
     return user.date_joined + timedelta(days=registration_verify_days())
@@ -73,7 +73,7 @@ def enforce_account_validity(user, dry_run=False):
             return "admin_expired"
         return None
 
-    # 2) 从未验证、注册超期 → 停用
+    # 2) 从未认证、注册超期 → 停用
     if not has_ever_verified(user):
         profile = profile_of(user)
         if _registration_deadline(user, profile) <= now:

@@ -40,15 +40,15 @@ test("重置密码：无有效 token 时提示链接无效", async ({ page }) =>
   await expect(page.getByText("该密码重置链接无效或已过期。")).toBeVisible();
 });
 
-test("邮箱验证：无有效参数时提示验证失败", async ({ page }) => {
+test("邮箱认证：无有效参数时提示认证失败", async ({ page }) => {
   await page.goto("/#/verify-email");
-  await expect(page.getByRole("heading", { name: "验证失败" })).toBeVisible();
-  await expect(page.getByText("该验证链接无效或已过期。")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "认证失败" })).toBeVisible();
+  await expect(page.getByText("该认证链接无效或已过期。")).toBeVisible();
 });
 
-test("重发验证邮件：提交后给出成功提示", async ({ page }) => {
+test("重发认证邮件：提交后给出成功提示", async ({ page }) => {
   await page.goto("/#/verify-email-pending");
-  await expect(page.getByRole("heading", { name: "重发验证邮件" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "重发认证邮件" })).toBeVisible();
 
   await page.getByPlaceholder("请输入注册时的邮箱").fill("e2e_plain@example.test");
   await page.locator('form button[type="submit"]').click();

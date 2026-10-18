@@ -1,7 +1,7 @@
 """身份到期前的站内提醒：还剩两个月 / 一个月各一次（只覆盖会降权的通道）。
 
 需求：账号身份因有效性到期被降权前，前两个月 / 前一个月各发一次站内系统通知。
-覆盖 ``Verification.expires_at`` 的两类降权来源：认证通道（已验证 → 未验证）与
+覆盖 ``Verification.expires_at`` 的两类降权来源：认证通道（已认证 → 未认证）与
 管理员委任通道（撤销 ``is_staff``）；超管委任永久（``expires_at=null``）不提醒。
 """
 from datetime import timedelta

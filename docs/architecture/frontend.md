@@ -64,7 +64,7 @@ frontend/
 │   │   ├── activity/      # 活动详情壳与面板：Collection/Exhibition/Deliberation/Survey
 │   │   └── review/        # 审核预览组件（ReviewPreview）
 │   ├── components/        # 跨页共享组件（布局、守卫、评论、消息、编辑器…）
-│   │   ├── profile/       # 个人中心面板（资料/密码/会话/验证/权限/禁言…）
+│   │   ├── profile/       # 个人中心面板（资料/密码/会话/认证/权限/禁言…）
 │   │   ├── mascot/        # 看板娘 host、惰性加载、气泡喊话
 │   │   ├── rte/           # Tiptap 自定义原子节点（Video、Iframe）
 │   │   └── feed/          # 首页社团动态卡片
@@ -84,7 +84,7 @@ frontend/
 
 `components/` 分组职责（不逐个穷举）：
 
-- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未验证提醒/横幅公告/回顶/页脚）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`。
+- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`。
 - **内容与互动**：`CommentSection`（评论树，含协管 UI）、`MessageThread`（私信/任务讨论线程）、`Avatar`、`ReportButton`、`AuthorReviewBanner`（作者视角审核状态横幅）、`Pagination`、`ArticleToc`（正文目录）、`ClubFeed` + `feed/FeedCards`（首页动态流）。
 - **表单与编辑器**：`RichTextEditor`（Tiptap 封装）、`DocxPreview`、`UserSearchSelect`（用户搜索选择器）、`MentionField`（@ 提及）、`CommentThreadStatusField`（评论线程开关）、`PasswordInput`、`SurveyFill`。
 - **视图部件**：`TaskGantt`（frappe-gantt 甘特）、`TaskTimeline`（任务时间线）。
@@ -160,8 +160,8 @@ frontend/
 | `/join/form` | `JoinFormPage` |  | 填写自我介绍问卷（`SurveyFill`） |
 | `/join/editor` | `JoinEditorPage` | ✅ | 编辑自我介绍问卷（复用 `SurveyCreatorPage`） |
 | `/register` | `RegisterPage` |  | 自助注册（用户名 + 双密码 + Turnstile） |
-| `/verify-email` | `VerifyEmailPage` |  | 邮箱验证落地页（邮件链接带 `?uid=&token=`） |
-| `/verify-email-pending` | `VerifyEmailPendingPage` |  | 重发验证邮件（`?email=` 可预填） |
+| `/verify-email` | `VerifyEmailPage` |  | 邮箱认证落地页（邮件链接带 `?uid=&token=`） |
+| `/verify-email-pending` | `VerifyEmailPendingPage` |  | 重发认证邮件（`?email=` 可预填） |
 | `/forgot-password` | `ForgotPasswordPage` |  | 忘记密码 |
 | `/reset-password` | `ResetPasswordPage` |  | 重置密码落地页 |
 | `/profile` | `ProfileRedirect` |  | 取 `me.id` 后 `replace` 到 `/u/<id>` |
@@ -206,13 +206,13 @@ URL 查询参数约定（hash 部分之后）：tab 状态用查询参数（如 
 
 | 模块 | 前缀 | 覆盖 |
 |------|------|------|
-| `api/client.ts` | `/auth` | 登录/登出/`me`/资料/改密/密码重置/注册/邮箱验证/会话列表/用户检索/收件箱 |
+| `api/client.ts` | `/auth` | 登录/登出/`me`/资料/改密/密码重置/注册/邮箱认证/会话列表/用户检索/收件箱 |
 | `api/news.ts` | `/news` | 列表/详情/我的/增删改/图片上传/featured/hot/tags/overview/feed |
 | `api/tasks.ts` | `/tasks` | 任务 CRUD、认领/审批/完成/指派等动作、标签 |
 | `api/activities.ts` | `/activities` | 活动 CRUD、生命周期动作、问卷 schema、征集/展品 |
 | `api/messaging.ts` | `/messaging` | 私信会话、通知、评论线程、未读数、横幅公告 |
 | `api/reviews.ts` / `api/feedback.ts` / `api/reports.ts` | `/reviews` | 发布审核、意见反馈、举报案 |
-| `api/identityReviews.ts` | `/auth` | 身份审核（预约验证、证明投递） |
+| `api/identityReviews.ts` | `/auth` | 身份审核（预约认证、证明投递） |
 | `api/about.ts` | `/about` | 关于页读写 |
 | `api/panorama.ts` | `/panorama` | 全景图列表/详情、导入（multipart）、改/删/重切片；`listAll()` 逐页拉全 |
 | `api/tutorials.ts` | `/tutorials` | 教程 CRUD |
@@ -264,11 +264,11 @@ try {
 </HashRouter>
 ```
 
-- **登录弹窗**：`LoginModalProvider` 提供 `openLogin(redirectTo?)` / `closeLogin` / `authNonce` / `notifyAuthChange`。`LoginModal` 由 Provider 常驻渲染，用户名/邮箱两种方式（`api.login` / `api.loginWithEmail`；手机号 tab 置灰「即将上线」）。登录成功后先自检一次 `api.me()`（防「假登录」：刚建会话即被挤下线时不进入已登录假态），成功则 `authNonce++` 并跳转 `redirectTo`；失败按类型化错误分支展示：登录保护期（含重试 ETA）、限流、账号停用、「邮箱未验证」（附「重发验证邮件」入口直达 `/verify-email-pending`）。
+- **登录弹窗**：`LoginModalProvider` 提供 `openLogin(redirectTo?)` / `closeLogin` / `authNonce` / `notifyAuthChange`。`LoginModal` 由 Provider 常驻渲染，用户名/邮箱两种方式（`api.login` / `api.loginWithEmail`；手机号 tab 置灰「即将上线」）。登录成功后先自检一次 `api.me()`（防「假登录」：刚建会话即被挤下线时不进入已登录假态），成功则 `authNonce++` 并跳转 `redirectTo`；失败按类型化错误分支展示：登录保护期（含重试 ETA）、限流、账号停用、「邮箱未认证」（附「重发认证邮件」入口直达 `/verify-email-pending`）。
 - **受保护路由**：`ProtectedRoute` 在挂载与每次 `authNonce` 变化后调 `api.me()` 校验；未登录时 `openLogin(location.pathname + location.search)` 记录回跳地址并渲染空（弹窗遮罩在前）。弹窗带 `redirectTo` 时关闭会先回首页，避免用户停在空白受保护页。
 - **单会话提示（挤号）**：`SessionGuard` 注册挤号回调并在已登录时每 15s 轮询 `api.me()`；被挤号的响应（类型化 `session_superseded`，含接管设备名/IP/时间）触发 `SessionSupersedeModal`（幂等展示，已显示则不覆盖），确认后重新打开登录弹窗。未登录则不轮询——没有会话就不会被挤号。
 - **登录态变化广播**：登录（`LoginModal` 的 `onLoggedIn`）与登出（`AppShell` 用户菜单的 `api.logout()`）都自增 `authNonce`；`AppShell`、受保护路由、`SessionGuard` 据此重新拉取身份，避免同页登出后本地 `user` 状态过期。
-- **注册与验证链路**：`/register` 只创建登录身份（用户名 + 双密码 + Turnstile），邮箱绑定与身份证明在登录后的「账号验证」面板（`components/profile/VerificationPanel`）；邮箱验证走邮件链接到 `/verify-email`，未验证登录被拒时跳 `/verify-email-pending` 重发。身份状态徽章由 `me.role` 驱动（见「能力投影」）。
+- **注册与认证链路**：`/register` 只创建登录身份（用户名 + 双密码 + Turnstile），邮箱绑定与身份证明在登录后的「账号认证」面板（`components/profile/VerificationPanel`）；邮箱认证走邮件链接到 `/verify-email`，未认证登录被拒时跳 `/verify-email-pending` 重发。身份状态徽章由 `me.role` 驱动（见「能力投影」）。
 
 ## 能力投影（permissions → UI）
 
@@ -289,7 +289,7 @@ try {
 
 - `components/profile/PermissionsPanel.tsx` 集中维护全部 `can_*` 的中文标签与说明（新增能力字段时在此补一行）。
 - 另一类投影是**资源随附的服务器计算标志**：任务详情的 `available_actions` 决定操作按钮（`TaskDetailPage`——按钮显隐完全由后端给出，前端不自行推导生命周期）；活动详情的 `schema_editable` 决定问卷是否可编辑（叠加 `canManage`）；评论线程的 `can_manage` 决定协管按钮（`CommentSection`）。
-- 身份徽章：`me.role.variant/label`（`visitor/user/admin/superadmin`）驱动「未验证」提醒条（`visitor` 时显示，点击跳 `/profile?tab=verification`）与后台入口（见「移动版」）；`profile.is_verified` 门禁私信/待办入口的可见性。
+- 身份徽章：`me.role.variant/label`（`visitor/user/admin/superadmin`）驱动「未认证」提醒条（`visitor` 时显示，点击跳 `/profile?tab=verification`）与后台入口（见「移动版」）；`profile.is_verified` 门禁私信/待办入口的可见性。
 - 用户渲染：共享用户形状（`SimpleUserSerializer` 语义——`avatar` 相对路径、显示名 `nickname || username`）由 `components/Avatar.tsx` 落实：`avatar` 为空时渲染首字符默认头像；`user.permissions` 只出现在当前用户接口，其它用户的引用对象不含 `can_*`。
 
 ## 移动版
@@ -328,7 +328,7 @@ Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?emb
 - **SurveyJS 全家桶**（survey-core / survey-react-ui / survey-creator-core / survey-creator-react / survey-analytics + chart.js）：SPA 内 `SurveyFill`（填写，`utils/survey.ts` 统一响应式宽度与 `onComplete` 接后端，`utils/surveyLocale.ts` 中文 locale）、`SurveyCreatorPage`（编辑器，`saveSurveyFunc` 直连后端保存）、`SurveyResponsesPage` / `SurveyStatsPage`（答复与 analytics 仪表盘）。构建时另将未哈希 min 文件拷到 `static/surveyjs/` 与 `dist/surveyjs/`，专供 Django admin 的问卷编辑器/结果页模板使用——升级 survey-* 后必须重跑 `npm run copy-surveyjs`。
 - **看板娘（Live2D）**：`vendor/live2d/`（runtime + widget + 模型 + `catalog.json`）构建时拷到 `/static/live2d/`，运行时经 `l2d` npm 包渲染 Cubism 2/6 模型。`MascotHost` 分三态：`widget`（完整挂件，独立懒加载 chunk `mascot/loadWidget`）/ `chip`（「看板娘」小按钮）/ `none`（窄屏 ≤1024px、系统 `prefers-reduced-motion`、考试看板且关闭偏好）。开关存 localStorage（`mascot.enabled`）；考试看板经 `examBoard/prefs.ts` 与 `mascot/speak.ts` 让看板娘播报考试提示与倒计时语音。
 - **Marzipano（校园全景）**：**不是 npm 依赖**——它是服务端多级分层方案（[ADR-0022](../adr/0022-campus-panorama-library.md)）的渲染端，运行时由 `utils/marzipano.ts::loadMarzipano()` 从自托管静态资源 `/static/panorama/marzipano.js` 注入脚本（幂等、失败可重试、不发任何第三方请求）。该文件与旧静态全景页共用，并已被 `scripts/pack-release.sh` 与 `scripts/check_panorama_static.py` 纳入发布完整性校验；**退役 `static/panorama/` 前必须先把 `marzipano.js` 迁到新位置并同步 `constants.ts::PANORAMA_RENDERER_URL`**。
-- **Cloudflare Turnstile**：`turnstile.ts` 在注册/找回密码/重发验证邮件/匿名反馈处按需注入脚本（未启用时零请求）；`turnstile_enabled` 与 sitekey 由 `/site-policy/` 下发，`useTurnstile` 负责渲染、重置与卸载组件。
+- **Cloudflare Turnstile**：`turnstile.ts` 在注册/找回密码/重发认证邮件/匿名反馈处按需注入脚本（未启用时零请求）；`turnstile_enabled` 与 sitekey 由 `/site-policy/` 下发，`useTurnstile` 负责渲染、重置与卸载组件。
 - **富文本**：Tiptap 3 编辑器（`RichTextEditor.tsx`），自定义原子节点 `rte/VideoNode.ts`（本地上传视频）与 `rte/IframeNode.ts`（仅 https iframe 嵌入，sandbox 属性与后端 `common/rich_text.py` 保持一致）；`utils/iframeEmbed.ts` 解析用户粘贴的 embed HTML（仅取首个 iframe 的 src/title，安全边界仍在服务端 sanitize）。工具栏扩展高亮 / 文字颜色 / 对齐 / 上下标 / 字数统计与选区气泡菜单、空行浮动菜单；新闻编辑页（`NewsFormPage`）为文档式布局，编辑内容自动保存至服务端草稿区（已发布稿存 `draft_*`，未发布稿直写正文；读写弃均须 `news.manage_news`），详情页提供「编辑 / 继续编辑」入口。
 - **文档处理**：`DocxPreview`（docx-preview 保真渲染 Word 原件）与 mammoth（Word 导入转富文本）。
 - **其他**：`frappe-gantt`（任务甘特，`TaskGantt`，配色映射 cobalt token）；`tus-js-client`（超过同步上限的大文件走 tus 可续传上传，端点 `/uploads/files/`，完成后后端自动挂为统一附件）；字体 Sora / Noto Sans SC 由 `cobalt.css` 以 Google Fonts `@import` 引入。

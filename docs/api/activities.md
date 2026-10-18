@@ -14,7 +14,7 @@
   - 设未来的 `start_at` 即进入 `scheduled`，到点自动开放（征集→`collecting`，其余→`open`）；到 `end_at` 自动结算众议 / 展示 / 调研。征集无 `end_at` 惰性结算，由「提前关闭」或满 `max_submissions` 收口。
   - **长期活动**（`is_permanent=true`）：不设截止，`end_at` 恒为 `null`，永不被时间自动结算；只能由发起人或持 `activities.manage_activity` 者调用 `close` 手动终结。`is_permanent` 与 `end_at` 二选一（勾选长期时传 `end_at` 会 400）。征集的 `max_submissions` 满额自动收口仍然生效（数量上限是显式配置，与时间无关）。
 - **审核轴**（`reviews` app，[ADR-0017](../adr/0017-unified-moderation-system.md)）：`review_status` ∈ `pending` / `approved` / `rejected` / `removed` / `null`（尚无审核行），只门控「公开展示」，不阻断活动自身状态机。列表 / 详情只出已过审（或无审核行）的活动；自己发起的全部活动（含待审 / 驳回 / 下架）走 `mine` 预览。
-- **`owed`**（列表 / 详情字段）：`vote` / `submit` / `null`——已验证成员在「投票中且未投」「收件中且未投」「展示中启用投票且未投」时欠的行动；仅对已验证成员计算。
+- **`owed`**（列表 / 详情字段）：`vote` / `submit` / `null`——已认证成员在「投票中且未投」「收件中且未投」「展示中启用投票且未投」时欠的行动；仅对已认证成员计算。
 - **`X-Device-Id`**：访客调研作答 / 公开受众投票的设备标识（门户写入 localStorage 的 UUID）；缺失或非法按无标识处理。
 
 ## 端点一览
@@ -22,27 +22,27 @@
 | 方法 | 路径 | 认证 | 权限 | 说明 |
 |---|---|---|---|---|
 | GET | `/activities/activities/` | 公开 | — | 活动列表（分页；访客仅见公开受众的调研与众议 / 展示） |
-| POST | `/activities/activities/` | 已验证 | — | 发起活动（创建即开审核） |
+| POST | `/activities/activities/` | 已认证 | — | 发起活动（创建即开审核） |
 | GET | `/activities/activities/{id}/` | 公开 | — | 活动详情（访客仅公开受众的调研与众议 / 展示） |
 | PUT | `/activities/activities/{id}/` | 登录 | 发起人或 `activities.manage_activity` | 全量更新（仅待开始；调研 Schema 见下） |
 | PATCH | `/activities/activities/{id}/` | 登录 | 发起人或 `activities.manage_activity` | 局部更新（同上） |
 | DELETE | `/activities/activities/{id}/` | 登录 | 发起人或 `activities.manage_activity` | 删除活动（无状态门禁） |
 | GET | `/activities/activities/mine/` | 登录 | — | 我发起的活动（含待审 / 驳回 / 下架） |
-| POST | `/activities/activities/{id}/vote/` | 公开 / 已验证 | — | 投选票（众议；启用投票的展示；公开受众游客可投） |
+| POST | `/activities/activities/{id}/vote/` | 公开 / 已认证 | — | 投选票（众议；启用投票的展示；公开受众游客可投） |
 | POST | `/activities/activities/{id}/respond/` | 公开 | — | 调研作答（访客需设备标识） |
 | GET | `/activities/activities/{id}/responses/` | 登录 | — | 问卷作答查看（发起人 / 管理看全部，其余看自己） |
-| POST | `/activities/activities/{id}/submit/` | 已验证 | — | 征集投稿（一束文件 = 一个作品） |
+| POST | `/activities/activities/{id}/submit/` | 已认证 | — | 征集投稿（一束文件 = 一个作品） |
 | POST | `/activities/activities/{id}/review_submission/` | 登录 | 发起人或 `activities.review_collection` | 作品复审（录用 / 退稿） |
 | POST | `/activities/activities/{id}/close/` | 登录 | 发起人或 `activities.manage_activity` | 提前关闭（众议 / 展示 / 调研结算；征集结束收件） |
 | POST | `/activities/activities/{id}/add_exhibit/` | 登录 | 发起人或 `activities.manage_activity` | 加展品（待开始 / 展示中） |
 | POST | `/activities/activities/{id}/update_exhibit/` | 登录 | 发起人或 `activities.manage_activity` | 改展品标题 / 换文件（仅待开始） |
 | POST | `/activities/activities/{id}/delete_exhibit/` | 登录 | 发起人或 `activities.manage_activity` | 删展品（待开始 / 展示中） |
 | POST | `/activities/activities/{id}/import_from_collection/` | 登录 | 发起人或 `activities.manage_activity` | 从征集导入作品为展品 |
-| POST | `/activities/activities/{id}/rate/` | 已验证 | — | 展品点赞 / 点踩（三态） |
-| POST | `/activities/activities/upload_image/` | 已验证 | — | 正文内嵌图片上传 |
+| POST | `/activities/activities/{id}/rate/` | 已认证 | — | 展品点赞 / 点踩（三态） |
+| POST | `/activities/activities/upload_image/` | 已认证 | — | 正文内嵌图片上传 |
 | POST | `/activities/activities/survey_upload/` | 公开 | — | 问卷文件题上传（图片 / PDF） |
 
-「认证」口径：公开 = `AllowAny`；登录 = 仅要求已登录（`IsAuthenticated`，未登录 403）；已验证 = 登录且账号已通过任一验证通道（`accounts.IsVerified`，未验证 403）。
+「认证」口径：公开 = `AllowAny`；登录 = 仅要求已登录（`IsAuthenticated`，未登录 403）；已认证 = 登录且账号已通过任一认证通道（`accounts.IsVerified`，未认证 403）。
 
 ## 端点详情
 
@@ -84,7 +84,7 @@
 
 `POST /activities/activities/`
 
-**认证**：已验证；**权限**：—（`CanCreateActivity` 只判登录，实际门禁是 `IsVerified`）。请求体为 JSON。
+**认证**：已认证；**权限**：—（`CanCreateActivity` 只判登录，实际门禁是 `IsVerified`）。请求体为 JSON。
 
 **请求体**
 
@@ -117,7 +117,7 @@
 
 | 状态码 | 场景 |
 |---|---|
-| 403 | 未登录；或账号未验证（`IsVerified`） |
+| 403 | 未登录；或账号未认证（`IsVerified`） |
 | 400 | 字段校验失败：`option_texts`「众议至少需要 2 个选项」「众议选项不超过 50 个」；`max_choices_per_voter`「每人最多选几项须在 1..选项数 之间」；`start_at`「开始时间须早于截止时间」；`end_at`「已勾选「长期有效」，不能再设截止时间」；`schema`「Schema 须包含 pages」 |
 
 ### 活动详情
@@ -208,9 +208,9 @@
 
 `POST /activities/activities/{id}/vote/`
 
-**认证**：`audience=public` 公开（`AllowAny`——游客与任何登录态均可投）；`audience=members` 须登录 + 已验证（未登录 401、未验证 403）。众议在 `open` 期间可投；展示只在 `voting_enabled=true` 且 `open` 时开放投票（`option_ids` 填展品对应的 `vote_option_id`）。
+**认证**：`audience=public` 公开（`AllowAny`——游客与任何登录态均可投）；`audience=members` 须登录 + 已认证（未登录 401、未认证 403）。众议在 `open` 期间可投；展示只在 `voting_enabled=true` 且 `open` 时开放投票（`option_ids` 填展品对应的 `vote_option_id`）。
 
-**请求体**：`{"option_ids": [31, 32]}`——选项 id 数组：至少 1 项、不得重复、不得超过 `max_choices_per_voter`，且都须属于本活动。一人一张选票，投出后不可更改；全部已验证成员投完时众议自动结算（转 `closed`；公开受众下游客票不参与结算）。
+**请求体**：`{"option_ids": [31, 32]}`——选项 id 数组：至少 1 项、不得重复、不得超过 `max_choices_per_voter`，且都须属于本活动。一人一张选票，投出后不可更改；全部已认证成员投完时众议自动结算（转 `closed`；公开受众下游客票不参与结算）。
 
 **判重与留痕**：登录用户按账号一人一张；`audience=public` 的游客按 `X-Device-Id` 头（UUID）一设备一张，未带合法标识返回 400；游客票记录 IP（取 `X-Forwarded-For` 末段，即 Nginx 追加的真实来源）与设备标识备查。
 
@@ -282,7 +282,7 @@
 
 `POST /activities/activities/{id}/submit/`
 
-**认证**：已验证；**权限**：—。仅征集且 `collecting` 期间可投；一人一作品、提交即锁定（不可改 / 撤）。请求为 `multipart/form-data`，字段 `files`（file[]，必填，一个作品的整束文件，数量 ≤ `max_files_per_submission`）。
+**认证**：已认证；**权限**：—。仅征集且 `collecting` 期间可投；一人一作品、提交即锁定（不可改 / 撤）。请求为 `multipart/form-data`，字段 `files`（file[]，必填，一个作品的整束文件，数量 ≤ `max_files_per_submission`）。
 
 每个文件依次通过：全局上传校验（站点同步上传上限、全局禁用扩展名）→ 活动级校验（`max_file_size` 单文件字节上限、`allowed_extensions` 后缀白名单）。作品数达 `max_submissions` 时自动收件结束（`collecting` → `reviewing` / `archived`）。
 
@@ -367,7 +367,7 @@
 
 `POST /activities/activities/{id}/rate/`
 
-**认证**：已验证；**权限**：—。仅展示且 `open` 期间可评分。请求体 `{"exhibit_id": 7, "choice": "like"}`；`choice` 为 `like` / `dislike`。三态：`none`（无记录）/ `like` / `dislike`——再点当前态即取消，换选即翻转；每人每展品一行，记名。
+**认证**：已认证；**权限**：—。仅展示且 `open` 期间可评分。请求体 `{"exhibit_id": 7, "choice": "like"}`；`choice` 为 `like` / `dislike`。三态：`none`（无记录）/ `like` / `dislike`——再点当前态即取消，换选即翻转；每人每展品一行，记名。
 
 **响应 `200 OK`**：活动详情（对应展品的 `like_count` / `dislike_count` / `my_rating` 更新）。
 
@@ -377,7 +377,7 @@
 
 `POST /activities/activities/upload_image/`
 
-**认证**：已验证；**权限**：—。供富文本编辑器「插入图片」与 Word 导入共用，请求为 `multipart/form-data`，字段 `image`（必填，≤5MB，仅 `image/jpeg`、`image/png`、`image/gif`、`image/webp`）。
+**认证**：已认证；**权限**：—。供富文本编辑器「插入图片」与 Word 导入共用，请求为 `multipart/form-data`，字段 `image`（必填，≤5MB，仅 `image/jpeg`、`image/png`、`image/gif`、`image/webp`）。
 
 **响应 `200 OK`**
 

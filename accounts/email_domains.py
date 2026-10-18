@@ -1,13 +1,13 @@
 """邮箱后缀白名单（ADR-0023）：只接受认可的服务商域名 + 中国大陆 / 港澳台院校域。
 
-为什么有白名单：站点用第三方邮箱发验证信（``settings.EMAIL_HOST_*``），成员普遍
-在用的服务商到达率稳定、出问题也好排查；放开任意后缀只会增加「收不到验证信」的
+为什么有白名单：站点用第三方邮箱发认证信（``settings.EMAIL_HOST_*``），成员普遍
+在用的服务商到达率稳定、出问题也好排查；放开任意后缀只会增加「收不到认证信」的
 支持成本。名单是**代码级策略**（不接受用户输入），改名单 = 改这里 + 走 PR。
 
 判定只发生在**接收新地址**的两处：
   - ``accounts.views.register_view``（注册带邮箱）；
-  - ``accounts.views.verification_email_bind_view``（验证面板绑定 / 换绑）。
-不回溯：已绑定地址、重发验证信（``/auth/resend-verification/``）、Django admin
+  - ``accounts.views.verification_email_bind_view``（认证面板绑定 / 换绑）。
+不回溯：已绑定地址、重发认证信（``/auth/resend-verification/``）、Django admin
 里管理员手填的邮箱不受影响（见 ADR-0023 决策 4）。
 
 两类判定（见 ADR-0023 决策 2）：

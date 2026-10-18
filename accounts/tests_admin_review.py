@@ -86,7 +86,7 @@ class AdminReviewActionsTest(TestCase):
         self.assertEqual(v.status, Verification.STATUS_APPROVED)
         self.assertEqual(v.verified_by, self.reviewer)
         self.assertIsNotNone(v.verified_at)
-        self.assertTrue(is_verified(self.target))  # manual approved ⇒ 已验证
+        self.assertTrue(is_verified(self.target))  # manual approved ⇒ 已认证
         from messaging.models import Notification
 
         n = Notification.objects.filter(
@@ -153,7 +153,7 @@ class IdentityProofAdminListTest(TestCase):
         req = self.factory.get("/")
         req.user = self.reviewer
         obj = self.proof_admin.get_queryset(req).get(pk=self.proof.pk)
-        self.assertEqual(self.proof_admin.manual_channel_status(obj), "待验证")
+        self.assertEqual(self.proof_admin.manual_channel_status(obj), "待认证")
 
         approve_identity(
             self.profile_admin, self._req(self.reviewer),

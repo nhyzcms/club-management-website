@@ -1,6 +1,6 @@
 """活动访问控制（遵循 ADR 0005：命名 BasePermission 子类 + has_perm，绝不查组名）。
 
-身份门禁（已验证成员）由 accounts.IsVerified 在视图层单独挂——此处只管"角色能力 +
+身份门禁（已认证成员）由 accounts.IsVerified 在视图层单独挂——此处只管"角色能力 +
 对象所有权"。读：已登录成员见全部过审活动；访客仅 list/retrieve 公开调研（AllowAny + queryset）。
 """
 from rest_framework import permissions
@@ -14,7 +14,7 @@ class CanViewActivity(permissions.BasePermission):
 
 
 class CanCreateActivity(permissions.BasePermission):
-    """创建活动：登录即可（是否已验证由 IsVerified 把关，故此处只判登录）。"""
+    """创建活动：登录即可（是否已认证由 IsVerified 把关，故此处只判登录）。"""
 
     def has_permission(self, request, view): # type: ignore
         return bool(request.user and request.user.is_authenticated)

@@ -59,7 +59,7 @@ class ManualSubmitTest(TestCase):
         self.assertEqual(IdentityProof.objects.filter(user=self.user).count(), 1)
         self.user.profile.refresh_from_db()
         self.assertEqual(self.user.profile.real_name, "李四")
-        self.assertFalse(is_verified(self.user))  # pending 不算已验证
+        self.assertFalse(is_verified(self.user))  # pending 不算已认证
 
     def test_submit_multiple_proofs_accumulate(self):
         resp = self._submit(self._client(), files=[proof(), proof("p2.png"), proof("p3.png")])

@@ -1,4 +1,4 @@
-"""邮箱验证通道端到端（#37）：面板 绑定 / 重发 / 换邮 + 邮箱登录只认 User.email + 重置需绑定邮箱。
+"""邮箱认证通道端到端（#37）：面板 绑定 / 重发 / 换邮 + 邮箱登录只认 User.email + 重置需绑定邮箱。
 
 核心生命周期（注册带邮箱 / verify-email / 晋升 User.email）见 tests_verify；本文件覆盖面板
 驱动的绑定动作及其安全断言。
@@ -29,7 +29,7 @@ def _login(client, **fields):
 
 
 def make_approved_email_user(username="u", email="u@163.com", password="StrongPass123!"):
-    """已绑定（验证通过）邮箱的用户：email 通道 approved + User.email = identifier。"""
+    """已绑定（认证通过）邮箱的用户：email 通道 approved + User.email = identifier。"""
     u = User.objects.create_user(username=username, password=password, is_active=True)
     u.email = email
     u.save()
@@ -58,7 +58,7 @@ class EmailBindTest(TestCase):
         self.assertEqual(v.status, Verification.STATUS_PENDING)
         self.assertEqual(v.identifier, "new@163.com")
         self.user.refresh_from_db()
-        self.assertEqual(self.user.email, "")  # User.email 未变（待验邮箱不住此）
+        self.assertEqual(self.user.email, "")  # User.email 未变（待认证邮箱不住此）
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("new@163.com", mail.outbox[0].to)
 
@@ -110,7 +110,7 @@ class EmailBindTest(TestCase):
         self.assertEqual(self.user.email, "old@163.com")  # 旧邮箱仍有效
 
     def test_bind_same_approved_email_is_noop(self):
-        # 已验证同邮箱再绑：保持 approved（不降级为 pending）
+        # 已认证同邮箱再绑：保持 approved（不降级为 pending）
         self.user.email = "same@163.com"
         self.user.save()
         Verification.objects.create(
@@ -121,7 +121,7 @@ class EmailBindTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         v = Verification.objects.get(user=self.user, channel=Verification.CHANNEL_EMAIL)
         self.assertEqual(v.status, Verification.STATUS_APPROVED)
-        self.assertEqual(len(mail.outbox), 0)  # 已验证，不重发
+        self.assertEqual(len(mail.outbox), 0)  # 已认证，不重发
 
     def test_change_email_verify_promotes_new(self):
         self.user.email = "old@163.com"
@@ -131,7 +131,7 @@ class EmailBindTest(TestCase):
             status=Verification.STATUS_APPROVED, identifier="old@163.com",
         )
         _bind(self._client(), "new@163.com")
-        # 点新邮箱的验证链接
+        # 点新邮箱的认证链接
         uid = urlsafe_base64_encode(force_bytes(self.user.pk))
         token = email_verification_token.make_token(self.user)
         resp = Client().get(f"/auth/verify-email/?uid={uid}&token={token}")
@@ -141,13 +141,13 @@ class EmailBindTest(TestCase):
 
 
 class EmailLoginTest(TestCase):
-    """邮箱登录只认 User.email（已绑定）；待验邮箱登不进。"""
+    """邮箱登录只认 User.email（已绑定）；待认证邮箱登不进。"""
 
     def setUp(self):
         cache.clear()
 
     def test_pending_email_cannot_login(self):
-        # 待验邮箱住 identifier、不进 User.email → 邮箱登录无匹配 → 凭据无效
+        # 待认证邮箱住 identifier、不进 User.email → 邮箱登录无匹配 → 凭据无效
         u = User.objects.create_user(username="u", password="StrongPass123!", is_active=True)
         Verification.objects.create(
             user=u, channel=Verification.CHANNEL_EMAIL,
@@ -163,7 +163,7 @@ class EmailLoginTest(TestCase):
 
 
 class PasswordResetRequiresBoundEmailTest(TestCase):
-    """密码重置按 User.email（已验证绑定）发链接；无绑定邮箱不发。"""
+    """密码重置按 User.email（已认证绑定）发链接；无绑定邮箱不发。"""
 
     def setUp(self):
         cache.clear()
@@ -179,7 +179,7 @@ class PasswordResetRequiresBoundEmailTest(TestCase):
         self.assertEqual(len(mail.outbox), 1)
 
     def test_reset_for_pending_email_sends_nothing(self):
-        # 待验邮箱不在 User.email → 无匹配账号 → 不发重置链接（防未验证邮箱重置）
+        # 待认证邮箱不在 User.email → 无匹配账号 → 不发重置链接（防未认证邮箱重置）
         u = User.objects.create_user(username="u", password="p", is_active=True)
         Verification.objects.create(
             user=u, channel=Verification.CHANNEL_EMAIL,

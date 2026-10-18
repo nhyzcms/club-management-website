@@ -2,7 +2,7 @@
 
 开关：``TURNSTILE_SITE_KEY`` 与 ``TURNSTILE_SECRET_KEY`` **都非空**才启用。
 任一为空 → 关闭：校验直接通过、公开快照不下发 sitekey。
-用于自助注册、找回密码、重发验证信、匿名意见反馈。
+用于自助注册、找回密码、重发认证信、匿名意见反馈。
 """
 import json
 import urllib.error

@@ -29,7 +29,7 @@
 ## 指南
 
 - [访问控制](guides/access-control.md) —— 身份、权限与可见性模型
-- [身份验证](guides/verification.md) —— 验证通道与流程
+- [身份认证](guides/certification.md) —— 认证通道与流程
 - [审核系统](guides/moderation.md) —— 四张桌与处理流程
 - [问卷系统](guides/surveys.md) —— SurveyJS 问卷与作答规则
 

@@ -23,7 +23,7 @@ import "../styles/profile.css";
 
 const SELF_TABS = [
   { key: "profile", label: "资料编辑" },
-  { key: "verification", label: "账号验证" },
+  { key: "verification", label: "账号认证" },
   { key: "member", label: "社员身份" },
   { key: "notify", label: "通知" },
   { key: "password", label: "改密码" },

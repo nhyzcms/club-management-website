@@ -17,7 +17,7 @@ interface UserMenuProfile {
 export interface UserMenuProps {
   user: UserMenuUser;
   profile: UserMenuProfile;
-  /** 已通过账号验证（决定「私信 / 待办」可见性） */
+  /** 已通过账号认证（决定「私信 / 待办」可见性） */
   verified: boolean;
   /** 站点私信开关（SiteSettings.dms_enabled） */
   dmsEnabled: boolean;

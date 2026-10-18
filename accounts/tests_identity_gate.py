@@ -1,6 +1,6 @@
-"""账号验证写门槛（ADR-0006）：桶写操作需账号已验证（任一通道 approved）；只读不受影响。
+"""账号认证写门槛（ADR-0006）：桶写操作需账号已认证（任一通道 approved）；只读不受影响。
 
-未验证 = 无 approved Verification 行（访客）；已验证 = 有一条 approved 通道（用户）。
+未认证 = 无 approved Verification 行（访客）；已认证 = 有一条 approved 通道（用户）。
 
 URL 前缀注意：config 把各 app 挂在 `tasks/` `reviews/` `messaging/` 下，各 app 路由器又
 注册同名 resource，故为 `/tasks/tasks/`、`/reviews/feedbacks/`、`/messaging/conversations/`。
@@ -25,12 +25,12 @@ CONV = "/messaging/conversations/"
 
 
 def make_unverified(username):
-    # 无 Verification 行 ⇒ 未验证（访客）
+    # 无 Verification 行 ⇒ 未认证（访客）
     return User.objects.create_user(username=username, password="p")
 
 
 def make_verified(username):
-    # approved manual 通道 ⇒ 已验证（用户）
+    # approved manual 通道 ⇒ 已认证（用户）
     return grant_verification(User.objects.create_user(username=username, password="p"))
 
 

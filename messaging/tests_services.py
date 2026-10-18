@@ -258,7 +258,7 @@ class MuteAndNotifyTest(TestCase):
         """邮件经「订阅(email) + 同步投递」（替代旧 Profile 布尔同步转发）。"""
         from messaging.models import NotificationDelivery, NotificationSubscription
 
-        grant_verification(self.target)  # email 通道要求账号已验证
+        grant_verification(self.target)  # email 通道要求账号已认证
 
         # 1) 未订阅 → 不产生外发投递
         notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})

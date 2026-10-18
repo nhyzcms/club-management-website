@@ -33,11 +33,11 @@ function visibleChannel(card: ChannelCard) {
 const CHANNEL_META: Record<string, { label: string; desc: string }> = {
   appointment: {
     label: "后台委任",
-    desc: "后台将账号委任为管理员或超级管理员时，身份即视为已验证，无需再走邮箱或人工通道。",
+    desc: "后台将账号委任为管理员或超级管理员时，身份即视为已认证，无需再走邮箱或人工通道。",
   },
-  email: { label: "邮箱验证", desc: "绑定并验证一个邮箱即可成为已验证用户。" },
-  manual: { label: "人工审批", desc: "提交身份证明，由管理员审核通过即成为已验证用户。" },
-  authcode: { label: "认证码", desc: "持有管理员发放的认证码时，输入码即可完成验证。" },
+  email: { label: "邮箱认证", desc: "绑定并认证一个邮箱即可成为已认证用户。" },
+  manual: { label: "人工审批", desc: "提交身份证明，由管理员审核通过即成为已认证用户。" },
+  authcode: { label: "认证码", desc: "持有管理员发放的认证码时，输入码即可完成认证。" },
 };
 
 // 各通道各状态 → 展示文案 + 徽章 + 提示（数据驱动：加状态只改此处）。
@@ -45,13 +45,13 @@ const STATE: Record<string, Record<ChannelStatus, { label: string; badge: string
   appointment: {
     none: { label: "未委任", badge: "badge-ghost", hint: "此通道由后台委任，无法自行申请。" },
     pending: { label: "待委任", badge: "badge-warning", hint: "" },
-    approved: { label: "已委任", badge: "badge-success", hint: "身份已由后台委任确认，无需再验证。" },
+    approved: { label: "已委任", badge: "badge-success", hint: "身份已由后台委任确认，无需再认证。" },
     rejected: { label: "已撤销", badge: "badge-danger", hint: "" },
   },
   email: {
     none: { label: "未绑定", badge: "badge-ghost", hint: "绑定邮箱后可用邮箱登录、找回密码。" },
-    pending: { label: "待验证", badge: "badge-warning", hint: "验证邮件已发送，请查收并点击验证链接。" },
-    approved: { label: "已通过", badge: "badge-success", hint: "邮箱已验证。" },
+    pending: { label: "待认证", badge: "badge-warning", hint: "认证邮件已发送，请查收并点击认证链接。" },
+    approved: { label: "已通过", badge: "badge-success", hint: "邮箱已认证。" },
     rejected: { label: "已驳回", badge: "badge-danger", hint: "" }, // email 通道无驳回，保留数据驱动完备性
   },
   manual: {
@@ -61,9 +61,9 @@ const STATE: Record<string, Record<ChannelStatus, { label: string; badge: string
     rejected: { label: "已驳回", badge: "badge-danger", hint: "身份证明被驳回，可重新提交。" },
   },
   authcode: {
-    none: { label: "未使用", badge: "badge-ghost", hint: "输入收到的认证码即可完成验证。" },
+    none: { label: "未使用", badge: "badge-ghost", hint: "输入收到的认证码即可完成认证。" },
     pending: { label: "待兑换", badge: "badge-warning", hint: "" }, // 该通道无 pending，保留数据驱动完备性
-    approved: { label: "已通过", badge: "badge-success", hint: "认证码已验证。" },
+    approved: { label: "已通过", badge: "badge-success", hint: "认证码已认证。" },
     rejected: { label: "已撤销", badge: "badge-danger", hint: "" }, // 该通道无 rejected，保留数据驱动完备性
   },
 };
@@ -82,7 +82,7 @@ function CardShell({ card, children }: { card: ChannelCard; children?: React.Rea
         <span className={"badge " + st.badge}>{st.label}</span>
       </div>
       {meta.desc && <p className="muted verify-card-desc">{meta.desc}</p>}
-      {showPendingId && <p className="muted verify-card-id">待验证邮箱：{card.identifier}</p>}
+      {showPendingId && <p className="muted verify-card-id">待认证邮箱：{card.identifier}</p>}
       {showBoundId && <p className="muted verify-card-id">已绑定：{card.identifier}</p>}
       {showAppointmentId && <p className="muted verify-card-id">委任身份：{appointmentLabel}</p>}
       {st.hint && <p className="muted verify-card-hint">{st.hint}</p>}
@@ -108,7 +108,7 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
     setMsg("");
     api.verificationEmailBind(email)
       .then(() => {
-        setMsg("验证邮件已发送，请查收。");
+        setMsg("认证邮件已发送，请查收。");
         setEmailInput("");
         onChanged();
       })
@@ -133,7 +133,7 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
       <div className="verify-card-actions">
         {card.status === "pending" && (
           <button className="btn btn-sm" type="button" disabled={submitting}
-                  onClick={() => bind(card.identifier)}>重发验证邮件</button>
+                  onClick={() => bind(card.identifier)}>重发认证邮件</button>
         )}
         <div className="verify-email-form">
           <input type="email" inputMode="email" placeholder="email@example.com"
@@ -237,7 +237,7 @@ function CodeCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: (
     setMsg("");
     api.verificationAuthcodeRedeem(codeInput)
       .then(() => {
-        setMsg("认证码验证通过，账号已完成验证。");
+        setMsg("认证码认证通过，账号已完成认证。");
         setCodeInput("");
         onChanged();
       })
@@ -279,7 +279,7 @@ export default function VerificationPanel() {
   if (err) {
     return (
       <div className="card card-pad">
-        <h2 className="profile-panel-title">账号验证</h2>
+        <h2 className="profile-panel-title">账号认证</h2>
         <p className="muted">{err}</p>
       </div>
     );
@@ -287,7 +287,7 @@ export default function VerificationPanel() {
   if (!data) {
     return (
       <div className="card card-pad">
-        <h2 className="profile-panel-title">账号验证</h2>
+        <h2 className="profile-panel-title">账号认证</h2>
         <p className="muted">加载中…</p>
       </div>
     );
@@ -295,14 +295,14 @@ export default function VerificationPanel() {
 
   return (
     <div className="card card-pad">
-      <h2 className="profile-panel-title">账号验证</h2>
+      <h2 className="profile-panel-title">账号认证</h2>
       <p className="muted verify-overview">
         {data.is_verified
-          ? "你的账号已验证。"
-          : "你的账号尚未验证（访客）——完成下列任一通道即成为已验证用户，解锁发帖 / 发消息 / 建申报等。"}
+          ? "你的账号已认证。"
+          : "你的账号尚未认证（访客）——完成下列任一通道即成为已认证用户，解锁发帖 / 发消息 / 建申报等。"}
       </p>
       {!policy.verification_enabled && (
-        <p className="muted verify-overview">验证通道已关闭</p>
+        <p className="muted verify-overview">认证通道已关闭</p>
       )}
       <div className="verify-cards">
         {data.channels.filter(visibleChannel).map((c) => {
