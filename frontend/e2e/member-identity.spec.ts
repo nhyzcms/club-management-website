@@ -27,6 +27,12 @@ test("注册 → 认领阶段：选身份 + 手机号后四位 → 认领成功"
   await page.locator("select").selectOption({ index: 1 });
   await page.getByRole("button", { name: "注册" }).click();
 
+  // 注册即登录 → 账号有效期弹窗（ADR-0041）会盖住页面；新账号从未读过，必弹。
+  const validity = page.getByRole("alertdialog", { name: "账号有效期" });
+  await expect(validity).toBeVisible();
+  await validity.getByRole("button", { name: "我知道了" }).click();
+  await expect(validity).toBeHidden();
+
   // 注册即登录 → 进入认领阶段
   await expect(page.getByRole("heading", { name: "以下身份是否是你？" })).toBeVisible();
   await expect(page.getByText("第 9 届 · 信息")).toBeVisible();

@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route, Navigate, useParams } from "react-router-dom
 import { lazy, Suspense, useEffect, type ReactElement } from "react";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
+import ValidityNoticeHost from "./components/ValidityNoticeHost";
 import LoginModalProvider from "./components/LoginModalProvider";
 import MascotHost from "./components/mascot/MascotHost";
 import { useEmbedMode } from "./embed";
@@ -176,6 +177,8 @@ export default function App() {
         </Routes>
       </Suspense>
       </SessionGuard>
+      {/* 账号有效期弹窗（ADR-0041）：挂在根部，桌面 / 手机版共用同一份快照。 */}
+      <ValidityNoticeHost />
       </LoginModalProvider>
       <MaybeMascot />
     </HashRouter>

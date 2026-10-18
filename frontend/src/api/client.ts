@@ -94,9 +94,15 @@ export const api = {
       headers: stepup,
     }) as Promise<{ message: string }>,
 
+  // 账号有效期（ADR-0041）：状态 / 到期时间 / 剩余天数 / 一次性提示键。
+  // “已读”写回服务端（Profile.validity_notice_ack），跨设备一致。
+  accountValidity: () =>
+    request("/validity/"),
+  accountValidityAck: (key: string) =>
+    request("/validity/ack/", { method: "POST", body: JSON.stringify({ key }) }),
+
   listUsers: () =>
     request("/users/"),
-
   // 用户搜索（任务表单指派/协作者）：分页信封 + ?search=（用户名/昵称模糊）
   searchUsers: (search: string) =>
     request(`/users/${search ? `?search=${encodeURIComponent(search)}` : ""}`) as Promise<{

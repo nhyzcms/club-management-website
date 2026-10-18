@@ -7,8 +7,11 @@
 项目当前已经具备以下模块：
 
 - 认证与账号：登录、注册、邮箱验证、人工审核、认证码、密码重置、用户资料、会话管理；
+  **账号有效期**（ADR-0041）在注册成功 / 认证通过时弹窗说明到期时间、剩余有效期与规则
+  （已读标记存服务端，续期后才再弹），认证面板也常显到期时间；
   个人中心支持**账号注销**（软删除：邮箱 / 头像 / 身份证明材料 / 登录设备记录即刻清除，
-  账号编码、真实姓名与社员编号保留在后台；历史私信与评论展示为「该用户已注销」）
+  账号编码、真实姓名与社员编号保留在后台；历史私信与评论展示为「该用户已注销」；
+  提交后再弹一次二次确认才真正执行）
 - 内容管理：新闻、教程、关于页、站点政策
 - 协作管理：任务、标签、评论区、私信、提案/反馈
 - 提醒与运营：站内通知（可按来源开关）、横幅公告、全站禁言
@@ -144,6 +147,8 @@ uv run python manage.py migrate          # 执行数据库迁移
 uv run python manage.py makemigrations  # 生成迁移文件
 uv run python manage.py test             # 运行测试
 uv run python manage.py check            # 检查项目配置
+uv run python manage.py enforce_validity # 兜底执行有效期规则 + 到期前提醒
+uv run python manage.py send_validity_broadcast --dry-run  # 试跑：有效期说明群发私信
 
 cd frontend && npm run dev               # 启动前端开发服务器
 cd frontend && npm run build             # 构建生产资源
