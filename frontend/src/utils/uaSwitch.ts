@@ -32,6 +32,11 @@ const TO_MOBILE: Record<string, string> = {
   "/join": "/m/join",
   "/join/form": "/m/join/form",
   "/profile": "/m/me",
+  // 手机版工作台（2026-10-18）
+  "/reviews": "/m/review",
+  "/inbox": "/m/inbox",
+  "/notifications": "/m/notifications",
+  "/tasks": "/m/tasks",
 };
 
 /** 静态路由：手机版 → 桌面版（TO_MOBILE 的逆映射）。 */
@@ -43,6 +48,10 @@ const TO_DESKTOP: Record<string, string> = {
   "/m/join": "/join",
   "/m/join/form": "/join/form",
   "/m/me": "/profile",
+  "/m/review": "/reviews",
+  "/m/inbox": "/inbox",
+  "/m/notifications": "/notifications",
+  "/m/tasks": "/tasks",
 };
 
 /** 有移动版详情页的模块：/news/:id ↔ /m/news/:id。 */
@@ -68,8 +77,12 @@ export function isMobilePath(path: string): boolean {
 
 function detailTarget(segments: string[], prefix: string): string | null {
   if (segments.length !== 2 || segments[1] === "") return null;
-  if (!DETAIL_MODULES.includes(segments[0])) return null;
-  return `${prefix}${segments[0]}/${segments[1]}`;
+  if (DETAIL_MODULES.includes(segments[0])) return `${prefix}${segments[0]}/${segments[1]}`;
+  // 任务详情只认数字 id：/tasks/new 是桌面表单，不能映射到不存在的 /m/tasks/new
+  if (segments[0] === "tasks" && /^\d+$/.test(segments[1])) {
+    return `${prefix}tasks/${segments[1]}`;
+  }
+  return null;
 }
 
 function desktopToMobile(path: string): string {

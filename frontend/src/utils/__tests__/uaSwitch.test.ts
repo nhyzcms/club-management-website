@@ -72,6 +72,14 @@ describe("decideUaSwitch", () => {
     expect(decideUaSwitch("desktop", "mobile", "#/profile")).toBe("/m/me");
     expect(decideUaSwitch("desktop", "mobile", "#/messages")).toBe("/m");
     expect(decideUaSwitch("desktop", "mobile", "#/news/42/edit")).toBe("/m");
+    // 手机版工作台：桌面 → 手机
+    expect(decideUaSwitch("desktop", "mobile", "#/reviews")).toBe("/m/review");
+    expect(decideUaSwitch("desktop", "mobile", "#/inbox")).toBe("/m/inbox");
+    expect(decideUaSwitch("desktop", "mobile", "#/notifications")).toBe("/m/notifications");
+    expect(decideUaSwitch("desktop", "mobile", "#/tasks")).toBe("/m/tasks");
+    expect(decideUaSwitch("desktop", "mobile", "#/tasks/12")).toBe("/m/tasks/12");
+    // 桌面新建任务表单没有手机版，回落首页而不是造一个不存在的 /m/tasks/new
+    expect(decideUaSwitch("desktop", "mobile", "#/tasks/new")).toBe("/m");
   });
 
   it("移动 → 桌面：映射回桌面版等价页", () => {
@@ -81,6 +89,9 @@ describe("decideUaSwitch", () => {
     expect(decideUaSwitch("app", "desktop", "#/m/activity/7")).toBe("/activity/7");
     expect(decideUaSwitch("mobile", "desktop", "#/m/me")).toBe("/profile");
     expect(decideUaSwitch("mobile", "desktop", "#/m/unknown")).toBe("/");
+    // 手机版工作台：手机 → 桌面
+    expect(decideUaSwitch("mobile", "desktop", "#/m/review")).toBe("/reviews");
+    expect(decideUaSwitch("mobile", "desktop", "#/m/tasks/12")).toBe("/tasks/12");
   });
 
   it("已经在目标侧就不跳（避免多此一举）", () => {

@@ -1,5 +1,5 @@
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
-import { lazy, Suspense, useEffect } from "react";
+import { HashRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
+import { lazy, Suspense, useEffect, type ReactElement } from "react";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
 import LoginModalProvider from "./components/LoginModalProvider";
@@ -56,6 +56,11 @@ const MobileTutorialsPage = lazy(() => import("./pages/MobileTutorialsPage"));
 const MobileTutorialDetailPage = lazy(() => import("./pages/MobileTutorialDetailPage"));
 const MobileJoinPage = lazy(() => import("./pages/MobileJoinPage"));
 const MobileJoinFormPage = lazy(() => import("./pages/MobileJoinFormPage"));
+const MobileReviewPage = lazy(() => import("./pages/MobileReviewPage"));
+const MobileInboxPage = lazy(() => import("./pages/MobileInboxPage"));
+const MobileNotificationsPage = lazy(() => import("./pages/MobileNotificationsPage"));
+const MobileTaskListPage = lazy(() => import("./pages/MobileTaskListPage"));
+const MobileTaskDetailPage = lazy(() => import("./pages/MobileTaskDetailPage"));
 
 function Loading() {
   return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中…</div>;
@@ -71,6 +76,25 @@ function MaybeMascot() {
 function HomeRoute() {
   if (isMobileDevice()) return <Navigate to="/m" replace />;
   return <HomePage />;
+}
+
+/**
+ * 手机 UA 访问「桌面专属」页面时改走对应手机版（例如 /#/reviews → /#/m/review）。
+ *
+ * 为什么不在页面内部做响应式：桌面页依赖 AppShell 的顶栏与宽屏栅格，
+ * 在 390px 上虽然能显示但交互（行内按钮、分页器、双栏）不适合单手操作。
+ * 手机版另有专门实现；桌面 UA 完全不受影响。
+ */
+function MobileAware({ to, children }: { to: string; children: ReactElement }) {
+  if (isMobileDevice()) return <Navigate to={to} replace />;
+  return children;
+}
+
+/** 任务详情：手机 UA 跳到 /m/tasks/:id（需要带上路由参数）。 */
+function TaskDetailRoute() {
+  const { id } = useParams<{ id: string }>();
+  if (isMobileDevice()) return <Navigate to={`/m/tasks/${id}`} replace />;
+  return <TaskDetailPage />;
 }
 
 export default function App() {
@@ -94,13 +118,13 @@ export default function App() {
           <Route path="/verify-email-pending" element={<VerifyEmailPendingPage />} />
           <Route path="/profile" element={<ProfileRedirect />} />
           <Route path="/u/:id" element={<UserProfile />} />
-          <Route path="/tasks" element={<ProtectedRoute><TaskListPage /></ProtectedRoute>} />
+          <Route path="/tasks" element={<MobileAware to="/m/tasks"><ProtectedRoute><TaskListPage /></ProtectedRoute></MobileAware>} />
           <Route path="/tasks/new" element={<ProtectedRoute><TaskFormPage /></ProtectedRoute>} />
-          <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetailPage /></ProtectedRoute>} />
+          <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetailRoute /></ProtectedRoute>} />
           <Route path="/tasks/:id/edit" element={<ProtectedRoute><TaskFormPage /></ProtectedRoute>} />
           <Route path="/messages" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
           <Route path="/messages/:id" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
-          <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/notifications" element={<MobileAware to="/m/notifications"><ProtectedRoute><NotificationsPage /></ProtectedRoute></MobileAware>} />
           <Route path="/activity" element={<ActivityListPage />} />
           <Route path="/activity/new" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
           <Route path="/activity/:id" element={<ActivityDetailPage />} />
@@ -108,14 +132,14 @@ export default function App() {
           <Route path="/activity/:id/survey-edit" element={<ProtectedRoute><SurveyEditorPage /></ProtectedRoute>} />
           <Route path="/activity/:id/survey-responses" element={<ProtectedRoute><SurveyResponsesPage /></ProtectedRoute>} />
           <Route path="/activity/:id/survey-stats" element={<ProtectedRoute><SurveyStatsPage /></ProtectedRoute>} />
-          <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
+          <Route path="/inbox" element={<MobileAware to="/m/inbox"><ProtectedRoute><InboxPage /></ProtectedRoute></MobileAware>} />
           <Route path="/feedback" element={<FeedbackPage />} />
           <Route path="/feedback/:id" element={<ProtectedRoute><FeedbackDetailPage /></ProtectedRoute>} />
           <Route path="/news" element={<NewsListPage />} />
           <Route path="/news/new" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/news/:id/edit" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
-          <Route path="/reviews" element={<ProtectedRoute><ReviewQueuePage /></ProtectedRoute>} />
+          <Route path="/reviews" element={<MobileAware to="/m/review"><ProtectedRoute><ReviewQueuePage /></ProtectedRoute></MobileAware>} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/panorama" element={<PanoramaPage />} />
           <Route path="/panorama/manage" element={<ProtectedRoute><PanoramaManagePage /></ProtectedRoute>} />
@@ -138,6 +162,11 @@ export default function App() {
           <Route path="/m/join" element={<MobileJoinPage />} />
           <Route path="/m/join/form" element={<MobileJoinFormPage />} />
           <Route path="/m/me" element={<MobileMePage />} />
+          <Route path="/m/review" element={<ProtectedRoute><MobileReviewPage /></ProtectedRoute>} />
+          <Route path="/m/inbox" element={<ProtectedRoute><MobileInboxPage /></ProtectedRoute>} />
+          <Route path="/m/notifications" element={<ProtectedRoute><MobileNotificationsPage /></ProtectedRoute>} />
+          <Route path="/m/tasks" element={<ProtectedRoute><MobileTaskListPage /></ProtectedRoute>} />
+          <Route path="/m/tasks/:id" element={<ProtectedRoute><MobileTaskDetailPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
           
         </Routes>

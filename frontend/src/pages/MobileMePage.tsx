@@ -7,24 +7,42 @@ import { formatUnreadCount, useUnreadCounts } from "../api/unreadBadges";
 import { THEME_OPTIONS, useTheme } from "../theme";
 import type { RoleVariant } from "../types/profile";
 import "../styles/mobile.css";
+import "../styles/mobile-work.css";
 
-/** /auth/me/（accounts.views._profile_response）真实返回结构：
- * 身份在 role、资料在 profile，user 上仅有 id/username/email/permissions。 */
+/** /auth/me/（accounts.views._profile_response）真实返回结构：身份在 role、
+ * 资料在 profile，user 上仅有 id/username/email/permissions。 */
 interface MeResponse {
-  user: { id: number; username: string; email: string };
+  user: {
+    id: number;
+    username: string;
+    email: string;
+    permissions?: {
+      can_review_content?: boolean;
+      can_review_identity?: boolean;
+      can_view_feedback?: boolean;
+      can_handle_reports?: boolean;
+    };
+  };
   role: { label: string; variant: RoleVariant };
   profile: { avatar: string | null; nickname: string; is_verified: boolean };
 }
 
-/** 列表项。badge 决定是否把未读数挂在右侧（2026-10-17：手机上原本完全看不到未读数）。 */
-const ENTRIES: { to: string; label: string; badge?: "dm" | "notif" }[] = [
-  { to: "/profile", label: "个人资料" },
-  { to: "/tasks", label: "我的任务" },
-  { to: "/messages", label: "私信", badge: "dm" },
-  { to: "/notifications", label: "通知", badge: "notif" },
-  { to: "/feedback", label: "意见反馈" },
-];
+interface Entry {
+  to: string;
+  label: string;
+  badge?: "dm" | "notif";
+  hint?: string;
+}
 
+/**
+ * 手机版「我的」。
+ *
+ * 2026-10-18：新增「工作」分组，把桌面端的工作台功能（审核台、待办、任务、
+ * 通知）接到手机版。权限派生与桌面 AppShell 一致：
+ * - 审核台：任一审核能力（内容/身份/反馈/举报）即可见；
+ * - 待办：需已认证（与 /auth/inbox/ 的门禁一致）；
+ * - 任务与通知：登录即可。
+ */
 export default function MobileMePage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -43,13 +61,72 @@ export default function MobileMePage() {
   }, []);
 
   const user = me?.user ?? null;
-  // 「进入后台管理」指向 Django admin（其门禁只认 is_staff），按身份徽章显示：
-  // 管理员 / 超级管理员可见，普通用户与访客不显示。
+  const permissions = user?.permissions ?? {};
+  const isVerified = !!me?.profile?.is_verified;
+  const showReview = !!(
+    permissions.can_review_content ||
+    permissions.can_review_identity ||
+    permissions.can_view_feedback ||
+    permissions.can_handle_reports
+  );
+  // 「进入后台管理」指向 Django admin（其门禁只认 is_staff），按身份徽章显示
   const isAdmin = me?.role?.variant === "admin" || me?.role?.variant === "superadmin";
+
+  const common: Entry[] = [
+    { to: "/m/tasks", label: "任务" },
+    ...(isVerified ? [{ to: "/m/inbox", label: "待办", hint: "待投票 / 待交稿 / 待验收" }] : []),
+    { to: "/m/notifications", label: "通知", badge: "notif" },
+    { to: "/messages", label: "私信", badge: "dm" },
+    { to: "/feedback", label: "意见反馈" },
+    { to: "/profile", label: "个人资料" },
+  ];
+
+  const work: Entry[] = [
+    ...(showReview ? [{ to: "/m/review", label: "审核台", hint: "身份 / 内容 / 反馈 / 举报" }] : []),
+    ...(isAdmin ? [{ to: "/admin/", label: "进入后台管理" }] : []),
+  ];
 
   const badgeOf = (kind?: "dm" | "notif") => {
     if (!kind || !counts.signedIn) return 0;
     return kind === "dm" ? counts.dm : counts.notif;
+  };
+
+  const open = (to: string) => {
+    if (to.startsWith("http")) window.location.href = to;
+    else if (to === "/admin/") window.location.href = "/admin/";
+    else navigate(to);
+  };
+
+  const renderGroup = (title: string, entries: Entry[]) => {
+    if (entries.length === 0) return null;
+    return (
+      <>
+        <div className="m-list-group-title">{title}</div>
+        <div className="m-list">
+          {entries.map((e) => {
+            const badge = badgeOf(e.badge);
+            return (
+              <div
+                key={e.to}
+                role="link"
+                tabIndex={0}
+                className="m-list-item"
+                onClick={() => open(e.to)}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter") open(e.to);
+                }}
+              >
+                <span className="m-list-label">
+                  {e.label}
+                  {e.hint && <span className="m-list-hint">{e.hint}</span>}
+                </span>
+                {badge > 0 && <span className="m-count-badge tnum">{formatUnreadCount(badge)}</span>}
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
   };
 
   return (
@@ -61,11 +138,18 @@ export default function MobileMePage() {
       <section className="m-me-card">
         {user ? (
           <>
-            <img className="m-me-avatar" src={me?.profile?.avatar || "/static/favicon.ico"} alt="" width={56} height={56} />
+            <img
+              className="m-me-avatar"
+              src={me?.profile?.avatar || "/static/favicon.ico"}
+              alt=""
+              width={56}
+              height={56}
+            />
             <div>
               <div className="m-me-name">{me?.profile?.nickname || user.username}</div>
               <div className="m-me-sub">
                 @{user.username} · {me?.role?.label ?? ""}
+                {isVerified ? "" : " · 未认证"}
               </div>
             </div>
           </>
@@ -81,8 +165,7 @@ export default function MobileMePage() {
         )}
       </section>
 
-      {/* 外观（2026-10-17）：手机上原本没有主题切换入口，深色只能靠桌面端设置。
-          App 壳内首次启动默认「跟随系统」（见 theme.ts 的 getTheme）。 */}
+      {/* 外观：手机上没有桌面顶栏的主题切换入口，这里保留三档分段控件。 */}
       <div className="m-list m-theme-card">
         <div className="m-theme-row">
           <span className="m-theme-label">外观</span>
@@ -102,41 +185,11 @@ export default function MobileMePage() {
         </div>
       </div>
 
-      <div className="m-list">
-        {ENTRIES.map((e) => {
-          const badge = badgeOf(e.badge);
-          return (
-            <div
-              key={e.to}
-              role="link"
-              tabIndex={0}
-              className="m-list-item"
-              onClick={() => navigate(e.to)}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter") navigate(e.to);
-              }}
-            >
-              <span className="m-list-label">{e.label}</span>
-              {badge > 0 && <span className="m-count-badge tnum">{formatUnreadCount(badge)}</span>}
-            </div>
-          );
-        })}
-        {user && isAdmin && (
-          <div
-            role="link"
-            tabIndex={0}
-            className="m-list-item"
-            onClick={() => {
-              window.location.href = "/admin/";
-            }}
-            onKeyDown={(ev) => {
-              if (ev.key === "Enter") window.location.href = "/admin/";
-            }}
-          >
-            <span className="m-list-label">进入后台管理</span>
-          </div>
-        )}
-        {user && (
+      {user && renderGroup("工作", work)}
+      {renderGroup("常用", common)}
+
+      {user && (
+        <div className="m-list">
           <button
             className="m-list-item m-list-danger"
             onClick={() => {
@@ -145,8 +198,8 @@ export default function MobileMePage() {
           >
             退出登录
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <MobileTabBar />
     </div>

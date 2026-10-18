@@ -59,6 +59,33 @@ test.describe("移动版（登录）", () => {
     await expect(page.locator(".m-vote-opt, .m-vote-result").first()).toBeVisible();
   });
 
+  test("工作台：桌面路径自动改道到手机版，审核台与任务可直达", async ({ page }) => {
+    // 桌面专属页面在手机 UA 下应改道（避免看到未适配宽屏的布局）
+    await page.goto("/#/reviews");
+    await expect(page).toHaveURL(/#\/m\/review$/);
+    await expect(page.getByRole("heading", { name: "审核台" })).toBeVisible();
+
+    const desks = page.getByRole("tablist", { name: "审核类型" });
+    await expect(desks.getByRole("button", { name: "身份" })).toBeVisible();
+    await expect(desks.getByRole("button", { name: "新闻" })).toBeVisible();
+    await expect(desks.getByRole("button", { name: "意见反馈" })).toBeVisible();
+    await expect(desks.getByRole("button", { name: "举报案" })).toBeVisible();
+
+    // 任务列表 → 详情（均走手机版路由）
+    await page.goto("/#/tasks");
+    await expect(page).toHaveURL(/#\/m\/tasks$/);
+    const task = page.getByText("E2E 任务：整理素材库").first();
+    await expect(task).toBeVisible({ timeout: 10_000 });
+    await task.click();
+    await expect(page).toHaveURL(/#\/m\/tasks\/\d+$/);
+    await expect(page.locator(".mw-detail-title")).toContainText("E2E 任务：整理素材库");
+
+    // 通知：桌面路径同样改道
+    await page.goto("/#/notifications");
+    await expect(page).toHaveURL(/#\/m\/notifications$/);
+    await expect(page.getByRole("heading", { name: "通知" })).toBeVisible();
+  });
+
   test("教程与加入：列表 → 详情 / 公告确认 → 问卷", async ({ page }) => {
     await page.goto("/#/m/tutorials");
     await page.getByText("E2E 教程：投稿指南").first().click();
