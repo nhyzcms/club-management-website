@@ -43,8 +43,8 @@
 .m-hero h1 .accent { color: var(--brand-200); }
 .m-hero p { margin-top: 8px; font-size: 13px; opacity: 0.85; line-height: 1.6; }
 
-/* ---------- 快捷入口 4 宫格 ---------- */
-.m-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 16px 0; }
+/* ---------- 快捷入口宫格（3 列；登录后追加任务/待办，共 6 格） ---------- */
+.m-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 14px 16px 0; }
 .m-grid-item {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 14px 4px; border-radius: 14px; background: var(--bg);
@@ -294,3 +294,20 @@
   font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap;
 }
 .m-theme-btn.is-current { background: var(--bg); color: var(--brand-700); box-shadow: var(--sh-1); }
+
+/* ---------- 「我的」分组（2026-10-18：工作 / 常用） ---------- */
+.m-list-group-title {
+  margin: 18px 16px 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--muted);
+}
+.m-list-group-title + .m-list { margin-top: 8px; }
+.m-list-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--faint);
+}

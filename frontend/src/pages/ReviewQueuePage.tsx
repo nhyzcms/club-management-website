@@ -17,9 +17,16 @@ import {
 import {
   type ReviewItem,
   type ReviewStatus,
-  type ReviewTargetType,
-  TARGET_TYPE_LABELS,
 } from "../types/reviews";
+import {
+  CONTENT_KINDS,
+  deskTabs,
+  firstContent,
+  firstFeedback,
+  firstIdentity,
+  firstReport,
+  type DeskKind,
+} from "../utils/reviewDesk";
 import {
   type FeedbackDetail,
   type FeedbackStatus,
@@ -38,61 +45,9 @@ import "../styles/list.css";
 import "../styles/form.css";
 import "../styles/detail.css";
 
-type DeskKind = "identity" | ReviewTargetType | "feedback" | "reports";
-
 const ADVANCE_MS = 900;
-const CONTENT_KINDS: ReviewTargetType[] = ["news", "activity", "tutorial"];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function firstOf<T extends { id: number }>(
-  fetchPage: (page: number) => Promise<{ results: T[]; next: string | null }>,
-  excludeId?: number,
-  skip?: Set<number>,
-): Promise<T | null> {
-  let page = 1;
-  for (;;) {
-    const data = await fetchPage(page);
-    const hit = (data.results || []).find(
-      (row) => row.id !== excludeId && !(skip && skip.has(row.id)),
-    );
-    if (hit) return hit;
-    if (!data.next) return null;
-    page += 1;
-  }
-}
-
-async function firstIdentity(status: IdentityReviewStatus, excludeId?: number, skip?: Set<number>) {
-  return firstOf((page) => identityReviewsApi.list({ status, page: String(page) }), excludeId, skip);
-}
-
-async function firstContent(type: ReviewTargetType, status: ReviewStatus | "", excludeId?: number, skip?: Set<number>) {
-  return firstOf(async (page) => {
-    const params: Record<string, string> = { ordering: "created_at", page: String(page) };
-    if (status) params.status = status;
-    const data = await reviewsApi.list(params);
-    return {
-      results: (data.results || []).filter((row) => row.target_type === type),
-      next: data.next,
-    };
-  }, excludeId, skip);
-}
-
-async function firstFeedback(status: FeedbackStatus | "", excludeId?: number, skip?: Set<number>) {
-  return firstOf((page) => {
-    const params: Record<string, string> = { ordering: "created_at", page: String(page) };
-    if (status) params.status = status;
-    return feedbackApi.list(params);
-  }, excludeId, skip);
-}
-
-async function firstReport(status: ReportStatus | "", excludeId?: number, skip?: Set<number>) {
-  return firstOf((page) => {
-    const params: Record<string, string> = { ordering: "created_at", page: String(page) };
-    if (status) params.status = status;
-    return reportsApi.list(params);
-  }, excludeId, skip);
-}
 
 export default function ReviewQueuePage() {
   const navigate = useNavigate();
@@ -419,22 +374,10 @@ export default function ReviewQueuePage() {
         ) : (
           <>
             <div className="filter-bar" role="tablist" aria-label="审核类型">
-              {canIdentity && (
-                <button className="chip" aria-pressed={kind === "identity"}
-                        onClick={() => pickKind("identity")}>身份</button>
-              )}
-              {canContent && CONTENT_KINDS.map((k) => (
-                <button key={k} className="chip" aria-pressed={kind === k}
-                        onClick={() => pickKind(k)}>{TARGET_TYPE_LABELS[k]}</button>
+              {deskTabs({ canContent, canIdentity, canFeedback, canReports }).map((t) => (
+                <button key={t.kind} className="chip" aria-pressed={kind === t.kind}
+                        onClick={() => pickKind(t.kind)}>{t.label}</button>
               ))}
-              {canFeedback && (
-                <button className="chip" aria-pressed={kind === "feedback"}
-                        onClick={() => pickKind("feedback")}>意见反馈</button>
-              )}
-              {canReports && (
-                <button className="chip" aria-pressed={kind === "reports"}
-                        onClick={() => pickKind("reports")}>举报案</button>
-              )}
             </div>
 
             {kind === "identity" ? (

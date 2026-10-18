@@ -16,6 +16,10 @@
 - 移动端：独立的手机版站点（`/#/m`）。底部 tab 与首页铃铛带未读数字红点（私信 + 通知），
   「我的」页列出带未读数的私信/通知入口，并提供**外观**切换（浅色 / 深色 / 跟随系统）；
   Android 壳内默认跟随系统深色（壳的 UA 标记见 `frontend/src/utils/device.ts` 的 `isAppShell`）
+- 手机版工作台（2026-10-18）：审核台 `/#/m/review`（身份 / 内容 / 意见反馈 / 举报案）、
+  待办 `/#/m/inbox`、通知 `/#/m/notifications`、任务列表与详情 `/#/m/tasks`；
+  「我的」按权限分「工作 / 常用」两组，首页九宫格对登录用户追加「任务」「待办」；
+  手机 UA 打开桌面路径（如 `/#/reviews`）会自动改道到对应手机版页面
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA
 - 运维能力：一键部署脚本（`scripts/install.sh`）、GitHub Release 自动更新（维护页 / 回滚）、systemd + Nginx + Gunicorn（ASGI / 单 worker），适合内部低门槛生产环境
 
@@ -121,6 +125,10 @@ club-management-website/
 - 附件上传：`/uploads/`
 - 站点政策：`/site-policy/`
 - 手机版（移动端站点）：`/#/m`
+  - 工作台：`/#/m/review`（审核台）、`/#/m/inbox`（待办）、`/#/m/notifications`（通知）、
+    `/#/m/tasks` 与 `/#/m/tasks/:id`（任务）
+  - 手机 UA 访问 `/reviews`、`/inbox`、`/notifications`、`/tasks`、`/tasks/:id` 会自动 `replace`
+    到对应的 `/#/m/...`（桌面 UA 不受影响）
 
 注意：本项目使用 Django + React 的单页架构，前端路由需要由 Django 回落到 `index.html`，非 API 路径都会进入 SPA 入口。
 
@@ -153,6 +161,9 @@ sudo ./scripts/install.sh                # 一键部署生产环境
   以及"写入与推送的载荷上限已解除（大文件/长文档不必再拆片）"这条工具链事实。
 - **不要在生产服务器上跑测试或构建**：生产机只有 2 核 / 2 GB 内存 / 3 MB 带宽，
   测试与构建一律交 CI（`backend` / `frontend` / `frontend-test` / `e2e` 四个作业）。
+- **手机版与桌面版是两套页面**：`/m` 页面不用 `AppShell`，二级页统一走 `components/MobilePage.tsx`。
+  新增桌面工作流页面时，若该功能对手机用户必要，同时补一个 `/m` 实现并在 `App.tsx` 的 `MobileAware`
+  里登记改道；审核台的取数规则在 `frontend/src/utils/reviewDesk.ts`（两端共用，勿复制）。
 - 手机版未读红点的数据源在 `frontend/src/api/unreadBadges.ts`：30 s 轮询 + 窗口可见/聚焦时刷新，
   并监听 App 壳派发的 `club:unread` 事件（壳在原生的 WS 收到新消息时发一个**不带数据**的常量事件）。
   改这条链路时注意：/m 页面**不用** `AppShell`，桌面顶栏那套徽标与它们无关。

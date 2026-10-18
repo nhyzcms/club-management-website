@@ -120,7 +120,12 @@ frontend/
 | `/m/tutorials/:id` | `MobileTutorialDetailPage` |  | 手机版教程详情（视频 / 文档 / 收藏） |
 | `/m/join` | `MobileJoinPage` |  | 手机版加入（公告 + 阅读确认） |
 | `/m/join/form` | `MobileJoinFormPage` |  | 手机版加入问卷 |
-| `/m/me` | `MobileMePage` |  | 手机版「我的」 |
+| `/m/me` | `MobileMePage` |  | 手机版「我的」（工作 / 常用分组，含外观切换） |
+| `/m/review` | `MobileReviewPage` | ✅ | 手机版审核台（身份 / 内容 / 意见反馈 / 举报案，权限按能力键派生） |
+| `/m/inbox` | `MobileInboxPage` | ✅ | 手机版待办（需已认证） |
+| `/m/notifications` | `MobileNotificationsPage` | ✅ | 手机版通知中心（「加载更多」分页） |
+| `/m/tasks` | `MobileTaskListPage` | ✅ | 手机版任务列表（状态 / 优先级 / 搜索） |
+| `/m/tasks/:id` | `MobileTaskDetailPage` | ✅ | 手机版任务详情（认领 / 验收 / 打回 / 附件 / 评论） |
 | `/about` | `AboutPage` |  | 关于我们 |
 | `/panorama` | `PanoramaPage` |  | 校园全景浏览（`?id=N` 选场景；Marzipano 多级层级图 + 首层常驻） |
 | `/panorama/manage` | `PanoramaManagePage` | ✅ | 全景图管理（导入 / 编辑 / 重切 / 删除），需 `can_manage_panoramas` |
@@ -135,17 +140,17 @@ frontend/
 | `/activity/:id/survey-edit` | `SurveyEditorPage` | ✅ | 问卷编辑（复用 `SurveyCreatorPage`） |
 | `/activity/:id/survey-responses` | `SurveyResponsesPage` | ✅ | 答复列表 |
 | `/activity/:id/survey-stats` | `SurveyStatsPage` | ✅ | 答复统计（survey-analytics 仪表盘） |
-| `/tasks` | `TaskListPage` | ✅ | 任务列表（列表/时间线/甘特视图切换） |
+| `/tasks` | `TaskListPage` | ✅ | 任务列表（列表/时间线/甘特视图切换）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
 | `/tasks/new` | `TaskFormPage` | ✅ | 新建任务（独立布局，不含全站外壳） |
-| `/tasks/:id` | `TaskDetailPage` | ✅ | 任务详情（动作按钮由 `available_actions` 驱动） |
+| `/tasks/:id` | `TaskDetailPage` | ✅ | 任务详情（动作按钮由 `available_actions` 驱动）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
 | `/tasks/:id/edit` | `TaskFormPage` | ✅ | 编辑任务 |
 | `/messages` | `MessagePage` | ✅ | 私信（无选中会话） |
 | `/messages/:id` | `MessagePage` | ✅ | 私信（指定会话） |
-| `/notifications` | `NotificationsPage` | ✅ | 通知中心 |
-| `/inbox` | `InboxPage` | ✅ | 「待办」聚合（任务/活动/私信等 kind 合并） |
+| `/notifications` | `NotificationsPage` | ✅ | 通知中心；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
+| `/inbox` | `InboxPage` | ✅ | 「待办」聚合（任务/活动/私信等 kind 合并）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
 | `/feedback` | `FeedbackPage` |  | 意见反馈（匿名可提交） |
 | `/feedback/:id` | `FeedbackDetailPage` | ✅ | 反馈详情与处理 |
-| `/reviews` | `ReviewQueuePage` | ✅ | 审核队列（内容/身份/反馈/举报分栏） |
+| `/reviews` | `ReviewQueuePage` | ✅ | 审核队列（内容/身份/反馈/举报分栏）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
 | `/exam` | `ExamBoardPage` |  | 考试看板（访客可看，独立全屏布局） |
 | `/schedule` | `SchedulePage` |  | 课表下载 |
 | `/tutorials` | `TutorialListPage` |  | 教程列表 |
@@ -164,6 +169,24 @@ frontend/
 | `*` | — |  | `<Navigate to="/" replace />` 兜底 |
 
 布局例外（不套全站外壳）：`/tasks/new`、`/tasks/:id/edit`（`TaskFormPage` 自带 `.task-page` 布局）、`/exam`（考试看板全屏）；移动版页面自持 `.m-app` 外壳；`ProfileRedirect` 只做跳转不渲染。`/panorama` 仍套 `AppShell`，但舞台区自带暗底容器与全屏按钮（不另开布局变体）。
+
+### 手机版工作台（2026-10-18）
+
+手机版不再是「只能看新闻/活动」的只读站点：审核台、待办、通知、任务列表与详情都有 `/m` 专属实现。
+
+- **入口**：`MobileMePage` 按权限分组渲染「工作 / 常用」；首页九宫格对登录用户追加「任务」「待办」。
+- **改道**：`App.tsx` 的 `MobileAware` 在手机 UA 下把 `/reviews`、`/inbox`、`/notifications`、`/tasks`、`/tasks/:id`
+  `replace` 到对应 `/m` 页面（保留深链接语义，桌面 UA 完全不受影响）。改道发生在 `ProtectedRoute` 外层，
+  未登录用户不会先触发一次 `/auth/me/` 再跳转。
+- **共用逻辑**：审核台的取数与「跳过已浏览条目」规则抽到 `src/utils/reviewDesk.ts`，桌面 `ReviewQueuePage`
+  与手机 `MobileReviewPage` 共用 `deskTabs()` / `firstIdentity()` / `firstContent()` / `firstFeedback()` / `firstReport()`。
+  新增审核桌时必须改这一处，否则两端会漂移（`src/utils/__tests__/reviewDesk.test.ts` 锁定顺序与可见性）。
+- **页面框架**：二级页统一用 `components/MobilePage.tsx`（返回 + 标题 + 右侧操作 + 底部 tab）；
+  样式在 `styles/mobile-work.css`（`mw-` 前缀），审核内容预览直接复用 `ReviewPreview`，
+  只用 `.m-review` 作用域覆盖排版，不复制正文渲染逻辑。
+- **尚未手机化**（仍会打开桌面页）：私信、意见反馈提交、个人资料/认证、各类发布表单、考试看板、
+  课表下载、全景管理。这些页面在 390px 下可用但不适合单手操作，后续按需迁移。
+
 
 页面内的重要子组件（非路由）：
 

@@ -95,6 +95,19 @@ export default function MobileHomePage() {
           <svg viewBox="0 0 24 24" {...stroke}><circle cx="9" cy="8" r="4" /><path d="M2 21c0-4 3.1-6 7-6s7 2 7 6" /><path d="M19 8v6M16 11h6" /></svg>
           <span>加入</span>
         </Link>
+        {/* 工作入口（2026-10-18）：登录后直达任务与待办；未登录不显示，避免点了弹登录 */}
+        {counts.signedIn && (
+          <Link to="/m/tasks" className="m-grid-item">
+            <svg viewBox="0 0 24 24" {...stroke}><path d="M9 5h10M9 12h10M9 19h10" /><path d="M4 5h.01M4 12h.01M4 19h.01" /></svg>
+            <span>任务</span>
+          </Link>
+        )}
+        {counts.signedIn && (
+          <Link to="/m/inbox" className="m-grid-item">
+            <svg viewBox="0 0 24 24" {...stroke}><path d="M4 4h16v16H4z" /><path d="m8 12 3 3 5-6" /></svg>
+            <span>待办</span>
+          </Link>
+        )}
       </div>
 
       <div className="m-section-h">
