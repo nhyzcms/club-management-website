@@ -37,6 +37,18 @@ export const api = {
   register: (data: FormData) =>
     request("/register/", { method: "POST", body: data }),
 
+  // 社员身份（Part A / ADR-0025）：状态 / 认领 / 公开扫码校验。
+  memberIdentity: () => request("/member/"),
+
+  memberClaim: (identityId: number, phoneLast4: string) =>
+    request("/member/claim/", {
+      method: "POST",
+      body: JSON.stringify({ identity_id: identityId, phone_last4: phoneLast4 }),
+    }),
+
+  memberCheck: (code: string, sig: string) =>
+    request(`/member/check/?c=${encodeURIComponent(code)}&s=${encodeURIComponent(sig)}`),
+
   verifyEmail: (uid: string, token: string) =>
     request(`/verify-email/?uid=${encodeURIComponent(uid)}&token=${encodeURIComponent(token)}`),
 

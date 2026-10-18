@@ -11,16 +11,20 @@
 - 认证 ×1：e2e_plain 待审人工认证（含证明材料图）；
 - 通知 ×1（e2e_info「新意见反馈」）；私信会话 ×1（e2e_plain ↔ e2e_info）；
 - 招生公告 + 自我介绍问卷 Schema；考试板：当天日期的一场考试；
+- 社员身份 ×1（「谢二」）：认领 / 扫码校验夹具，并把签名后的二维码参数写入
+  ``frontend/e2e/.member-qr.json``（Playwright 用例读取，免在 spec 里复刻 HMAC）；
 - 重置两个账号的登录会话：登录保护窗口会把 10 分钟内的「再次登录」拒掉，
   每次跑 E2E 前必须清掉旧会话，否则第二次运行会 409。
 
 密码：环境变量 ``E2E_PASSWORD``，默认 ``e2e-pass-123``（测试环境固定值，非机密）。
 生产环境（DEBUG=False）需显式 ``--force`` 才可执行。
 """
+import json
 import os
 import struct
 import zlib
 from datetime import time as dtime
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -29,7 +33,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from about.models import AboutBlock, AboutPage
-from accounts.models import IdentityProof, Profile, UserSession, Verification
+from accounts.member_codes import make_signature
+from accounts.models import IdentityProof, MemberIdentity, Profile, UserSession, Verification
 from activities.models import Activity, Questionnaire, VoteOption, default_join_schema
 from exam_board.models import Exam, ExamBatch, ExamSubject
 from messaging.models import Conversation, Message, Notification
@@ -93,6 +98,28 @@ class Command(BaseCommand):
 
         # 登录保护：清掉旧会话，保证每次运行的首次登录都被放行
         UserSession.objects.filter(user__username__in=E2E_USERS).delete()
+
+        # ── 社员身份（Part A / ADR-0025）：认领 + 扫码校验夹具 ──────────
+        # 「谢二」未被绑定：注册用例用同名真实姓名注册后可自助认领；
+        # 签名参数另写入 frontend/e2e/.member-qr.json，供扫码校验用例直读。
+        member_row, _ = MemberIdentity.objects.get_or_create(
+            code="26090001",
+            defaults={
+                "name": "谢二",
+                "admit_year": 2026,
+                "cohort": 9,
+                "group": "信息",
+                "phone": "13800001234",
+            },
+        )
+        qr_fixture = {
+            "code": member_row.code,
+            "sig": make_signature(member_row.code),
+            "name": member_row.name,
+        }
+        fixture_path = Path(settings.BASE_DIR) / "frontend" / "e2e" / ".member-qr.json"
+        fixture_path.parent.mkdir(parents=True, exist_ok=True)
+        fixture_path.write_text(json.dumps(qr_fixture, ensure_ascii=False, indent=2), encoding="utf-8")
 
         tag_notice, _ = Tag.objects.get_or_create(name="E2E公告")
         tag_event, _ = Tag.objects.get_or_create(name="E2E活动")

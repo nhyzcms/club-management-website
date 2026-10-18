@@ -13,6 +13,10 @@ from common.policy import (
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
     DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
+    DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+    DEFAULT_MEMBER_CLAIM_ENABLED,
+    DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
+    DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_REPORTS_PER_USER_PER_DAY,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
@@ -55,6 +59,10 @@ class SitePolicyDefaultsTest(TestCase):
         self.assertEqual(p.feedback_anon_per_ip_per_day, DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY)
         self.assertEqual(p.reports_per_user_per_day, DEFAULT_REPORTS_PER_USER_PER_DAY)
         self.assertEqual(p.authcode_redeem_per_user_per_hour, DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR)
+        self.assertEqual(p.member_claim_enabled, DEFAULT_MEMBER_CLAIM_ENABLED)
+        self.assertEqual(p.member_claim_per_user_per_hour, DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR)
+        self.assertEqual(p.member_claim_per_ip_per_day, DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY)
+        self.assertEqual(p.member_check_per_ip_per_hour, DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR)
         self.assertEqual(p.sync_upload_max_bytes, DEFAULT_SYNC_UPLOAD_MAX_BYTES)
         self.assertEqual(p.tus_media_max_bytes, DEFAULT_TUS_MEDIA_MAX_BYTES)
         self.assertEqual(p.auto_update_enabled, DEFAULT_AUTO_UPDATE_ENABLED)
@@ -131,6 +139,10 @@ class SitePolicyDefaultsTest(TestCase):
                 "feedback_anon_per_ip_per_day",
                 "reports_per_user_per_day",
                 "authcode_redeem_per_user_per_hour",
+                "member_claim_enabled",
+                "member_claim_per_user_per_hour",
+                "member_claim_per_ip_per_day",
+                "member_check_per_ip_per_hour",
             ),
         )
 

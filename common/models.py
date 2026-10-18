@@ -14,6 +14,10 @@ from .policy import (
     DEFAULT_REPORTS_PER_USER_PER_DAY,
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
     DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
+    DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+    DEFAULT_MEMBER_CLAIM_ENABLED,
+    DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
+    DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_REGISTRATION_ENABLED,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
@@ -105,6 +109,28 @@ class SiteSettings(models.Model):
         default=DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
         validators=[MinValueValidator(1)],
         help_text="认证码兑换只计失败；成功兑换不占额度。",
+    )
+    member_claim_enabled = models.BooleanField(
+        "开放社员身份自助认领",
+        default=DEFAULT_MEMBER_CLAIM_ENABLED,
+        help_text="关闭后：认领接口 403、注册后的认领阶段不展示；已绑定关系不受影响。",
+    )
+    member_claim_per_user_per_hour = models.PositiveIntegerField(
+        "每账号每小时认领失败次数",
+        default=DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="自助认领只计失败；成功认领不占额度。",
+    )
+    member_claim_per_ip_per_day = models.PositiveIntegerField(
+        "每 IP 每日认领失败次数",
+        default=DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
+        validators=[MinValueValidator(1)],
+    )
+    member_check_per_ip_per_hour = models.PositiveIntegerField(
+        "每 IP 每小时扫码校验次数",
+        default=DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="工牌二维码校验的公开端点频控（计全部请求）。",
     )
     sync_upload_max_bytes = models.PositiveBigIntegerField(
         "同步上传单文件上限（字节）",

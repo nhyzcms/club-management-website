@@ -1,0 +1,30 @@
+/* 社员身份（Part A / ADR-0025）：认领表单 / 身份卡片 / 公开校验页。 */
+
+.member-claim-list { display: flex; flex-direction: column; gap: var(--s-2); margin-bottom: var(--s-4); }
+.member-claim-item {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3) var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md);
+  cursor: pointer; transition: border-color var(--dur-1) var(--ease);
+}
+.member-claim-item:hover { border-color: var(--brand-400); }
+.member-claim-item.is-picked { border-color: var(--brand-600); background: var(--brand-50); }
+.member-claim-name { font-weight: 600; }
+.member-claim-err { color: var(--danger, #dc2626); font-size: 13px; margin: 0 0 var(--s-2); }
+.member-claim-ok { color: var(--success, #16a34a); font-size: 13px; margin-bottom: var(--s-2); }
+
+.member-card {
+  display: flex; align-items: center; gap: var(--s-5); flex-wrap: wrap;
+  padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: var(--s-4);
+}
+.member-card-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 26px; font-weight: 700; letter-spacing: 3px; color: var(--brand-700);
+}
+.member-card-meta { display: flex; flex-direction: column; gap: 2px; }
+
+.member-verify-avatar {
+  width: 72px; height: 72px; border-radius: var(--r-pill);
+  object-fit: cover; margin: 0 auto var(--s-3); display: block;
+}
+.member-verify-name { font-size: 22px; font-weight: 700; margin-bottom: var(--s-2); }
+.member-verify-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 2px; }

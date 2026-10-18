@@ -3,14 +3,19 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useSitePolicy } from "../api/sitePolicy";
 import AppShell from "../components/AppShell";
+import MemberClaimForm from "../components/member/MemberClaimForm";
 import PasswordInput from "../components/PasswordInput";
 import { useLoginModal } from "../components/LoginModalProvider";
 import { useTurnstile } from "../turnstile";
 import { IDENTITY_OPTIONS } from "../types/profile";
+import type { MemberIdentityStatus } from "../types/member";
 
 /**
  * 注册页（ADR-0006 注册↔验证分离，2026-09 修订）：建登录身份（用户名 + 双密码 + Turnstile）
  * + 真实姓名 / 身份（必填，写入 Profile）；邮箱 / 身份证明仍在登录后的「账号验证」面板。
+ *
+ * 2026-10（ADR-0025）：注册成功即登录（服务端建会话），并进入「以下身份是否是你」的
+ * 社员身份认领阶段（可跳过，之后在个人中心「社员身份」补办）。
  *
  * 后端为权威校验源；前端只做轻量预检（必填、密码一致、长度），其余错误由后端返回展示。
  */
@@ -23,6 +28,12 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  // 注册后的认领阶段（Part A / ADR-0025）
+  const [memberStatus, setMemberStatus] = useState<MemberIdentityStatus | null>(null);
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [memberErr, setMemberErr] = useState("");
+  const [claimed, setClaimed] = useState(false);
+  const [skipped, setSkipped] = useState(false);
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
   const policy = useSitePolicy();
@@ -72,6 +83,12 @@ export default function RegisterPage() {
     try {
       await api.register(fd);
       setDone(true);
+      // 注册即登录（ADR-0025）：直接核对社员名册，进入认领阶段。
+      setMemberLoading(true);
+      api.memberIdentity()
+        .then((d: any) => setMemberStatus(d as MemberIdentityStatus))
+        .catch((e: any) => setMemberErr(e.message || ""))
+        .finally(() => setMemberLoading(false));
     } catch (err: any) {
       setError(err?.message || "注册失败，请稍后重试。");
       resetTurnstile();
@@ -85,6 +102,58 @@ export default function RegisterPage() {
     openLogin();
   };
 
+  /** 注册成功后的三态：核对中 / 认领阶段 / 完成说明。 */
+  const renderMemberStage = () => {
+    if (memberLoading) {
+      return (
+        <>
+          <h2 style={{ marginBottom: "var(--s-4)" }}>注册成功</h2>
+          <p className="muted">正在核对社员名册…</p>
+        </>
+      );
+    }
+    if (memberStatus?.enabled && memberStatus.candidates.length > 0 && !claimed && !skipped) {
+      return (
+        <>
+          <h2 style={{ marginBottom: "var(--s-4)" }}>以下身份是否是你？</h2>
+          <p className="muted" style={{ marginBottom: "var(--s-4)" }}>
+            我们在社员名册中找到了与「{realName.trim()}」一致的身份。绑定后即拥有社员识别码；
+            也可以先跳过，之后在个人中心「社员身份」里补办。
+          </p>
+          <MemberClaimForm candidates={memberStatus.candidates} onDone={() => setClaimed(true)} />
+          <button
+            className="btn btn-block"
+            type="button"
+            style={{ marginTop: "var(--s-3)" }}
+            onClick={() => setSkipped(true)}
+          >
+            暂时跳过
+          </button>
+        </>
+      );
+    }
+    return (
+      <>
+        <h2 style={{ marginBottom: "var(--s-4)" }}>{claimed ? "认领成功" : "注册成功"}</h2>
+        <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
+          你已自动登录。
+          {claimed
+            ? "社员身份已绑定，识别码见个人中心「社员身份」。"
+            : skipped
+              ? "已跳过身份认领，之后可在个人中心「社员身份」中完成。"
+              : memberErr
+                ? "名册核对暂时失败，可稍后在个人中心「社员身份」里重试。"
+                : "如果社员名单已导入，可稍后在个人中心「社员身份」里试试认领。"}
+          在个人中心「账号验证」完成验证（绑定邮箱或提交身份证明），
+          即可解锁发帖、发消息、建申报等全部功能。
+        </p>
+        <button className="btn btn-primary btn-block" type="button" onClick={() => navigate("/")}>
+          进入首页
+        </button>
+      </>
+    );
+  };
+
   return (
     <AppShell>
       <div className="page">
@@ -92,16 +161,7 @@ export default function RegisterPage() {
           <div style={{ paddingTop: "var(--s-16)", paddingBottom: "var(--s-16)" }}>
             <div className="card card-pad">
               {done ? (
-                <>
-                  <h2 style={{ marginBottom: "var(--s-4)" }}>注册成功</h2>
-                  <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
-                    你现在可以用<strong>{username}</strong>和密码登录。登录后在个人中心「账号验证」
-                    完成验证（绑定邮箱或提交身份证明），即可解锁发帖、发消息、建申报等全部功能。
-                  </p>
-                  <button className="btn btn-primary btn-block" type="button" onClick={goLogin}>
-                    去登录
-                  </button>
-                </>
+                renderMemberStage()
               ) : !policy.registration_enabled ? (
                 <>
                   <h2 style={{ marginBottom: "var(--s-4)" }}>注册已关闭</h2>

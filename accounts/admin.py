@@ -1,10 +1,17 @@
+import io
+import uuid
 from datetime import timedelta
 
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
+from django.core.cache import cache
+from django.core.exceptions import PermissionDenied
 from django.db.models import F, OuterRef, Q, Subquery
+from django.http import HttpResponse
+from django.shortcuts import render
+from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
@@ -12,10 +19,22 @@ from common.policy import get_policy
 
 from .authcode import generate_authcode_value, normalize_authcode
 from .identity_review import approve_manual, disable_user, reject_manual
+from .member_qr import export_zip
+from .member_roster import (
+    HEADERS,
+    ParsedRow,
+    RosterParseError,
+    auto_match_identities,
+    commit_import,
+    parse_roster,
+    plan_import,
+)
 from .models import (
     AuthCode,
     AuthCodeRedemption,
+    IdentityImportBatch,
     IdentityProof,
+    MemberIdentity,
     Profile,
     Verification,
     can_manage_validity_for,
@@ -471,3 +490,304 @@ class AuthCodeRedemptionAdmin(admin.ModelAdmin):
 
 admin.site.register(AuthCode, AuthCodeAdmin)
 admin.site.register(AuthCodeRedemption, AuthCodeRedemptionAdmin)
+
+
+# ---- 社员身份编号（ADR-0025）----
+# 名册模块整体由命名工作流权限 accounts.manage_member_roster 收口：
+# 列表 / 编辑 / 导入 / 导出二维码 / 自动重匹配 / 解绑，全部走同一枚权限。
+
+_ROSTER_PERM = "accounts.manage_member_roster"
+
+
+def _rows_to_payload(rows):
+    """ParsedRow → 可缓存的纯数据（预检与确认之间暂存）。"""
+    return [
+        {
+            "row_no": r.row_no,
+            "values": r.values,
+            "errors": list(r.errors),
+            "warnings": list(r.warnings),
+        }
+        for r in rows
+    ]
+
+
+def _rows_from_payload(payload):
+    return [
+        ParsedRow(
+            row_no=item["row_no"],
+            values=item["values"],
+            errors=list(item.get("errors", [])),
+            warnings=list(item.get("warnings", [])),
+        )
+        for item in payload
+    ]
+
+
+class MemberIdentityBoundFilter(admin.SimpleListFilter):
+    title = "绑定状态"
+    parameter_name = "bound"
+
+    def lookups(self, request, model_admin):
+        return [("yes", "已绑定"), ("no", "未绑定")]
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.filter(user__isnull=False)
+        if self.value() == "no":
+            return queryset.filter(user__isnull=True)
+        return queryset
+
+
+@admin.action(description="导出二维码（ZIP / PNG）")
+def export_member_qr(modeladmin, request, queryset):
+    """批量导出所选社员身份的二维码（文件名：识别码_姓名.png，512px 上下）。"""
+    rows = list(queryset.order_by("code"))
+    if not rows:
+        modeladmin.message_user(request, "没有可导出的行。", level=messages.WARNING)
+        return
+    payload = export_zip(rows)
+    stamp = timezone.localtime().strftime("%Y%m%d-%H%M")
+    response = HttpResponse(payload, content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="member-qr-{stamp}.zip"'
+    return response
+
+
+@admin.action(description="重新运行自动匹配（所选未绑定行）")
+def rerun_member_match(modeladmin, request, queryset):
+    matched = auto_match_identities(rows=list(queryset))
+    modeladmin.message_user(request, f"自动匹配完成：新绑定 {matched} 条。")
+
+
+@admin.action(description="解绑账号（保留名册行）")
+def unbind_member_identity(modeladmin, request, queryset):
+    count = 0
+    for row in queryset.filter(user__isnull=False):
+        row.user = None
+        row.bound_at = None
+        row.bound_by = None
+        row.bind_method = ""
+        row.save(update_fields=["user", "bound_at", "bound_by", "bind_method", "updated_at"])
+        count += 1
+    modeladmin.message_user(request, f"已解绑 {count} 条。")
+
+
+class MemberIdentityAdmin(admin.ModelAdmin):
+    """社员身份：名册行管理 + 导入子页面（两步式）+ 二维码导出。"""
+
+    change_list_template = "admin/accounts/memberidentity/change_list.html"
+
+    list_display = (
+        "name", "cohort", "group", "code", "user_display",
+        "bind_method_display", "status", "phone",
+    )
+    list_filter = (MemberIdentityBoundFilter, "cohort", "group", "status")
+    search_fields = ("name", "code", "phone", "user__username")
+    actions = (export_member_qr, rerun_member_match, unbind_member_identity)
+    readonly_fields = ("bound_at", "bound_by", "bind_method", "created_at", "updated_at")
+    fieldsets = (
+        (
+            "名册信息",
+            {"fields": ("name", "grade", "class_no", "student_no", "admit_year",
+                        "joined_on_raw", "cohort", "group", "gender", "age", "phone")},
+        ),
+        ("编号", {"fields": ("code", "status")}),
+        ("绑定", {"fields": ("user", "bind_method", "bound_at", "bound_by", "import_batch")}),
+        ("时间", {"fields": ("created_at", "updated_at")}),
+    )
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        if "user" in form.base_fields:
+            form.base_fields["user"].required = False  # 允许置空 = 解绑
+        return form
+
+    def save_model(self, request, obj, form, change):
+        # 后台手动绑定 / 解绑时补记绑定元数据（只在 user 变化时动）。
+        if change:
+            previous = (
+                MemberIdentity.objects.filter(pk=obj.pk)
+                .values_list("user_id", flat=True)
+                .first()
+            )
+            if previous != obj.user_id:
+                if obj.user_id:
+                    obj.bound_at = timezone.now()
+                    obj.bound_by = request.user
+                    obj.bind_method = MemberIdentity.BIND_ADMIN
+                else:
+                    obj.bound_at = None
+                    obj.bound_by = None
+                    obj.bind_method = ""
+        super().save_model(request, obj, form, change)
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.has_perm(_ROSTER_PERM):
+            for name in ("export_member_qr", "rerun_member_match", "unbind_member_identity"):
+                actions.pop(name, None)
+        return actions
+
+    # ---- 模块权限收口（全部走 manage_member_roster；超管天然放行）----
+    def has_module_permission(self, request):
+        return request.user.has_perm(_ROSTER_PERM)
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.has_perm(_ROSTER_PERM)
+
+    def has_add_permission(self, request):
+        return request.user.has_perm(_ROSTER_PERM)
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.has_perm(_ROSTER_PERM)
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    @admin.display(description="绑定账号")
+    def user_display(self, obj):
+        return obj.user.username if obj.user_id else "—"
+
+    @admin.display(description="绑定方式")
+    def bind_method_display(self, obj):
+        return obj.get_bind_method_display() if obj.bind_method else "—"
+
+    # ---- 导入子页面（上传 → 预检 → 确认）+ 模板下载 ----
+    def get_urls(self):
+        custom = [
+            path(
+                "import/",
+                self.admin_site.admin_view(self.import_view),
+                name="accounts_memberidentity_import",
+            ),
+            path(
+                "import/template/",
+                self.admin_site.admin_view(self.template_view),
+                name="accounts_memberidentity_import_template",
+            ),
+        ]
+        return custom + super().get_urls()
+
+    def _require_roster_perm(self, request):
+        if not request.user.has_perm(_ROSTER_PERM):
+            raise PermissionDenied
+
+    def import_view(self, request):
+        self._require_roster_perm(request)
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "导入名册",
+            "opts": self.model._meta,
+            "headers": HEADERS,
+            "preview": None,
+            "report": None,
+        }
+
+        if request.method == "POST" and request.POST.get("cancel"):
+            pass  # 取消：留在上传态
+
+        elif request.method == "POST" and request.POST.get("stash"):
+            stash_key = f"member-roster-import:{request.POST.get('stash')}"
+            stash = cache.get(stash_key)
+            if stash is None:
+                messages.error(request, "预检数据已过期，请重新上传。")
+            else:
+                batch = commit_import(
+                    _rows_from_payload(stash["rows"]),
+                    file_name=stash["file_name"],
+                    operator=request.user,
+                )
+                cache.delete(stash_key)
+                report = dict(batch.summary or {})
+                report["file_name"] = batch.file_name
+                context["report"] = report
+
+        elif request.method == "POST" and request.FILES.get("file"):
+            upload = request.FILES["file"]
+            try:
+                rows = parse_roster(upload.name, upload.read())
+            except RosterParseError as exc:
+                messages.error(request, str(exc))
+            else:
+                plan = plan_import(rows)
+                stash_id = uuid.uuid4().hex
+                cache.set(
+                    f"member-roster-import:{stash_id}",
+                    {"file_name": upload.name, "rows": _rows_to_payload(rows)},
+                    timeout=900,
+                )
+                context["preview"] = {
+                    "stash_id": stash_id,
+                    "file_name": upload.name,
+                    "counts": plan["counts"],
+                    "items": [
+                        {
+                            "row_no": item["row"].row_no,
+                            "name": item["row"].values.get("姓名", ""),
+                            "cohort": item["row"].values.get("届数", ""),
+                            "group": item["row"].values.get("组别", ""),
+                            "action": item["action"],
+                            "code": item["code"] or "",
+                            "note": item["note"],
+                        }
+                        for item in plan["items"]
+                    ],
+                }
+
+        return render(request, "admin/accounts/memberidentity/import.html", context)
+
+    def template_view(self, request):
+        self._require_roster_perm(request)
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "名册"
+        sheet.append(HEADERS)
+        sheet.append(["张三", "高一", "1", "1", 2026, "20260303", 2, "摄影", "男", 16, "13800000000", ""])
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="member-roster-template.xlsx"'
+        return response
+
+
+class IdentityImportBatchAdmin(admin.ModelAdmin):
+    """导入批次（审计）：只读列表，随名册管理权限可见。"""
+
+    list_display = ("file_name", "uploaded_by", "uploaded_at", "summary_display")
+    list_filter = ("uploaded_at",)
+    search_fields = ("file_name", "uploaded_by__username")
+
+    def has_module_permission(self, request):
+        return request.user.has_perm(_ROSTER_PERM)
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.has_perm(_ROSTER_PERM)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    @admin.display(description="统计")
+    def summary_display(self, obj):
+        s = obj.summary or {}
+        if not s:
+            return "—"
+        return (
+            f"新增 {s.get('created', 0)} · 更新 {s.get('updated', 0)} · "
+            f"冲突 {s.get('conflicts', 0)} · 错误 {s.get('errors', 0)} · "
+            f"自动绑定 {s.get('auto_matched', 0)}"
+        )
+
+
+admin.site.register(MemberIdentity, MemberIdentityAdmin)
+admin.site.register(IdentityImportBatch, IdentityImportBatchAdmin)

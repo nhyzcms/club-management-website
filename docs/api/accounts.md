@@ -2,7 +2,7 @@
 
 账号体系：注册 / 登录 / 登出 / 会话记录、验证通道（邮箱、人工审批、后台委任）、密码重置、资料与头像、能力投影（`can_*`）、用户检索，以及人工身份审核队列与待办收件箱。端点全部由 `accounts/urls.py` 暴露（前缀 `/auth/`，其中 `identity-reviews` 由 `DefaultRouter` 注册）。
 
-> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005](../adr/0005-access-control-principle.md)、[ADR-0006](../adr/0006-verification-model.md)、[ADR-0008](../adr/0008-list-pagination.md)、[ADR-0010](../adr/0010-runtime-site-policy.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0023](../adr/0023-email-domain-allowlist.md)
+> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005](../adr/0005-access-control-principle.md)、[ADR-0006](../adr/0006-verification-model.md)、[ADR-0008](../adr/0008-list-pagination.md)、[ADR-0010](../adr/0010-runtime-site-policy.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0023](../adr/0023-email-domain-allowlist.md)、[ADR-0025](../adr/0025-member-identity.md)
 
 ## 模块约定
 
@@ -37,6 +37,9 @@
 | POST | `/auth/verification/email/bind/` | 登录 | — | 绑定 / 换邮 / 重发邮箱验证 |
 | POST | `/auth/verification/manual/submit/` | 登录 | — | 提交人工通道身份证明（multipart） |
 | POST | `/auth/verification/authcode/redeem/` | 登录 | — | 兑换认证码（即时通过） |
+| GET | `/auth/member/` | 登录 | — | 本人社员身份 + 可认领候选（[ADR-0025](../adr/0025-member-identity.md)） |
+| POST | `/auth/member/claim/` | 登录 | — | 自助认领（身份 + 手机号后四位） |
+| GET | `/auth/member/check/` | 公开 | — | 扫码校验（签名；最小公开字段） |
 | GET | `/auth/identity-proof/{pk}/` | 登录 | 本人或 `accounts.can_review_identity` | 身份证明文件（鉴权下载） |
 | GET | `/auth/identity-reviews/` | 登录 | `accounts.can_review_identity` | 人工身份审核队列 |
 | GET | `/auth/identity-reviews/{pk}/` | 登录 | `accounts.can_review_identity` | 单条审核记录 |
@@ -393,3 +396,29 @@
 | tasks | `id` / `title` / `status` / `priority` / `created_at` |
 
 可见范围：本人全部；他人仅公开项（`news` 还需 `is_published=true`；`feedback` 恒为空；`activities` / `tutorials` 按审核轴公开）。**查看他人任务返回 403** `{"error": "无权查看他人任务"}`。`review_status` 可为 `null`（尚无审核行）。
+
+### 社员身份（[ADR-0025](../adr/0025-member-identity.md)）
+
+`GET /auth/member/`：**认证**登录。本人绑定状态 + 可认领候选。未绑定且认领开关开启时，候选 = 「未绑定且姓名（归一化）与本人 `real_name` 一致」的名册行，仅含 `id` / `name` / `cohort` / `group`（**电话绝不下发**）；绑定后 `bound` 含 `code`（识别码）/ `status`（`active` / `graduated` / `left`）。
+
+**响应 `200 OK`**
+
+```json
+{"enabled": true, "bound": null, "candidates": [{"id": 3, "name": "张三", "cohort": 2, "group": "摄影"}]}
+```
+
+`POST /auth/member/claim/`：**认证**登录。JSON `{"identity_id": <候选 id>, "phone_last4": "9198"}`。服务端强制「账号 `real_name` == 名册行姓名（归一）」并以**手机号后四位**校验；成功 `200`：`{"message": "认领成功。", "member": {…}}`。
+
+| 状态码 | 场景 |
+|---|---|
+| 400 | 后四位不匹配 / 姓名不匹配 / 名册行或账号已在别处绑定 / 名册行无电话 |
+| 403 | 认领开关关闭：`{"reason": "claim_closed"}` |
+| 429 | 失败超限（账号 5 次/时、IP 20 次/天，**只计失败**） |
+
+`GET /auth/member/check/`：**认证**公开。`?c=<识别码>&s=<签名>`。签名不符或码不存在一律 `404 {"found": false}`（语义不可区分，防枚举）；命中返回：
+
+```json
+{"found": true, "name": "张三", "cohort": 2, "group": "摄影", "code": "26020001", "status": "active", "avatar": null}
+```
+
+**绝不含**电话 / 学号 / 邮箱；按 IP 限流（60 次/时，计全部请求）→ `429`。签名 = HMAC-SHA256（密钥默认由 `SECRET_KEY` 派生，`MEMBER_QR_SECRET` 可覆盖）截断 16 位 hex——二维码内容如 `https://<站点>/#/v/26020001?s=70758f5d88e74a0f`。

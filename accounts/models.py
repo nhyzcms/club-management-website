@@ -517,3 +517,99 @@ class AuthCodeRedemption(models.Model):
 
     def __str__(self):
         return f"{self.user.username} ← {self.authcode.code}"
+
+
+class IdentityImportBatch(models.Model):
+    """名册导入批次（审计）：每次「确认导入」一行，附统计摘要。"""
+
+    file_name = models.CharField("文件名", max_length=255)
+    uploaded_by = models.ForeignKey(
+        User, verbose_name="操作人", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="identity_import_batches",
+    )
+    uploaded_at = models.DateTimeField("导入时间", auto_now_add=True)
+    summary = models.JSONField("统计摘要", default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "名册导入批次"
+        verbose_name_plural = "名册导入批次"
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"{self.file_name} @ {self.uploaded_at:%Y-%m-%d %H:%M}"
+
+
+class MemberIdentity(models.Model):
+    """社员身份：一届名册中的一行（工牌识别码本体，ADR-0025）。
+
+    - ``code`` 识别码全库唯一：导入时「表带码原样保留、空码按规则生成」；
+    - ``user`` 绑定的站内账号（OneToOne，未绑 = null，多行 null 不冲突）。
+      绑定三条路径：导入自动匹配（真实姓名唯一命中）/ 管理员手动 / 用户自助认领；
+    - ``phone`` 仅后台可见，只用于认领校验（后四位），绝不在校验页等公开面出现。
+    """
+
+    STATUS_ACTIVE = "active"
+    STATUS_GRADUATED = "graduated"
+    STATUS_LEFT = "left"
+    STATUSES = [
+        (STATUS_ACTIVE, "在册"),
+        (STATUS_GRADUATED, "已毕业"),
+        (STATUS_LEFT, "已退社"),
+    ]
+
+    BIND_AUTO = "auto"
+    BIND_ADMIN = "admin"
+    BIND_SELF = "self"
+    BIND_METHODS = [
+        (BIND_AUTO, "自动匹配"),
+        (BIND_ADMIN, "管理员绑定"),
+        (BIND_SELF, "自助认领"),
+    ]
+
+    # ---- 名册快照 ----
+    name = models.CharField("姓名", max_length=100)
+    grade = models.CharField("年级", max_length=20, blank=True, default="")
+    class_no = models.CharField("班级", max_length=20, blank=True, default="")
+    student_no = models.CharField("学号", max_length=20, blank=True, default="")
+    admit_year = models.PositiveIntegerField("入学年份")
+    joined_on_raw = models.CharField("入社时间", max_length=20, blank=True, default="")
+    cohort = models.PositiveIntegerField("届数")
+    group = models.CharField("组别", max_length=50, blank=True, default="")
+    gender = models.CharField("性别", max_length=8, blank=True, default="")
+    age = models.PositiveIntegerField("年龄", null=True, blank=True)
+    phone = models.CharField("电话号码", max_length=20, blank=True, default="")
+
+    # ---- 编号与绑定 ----
+    code = models.CharField("识别码", max_length=16, unique=True)
+    status = models.CharField("状态", max_length=12, choices=STATUSES, default=STATUS_ACTIVE)
+    user = models.OneToOneField(
+        User, verbose_name="绑定账号", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="member_identity",
+    )
+    bound_at = models.DateTimeField("绑定时间", null=True, blank=True)
+    bound_by = models.ForeignKey(
+        User, verbose_name="绑定操作人", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="member_identities_bound",
+    )
+    bind_method = models.CharField("绑定方式", max_length=8, choices=BIND_METHODS, blank=True, default="")
+    import_batch = models.ForeignKey(
+        IdentityImportBatch, verbose_name="来源批次", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="identities",
+    )
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        verbose_name = "社员身份"
+        verbose_name_plural = "社员身份"
+        ordering = ["cohort", "code"]
+        indexes = [
+            models.Index(fields=["name"]),
+            models.Index(fields=["cohort"]),
+        ]
+        permissions = [
+            ("manage_member_roster", "可以管理社员名册（导入 / 绑定 / 导出）"),
+        ]
+
+    def __str__(self):
+        return f"{self.name} · {self.cohort}届 · {self.code}"

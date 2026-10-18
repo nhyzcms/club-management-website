@@ -36,10 +36,23 @@ from .email_domains import (
     is_allowed_email_domain,
 )
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
-from .models import Profile, IdentityProof, UserSession, Verification, is_verified, verification_valid_days
+from .member_codes import verify_signature
+from .member_roster import ClaimError, claim_candidates, claim_identity
+from .models import (
+    MemberIdentity,
+    Profile,
+    IdentityProof,
+    UserSession,
+    Verification,
+    is_verified,
+    verification_valid_days,
+)
 from .tokens import email_verification_token
 from .throttles import (
     AuthCodeRedeemThrottle,
+    MemberCheckThrottle,
+    MemberClaimIpThrottle,
+    MemberClaimThrottle,
     RegisterThrottle,
     ResendVerificationThrottle,
     login_blocked_response,
@@ -419,6 +432,119 @@ def verification_authcode_redeem_view(request):
     return JsonResponse({"message": "认证码验证通过，账号已完成验证。"})
 
 
+def _member_identity_payload(row: MemberIdentity) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "cohort": row.cohort,
+        "group": row.group,
+        "code": row.code,
+        "status": row.status,
+        "bound_at": row.bound_at.isoformat() if row.bound_at else None,
+    }
+
+
+@require_GET
+@login_required
+def member_identity_view(request):
+    """社员身份（ADR-0025）：本人绑定状态 + 可认领候选。
+
+    候选 = 「未绑定」且姓名与本人真实姓名（归一后）一致的名册行；
+    认领开关关闭 / 已绑定时不返回候选。
+    """
+    policy = get_policy()
+    bound = MemberIdentity.objects.filter(user=request.user).first()
+    candidates = []
+    if policy.member_claim_enabled and bound is None:
+        candidates = claim_candidates(request.user)
+    return JsonResponse({
+        "enabled": policy.member_claim_enabled,
+        "bound": _member_identity_payload(bound) if bound is not None else None,
+        "candidates": [
+            {"id": row.id, "name": row.name, "cohort": row.cohort, "group": row.group}
+            for row in candidates
+        ],
+    })
+
+
+@require_POST
+@login_required
+def member_claim_view(request):
+    """自助认领（ADR-0025）：选一条未绑定身份 + 手机号后四位校验即绑定。
+
+    失败（手机号不对 / 已绑定等）按账号与 IP 双通道节流（只计失败）；
+    服务端强制「账号真实姓名 == 名册行姓名」，不信任前端候选列表。
+    """
+    if not get_policy().member_claim_enabled:
+        return JsonResponse({"error": "自助认领已关闭。", "reason": "claim_closed"}, status=403)
+
+    user_throttle = MemberClaimThrottle()
+    ip_throttle = MemberClaimIpThrottle()
+    if user_throttle.is_blocked(request) or ip_throttle.is_blocked(request):
+        return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    phone_last4 = (body.get("phone_last4") or "").strip()
+    try:
+        identity_id = int(body.get("identity_id"))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "请选择身份并输入手机号后四位。"}, status=400)
+    if not phone_last4:
+        return JsonResponse({"error": "请选择身份并输入手机号后四位。"}, status=400)
+
+    try:
+        row = claim_identity(request.user, identity_id, phone_last4)
+    except ClaimError as exc:
+        user_throttle.allow_request(request, None)  # 只计失败：成功不占额度
+        ip_throttle.allow_request(request, None)
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    return JsonResponse({
+        "message": "认领成功。",
+        "member": _member_identity_payload(row),
+    })
+
+
+@require_GET
+def member_check_view(request):
+    """扫码校验（公开，ADR-0025）：``?c=<识别码>&s=<签名>``。
+
+    签名不符 / 码不存在一律 404（语义不可区分，防枚举）；命中返回最小公开字段：
+    姓名、届数、组别、状态、头像（可选）。电话 / 学号 / 邮箱绝不出现。
+    """
+    throttle = MemberCheckThrottle()
+    if not throttle.allow_request(request, None):
+        return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+
+    code = (request.GET.get("c") or "").strip()
+    sig = (request.GET.get("s") or "").strip()
+    not_found = JsonResponse({"found": False}, status=404)
+    if not verify_signature(code, sig):
+        return not_found
+
+    row = MemberIdentity.objects.filter(code=code).first()
+    if row is None:
+        return not_found
+
+    avatar_url = None
+    if row.user_id:
+        profile = Profile.objects.filter(user_id=row.user_id).first()
+        if profile is not None and profile.avatar:
+            avatar_url = profile.avatar.url
+    return JsonResponse({
+        "found": True,
+        "name": row.name,
+        "cohort": row.cohort,
+        "group": row.group,
+        "code": row.code,
+        "status": row.status,
+        "avatar": avatar_url,
+    })
+
+
 @login_required
 def me_view(request):
     profile = _get_or_create_profile(request.user)
@@ -601,10 +727,15 @@ def register_view(request):
     if started_email:
         _send_verification_email(user)
 
+    # 注册即登录（ADR-0025）：认领等注册后置步骤需要在登录态下完成。
+    # 会话记录由 user_logged_in 信号统一写 UserSession（accounts/signals.py）。
+    login(request, user)
+
     return JsonResponse(
         {
             "message": "注册成功。" + ("请查收邮件完成邮箱验证。" if started_email else ""),
             "user": {"id": user.id, "username": user.username},
+            "logged_in": True,
         },
         status=201,
     )

@@ -70,6 +70,43 @@ class AuthCodeRedeemThrottle(_IPLimitThrottle):
         return f"{get_policy().authcode_redeem_per_user_per_hour}/hour"
 
 
+class MemberClaimThrottle(_IPLimitThrottle):
+    """自助认领节流：每账号每小时 N 次失败（N 来自 get_policy()）。
+
+    按账号（user.pk）计数、**只计失败**——成功认领不占额度；调用方在失败时
+    显式调用 allow_request 记账（与认证码兑换同口径）。
+    """
+
+    scope = "member_claim"
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False) or not user.pk:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": f"u{user.pk}"}
+
+    def get_rate(self):
+        return f"{get_policy().member_claim_per_user_per_hour}/hour"
+
+
+class MemberClaimIpThrottle(_IPLimitThrottle):
+    """自助认领节流：每 IP 每天 N 次失败（N 来自 get_policy()）。"""
+
+    scope = "member_claim_ip"
+
+    def get_rate(self):
+        return f"{get_policy().member_claim_per_ip_per_day}/day"
+
+
+class MemberCheckThrottle(_IPLimitThrottle):
+    """扫码校验公开端点频控：每 IP 每小时 N 次（计全部请求）。"""
+
+    scope = "member_check"
+
+    def get_rate(self):
+        return f"{get_policy().member_check_per_ip_per_hour}/hour"
+
+
 class LoginIpThrottle(_IPLimitThrottle):
     """登录失败节流：每个 IP 每小时 N 次（N 来自 get_policy()）。"""
 
