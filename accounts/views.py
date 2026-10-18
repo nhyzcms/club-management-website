@@ -36,10 +36,23 @@ from .email_domains import (
     is_allowed_email_domain,
 )
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
-from .models import Profile, IdentityProof, UserSession, Verification, is_verified, verification_valid_days
+from .member_codes import verify_signature
+from .member_roster import ClaimError, claim_candidates, claim_identity
+from .models import (
+    MemberIdentity,
+    Profile,
+    IdentityProof,
+    UserSession,
+    Verification,
+    is_verified,
+    verification_valid_days,
+)
 from .tokens import email_verification_token
 from .throttles import (
     AuthCodeRedeemThrottle,
+    MemberCheckThrottle,
+    MemberClaimIpThrottle,
+    MemberClaimThrottle,
     RegisterThrottle,
     ResendVerificationThrottle,
     login_blocked_response,
@@ -59,7 +72,7 @@ _EXPIRED_UNVERIFIED_MESSAGE = "本账户超过 60 日未认证，已被系统停
 
 def _verification_closed_response():
     return JsonResponse(
-        {"error": "验证通道已关闭", "reason": "verification_closed"},
+        {"error": "认证通道已关闭", "reason": "verification_closed"},
         status=403,
     )
 
@@ -90,24 +103,24 @@ def _form_errors(form):
 
 
 def _send_verification_email(user):
-    """发邮箱验证邮件到 **待验邮箱**（email 通道 identifier，非 User.email）。
+    """发邮箱认证邮件到 **待认证邮箱**（email 通道 identifier，非 User.email）。
 
     链接 = FRONTEND_URL + #/verify-email?uid=&token=。令牌绑 identifier + 通道 status
-    （见 accounts.tokens）：改邮箱或验证通过后旧令牌失效。发信失败仅记日志、不抛——
-    账号已建，用户可走「重发」补发，不因 SMTP 抖动回滚。无待验邮箱则不发。
+    （见 accounts.tokens）：改邮箱或认证通过后旧令牌失效。发信失败仅记日志、不抛——
+    账号已建，用户可走「重发」补发，不因 SMTP 抖动回滚。无待认证邮箱则不发。
     """
     v = user.verifications.filter(channel=Verification.CHANNEL_EMAIL).first()
     if v is None or not v.identifier:
-        return  # 无待验邮箱：无可发（注册未留邮箱等情况）
+        return  # 无待认证邮箱：无可发（注册未留邮箱等情况）
     recipient = v.identifier
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = email_verification_token.make_token(user)
     link = f"{settings.FRONTEND_URL}/#/verify-email?uid={uid}&token={token}"
     try:
         send_mail(
-            subject="邮箱验证 - 南汇一中传媒社",
+            subject="邮箱认证 - 南汇一中传媒社",
             message=(
-                "你好！请点击下方链接完成邮箱验证：\n\n"
+                "你好！请点击下方链接完成邮箱认证：\n\n"
                 f"{link}\n\n"
                 "如果你没有注册过本社团账号，请忽略此邮件。"
             ),
@@ -116,7 +129,7 @@ def _send_verification_email(user):
             fail_silently=True,
         )
     except Exception:
-        logger.exception("发送邮箱验证邮件失败: user_pk=%s", user.pk)
+        logger.exception("发送邮箱认证邮件失败: user_pk=%s", user.pk)
 
 
 @require_POST
@@ -136,7 +149,7 @@ def login_view(request):
     if blocked is not None:
         return blocked
 
-    # 用 check_password 而非 authenticate：密码正确后再区分「停用 / 未验证」，
+    # 用 check_password 而非 authenticate：密码正确后再区分「停用 / 未认证」，
     # 错误密码统一回 401，不泄露账号存在性与状态（防枚举）。
     candidate = User.objects.filter(username=username).first() if username else None
     if candidate is None or not candidate.check_password(form.cleaned_data["password"]):
@@ -166,8 +179,8 @@ def login_view(request):
             {"error": "账号已停用，请联系信息组。", "reason": "account_disabled"},
             status=403,
         )
-    # 登录与验证解耦（ADR-0006 决策 6）：未验证账号可登录为访客，仅 is_active 拒停用。
-    # 写操作门禁由 IsVerified 单独管（未验证能登、能读，不能写）。
+    # 登录与认证解耦（ADR-0006 决策 6）：未认证账号可登录为访客，仅 is_active 拒停用。
+    # 写操作门禁由 IsVerified 单独管（未认证能登、能读，不能写）。
 
     # 10 分钟登录保护：该账号已有当前会话且登录未满窗口、且非同一会话再认证 → 拒绝
     existing = UserSession.objects.filter(user=candidate, is_current=True).first()
@@ -213,7 +226,7 @@ def logout_view(request):
 @require_GET
 @login_required
 def verification_status_view(request):
-    """账号验证状态（#36）：总 is_verified + 各通道当前状态，数据驱动面板铺卡。
+    """账号认证状态（#36）：总 is_verified + 各通道当前状态，数据驱动面板铺卡。
 
     每个已定义通道一卡，按 CHANNELS 序。无 Verification 行的通道 status="none"（前端映射
     「未绑定 / 未提交」；后台委任 none 不铺卡）。通道对象键集与前端 VerificationPanel 契约
@@ -238,11 +251,11 @@ def verification_status_view(request):
 def verification_email_bind_view(request):
     """邮箱通道绑定 / 重发 / 换邮（面板动作，#37 / ADR-0006）。
 
-    统一为「email 通道置 pending + identifier=待验地址 + 发信」，``User.email`` 不动（待验邮箱
-    不住此）——验证通过才晋升（见 verify_email_view）。故：
+    统一为「email 通道置 pending + identifier=待认证地址 + 发信」，``User.email`` 不动（待认证邮箱
+    不住此）——认证通过才晋升（见 verify_email_view）。故：
       - 首次绑定 / 重发同邮箱 → 建或刷新 pending 行并发信；
-      - 换邮箱（含已验证旧邮箱）→ 回 pending(identifier=新)，旧 User.email 在新验证前仍有效；
-      - 已验证且未过期同邮箱再绑 → no-op（不降级）；过期则回落重新验证。
+      - 换邮箱（含已认证旧邮箱）→ 回 pending(identifier=新)，旧 User.email 在新认证前仍有效；
+      - 已认证且未过期同邮箱再绑 → no-op（不降级）；过期则回落重新认证。
     绑定时校验邮箱唯一（User.email 或他人 pending identifier）与**后缀白名单**（ADR-0023：
     只拦新地址，既有同址重发 / 复绑按祖父条款放行）。
     """
@@ -265,22 +278,22 @@ def verification_email_bind_view(request):
 
     user = request.user
     existing = user.verifications.filter(channel=Verification.CHANNEL_EMAIL).first()
-    # 已验证且未过期同邮箱再绑 → no-op（不降级为 pending、不重发）
+    # 已认证且未过期同邮箱再绑 → no-op（不降级为 pending、不重发）
     if (
         existing is not None
         and existing.status == Verification.STATUS_APPROVED
         and existing.identifier == email
         and (existing.expires_at is None or existing.expires_at > timezone.now())
     ):
-        return JsonResponse({"message": "该邮箱已验证。"})
+        return JsonResponse({"message": "该邮箱已认证。"})
 
     # 后缀白名单（ADR-0023）：只拦「新地址」；既有同址（重发 / 复绑，含白名单上线前留下的
-    # 非白名单地址）放行——不回溯旧数据，否则这批人会被卡在验证中途。
+    # 非白名单地址）放行——不回溯旧数据，否则这批人会被卡在认证中途。
     same_identifier = existing is not None and existing.identifier == email
     if not same_identifier and not is_allowed_email_domain(email):
         return _email_domain_blocked_response(email)
 
-    # 唯一性：不可绑他账号有效持有的邮箱（已验证 User.email 或他人 pending identifier）
+    # 唯一性：不可绑他账号有效持有的邮箱（已认证 User.email 或他人 pending identifier）
     if _email_taken(email, exclude_user=user):
         return JsonResponse({"error": "该邮箱已被占用"}, status=400)
 
@@ -299,7 +312,7 @@ def verification_email_bind_view(request):
         existing.save(update_fields=["status", "identifier", "verified_at", "verified_by", "expires_at"])
 
     _send_verification_email(user)
-    return JsonResponse({"message": "验证邮件已发送，请查收。"})
+    return JsonResponse({"message": "认证邮件已发送，请查收。"})
 
 
 @require_POST
@@ -408,7 +421,7 @@ def verification_authcode_redeem_view(request):
         return JsonResponse({"error": "请输入认证码。"}, status=400)
 
     if is_verified(request.user):
-        return JsonResponse({"error": "账号已完成验证，无需使用认证码。"}, status=400)
+        return JsonResponse({"error": "账号已完成认证，无需使用认证码。"}, status=400)
 
     try:
         redeem_authcode(request.user, code)
@@ -416,7 +429,120 @@ def verification_authcode_redeem_view(request):
         throttle.allow_request(request, None)  # 只计失败：成功不占额度
         return JsonResponse({"error": str(exc)}, status=400)
 
-    return JsonResponse({"message": "认证码验证通过，账号已完成验证。"})
+    return JsonResponse({"message": "认证码认证通过，账号已完成认证。"})
+
+
+def _member_identity_payload(row: MemberIdentity) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "cohort": row.cohort,
+        "group": row.group,
+        "code": row.code,
+        "status": row.status,
+        "bound_at": row.bound_at.isoformat() if row.bound_at else None,
+    }
+
+
+@require_GET
+@login_required
+def member_identity_view(request):
+    """社员身份（ADR-0025）：本人绑定状态 + 可认领候选。
+
+    候选 = 「未绑定」且姓名与本人真实姓名（归一后）一致的名册行；
+    认领开关关闭 / 已绑定时不返回候选。
+    """
+    policy = get_policy()
+    bound = MemberIdentity.objects.filter(user=request.user).first()
+    candidates = []
+    if policy.member_claim_enabled and bound is None:
+        candidates = claim_candidates(request.user)
+    return JsonResponse({
+        "enabled": policy.member_claim_enabled,
+        "bound": _member_identity_payload(bound) if bound is not None else None,
+        "candidates": [
+            {"id": row.id, "name": row.name, "cohort": row.cohort, "group": row.group}
+            for row in candidates
+        ],
+    })
+
+
+@require_POST
+@login_required
+def member_claim_view(request):
+    """自助认领（ADR-0025）：选一条未绑定身份 + 手机号后四位校验即绑定。
+
+    失败（手机号不对 / 已绑定等）按账号与 IP 双通道节流（只计失败）；
+    服务端强制「账号真实姓名 == 名册行姓名」，不信任前端候选列表。
+    """
+    if not get_policy().member_claim_enabled:
+        return JsonResponse({"error": "自助认领已关闭。", "reason": "claim_closed"}, status=403)
+
+    user_throttle = MemberClaimThrottle()
+    ip_throttle = MemberClaimIpThrottle()
+    if user_throttle.is_blocked(request) or ip_throttle.is_blocked(request):
+        return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    phone_last4 = (body.get("phone_last4") or "").strip()
+    try:
+        identity_id = int(body.get("identity_id"))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "请选择身份并输入手机号后四位。"}, status=400)
+    if not phone_last4:
+        return JsonResponse({"error": "请选择身份并输入手机号后四位。"}, status=400)
+
+    try:
+        row = claim_identity(request.user, identity_id, phone_last4)
+    except ClaimError as exc:
+        user_throttle.allow_request(request, None)  # 只计失败：成功不占额度
+        ip_throttle.allow_request(request, None)
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    return JsonResponse({
+        "message": "认领成功。",
+        "member": _member_identity_payload(row),
+    })
+
+
+@require_GET
+def member_check_view(request):
+    """扫码校验（公开，ADR-0025）：``?c=<识别码>&s=<签名>``。
+
+    签名不符 / 码不存在一律 404（语义不可区分，防枚举）；命中返回最小公开字段：
+    姓名、届数、组别、状态、头像（可选）。电话 / 学号 / 邮箱绝不出现。
+    """
+    throttle = MemberCheckThrottle()
+    if not throttle.allow_request(request, None):
+        return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+
+    code = (request.GET.get("c") or "").strip()
+    sig = (request.GET.get("s") or "").strip()
+    not_found = JsonResponse({"found": False}, status=404)
+    if not verify_signature(code, sig):
+        return not_found
+
+    row = MemberIdentity.objects.filter(code=code).first()
+    if row is None:
+        return not_found
+
+    avatar_url = None
+    if row.user_id:
+        profile = Profile.objects.filter(user_id=row.user_id).first()
+        if profile is not None and profile.avatar:
+            avatar_url = profile.avatar.url
+    return JsonResponse({
+        "found": True,
+        "name": row.name,
+        "cohort": row.cohort,
+        "group": row.group,
+        "code": row.code,
+        "status": row.status,
+        "avatar": avatar_url,
+    })
 
 
 @login_required
@@ -511,10 +637,10 @@ def password_reset_confirm_view(request):
 def register_view(request):
     """注册（ADR-0006，2026-09 修订）：建登录身份（用户名 + 密码 + Turnstile）+ 真实姓名 / 身份（必填）。
 
-    注册↔验证分离：邮箱 / 身份证明仍挪在验证面板；但 real_name / identity 为注册必填，
-    写入 Profile（identity 须合法枚举）。新号无 Verification 行 ⇒ 未验证（访客）。
-    若提供邮箱：须过**后缀白名单**（ADR-0023），再建 email 通道 pending（identifier=待验地址）
-    并发验证信，``User.email`` 保持空（待验邮箱不住 User.email）——验证通过才晋升
+    注册↔认证分离：邮箱 / 身份证明仍挪在认证面板；但 real_name / identity 为注册必填，
+    写入 Profile（identity 须合法枚举）。新号无 Verification 行 ⇒ 未认证（访客）。
+    若提供邮箱：须过**后缀白名单**（ADR-0023），再建 email 通道 pending（identifier=待认证地址）
+    并发认证信，``User.email`` 保持空（待认证邮箱不住 User.email）——认证通过才晋升
     （见 verify_email_view）。
     """
     if not get_policy().registration_enabled:
@@ -583,7 +709,7 @@ def register_view(request):
     started_email = False
     try:
         with transaction.atomic():
-            # User.email 只装已验证邮箱：注册阶段留空；邮箱验证通过才晋升写入。
+            # User.email 只装已认证邮箱：注册阶段留空；邮箱认证通过才晋升写入。
             user = User.objects.create_user(
                 username=username, email="", password=password, is_active=True
             )
@@ -601,10 +727,15 @@ def register_view(request):
     if started_email:
         _send_verification_email(user)
 
+    # 注册即登录（ADR-0025）：认领等注册后置步骤需要在登录态下完成。
+    # 会话记录由 user_logged_in 信号统一写 UserSession（accounts/signals.py）。
+    login(request, user)
+
     return JsonResponse(
         {
-            "message": "注册成功。" + ("请查收邮件完成邮箱验证。" if started_email else ""),
+            "message": "注册成功。" + ("请查收邮件完成邮箱认证。" if started_email else ""),
             "user": {"id": user.id, "username": user.username},
+            "logged_in": True,
         },
         status=201,
     )
@@ -612,23 +743,23 @@ def register_view(request):
 
 @require_GET
 def verify_email_view(request):
-    """邮箱验证：GET /auth/verify-email/?uid=&token= → email 通道 approved + 晋升 User.email。
+    """邮箱认证：GET /auth/verify-email/?uid=&token= → email 通道 approved + 晋升 User.email。
 
-    令牌绑 identifier + 通道 status（见 tokens）：改待验邮箱或验证通过后旧令牌失效。
-    验证通过：identifier 晋升写入 User.email（绑定邮箱生效，可用邮箱登录 / 重置密码）。
+    令牌绑 identifier + 通道 status（见 tokens）：改待认证邮箱或认证通过后旧令牌失效。
+    认证通过：identifier 晋升写入 User.email（绑定邮箱生效，可用邮箱登录 / 重置密码）。
     ADR-0041：通过时设 expires_at = 通过日 + 认证有效期。
-    不校验后缀白名单（ADR-0023 决策 4）：令牌已限定为既有 pending 地址，落地即完成该地址的验证。
+    不校验后缀白名单（ADR-0023 决策 4）：令牌已限定为既有 pending 地址，落地即完成该地址的认证。
     """
     if not get_policy().verification_enabled:
         return _verification_closed_response()
     user = _user_from_uid(request.GET.get("uid", ""))
     token = request.GET.get("token", "")
     if user is None or not email_verification_token.check_token(user, token):
-        return JsonResponse({"error": "验证链接无效或已过期。", "reason": "invalid"}, status=400)
+        return JsonResponse({"error": "认证链接无效或已过期。", "reason": "invalid"}, status=400)
 
     v = user.verifications.filter(channel=Verification.CHANNEL_EMAIL).first()
     if v is None or not v.identifier:
-        return JsonResponse({"error": "验证链接无效或已过期。", "reason": "invalid"}, status=400)
+        return JsonResponse({"error": "认证链接无效或已过期。", "reason": "invalid"}, status=400)
 
     # approved：identifier 晋升 → User.email（绑定邮箱生效）；令牌随 status 翻转失效，不可重放。
     if v.status != Verification.STATUS_APPROVED:
@@ -640,16 +771,16 @@ def verify_email_view(request):
     if user.email != v.identifier:
         user.email = v.identifier
         user.save(update_fields=["email"])
-    return JsonResponse({"message": "邮箱验证成功。"})
+    return JsonResponse({"message": "邮箱认证成功。"})
 
 
 @require_POST
 def resend_verification_view(request):
-    """重发邮箱验证邮件：POST {email}，按 email 通道 identifier 查待验账号。
+    """重发邮箱认证邮件：POST {email}，按 email 通道 identifier 查待验账号。
 
-    不泄密：无论邮箱是否存在 / 是否在验 / 已验证，返回同样提示（防账号探测）。
+    不泄密：无论邮箱是否存在 / 是否在验 / 已认证，返回同样提示（防账号探测）。
     只对「存在 pending email 通道、账号启用」的账号真正发信（发往待验 identifier）。
-    不校验后缀白名单（ADR-0023 决策 4）：只重发既有待验地址，不接收新地址。
+    不校验后缀白名单（ADR-0023 决策 4）：只重发既有待认证地址，不接收新地址。
     """
     if not get_policy().verification_enabled:
         return _verification_closed_response()
@@ -679,7 +810,7 @@ def resend_verification_view(request):
     if v is not None and v.user.is_active:
         _send_verification_email(v.user)
 
-    return JsonResponse({"message": "如果该邮箱正在验证中，验证邮件已重发。"})
+    return JsonResponse({"message": "如果该邮箱正在认证中，认证邮件已重发。"})
 
 
 @login_required
@@ -726,7 +857,7 @@ def _email_domain_blocked_response(email):
 
 
 def _email_taken(email, exclude_user=None):
-    """邮箱是否已被他账号有效持有：User.email（已验证绑定）或他人 email 通道 identifier（含 pending）。
+    """邮箱是否已被他账号有效持有：User.email（已认证绑定）或他人 email 通道 identifier（含 pending）。
 
     绑定唯一性（ADR-0006 决策 10）：一个邮箱同一时刻只能被一个账号有效持有（已绑定或正在验）。
     """
@@ -774,7 +905,7 @@ def _role_for(user):
     """身份徽章 {label, variant}：超管 > 管理员 > 用户 > 访客（ADR-0005 决策 7 / ADR-0006）。
 
     与组、权限解耦——纯身份态派生；variant 供前端徽章配色。「用户 / 访客」分界读
-    ``is_verified``（任一验证通道通过即用户，否则访客）。
+    ``is_verified``（任一认证通道通过即用户，否则访客）。
     """
     if not user.is_authenticated:
         return {"label": "访客", "variant": "visitor"}
@@ -795,8 +926,8 @@ def _profile_response(user, profile):
             "email": user.email,
             "permissions": _capabilities(user),
         },
-        # 身份徽章（ADR-0005 决策 7）：前端据此（而非单看 is_verified）决定是否提示去验证——
-        # 超管 / 管理员 / 已验证用户均不提示，仅访客（未验证普通成员）提示。
+        # 身份徽章（ADR-0005 决策 7）：前端据此（而非单看 is_verified）决定是否提示去认证——
+        # 超管 / 管理员 / 已认证用户均不提示，仅访客（未认证普通成员）提示。
         "role": _role_for(user),
         "profile": {
             "avatar": profile.avatar.url if profile.avatar else None,
@@ -804,7 +935,7 @@ def _profile_response(user, profile):
             "birthday": profile.birthday.isoformat() if profile.birthday else None,
             "gender": profile.gender,
             "bio": profile.bio,
-            # 验证态（ADR-0006）：前端据此显访客提示 / 引导去验证面板。
+            # 认证态（ADR-0006）：前端据此显访客提示 / 引导去认证面板。
             "is_verified": is_verified(user),
         },
     }

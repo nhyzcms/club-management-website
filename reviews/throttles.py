@@ -16,7 +16,7 @@ class FeedbackAnonThrottle(AnonRateThrottle):
 
 
 class ReportDailyThrottle(UserRateThrottle):
-    """已验证成员举报节流：每用户每天 N 条（N 来自 get_policy()）。"""
+    """已认证成员举报节流：每用户每天 N 条（N 来自 get_policy()）。"""
 
     scope = "reports_user"
 

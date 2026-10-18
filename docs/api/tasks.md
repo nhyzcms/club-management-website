@@ -2,7 +2,7 @@
 
 成员发起、可指派负责人与协作者的工作项（任务）的增删改查、认领审批、状态流转、指派与标签管理。
 
-> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0002 统一附件端点 + 抽象权限规则](../adr/0002-unified-attachment-endpoint-and-permission.md)、[ADR-0003 不抽取任务 / 申报共享生命周期基类](../adr/0003-no-shared-task-proposal-lifecycle-base.md)、[ADR-0006 账号验证模型](../adr/0006-verification-model.md)、[ADR-0012 附件创建接缝](../adr/0012-attachment-create-seam.md)
+> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0002 统一附件端点 + 抽象权限规则](../adr/0002-unified-attachment-endpoint-and-permission.md)、[ADR-0003 不抽取任务 / 申报共享生命周期基类](../adr/0003-no-shared-task-proposal-lifecycle-base.md)、[ADR-0006 账号认证模型](../adr/0006-verification-model.md)、[ADR-0012 附件创建接缝](../adr/0012-attachment-create-seam.md)
 
 挂载前缀 `/tasks/`，路由由 DRF `DefaultRouter` 生成：任务集合在 `/tasks/tasks/`，标签集合在 `/tasks/tags/`。状态机与权限判定集中在 `tasks/lifecycle.py`，视图层只是薄适配（认领、审批、完成、指派等动作名与 `available_actions` 中的取值一一对应）。任务是统一附件的父级之一，附件上传 / 删除走 `/attachments/`，本模块详情只读回显。
 
@@ -30,17 +30,17 @@
 | 方法 | 路径 | 认证 | 权限 | 说明 |
 |---|---|---|---|---|
 | GET | `/tasks/tasks/` | 登录 | — | 任务列表（分页 20/页；`?all=1` 全量裸数组）|
-| POST | `/tasks/tasks/` | 已验证 | — | 创建任务（自动建评论区）|
+| POST | `/tasks/tasks/` | 已认证 | — | 创建任务（自动建评论区）|
 | GET | `/tasks/tasks/{id}/` | 登录 | — | 任务详情（含 `available_actions`）|
-| PUT / PATCH | `/tasks/tasks/{id}/` | 已验证 | 仅 `pending`；创建者或 `tasks.manage_tasks` | 编辑任务 |
-| DELETE | `/tasks/tasks/{id}/` | 已验证 | 仅 `pending`；创建者或 `tasks.manage_tasks` | 删除任务 |
-| POST | `/tasks/tasks/{id}/claim/` | 已验证 | — | 申请认领 |
+| PUT / PATCH | `/tasks/tasks/{id}/` | 已认证 | 仅 `pending`；创建者或 `tasks.manage_tasks` | 编辑任务 |
+| DELETE | `/tasks/tasks/{id}/` | 已认证 | 仅 `pending`；创建者或 `tasks.manage_tasks` | 删除任务 |
+| POST | `/tasks/tasks/{id}/claim/` | 已认证 | — | 申请认领 |
 | POST | `/tasks/tasks/{id}/approve_claim/` | 登录 | 创建者或 `tasks.manage_tasks` | 批准认领申请 |
 | POST | `/tasks/tasks/{id}/reject_claim/` | 登录 | 创建者或 `tasks.manage_tasks` | 拒绝认领申请 |
-| POST | `/tasks/tasks/{id}/complete/` | 已验证 | 活跃参与者或 `tasks.manage_tasks` | 提交验收 |
+| POST | `/tasks/tasks/{id}/complete/` | 已认证 | 活跃参与者或 `tasks.manage_tasks` | 提交验收 |
 | POST | `/tasks/tasks/{id}/approve_completion/` | 登录 | 创建者或 `tasks.manage_tasks` | 通过验收 |
 | POST | `/tasks/tasks/{id}/reject_completion/` | 登录 | 创建者或 `tasks.manage_tasks` | 打回（必填理由）|
-| POST | `/tasks/tasks/{id}/cancel/` | 已验证 | 创建者或 `tasks.manage_tasks` | 取消任务 |
+| POST | `/tasks/tasks/{id}/cancel/` | 已认证 | 创建者或 `tasks.manage_tasks` | 取消任务 |
 | POST | `/tasks/tasks/{id}/assign/` | 登录 | `tasks.assign_task` | 指派 / 清空负责人 |
 | GET | `/tasks/tasks/my_tasks/` | 登录 | — | 我的任务（分页）|
 | GET | `/tasks/tags/` | 登录 | — | 标签全量裸数组（不分页）|
@@ -50,7 +50,7 @@
 | DELETE | `/tasks/tags/{id}/` | 登录 | `tasks.manage_tags` | 删除标签 |
 | GET | `/tasks/` | 登录 | — | DRF 路由根（索引，自动生成）|
 
-「已验证」指 `IsVerified`（任一验证通道 approved，ADR-0006）；`tasks.manage_tasks` / `tasks.manage_tags` / `tasks.assign_task` 是模型权限代号，社长默认组持有。
+「已认证」指 `IsVerified`（任一认证通道 approved，ADR-0006）；`tasks.manage_tasks` / `tasks.manage_tags` / `tasks.assign_task` 是模型权限代号，社长默认组持有。
 
 列表 / 详情中的用户引用统一为 `{id, username, nickname, avatar}`；仅当查看者即本人时额外带 `email`。时间字段为 UTC ISO 8601（如 `2026-09-19T04:30:00Z`）。
 
@@ -105,7 +105,7 @@
 ### 创建任务
 `POST /tasks/tasks/`
 
-**认证**：已验证（`IsVerified`）；**权限**：—（所有登录且已验证的用户可建任务）
+**认证**：已认证（`IsVerified`）；**权限**：—（所有登录且已认证的用户可建任务）
 
 **请求体**（`title` 必填；`assignee_id` 设了就建为 `in_progress`，否则 `pending`；`tag_ids` / `collaborator_ids` 为 id 数组；`comment_thread_status` 为 `open` / `muted` / `closed`，创建时顺带设评论区状态，无协管权限 → 403）
 
@@ -126,7 +126,7 @@
 | 状态码 | 场景 |
 |---|---|
 | 400 | 字段校验失败（如 `title` 缺失、`tag_ids` 含不存在的标签）|
-| 403 | 未验证（`IsVerified`）或试图设置无权限的 `comment_thread_status` |
+| 403 | 未认证（`IsVerified`）或试图设置无权限的 `comment_thread_status` |
 
 ### 任务详情
 `GET /tasks/tasks/{id}/`
@@ -185,27 +185,27 @@
 ### 编辑任务
 `PUT / PATCH /tasks/tasks/{id}/`
 
-**认证**：已验证；**权限**：任务须为 `pending`，且查看者是创建者或持 `tasks.manage_tasks`（进入认领 / 进行后对所有人锁定，含管理权限者）
+**认证**：已认证；**权限**：任务须为 `pending`，且查看者是创建者或持 `tasks.manage_tasks`（进入认领 / 进行后对所有人锁定，含管理权限者）
 
 **请求体**：同创建（`title` / `description` / `priority` / `assignee_id` / `tag_ids` / `collaborator_ids` / `comment_thread_status`）；`tag_ids`、`collaborator_ids` 为**整体替换**，传空数组即清空。`creator` / `status` / `completed_at` / `reject_reason` / `created_at` / `updated_at` 只读。
 
 **响应 `200 OK`**：任务详情。
 
-**错误**：400 字段校验失败；403 非 `pending` 状态、非创建者且无 `tasks.manage_tasks`、或未验证；404 任务不存在。
+**错误**：400 字段校验失败；403 非 `pending` 状态、非创建者且无 `tasks.manage_tasks`、或未认证；404 任务不存在。
 
 ### 删除任务
 `DELETE /tasks/tasks/{id}/`
 
-**认证**：已验证；**权限**：同编辑（仅 `pending`，创建者或 `tasks.manage_tasks`）
+**认证**：已认证；**权限**：同编辑（仅 `pending`，创建者或 `tasks.manage_tasks`）
 
 **响应 `204 No Content`**：无正文。连带删除附件行（磁盘文件由 attachments 信号回收）与其评论区（CASCADE）。
 
-**错误**：403 非 `pending` / 无权 / 未验证；404 不存在。
+**错误**：403 非 `pending` / 无权 / 未认证；404 不存在。
 
 ### 申请认领
 `POST /tasks/tasks/{id}/claim/`
 
-**认证**：已验证；**权限**：—（服务端判定：非创建者且任务无负责人）
+**认证**：已认证；**权限**：—（服务端判定：非创建者且任务无负责人）
 
 **请求体**
 
@@ -235,7 +235,7 @@
 | 状态码 | 场景 |
 |---|---|
 | 400 | 状态不允许（不在 `pending` / `review`）→ `当前无法申请认领`；重复申请 → `你已经申请过认领此任务` |
-| 403 | 创建者申请、任务已有负责人 → `当前无法申请认领`；未验证 |
+| 403 | 创建者申请、任务已有负责人 → `当前无法申请认领`；未认证 |
 | 404 | 任务不存在 |
 
 ### 批准认领申请
@@ -267,13 +267,13 @@
 ### 提交验收
 `POST /tasks/tasks/{id}/complete/`
 
-**认证**：已验证；**权限**：活跃参与者（`in_progress` 时的负责人或协作者）或 `tasks.manage_tasks`（要求任务处于 `in_progress`）
+**认证**：已认证；**权限**：活跃参与者（`in_progress` 时的负责人或协作者）或 `tasks.manage_tasks`（要求任务处于 `in_progress`）
 
 **请求体**：无。
 
 **响应 `200 OK`**：任务详情；任务转 `reviewing`，`reject_reason` 清空。
 
-**错误**：400 状态不允许 → `当前无法提交验收`；403 非参与者且无管理权限 → `当前无法提交验收`，未验证 → `请先完成账号验证后再使用此功能（发帖 / 发消息 / 建申报等）。`；404 任务不存在。
+**错误**：400 状态不允许 → `当前无法提交验收`；403 非参与者且无管理权限 → `当前无法提交验收`，未认证 → `请先完成账号认证后再使用此功能（发帖 / 发消息 / 建申报等）。`；404 任务不存在。
 
 ### 通过验收
 `POST /tasks/tasks/{id}/approve_completion/`
@@ -304,7 +304,7 @@
 ### 取消任务
 `POST /tasks/tasks/{id}/cancel/`
 
-**认证**：已验证；**权限**：创建者或 `tasks.manage_tasks`（要求任务处于非终态：`pending` / `in_progress` / `reviewing` / `review`）
+**认证**：已认证；**权限**：创建者或 `tasks.manage_tasks`（要求任务处于非终态：`pending` / `in_progress` / `reviewing` / `review`）
 
 **请求体**：无。
 
@@ -323,7 +323,7 @@
 |---|---|---|---|
 | assignee_id | int \| null | 否 | 目标用户 id；缺省或 `null` 表示**清空负责人** |
 
-**响应 `200 OK`**：任务详情；设了负责人则状态 `in_progress`，清空则回到 `pending`（不校验目标是否已验证）。
+**响应 `200 OK`**：任务详情；设了负责人则状态 `in_progress`，清空则回到 `pending`（不校验目标是否已认证）。
 
 **错误**：403 `无指派权限`；404 目标用户不存在 → `用户不存在`；404 任务不存在。
 

@@ -323,15 +323,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {/* 未验证提示（ADR-0006）：仅访客（未验证普通成员）提示。超管 / 管理员徽章
+      {/* 未认证提示（ADR-0006）：仅访客（未认证普通成员）提示。超管 / 管理员徽章
           不挡提示逻辑——他们经后台委任已是 is_verified，不会落到 visitor。 */}
       {user && roleVariant === "visitor" && (
         <button className="identity-banner" type="button" role="status"
                 onClick={() => go("/profile?tab=verification")}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>
           <span>          {policy.verification_enabled
-            ? "你的账号尚未验证，发帖 / 发消息 / 建申报暂不可用。前往「账号验证」完成验证。"
-            : "验证通道已关闭，暂无法完成验证"}</span>
+            ? "你的账号尚未认证，发帖 / 发消息 / 建申报暂不可用。前往「账号认证」完成认证。"
+            : "认证通道已关闭，暂无法完成认证"}</span>
         </button>
       )}
 

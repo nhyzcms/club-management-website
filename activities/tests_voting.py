@@ -96,7 +96,7 @@ class CastBallotTest(TestCase):
         self.assertEqual(ctx.exception.detail, "投票已结束")
 
     def test_cast_ballot_closes_when_all_verified_voted(self):
-        # 本用例已验证成员恰好 2 人
+        # 本用例已认证成员恰好 2 人
         cast_ballot(activity=self.activity, user=self.member, option_ids=[self.oa.pk])
         self.activity.refresh_from_db()
         self.assertEqual(self.activity.status, OPEN)

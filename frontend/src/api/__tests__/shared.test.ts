@@ -13,7 +13,7 @@ import {
 // ---------- classifyHttpResponse：reason 串 → 类型化 kind（唯一映射点） ----------
 
 describe("classifyHttpResponse", () => {
-  it("按 reason 映射挤号 / 登录保护 / 限流 / 停用 / 邮箱未验证 / 邮箱后缀白名单", () => {
+  it("按 reason 映射挤号 / 登录保护 / 限流 / 停用 / 邮箱未认证 / 邮箱后缀白名单", () => {
     expect(classifyHttpResponse(409, { reason: REASON.SESSION_SUPERSEDED, takeover: { device_name: "X" } }))
       .toEqual({ kind: "session_superseded", takeover: { device_name: "X" } });
     expect(classifyHttpResponse(409, { reason: REASON.LOGIN_PROTECTION, retry_after: 120 }))

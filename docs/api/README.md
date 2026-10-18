@@ -2,7 +2,7 @@
 
 本目录是南汇一中传媒社社团管理系统的 HTTP / WebSocket 接口参考，按模块分册。所有接口由 Django + Django REST Framework 提供，Web 端、移动版与嵌入页共用同一套。
 
-> 推荐阅读顺序：本篇（全局约定）→ [访问控制指南](../guides/access-control.md) 与 [身份验证指南](../guides/verification.md)（权限体系）→ 各模块分册。
+> 推荐阅读顺序：本篇（全局约定）→ [访问控制指南](../guides/access-control.md) 与 [身份认证指南](../guides/certification.md)（权限体系）→ 各模块分册。
 
 ## 基本约定
 
@@ -10,7 +10,7 @@
 
 - 接口采用**浏览器会话认证**（DRF `SessionAuthentication`）：登录成功后以 `sessionid` cookie 维持会话，跨源调用需携带凭据（`credentials: include`）。
 - 全局默认权限为「登录」；公开接口在各视图上显式放开（如新闻、教程、关于页的读取）。
-- 部分能力额外要求「身份已验证」或持有具体权限（`has_perm`），各模块文档逐端点注明。
+- 部分能力额外要求「身份已认证」或持有具体权限（`has_perm`），各模块文档逐端点注明。
 
 ### CSRF
 
@@ -62,7 +62,7 @@
 | `login_throttled` | 登录尝试过于频繁 | `retry_after` |
 | `account_disabled` | 账号已停用 | — |
 | `account_expired_unverified` | 超期未认证被系统停用（登录被拒，携专属文案） | — |
-| `email_not_verified` | 邮箱未验证，登录被拒 | `email` |
+| `email_not_verified` | 邮箱未认证，登录被拒 | `email` |
 
 ### 实时通道（WebSocket）
 
@@ -83,7 +83,7 @@
 
 | 模块 | 文档 | 说明 |
 |---|---|---|
-| 账号与认证 | [accounts](accounts.md) | 注册 / 登录 / 验证 / 资料 / 能力投影 |
+| 账号与认证 | [accounts](accounts.md) | 注册 / 登录 / 认证 / 资料 / 能力投影 |
 | 新闻 | [news](news.md) | 社团新闻，发布审核门控 |
 | 活动 | [activities](activities.md) | 众议 / 征集 / 展示 / 调研四类活动与问卷 |
 | 任务 | [tasks](tasks.md) | 任务与标签，状态机流转 |
@@ -97,4 +97,4 @@
 | 附件与上传 | [attachments](attachments.md) | 统一附件模型 + TUS 断点续传 |
 | 公共 | [common](common.md) | 站点策略等公共接口 |
 
-> 各模块文档中「认证」列的取值：**公开**（匿名可用）／**登录**（已登录）／**已验证**（登录且通过身份验证）／**职员**（持有相应权限）。
+> 各模块文档中「认证」列的取值：**公开**（匿名可用）／**登录**（已登录）／**已认证**（登录且通过身份认证）／**职员**（持有相应权限）。

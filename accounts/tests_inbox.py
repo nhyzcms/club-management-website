@@ -1,4 +1,4 @@
-"""GET /auth/inbox/ —— 已验证成员的混合待办收件箱（#82）。
+"""GET /auth/inbox/ —— 已认证成员的混合待办收件箱（#82）。
 
 单一 HTTP seam：信封 {count, next: null, previous: null, results}；
 条目 kind/reason/pinned；投票/投稿/已读/验收后下一 GET 不再出现该行。
@@ -27,7 +27,7 @@ def _file(name="a.png"):
 
 
 class InboxGateTest(TestCase):
-    """门禁与 IsVerified 对齐：匿名/访客 403；已验证（含后台委任）放行。"""
+    """门禁与 IsVerified 对齐：匿名/访客 403；已认证（含后台委任）放行。"""
 
     def setUp(self):
         self.client = APIClient()
@@ -47,7 +47,7 @@ class InboxGateTest(TestCase):
         self.assertEqual(self.client.get(INBOX).status_code, 200)
 
     def test_staff_without_appointment_row_denied(self):
-        # 标志位不是验证逃生舱：无委任行仍 403（ADR-0013）
+        # 标志位不是认证逃生舱：无委任行仍 403（ADR-0013）
         from accounts.models import Verification
         staff = User.objects.create_user(username="staff", password="x", is_staff=True)
         Verification.objects.filter(user=staff, channel=Verification.CHANNEL_APPOINTMENT).delete()
@@ -391,7 +391,7 @@ class InboxOmitsConversationTest(TestCase):
 
 
 class ActivityListOwedTest(TestCase):
-    """列表 owed 与收件箱同一谓词：已验证才有 vote/submit；访客/未债为 null。"""
+    """列表 owed 与收件箱同一谓词：已认证才有 vote/submit；访客/未债为 null。"""
 
     def setUp(self):
         self.author = grant_verification(User.objects.create_user(username="author", password="x"))

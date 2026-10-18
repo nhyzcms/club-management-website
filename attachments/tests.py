@@ -357,7 +357,7 @@ class DeleteOwnAfterTaskNotInProgressTest(_AttachmentTestCase):
 class CascadeReclaimTest(_AttachmentTestCase):
     def setUp(self):
         super().setUp()
-        # creator 会删 task（tasks destroy 受 IsVerified 门禁）→ 需已验证
+        # creator 会删 task（tasks destroy 受 IsVerified 门禁）→ 需已认证
         self.creator = grant_verification(User.objects.create_user(username="creator", password="x"))
         self.client = APIClient()
         self.client.force_authenticate(self.creator)

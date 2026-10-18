@@ -1,6 +1,6 @@
 """评论区 / 私信 / 通知 / 禁言 / 横幅 — 其它 app 只碰本模块，不 import 模型或 viewset。
 
-写入规则（验证、全站禁言、评论区状态、嵌套上限、3 分钟撤回、墓碑删除）都收在这里。
+写入规则（认证门禁、全站禁言、评论区状态、嵌套上限、3 分钟撤回、墓碑删除）都收在这里。
 HTTP 是事实源；``push_user`` / ``push_thread`` 只是推送适配器（Channels 未接线时静默 no-op）。
 """
 from __future__ import annotations
@@ -355,7 +355,7 @@ def start_private(user, target) -> tuple[Conversation, bool]:
     from accounts.models import is_verified
 
     if not is_verified(target):
-        raise MessagingError("对方尚未完成验证")
+        raise MessagingError("对方尚未完成认证")
     if is_muted(user):
         raise MessagingForbidden("你已被全站禁言，暂时不能发言")
     existing = (

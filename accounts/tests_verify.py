@@ -1,7 +1,7 @@
-"""邮箱验证通道（ADR-0006）：verify-email / resend / 登录态。
+"""邮箱认证通道（ADR-0006）：verify-email / resend / 登录态。
 
 verify-email：email 通道 pending → approved，identifier 晋升写入 User.email（绑定邮箱生效）。
-resend：按 email 通道 identifier 查待验账号重发。登录与验证解耦：未验证可登录（访客），
+resend：按 email 通道 identifier 查待验账号重发。登录与认证解耦：未认证可登录（访客），
 仅 is_active 拒停用。
 """
 import json
@@ -22,12 +22,12 @@ def _login(client, **fields):
 
 
 def make_user(username="someone", password="StrongPass123!"):
-    """新建活跃用户（无 Verification 行 ⇒ 未验证 / 访客）。"""
+    """新建活跃用户（无 Verification 行 ⇒ 未认证 / 访客）。"""
     return User.objects.create_user(username=username, password=password, is_active=True)
 
 
 def make_pending_email_user(username="someone", email="someone@example.com", password="StrongPass123!"):
-    """新建带 pending email 通道的用户（复刻带邮箱注册）：identifier=待验地址，User.email 仍空。"""
+    """新建带 pending email 通道的用户（复刻带邮箱注册）：identifier=待认证地址，User.email 仍空。"""
     u = User.objects.create_user(username=username, password=password, is_active=True)
     Verification.objects.create(
         user=u, channel=Verification.CHANNEL_EMAIL,
@@ -55,7 +55,7 @@ class VerifyEmailViewTest(TestCase):
         v = Verification.objects.get(user=self.user, channel=Verification.CHANNEL_EMAIL)
         self.assertEqual(v.status, Verification.STATUS_APPROVED)
         self.assertEqual(self.user.email, "someone@example.com")  # identifier 晋升写入
-        self.assertTrue(is_verified(self.user))  # email 通道 approved ⇒ 已验证
+        self.assertTrue(is_verified(self.user))  # email 通道 approved ⇒ 已认证
 
     def test_verify_invalid_token_rejected(self):
         uid, _ = _uid_token(self.user)
@@ -72,7 +72,7 @@ class VerifyEmailViewTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_verify_after_pending_email_change_old_token_invalid(self):
-        # 改待验邮箱（identifier 变）→ 旧令牌失效
+        # 改待认证邮箱（identifier 变）→ 旧令牌失效
         uid, token = _uid_token(self.user)
         v = Verification.objects.get(user=self.user, channel=Verification.CHANNEL_EMAIL)
         v.identifier = "changed@example.com"
@@ -154,13 +154,13 @@ class ResendVerificationViewTest(TestCase):
 
 
 class LoginStateTest(TestCase):
-    """登录态（ADR-0006 决策 6）：未验证可登录（访客）/ 停用被拒 / 错误密码不泄状态。"""
+    """登录态（ADR-0006 决策 6）：未认证可登录（访客）/ 停用被拒 / 错误密码不泄状态。"""
 
     def setUp(self):
         cache.clear()
 
     def test_unverified_can_login(self):
-        # 未验证账号（无 Verification 行）也能登录（落地访客，写操作由 IsVerified 另管）
+        # 未认证账号（无 Verification 行）也能登录（落地访客，写操作由 IsVerified 另管）
         make_user("uv", password="StrongPass123!")
         resp = _login(self.client, username="uv", password="StrongPass123!")
         self.assertEqual(resp.status_code, 200)

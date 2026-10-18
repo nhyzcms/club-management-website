@@ -26,12 +26,12 @@ from .permissions import CanReviewIdentity
 
 
 class VerificationClosed(Exception):
-    """验证通道已关闭，无法通过或驳回身份审核。"""
+    """认证通道已关闭，无法通过或驳回身份审核。"""
 
 
 def _require_verification_open():
     if not get_policy().verification_enabled:
-        raise VerificationClosed("验证通道已关闭")
+        raise VerificationClosed("认证通道已关闭")
 
 
 def _send(user, subject, message):
@@ -58,7 +58,7 @@ def revoke_user_sessions(user):
 def approve_manual(user, reviewer):
     """通过身份审核：manual 通道置 approved（+ verified_at / verified_by / expires_at），并发邮件。
 
-    验证态单一事实源是 Verification 行（ADR-0006）。任一未过期 approved 通道 ⇒ 账号已验证。
+    认证态单一事实源是 Verification 行（ADR-0006）。任一未过期 approved 通道 ⇒ 账号已认证。
     expires_at = 通过日 + 认证有效期（ADR-0041）。
     """
     _require_verification_open()
@@ -125,8 +125,8 @@ def reject_manual(user, reviewer):
 def disable_user(user):
     """停用账号：置 is_active=False，吊销既有会话，并发邮件通知当事人联系信息组。
 
-    账号级动作，与验证通道无关——被停用账号既不能登录、既有会话也被立即吊销。
-    验证通道关闭时仍可执行。
+    账号级动作，与认证通道无关——被停用账号既不能登录、既有会话也被立即吊销。
+    认证通道关闭时仍可执行。
     """
     if user.is_active:
         user.is_active = False
@@ -194,7 +194,7 @@ class IdentityReviewSerializer(serializers.ModelSerializer):
 
 def _verification_closed_payload():
     return Response(
-        {"error": "验证通道已关闭", "reason": "verification_closed"},
+        {"error": "认证通道已关闭", "reason": "verification_closed"},
         status=status.HTTP_403_FORBIDDEN,
     )
 

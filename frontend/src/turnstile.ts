@@ -2,7 +2,7 @@
  * Cloudflare Turnstile 前端集成。
  *
  * sitekey 由 ``GET /site-policy/`` 下发。未启用时不加载 Cloudflare 脚本、不渲染挂件。
- * 脚本按需注入（注册 / 找回密码 / 重发验证信 / 匿名反馈），避免全站预载。
+ * 脚本按需注入（注册 / 找回密码 / 重发认证信 / 匿名反馈），避免全站预载。
  */
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useSitePolicy, useSitePolicyReady } from "./api/sitePolicy";

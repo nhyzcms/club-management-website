@@ -134,7 +134,7 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
 
 
 class ReportCaseViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    """举报案：已验证成员提交；列表/处理需 handle_report。"""
+    """举报案：已认证成员提交；列表/处理需 handle_report。"""
 
     serializer_class = ReportCaseSerializer
     filterset_fields = ["status"]

@@ -11,7 +11,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (
-            "验证",
+            "认证",
             {
                 "fields": (
                     "verification_enabled",
@@ -36,6 +36,10 @@ class SiteSettingsAdmin(admin.ModelAdmin):
                     "feedback_anon_per_ip_per_day",
                     "reports_per_user_per_day",
                     "authcode_redeem_per_user_per_hour",
+                    "member_claim_enabled",
+                    "member_claim_per_user_per_hour",
+                    "member_claim_per_ip_per_day",
+                    "member_check_per_ip_per_hour",
                 )
             },
         ),

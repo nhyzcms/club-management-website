@@ -1,0 +1,65 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div id="content-main">
+
+  <p><a href="{% url 'admin:accounts_memberidentity_import_template' %}">下载导入模板（xlsx）</a>
+     · 识别码由系统自动生成（规则：[入学年份后2位][届数2位][届内序号4位]；表格中该列内容将被忽略）</p>
+
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+      <div class="form-row">
+        <label for="id_file">名册文件（.csv / .xlsx）：</label>
+        <input type="file" name="file" id="id_file" accept=".csv,.xlsx" required>
+      </div>
+    </fieldset>
+    <div class="submit-row">
+      <input type="submit" value="上传并预检">
+    </div>
+  </form>
+
+  {% if preview %}
+  <h2>预检结果 — {{ preview.file_name }}</h2>
+  <ul>
+    <li>将<b>新增 {{ preview.counts.create }}</b> 条 · 将<b>更新 {{ preview.counts.update }}</b> 条</li>
+    <li>冲突 {{ preview.counts.conflict }} · 错误 {{ preview.counts.error }}（冲突与错误行<b>不会入库</b>）</li>
+  </ul>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="stash" value="{{ preview.stash_id }}">
+    <div class="submit-row">
+      <input type="submit" value="确认导入" class="default">
+      <input type="submit" name="cancel" value="取消">
+    </div>
+  </form>
+  <table style="width:100%">
+    <thead>
+      <tr><th>行</th><th>姓名</th><th>届数</th><th>组别</th><th>动作</th><th>识别码</th><th>备注</th></tr>
+    </thead>
+    <tbody>
+      {% for item in preview.items %}
+      <tr>
+        <td>{{ item.row_no }}</td>
+        <td>{{ item.name }}</td>
+        <td>{{ item.cohort }}</td>
+        <td>{{ item.group }}</td>
+        <td>{{ item.action }}</td>
+        <td>{{ item.code }}</td>
+        <td>{{ item.note }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if report %}
+  <h2>导入完成 — {{ report.file_name }}</h2>
+  <ul>
+    <li>新增 {{ report.created }} · 更新 {{ report.updated }} · 自动绑定 {{ report.auto_matched }}</li>
+    <li>冲突 {{ report.conflicts }} · 错误 {{ report.errors }}</li>
+  </ul>
+  <p><a href="{% url 'admin:accounts_memberidentity_changelist' %}">返回社员身份列表</a></p>
+  {% endif %}
+
+</div>
+{% endblock %}

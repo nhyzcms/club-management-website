@@ -42,7 +42,7 @@
 |---|---|---|
 | `/admin/` | Django Admin 管理后台 | [管理后台指南](../operations/admin-guide.md) |
 | `/site-policy/` | 站点策略公开投影 | [common](../api/common.md) |
-| `/auth/` | 账号、登录、验证、资料 | [accounts](../api/accounts.md) |
+| `/auth/` | 账号、登录、认证、资料 | [accounts](../api/accounts.md) |
 | `/tasks/` `/messaging/` `/activities/` `/exam_board/` `/news/` `/reviews/` `/about/` `/tutorials/` `/recruitment/` `/attachments/` | 各业务模块 API | 各模块文档 |
 | `/uploads/` | TUS 断点续传端点 | [attachments](../api/attachments.md) |
 | `/file/…` | 公开媒体文件服务 | — |
@@ -56,7 +56,7 @@
 
 | App | 职责 | 关键概念 | 参考 |
 |---|---|---|---|
-| `accounts` | 账号、登录 / 会话、身份验证、资料与头像 | 单会话、登录保护、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) |
+| `accounts` | 账号、登录 / 会话、身份认证、资料与头像 | 单会话、登录保护、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) |
 | `common` | 站点策略、维护模式 | `SiteSettings` 运行时策略 | [API](../api/common.md) |
 | `news` | 社团新闻 | 发布审核门控 | [API](../api/news.md) |
 | `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
@@ -79,10 +79,10 @@
 - 前端消费服务端算好的语义化 `can_*` 布尔，不接触原始权限代号。
 - 详见 [访问控制指南](../guides/access-control.md) 与 [ADR-0005](../adr/0005-access-control-principle.md)。
 
-### 身份验证
+### 身份认证
 
-- 登录后需通过身份验证（人工审核 / 委任 / 认证码通道：见 [ADR-0006](../adr/0006-verification-model.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0020](../adr/0020-authcode-verification-channel.md)）才计为正式「用户」；门禁分级：公开 → 登录 → 已验证 → 权限。
-- 详见 [身份验证指南](../guides/verification.md)。
+- 登录后需通过身份认证（人工审核 / 委任 / 认证码通道：见 [ADR-0006](../adr/0006-verification-model.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0020](../adr/0020-authcode-verification-channel.md)）才计为正式「用户」；门禁分级：公开 → 登录 → 已认证 → 权限。
+- 详见 [身份认证指南](../guides/certification.md)。
 
 ### 单会话与登录保护
 

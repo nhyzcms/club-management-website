@@ -97,7 +97,7 @@ export default function LoginModal({
         setError(humanizeApiError(apiError));
         return;
       }
-      // 自助注册三态：账号已停用 / 邮箱未验证（后者附「重发验证邮件」入口）
+      // 自助注册三态：账号已停用 / 邮箱未认证（后者附「重发认证邮件」入口）
       if (apiError?.kind === "account_disabled") {
         setError(humanizeApiError(apiError));
         return;
@@ -154,7 +154,7 @@ export default function LoginModal({
           )}
           {resendEmail && (
             <div className="hint center">
-              <a href="#" onClick={(e) => { e.preventDefault(); onClose(); navigate(`/verify-email-pending?email=${encodeURIComponent(resendEmail)}`); }}>重发验证邮件 →</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); onClose(); navigate(`/verify-email-pending?email=${encodeURIComponent(resendEmail)}`); }}>重发认证邮件 →</a>
             </div>
           )}
           <div className="seg seg-sm" role="tablist" aria-label="登录方式">

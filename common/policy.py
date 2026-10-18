@@ -24,6 +24,11 @@ DEFAULT_LOGIN_PER_USERNAME_PER_HOUR = 10
 DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY = 10
 DEFAULT_REPORTS_PER_USER_PER_DAY = 10
 DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR = 10
+# 社员身份编号（ADR-0025）：自助认领 / 扫码校验开关与限流。
+DEFAULT_MEMBER_CLAIM_ENABLED = True
+DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR = 5
+DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY = 20
+DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR = 60
 DEFAULT_SYNC_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 DEFAULT_TUS_MEDIA_MAX_BYTES = 500 * 1024 * 1024
 DEFAULT_AUTO_UPDATE_ENABLED = True
@@ -55,6 +60,10 @@ class SitePolicy:
     feedback_anon_per_ip_per_day: int
     reports_per_user_per_day: int
     authcode_redeem_per_user_per_hour: int
+    member_claim_enabled: bool
+    member_claim_per_user_per_hour: int
+    member_claim_per_ip_per_day: int
+    member_check_per_ip_per_hour: int
     sync_upload_max_bytes: int
     tus_media_max_bytes: int
     auto_update_enabled: bool
@@ -85,6 +94,10 @@ class SitePolicy:
             feedback_anon_per_ip_per_day=DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
             reports_per_user_per_day=DEFAULT_REPORTS_PER_USER_PER_DAY,
             authcode_redeem_per_user_per_hour=DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
+            member_claim_enabled=DEFAULT_MEMBER_CLAIM_ENABLED,
+            member_claim_per_user_per_hour=DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
+            member_claim_per_ip_per_day=DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
+            member_check_per_ip_per_hour=DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
             sync_upload_max_bytes=DEFAULT_SYNC_UPLOAD_MAX_BYTES,
             tus_media_max_bytes=DEFAULT_TUS_MEDIA_MAX_BYTES,
             auto_update_enabled=DEFAULT_AUTO_UPDATE_ENABLED,
@@ -130,6 +143,16 @@ def _snapshot(row) -> SitePolicy:
         ),
         authcode_redeem_per_user_per_hour=getattr(
             row, "authcode_redeem_per_user_per_hour", DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
+        ),
+        member_claim_enabled=getattr(row, "member_claim_enabled", DEFAULT_MEMBER_CLAIM_ENABLED),
+        member_claim_per_user_per_hour=getattr(
+            row, "member_claim_per_user_per_hour", DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
+        ),
+        member_claim_per_ip_per_day=getattr(
+            row, "member_claim_per_ip_per_day", DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
+        ),
+        member_check_per_ip_per_hour=getattr(
+            row, "member_check_per_ip_per_hour", DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
         ),
         sync_upload_max_bytes=row.sync_upload_max_bytes,
         tus_media_max_bytes=row.tus_media_max_bytes,

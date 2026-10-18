@@ -4,7 +4,7 @@
 
 > 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005 访问控制原则](../adr/0005-access-control-principle.md)、[ADR-0010 运行时站点策略](../adr/0010-runtime-site-policy.md)、[ADR-0015 Channels 无 Redis：WebSocket 只推送](../adr/0015-channels-without-redis.md)、[ADR-0016 评论区与私信会话分离](../adr/0016-comment-thread-vs-dm.md)、[ADR-0017 统一审核系统](../adr/0017-unified-moderation-system.md)
 
-挂载前缀 `/messaging/`，路由由 DRF `DefaultRouter` 生成：`/messaging/threads/`、`/messaging/comments/`、`/messaging/conversations/`、`/messaging/notifications/`、`/messaging/mutes/`、`/messaging/banners/`。写入规则（验证、全站禁言、评论区状态、嵌套上限、3 分钟撤回、墓碑删除）集中在 `messaging/services.py`；HTTP 是事实源，WebSocket 只是推送适配器。举报案的默认处置（评论墓碑删除 / 全站禁言）由 reviews 的特权服务调用，不经本模块端点。
+挂载前缀 `/messaging/`，路由由 DRF `DefaultRouter` 生成：`/messaging/threads/`、`/messaging/comments/`、`/messaging/conversations/`、`/messaging/notifications/`、`/messaging/mutes/`、`/messaging/banners/`。写入规则（认证门禁、全站禁言、评论区状态、嵌套上限、3 分钟撤回、墓碑删除）集中在 `messaging/services.py`；HTTP 是事实源，WebSocket 只是推送适配器。举报案的默认处置（评论墓碑删除 / 全站禁言）由 reviews 的特权服务调用，不经本模块端点。
 
 **通用规则速查**
 
@@ -13,7 +13,7 @@
 - 拧状态 / 墓碑删评论：**宿主主人**（news 作者 / activity、task 创建人）或持 `messaging.manage_comment_thread`；不随「管理新闻 / 活动 / 任务」自动获得。
 - 撤回窗口 3 分钟（评论与私信一致）；评论已有回复则不能撤回。
 - 站点策略开关：`comments_enabled` 关闭 → 发评论 403「评论功能已关闭」；`dms_enabled` 关闭 → 发 / 发起私信 403「私信功能已关闭」（`get_policy()`，ADR-0010）。
-- 未验证（`IsVerified`）与全站禁言（`IsNotMuted`）只拦**写**动作；被禁言者仍可登录、阅读、接收。
+- 未认证（`IsVerified`）与全站禁言（`IsNotMuted`）只拦**写**动作；被禁言者仍可登录、阅读、接收。
 - 通知**未读聚合**：同一「未读事项」（源 × 事件 × 事项）只保留一条通知，读掉之后才重新通知（见「通知列表与详情」）。
 
 ## 端点一览
@@ -24,18 +24,18 @@
 | GET | `/messaging/threads/{id}/` | 公开 | — | 评论区详情（不可见 → 404）|
 | PATCH | `/messaging/threads/{id}/` | 登录 | 宿主主人或 `messaging.manage_comment_thread` | 改评论区状态 |
 | GET | `/messaging/comments/?thread=` | 公开 | — | 根评论分页（子评论嵌在 `replies`）|
-| POST | `/messaging/comments/` | 已验证 | —（另受站点开关与全站禁言限制）| 发表评论 / 回复 |
+| POST | `/messaging/comments/` | 已认证 | —（另受站点开关与全站禁言限制）| 发表评论 / 回复 |
 | POST | `/messaging/comments/{id}/retract/` | 登录 | —（仅作者本人）| 撤回自己的评论 |
 | POST | `/messaging/comments/{id}/delete/` | 登录 | 宿主主人或 `messaging.manage_comment_thread` | 墓碑删除评论 |
 | GET | `/messaging/conversations/` | 登录 | — | 我的会话列表（分页）|
 | POST | `/messaging/conversations/` | 登录 | — | 禁用，固定 405 |
 | GET | `/messaging/conversations/{id}/` | 登录 | —（仅参与者）| 会话详情 |
-| POST | `/messaging/conversations/{id}/send_message/` | 已验证 | —（仅参与者；另受全站禁言限制）| 发送私信 |
+| POST | `/messaging/conversations/{id}/send_message/` | 已认证 | —（仅参与者；另受全站禁言限制）| 发送私信 |
 | POST | `/messaging/conversations/{id}/retract_message/` | 登录 | —（仅发送者本人）| 撤回私信 |
 | POST | `/messaging/conversations/{id}/mark_read/` | 登录 | —（仅参与者）| 会话消息批量标已读（联动该会话未读通知）|
 | GET | `/messaging/conversations/unread_count/` | 登录 | — | 私信未读总数（铃铛红点）|
 | GET | `/messaging/conversations/messages/?conversation_id=` | 登录 | —（仅参与者）| 会话消息倒序分页 |
-| POST | `/messaging/conversations/start_private/` | 已验证 | —（另受全站禁言限制）| 发起 / 复用 1:1 会话 |
+| POST | `/messaging/conversations/start_private/` | 已认证 | —（另受全站禁言限制）| 发起 / 复用 1:1 会话 |
 | GET | `/messaging/notifications/` | 登录 | — | 我的通知列表（分页）|
 | GET | `/messaging/notifications/{id}/` | 登录 | — | 通知详情（仅收件人）|
 | GET | `/messaging/notifications/unread_count/` | 登录 | — | 未读通知数 |
@@ -112,7 +112,7 @@
 ### 发表评论
 `POST /messaging/comments/`
 
-**认证**：已验证；**权限**：—（另受站点开关、全站禁言与评论区状态限制）
+**认证**：已认证；**权限**：—（另受站点开关、全站禁言与评论区状态限制）
 
 **请求体**
 
@@ -129,7 +129,7 @@
 | 状态码 | 场景 |
 |---|---|
 | 400 | 缺少 `thread`；`父评论不存在`；`评论内容不能为空`；`评论区已禁言`；`评论区已关闭`；`超过最大嵌套层数`（上限 `comment_max_depth`，默认 8）|
-| 403 | 站点 `comments_enabled` 关闭 → `评论功能已关闭`；未验证 → `请先完成账号验证后再使用此功能（发帖 / 发消息 / 建申报等）。`；被全站禁言 → `你已被全站禁言，暂时不能发言。` |
+| 403 | 站点 `comments_enabled` 关闭 → `评论功能已关闭`；未认证 → `请先完成账号认证后再使用此功能（发帖 / 发消息 / 建申报等）。`；被全站禁言 → `你已被全站禁言，暂时不能发言。` |
 | 404 | 评论区不存在 / 不可见 |
 
 发布成功向该区订阅者推送 `comment` 事件，并给被回复者 / 被 @ 的可见者写通知（类别 `comment`）。
@@ -190,7 +190,7 @@
 ### 发送私信
 `POST /messaging/conversations/{id}/send_message/`
 
-**认证**：已验证；**权限**：参与者（另受全站禁言限制）
+**认证**：已认证；**权限**：参与者（另受全站禁言限制）
 
 **请求体**：`{ "content": "今晚有空吗？" }`（必填，去空白后非空；其中 `@username` 会解析进 `mentions`）。
 
@@ -205,7 +205,7 @@
 
 `is_read` 表示当前用户是否已有该消息的已读记录；发送同时刷新会话 `updated_at`，并向对方推送 `dm` 事件。
 
-**错误**：400 `消息内容不能为空`；403 站点 `dms_enabled` 关闭 → `私信功能已关闭`、未验证、全站禁言；404 会话不存在或不参与。
+**错误**：400 `消息内容不能为空`；403 站点 `dms_enabled` 关闭 → `私信功能已关闭`、未认证、全站禁言；404 会话不存在或不参与。
 
 ### 撤回私信
 `POST /messaging/conversations/{id}/retract_message/`
@@ -242,13 +242,13 @@
 ### 发起私信
 `POST /messaging/conversations/start_private/`
 
-**认证**：已验证；**权限**：—（另受全站禁言限制）
+**认证**：已认证；**权限**：—（另受全站禁言限制）
 
-**请求体**：`{ "user_id": 7 }`（必填，对方须已验证）。
+**请求体**：`{ "user_id": 7 }`（必填，对方须已认证）。
 
 **响应**：新建返回 `201 Created`，已有 1:1 会话则复用返回 `200 OK`；正文均为会话对象（结构同会话列表条目）。
 
-**错误**：400 缺少 `user_id`、`不能和自己对话`、`对方尚未完成验证`；403 站点 `dms_enabled` 关闭 → `私信功能已关闭`、自己已被全站禁言；404 `用户不存在`。
+**错误**：400 缺少 `user_id`、`不能和自己对话`、`对方尚未完成认证`；403 站点 `dms_enabled` 关闭 → `私信功能已关闭`、自己已被全站禁言；404 `用户不存在`。
 
 ### 通知列表与详情
 `GET /messaging/notifications/` · `GET /messaging/notifications/{id}/`
@@ -276,7 +276,7 @@
 | `comment` | `comment_replied` | 有人回复你的评论 | `comment_id`、`thread_id`、`parent_id`、`news_id` / `activity_id` / `task_id` |
 | `comment` | `comment_mentioned` | 评论中 @ 你（你能看见该宿主才通知）| 同上 |
 | `dm` | `new_message` | 收到新私信（**按会话聚合**：同会话连发多条只提示一次，直到读掉）| `type` = `dm`、`id`（会话 id）、`title`、`url`；聚合后附 `count`（累计条数）、`last_at` |
-| `validity` | `expiring_2m` / `expiring_1m` | 认证 / 管理员身份**到期前**两个月 / 一个月（到期会降权，见[身份验证指南](../guides/verification.md#到期前提醒降权预警））| `channel`、`channel_label`、`level`、`expires_on`、`days_left`、`url`（验证面板）|
+| `validity` | `expiring_2m` / `expiring_1m` | 认证 / 管理员身份**到期前**两个月 / 一个月（到期会降权，见[身份认证指南](../guides/certification.md#到期前提醒降权预警））| `channel`、`channel_label`、`level`、`expires_on`、`days_left`、`url`（认证面板）|
 | `review` | `approved` / `rejected` / `removed` | 发布审核通过 / 驳回 / 下架（通知宿主主人）| `type`（news / activity / tutorial）、`id`、`url` |
 | `review` | `closed` | 署名意见反馈了结 | `type` = `feedback`、`id`、`url`（有 note 时附 `reason`）|
 | `discipline` | `muted` / `mute_lifted` / `mute_expired` | 全站禁言授予 / 解除 / 到期惰性解除 | `mute_id`（`muted` 另附 `reason`、`ends_at`）|

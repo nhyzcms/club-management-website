@@ -111,7 +111,7 @@ def can_vote(activity, user):
     """投票守卫：类型与状态（众议=open；展示=``voting_enabled`` 且 open）+ 受众放行。
 
     受众 ``public``：任何人（含未登录游客——视图按设备标识判重、记录 IP）；
-    受众 ``members``：须已登录（验证轴由 ``IsVerified`` 在视图层把关）。
+    受众 ``members``：须已登录（认证轴由 ``IsVerified`` 在视图层把关）。
     """
     if activity.audience != "public" and not (
         user and getattr(user, "is_authenticated", False)
@@ -236,7 +236,7 @@ def transition_overdue():
 def can_submit(activity, user):
     """征集投稿守卫：类型=征集、状态=collecting、用户已认证。
 
-    「已验证」由视图的 IsVerified 把关；满额由视图在投稿后用
+    「已认证」由视图的 IsVerified 把关；满额由视图在投稿后用
     ``maybe_close_collection_on_cap`` 收口。
     """
     return (

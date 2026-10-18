@@ -120,14 +120,14 @@ describe("UserMenu（GitHub 式头像菜单）", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
   });
 
-  it("条件项：未验证 / 私信开关 / 审核权限正确裁剪菜单", async () => {
+  it("条件项：未认证 / 私信开关 / 审核权限正确裁剪菜单", async () => {
     setup({ verified: false, dmsEnabled: false, canReview: false });
     fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
     expect(screen.queryByRole("menuitem", { name: "私信" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "待办" })).not.toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "审核队列" })).not.toBeInTheDocument();
-    // 未验证时内容组仍有「个人中心 / 通知」
+    // 未认证时内容组仍有「个人中心 / 通知」
     expect(screen.getByRole("menuitem", { name: "通知" })).toBeInTheDocument();
   });
 });

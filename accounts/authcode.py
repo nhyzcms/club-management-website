@@ -67,7 +67,7 @@ def redeem_authcode(user, raw_code: str) -> AuthCode:
         ).first()
         if current is not None and (current.expires_at is None or current.expires_at > now):
             # 认证仍有效：无需再兑换（顺序防线；唯一约束兜底并发）。
-            raise AuthCodeError("账号已完成验证，无需使用认证码。")
+            raise AuthCodeError("账号已完成认证，无需使用认证码。")
 
         AuthCodeRedemption.objects.create(authcode=code, user=user)
         code.used_count += 1

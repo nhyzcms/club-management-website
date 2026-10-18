@@ -13,6 +13,7 @@ import SessionsPanel from "../components/profile/SessionsPanel";
 import ContentListPanel from "../components/profile/ContentListPanel";
 import PermissionsPanel from "../components/profile/PermissionsPanel";
 import VerificationPanel from "../components/profile/VerificationPanel";
+import MemberIdentityPanel from "../components/profile/MemberIdentityPanel";
 import MuteUserPanel from "../components/profile/MuteUserPanel";
 import NotificationPreferencesPanel from "../components/profile/NotificationPreferencesPanel";
 import ReportButton from "../components/ReportButton";
@@ -22,7 +23,8 @@ import "../styles/profile.css";
 
 const SELF_TABS = [
   { key: "profile", label: "资料编辑" },
-  { key: "verification", label: "账号验证" },
+  { key: "verification", label: "账号认证" },
+  { key: "member", label: "社员身份" },
   { key: "notify", label: "通知" },
   { key: "password", label: "改密码" },
   { key: "sessions", label: "登录记录" },
@@ -139,6 +141,7 @@ export default function UserProfile() {
             <div className="profile-panel">
               {active === "profile" && <ProfileEditPanel onSaved={onProfileSaved} />}
               {active === "verification" && <VerificationPanel />}
+              {active === "member" && <MemberIdentityPanel />}
               {active === "notify" && <NotificationPreferencesPanel />}
               {active === "password" && <PasswordPanel />}
               {active === "sessions" && <SessionsPanel />}

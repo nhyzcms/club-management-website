@@ -117,7 +117,7 @@ export const activityApi = {
       body: JSON.stringify({ collection_id: collectionId, submission_ids: submissionIds }),
     }),
 
-  // 正文内嵌图片上传（已验证成员）：返回 {url}
+  // 正文内嵌图片上传（已认证成员）：返回 {url}
   uploadImage: (file: File): Promise<{ url: string }> => {
     const fd = new FormData();
     fd.append("image", file);

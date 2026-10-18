@@ -61,7 +61,7 @@ class BaseChannel:
     uses_shared_connection: bool = False  # 是否复用投递队列的共享外发连接（如 email 的 SMTP）
 
     def is_available(self, user) -> bool:
-        """该用户当前是否可用此通道（如邮箱已验证）。"""
+        """该用户当前是否可用此通道（如邮箱已认证）。"""
         return True
 
     def deliver(self, delivery, *, connection=None) -> None:

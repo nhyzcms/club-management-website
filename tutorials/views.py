@@ -21,7 +21,7 @@ from .serializers import (
 
 
 class TutorialViewSet(viewsets.ModelViewSet):
-    """教程集锦：公开读已过审；已验证成员可上传；收藏 + 去重播放量。"""
+    """教程集锦：公开读已过审；已认证成员可上传；收藏 + 去重播放量。"""
 
     parser_classes = [JSONParser, MultiPartParser, FormParser]
     filterset_fields = ["file_type"]

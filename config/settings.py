@@ -35,7 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # 测试库数据每次清空、绝不进生产，密码强度在此无意义。
 if TESTING:
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
-    # 邮件走内存后端：注册/验证/重置路径发信不触网、不阻塞、可断言 mail.outbox。
+    # 邮件走内存后端：注册/认证/重置路径发信不触网、不阻塞、可断言 mail.outbox。
     # （防御性：本地若在 .env 配了 EMAIL_HOST_USER，否则会被切到真实 SMTP smtp.163.com。）
     EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
