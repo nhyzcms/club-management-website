@@ -15,7 +15,9 @@
 - 招聘与审批：招聘信息、面试/审核流程
 - 移动端：独立的手机版站点（`/#/m`）。底部 tab 与首页铃铛带未读数字红点（私信 + 通知），
   「我的」页列出带未读数的私信/通知入口，并提供**外观**切换（浅色 / 深色 / 跟随系统）；
-  Android 壳内默认跟随系统深色（壳的 UA 标记见 `frontend/src/utils/device.ts` 的 `isAppShell`）
+  Android 壳内默认跟随系统深色（壳的 UA 标记见 `frontend/src/utils/device.ts` 的 `isAppShell`）；
+  每次刷新都会对比 UA 类别，移动侧（手机浏览器 / App 壳）与桌面侧切换后自动落到对应版本的等价页面
+  （`frontend/src/utils/uaSwitch.ts`，类别不变时深链接不动）
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA
 - 运维能力：一键部署脚本（`scripts/install.sh`）、GitHub Release 自动更新（维护页 / 回滚）、systemd + Nginx + Gunicorn（ASGI / 单 worker），适合内部低门槛生产环境
 

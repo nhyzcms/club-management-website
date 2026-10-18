@@ -283,6 +283,7 @@ try {
 - 手机版内闭环：首页快捷格、列表卡片与「更多」一律指向 `/m/*`——列表进详情、教程、加入都不跳出手机版。
 - 共享外壳：样式 `styles/mobile.css`（`.m-app` 作用域：topbar / 渐变 hero / 四宫格快捷入口 / 卡片流 / 固定底部 tab），每个页面自渲染 `<MobileTabBar />`（`components/MobileTabBar.tsx`，四个 tab：首页/活动/新闻/我的，`NavLink` 指向 `/m/*`，首页用 `end` 精确匹配）。
 - 自动改道：`HomeRoute` 在根路径用 `utils/device.ts::isMobileDevice()`（UA 正则命中 iPhone/Android/Windows Phone 等）判断手机浏览器，渲染 `<Navigate to="/m" replace />`；深链接、桌面端与「请求桌面站点」模式不受影响。
+- UA 变化改道：`index.tsx` 在 React 渲染前调用 `utils/uaSwitch.ts::applyUaSwitch()`，把当前 UA 归为三档（`app` / `mobile` / `desktop`，见 `device.ts::classifyUserAgent`）并与 `localStorage` 里的上一次类别比较。**只在跨「移动侧 / 桌面侧」变化时**跳一次：变成移动侧 → 手机版等价页（`/news/:id` → `/m/news/:id`，无对应页面则 `/m`），变成桌面侧 → 桌面版等价页（`/m/me` → `/profile`，其余回落 `/`）。只比类别不比字符串，浏览器版本号升级、壳版本升级都不会误跳；类别不变时深链接保持原样。跳转用 `history.replaceState` 改 hash，不新增历史记录、不产生闪屏。
 - `/m/me` 按真实契约 `{user, role, profile}` 渲染：显示名与头像取 `profile`、身份徽章取 `role.label`；`role.variant ∈ {admin, superadmin}` 时显示「进入后台管理」行（`window.location.href = "/admin/"`）；匿名显示登录 CTA；退出登录 = `api.logout()` + 刷新。
 - 加固点：网格用 `repeat(4, minmax(0, 1fr))` 防溢出、`.m-app` 上 `overflow-x: hidden`、固定条带 `env(safe-area-inset-*)` 安全区 padding。
 
