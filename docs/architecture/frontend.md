@@ -178,6 +178,8 @@ frontend/
 - **改道**：`App.tsx` 的 `MobileAware` 在手机 UA 下把 `/reviews`、`/inbox`、`/notifications`、`/tasks`、`/tasks/:id`
   `replace` 到对应 `/m` 页面（保留深链接语义，桌面 UA 完全不受影响）。改道发生在 `ProtectedRoute` 外层，
   未登录用户不会先触发一次 `/auth/me/` 再跳转。
+- **刷新改道**：`utils/uaSwitch.ts` 的 `TO_MOBILE` / `TO_DESKTOP` 也登记了这批页面
+  （含 `/tasks/:id` 的数字 id 特判），否则切换 UA 类别刷新时会掉回 `/m` 首页。
 - **共用逻辑**：审核台的取数与「跳过已浏览条目」规则抽到 `src/utils/reviewDesk.ts`，桌面 `ReviewQueuePage`
   与手机 `MobileReviewPage` 共用 `deskTabs()` / `firstIdentity()` / `firstContent()` / `firstFeedback()` / `firstReport()`。
   新增审核桌时必须改这一处，否则两端会漂移（`src/utils/__tests__/reviewDesk.test.ts` 锁定顺序与可见性）。
@@ -306,6 +308,7 @@ try {
 - 手机版内闭环：首页快捷格、列表卡片与「更多」一律指向 `/m/*`——列表进详情、教程、加入都不跳出手机版。
 - 共享外壳：样式 `styles/mobile.css`（`.m-app` 作用域：topbar / 渐变 hero / 四宫格快捷入口 / 卡片流 / 固定底部 tab），每个页面自渲染 `<MobileTabBar />`（`components/MobileTabBar.tsx`，四个 tab：首页/活动/新闻/我的，`NavLink` 指向 `/m/*`，首页用 `end` 精确匹配）。
 - 自动改道：`HomeRoute` 在根路径用 `utils/device.ts::isMobileDevice()`（UA 正则命中 iPhone/Android/Windows Phone 等）判断手机浏览器，渲染 `<Navigate to="/m" replace />`；深链接、桌面端与「请求桌面站点」模式不受影响。
+- UA 变化改道：`index.tsx` 在 React 渲染前调用 `utils/uaSwitch.ts::applyUaSwitch()`，把当前 UA 归为三档（`app` / `mobile` / `desktop`，见 `device.ts::classifyUserAgent`）并与 `localStorage` 里的上一次类别比较。**只在跨「移动侧 / 桌面侧」变化时**跳一次：变成移动侧 → 手机版等价页（`/news/:id` → `/m/news/:id`，无对应页面则 `/m`），变成桌面侧 → 桌面版等价页（`/m/me` → `/profile`，其余回落 `/`）。只比类别不比字符串，浏览器版本号升级、壳版本升级都不会误跳；类别不变时深链接保持原样。跳转用 `history.replaceState` 改 hash，不新增历史记录、不产生闪屏。
 - `/m/me` 按真实契约 `{user, role, profile}` 渲染：显示名与头像取 `profile`、身份徽章取 `role.label`；`role.variant ∈ {admin, superadmin}` 时显示「进入后台管理」行（`window.location.href = "/admin/"`）；匿名显示登录 CTA；退出登录 = `api.logout()` + 刷新。
 - 加固点：网格用 `repeat(4, minmax(0, 1fr))` 防溢出、`.m-app` 上 `overflow-x: hidden`、固定条带 `env(safe-area-inset-*)` 安全区 padding。
 

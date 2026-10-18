@@ -15,7 +15,9 @@
 - 招聘与审批：招聘信息、面试/审核流程
 - 移动端：独立的手机版站点（`/#/m`）。底部 tab 与首页铃铛带未读数字红点（私信 + 通知），
   「我的」页列出带未读数的私信/通知入口，并提供**外观**切换（浅色 / 深色 / 跟随系统）；
-  Android 壳内默认跟随系统深色（壳的 UA 标记见 `frontend/src/utils/device.ts` 的 `isAppShell`）
+  Android 壳内默认跟随系统深色（壳的 UA 标记见 `frontend/src/utils/device.ts` 的 `isAppShell`）；
+  每次刷新都会对比 UA 类别，移动侧（手机浏览器 / App 壳）与桌面侧切换后自动落到对应版本的等价页面
+  （`frontend/src/utils/uaSwitch.ts`，类别不变时深链接不动）
 - 手机版工作台（2026-10-18）：审核台 `/#/m/review`（身份 / 内容 / 意见反馈 / 举报案）、
   待办 `/#/m/inbox`、通知 `/#/m/notifications`、任务列表与详情 `/#/m/tasks`；
   「我的」按权限分「工作 / 常用」两组，首页九宫格对登录用户追加「任务」「待办」；
