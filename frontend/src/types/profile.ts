@@ -1,6 +1,8 @@
 export type RoleVariant = "visitor" | "user" | "admin" | "superadmin";
 
 export interface UserProfileData {
+  /** 已注销账号的墓碑响应（ADR-0025）：只为 true 时下方字段可能为空。 */
+  deleted?: boolean;
   user: { id: number; username: string; date_joined: string; email?: string };
   profile: {
     avatar: string | null;

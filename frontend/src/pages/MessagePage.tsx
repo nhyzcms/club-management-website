@@ -105,6 +105,7 @@ export default function MessagePage() {
   };
 
   const activeOther = activeConv?.participants.find((p) => p.id !== user?.id);
+  const peerDeleted = !!activeOther?.is_deleted;
 
   if (!policy.dms_enabled) {
     // 站点策略关闭私信：页面兜底（入口已隐藏，直接访问 URL 时给提示）。
@@ -208,7 +209,13 @@ export default function MessagePage() {
                   {activeOther && <Link to={`/u/${activeOther.id}`}><Avatar user={activeOther} size="md" /></Link>}
                   <h3>{getConvTitle(activeConv)}</h3>
                 </div>
-                {user && <MessageThread conversationId={activeConv.id} currentUser={user} />}
+                {user && (
+                  <MessageThread
+                    conversationId={activeConv.id}
+                    currentUser={user}
+                    peerDeleted={peerDeleted}
+                  />
+                )}
               </>
             ) : (
               <div className="msg-empty">选择一个会话，或点「写私信」搜索用户开始聊天</div>

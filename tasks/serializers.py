@@ -57,30 +57,47 @@ class CommentThreadHostMixin(serializers.Serializer):
 
 
 class SimpleUserSerializer(serializers.ModelSerializer):
-    """轻量用户引用（id / username / nickname / avatar）。
+    """轻量用户引用（id / username / nickname / avatar / is_deleted）。
 
     ``email`` 是私密字段，仅本人可见——与 ``accounts.visibility`` 的
     ``can_see_private = owner`` 对齐（见 accounts/tests_visibility.py 字段可见性
     矩阵）。此前 email 列在 ``fields`` 里无条件输出，使所有复用本序列化器的
     公开读接口（新闻 / 教程 / 活动等）随内容泄露他人邮箱；现改为在
     :meth:`to_representation` 中仅当查看者即本人时动态挂载。
+
+    已注销账号（ADR-0025）：``is_deleted=True``，并把 username / avatar 置空、
+    nickname 统一替换成「该用户已注销」——历史私信、评论、新闻作者位都靠这一处
+    收口，前端 `nickname || username` 的老写法会自然显示该文案，不泄露旧昵称。
     """
 
     nickname = serializers.CharField(source="profile.nickname", default="")
     avatar = serializers.SerializerMethodField()
+    is_deleted = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "nickname", "avatar"]
+        fields = ["id", "username", "nickname", "avatar", "is_deleted"]
 
     def get_avatar(self, obj):
         profile = getattr(obj, "profile", None)
-        if profile and profile.avatar:
+        if profile and profile.avatar and profile.deleted_at is None:
             return profile.avatar.url
         return None
 
+    def get_is_deleted(self, obj):
+        from accounts.models import is_deleted_user
+
+        return is_deleted_user(obj)
+
     def to_representation(self, obj):
         data = super().to_representation(obj)
+        if data.get("is_deleted"):
+            from accounts.models import DELETED_ACCOUNT_LABEL
+
+            data["username"] = ""
+            data["nickname"] = DELETED_ACCOUNT_LABEL
+            data["avatar"] = None
+            return data
         request = self.context.get("request")
         viewer = getattr(request, "user", None)
         if viewer is not None and viewer.is_authenticated and viewer.pk == obj.pk:

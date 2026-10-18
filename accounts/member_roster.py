@@ -311,6 +311,9 @@ def auto_match_identities(rows: list[MemberIdentity] | None = None) -> int:
 
     profiles = (
         Profile.objects.exclude(real_name="")
+        # 已注销 / 已停用账号不参与自动匹配（ADR-0027）：否则同名的新名册行会被绑到
+        # 一个永远不会再登录的账号上，且无法再被本人认领。
+        .filter(user__is_active=True, deleted_at__isnull=True)
         .filter(user__member_identity__isnull=True)
         .select_related("user")
     )

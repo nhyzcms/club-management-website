@@ -29,7 +29,8 @@
 | GET | `/auth/me/` | 登录 | — | 当前用户（资料 + 能力投影） |
 | GET | `/auth/profile/` | 登录 | — | 同上（同一响应，历史别名） |
 | POST | `/auth/profile/update/` | 登录 | — | 更新资料 / 头像（multipart） |
-| POST | `/auth/profile/change-password/` | 登录 | — | 修改密码 |
+| POST | `/auth/profile/change-password/` | 登录 | — | 修改密码（需 Step-up） |
+| POST | `/auth/account/delete/` | 登录 | — | 注销账号（软删除 + 敏感信息清除，[ADR-0027](../adr/0027-account-deletion.md)） |
 | GET | `/auth/sessions/` | 登录 | — | 本人最近登录记录 |
 | POST | `/auth/password-reset/` | 公开 | — | 发起密码重置 |
 | POST | `/auth/password-reset/confirm/` | 公开 | — | 确认新密码 |
@@ -191,6 +192,22 @@
 `POST /auth/profile/change-password/`
 
 **认证**：登录；**权限**：—。请求体 JSON：`old_password`（是）、`new_password`（是，≥8 字符）。**响应 `200 OK`**：`{"message": "密码修改成功"}`；**错误**：400 `{"error": "原密码不正确"}` 或表单校验消息。
+
+### 注销账号
+
+`POST /auth/account/delete/`
+
+**认证**：登录；**权限**：—。请求体 JSON：`password`（是）、`confirm`（是，必须逐字等于 `注销账号`）。账号配置了可用安全验证方式（认证邮箱 / 安全问题）时另需 `X-StepUp-Grant` 头（scope `delete_account`），缺 grant → 403 `{"error": "需要先完成安全验证。", "reason": "step_up_required", "scope": "delete_account"}`；两种方式都没有的账号退回「密码 + 逐字确认」。
+
+**响应 `200 OK`**：`{"message": "账号已注销"}`，同时当前会话被清空（需重新登录，但账号已停用）。
+
+**错误**：
+
+- 400 `confirmation_required` / `password_required` / `password_incorrect`；
+- 403 `account_deletion_protected`（管理员 / 超管账号不允许自助注销）；
+- 409 `account_already_deleted`（重复注销）。
+
+注销语义见 [ADR-0027](../adr/0027-account-deletion.md)：`User` / `Profile` 行保留（`Profile.deleted_at` 标记），邮箱、头像、身份证明材料、验证通道、登录设备、通知与安全验证残留删除；真实姓名、账号唯一编码与社员编号（`MemberIdentity`）保留。
 
 ### 登录记录（会话列表）
 
@@ -359,6 +376,8 @@
 `GET /auth/users/{id}/profile/`
 
 **认证**：登录；**权限**：—（按查看者身份裁剪字段）。`id` 不存在或账号停用 → 404 `{"error": "用户不存在"}`。
+
+已注销账号（`Profile.deleted_at` 非空）例外返回**墓碑响应**：`{"deleted": true, "user": {"id", "username": ""}, "profile": {"avatar": null, "nickname": "", "bio": ""}, "role": {"label": "已注销"}, "viewer": {...}}`，不含权限 / 组 / 私密字段（[ADR-0027](../adr/0027-account-deletion.md)）。
 
 **响应 `200 OK`**（本人查看自己的示例；他人查看时省略 ★ 字段）
 

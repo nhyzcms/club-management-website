@@ -80,6 +80,15 @@
 .mb-retract:hover { text-decoration: underline; }
 .msg-error { padding: var(--s-2) var(--s-4); font-size: 13px; color: var(--danger); }
 
+/* 对方已注销（ADR-0025）：历史消息可读，输入区禁用。 */
+.msg-deleted-banner {
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-600);
+  font-size: 13px;
+}
+
 .msg-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
 
 .msg-input { padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); display: flex; gap: var(--s-2); }

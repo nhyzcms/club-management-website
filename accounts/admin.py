@@ -162,8 +162,8 @@ class ManualChannelStatusFilter(admin.SimpleListFilter):
 
 
 class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
-    list_display = ("user", "real_name", "identity", "verified", "registration_deadline")
-    list_filter = (VerifiedFilter, "identity")
+    list_display = ("user", "real_name", "identity", "verified", "deleted", "registration_deadline")
+    list_filter = (VerifiedFilter, "identity", "deleted_at")
     search_fields = ("user__username", "user__email", "real_name")
     actions = list(_IDENTITY_ACTIONS)
 
@@ -171,9 +171,13 @@ class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
     def verified(self, obj):
         return is_verified(obj.user)
 
+    @admin.display(boolean=True, description="已注销")
+    def deleted(self, obj):
+        return obj.deleted_at is not None
+
     def get_readonly_fields(self, request, obj=None):
-        # expiry_disabled_at 系统维护；registration_deadline 仅持 manage_validity 且改下位可改。
-        ro = ["expiry_disabled_at"]
+        # expiry_disabled_at / deleted_at 系统维护；registration_deadline 仅持 manage_validity 且改下位可改。
+        ro = ["expiry_disabled_at", "deleted_at"]
         if obj is not None and not can_manage_validity_for(request.user, obj.user):
             ro.append("registration_deadline")
         return ro
@@ -252,8 +256,8 @@ class ProfileInline(admin.StackedInline):
     fk_name = "user"  # Profile 仅 user 一个 FK→User；显式绑定，防后续新增 FK 时歧义
 
     def get_readonly_fields(self, request, obj=None):
-        # expiry_disabled_at 系统维护；registration_deadline 仅持 manage_validity 且改下位可改。
-        ro = ["expiry_disabled_at"]
+        # expiry_disabled_at / deleted_at 系统维护；registration_deadline 仅持 manage_validity 且改下位可改。
+        ro = ["expiry_disabled_at", "deleted_at"]
         if not can_manage_validity_for(request.user, obj):
             ro.append("registration_deadline")
         return ro
@@ -284,12 +288,21 @@ class VerificationInline(admin.TabularInline):
 
 
 class CustomUserAdmin(UserAdmin):
-    list_display = ("username", "email", "first_name", "last_name", "is_staff", "is_active")
-    list_filter = ("is_staff", "is_active")
+    list_display = ("username", "email", "first_name", "last_name", "is_staff", "is_active", "deleted")
+    list_filter = ("is_staff", "is_active", "profile__deleted_at")
     search_fields = ("username", "email", "first_name", "last_name")
     ordering = ("username",)
     inlines = [ProfileInline, VerificationInline]
     actions = ["ban_users", "mute_users"]
+
+    def get_queryset(self, request):
+        # 已注销列读 profile.deleted_at：一次性 select_related，避免列表 N+1。
+        return super().get_queryset(request).select_related("profile")
+
+    @admin.display(boolean=True, description="已注销")
+    def deleted(self, obj):
+        profile = getattr(obj, "profile", None)
+        return bool(profile and profile.deleted_at)
 
     def get_actions(self, request):
         actions = super().get_actions(request)
