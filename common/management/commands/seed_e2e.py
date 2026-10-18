@@ -45,7 +45,7 @@ from reviews.models import Feedback, ReportCase, ReportFiling, Review
 from tasks.models import Tag, Task
 from tutorials.models import Tutorial
 
-E2E_USERS = ("e2e_info", "e2e_plain", "e2e_stepup")
+E2E_USERS = ("e2e_info", "e2e_plain", "e2e_stepup", "e2e_validity")
 DEFAULT_PASSWORD = "e2e-pass-123"
 
 
@@ -102,8 +102,32 @@ class Command(BaseCommand):
         stepup_user.set_password(password)
         stepup_user.save()
 
-        for user, nickname in ((info, "E2E 信息员"), (plain, "E2E 普通成员"), (stepup_user, "E2E 安全验证成员")):
+        # 账号有效期弹窗（ADR-0041）专属：不预置「已读」，供 validity.spec.ts 断言弹窗内容。
+        validity_user, _ = User.objects.get_or_create(
+            username="e2e_validity", defaults={"email": "e2e_validity@example.test"},
+        )
+        validity_user.is_superuser = False
+        validity_user.is_staff = False
+        validity_user.is_active = True
+        validity_user.set_password(password)
+        validity_user.save()
+
+        for user, nickname in (
+            (info, "E2E 信息员"),
+            (plain, "E2E 普通成员"),
+            (stepup_user, "E2E 安全验证成员"),
+            (validity_user, "E2E 有效期成员"),
+        ):
             Profile.objects.update_or_create(user=user, defaults={"nickname": nickname})
+
+        # 有效期弹窗会盖住页面：除专属账号外，其余种子账号预置「已读」，
+        # 避免打断既有用例的点击（弹窗只在未读时才出现）。
+        from accounts.validity_summary import account_validity
+
+        for user in (info, plain, stepup_user):
+            profile = Profile.objects.get(user=user)
+            profile.validity_notice_ack = account_validity(user)["key"]
+            profile.save(update_fields=["validity_notice_ack"])
 
         # 登录保护：清掉旧会话，保证每次运行的首次登录都被放行
         UserSession.objects.filter(user__username__in=E2E_USERS).delete()
