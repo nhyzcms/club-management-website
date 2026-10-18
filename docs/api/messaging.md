@@ -48,7 +48,7 @@
 | WS | `/ws/messaging/` | 登录（会话 Cookie）| — | 推送通道（只推不收业务数据）|
 | GET | `/messaging/` | 登录 | — | DRF 路由根（索引，自动生成）|
 
-用户引用统一为 `{id, username, nickname, avatar}`（仅本人带 `email`）；时间字段为 UTC ISO 8601（如 `2026-09-19T04:30:00Z`）。
+用户引用统一为 `{id, username, nickname, avatar, is_deleted}`（仅本人带 `email`）；时间字段为 UTC ISO 8601（如 `2026-09-19T04:30:00Z`）。已注销账号的 `is_deleted=true`，`username` / `avatar` 为空、`nickname` 固定为「该用户已注销」；与已注销账号的历史会话只读，`send_message` 返回 403「该用户已注销，无法继续发送私信」（[ADR-0027](../adr/0027-account-deletion.md)）。
 
 ## 端点详情
 

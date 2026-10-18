@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate, Link } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { api } from "../api/client";
 import { useLoginModal } from "../components/LoginModalProvider";
@@ -17,6 +17,7 @@ import MemberIdentityPanel from "../components/profile/MemberIdentityPanel";
 import SecurityPanel from "../components/profile/SecurityPanel";
 import MuteUserPanel from "../components/profile/MuteUserPanel";
 import NotificationPreferencesPanel from "../components/profile/NotificationPreferencesPanel";
+import AccountDeletionPanel from "../components/profile/AccountDeletionPanel";
 import ReportButton from "../components/ReportButton";
 import { messagingApi } from "../api/messaging";
 import type { UserProfileData } from "../types/profile";
@@ -36,6 +37,7 @@ const SELF_TABS = [
   { key: "feedback", label: "我的反馈" },
   { key: "tasks", label: "我的任务" },
   { key: "permissions", label: "我的权限", divider: true },
+  { key: "delete", label: "注销账号" },
 ];
 
 export default function UserProfile() {
@@ -93,6 +95,22 @@ export default function UserProfile() {
 
   const isOwner = profile.viewer.is_owner;
   const isAdmin = profile.viewer.is_admin;
+
+  if (profile.deleted) {
+    return (
+      <AppShell>
+        <div className="container" style={{ paddingTop: "var(--s-12)", paddingBottom: "var(--s-16)" }}>
+          <div className="card card-pad" style={{ maxWidth: 560, margin: "0 auto", textAlign: "center" }}>
+            <h1 style={{ fontSize: 20, marginBottom: "var(--s-3)" }}>该用户已注销</h1>
+            <p className="muted" style={{ marginBottom: "var(--s-4)" }}>
+              该账号已由本人主动注销，资料与联系方式不再公开展示；历史私信与评论仍保留。
+            </p>
+            <Link className="btn btn-secondary" to="/">返回首页</Link>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   const tabs = isOwner
     ? SELF_TABS
@@ -154,6 +172,7 @@ export default function UserProfile() {
               {active === "feedback" && <ContentListPanel userId={uid} type="feedback" selfView />}
               {active === "tasks" && <ContentListPanel userId={uid} type="tasks" selfView />}
               {active === "permissions" && <PermissionsPanel profile={profile} />}
+              {active === "delete" && <AccountDeletionPanel />}
             </div>
           </div>
         ) : (

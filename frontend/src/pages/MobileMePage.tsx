@@ -79,6 +79,7 @@ export default function MobileMePage() {
     { to: "/messages", label: "私信", badge: "dm" },
     { to: "/feedback", label: "意见反馈" },
     { to: "/profile", label: "个人资料" },
+    { to: "/profile?tab=delete", label: "注销账号", hint: "删除邮箱与验证材料，不可恢复" },
   ];
 
   const work: Entry[] = [

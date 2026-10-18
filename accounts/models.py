@@ -61,6 +61,12 @@ class Profile(models.Model):
     # 系统维护，不可手改。
     expiry_disabled_at = models.DateTimeField("因超期停用时间", null=True, blank=True)
 
+    # 账号注销（自服务，ADR-0027）：非空 = 用户已主动注销。
+    # 这是**软删除标记**——User / Profile 行本身永不删除：主键、用户名（账号唯一编码）、
+    # 真实姓名、注册时间等留作后台审计与历史内容归属；敏感字段另行清除，
+    # 见 accounts/deletion.py 与 messaging.serializers.SimpleUserSerializer（展示为「该用户已注销」）。
+    deleted_at = models.DateTimeField("注销时间", null=True, blank=True)
+
     def __str__(self):
         return f"{self.user.username}'s profile"
 
@@ -136,6 +142,17 @@ def profile_of(user):
         return user.profile
     except Profile.DoesNotExist:
         return None
+
+
+# 已注销账号在所有公开展示位（私信发送者、新闻作者、评论作者……）的统一文案。
+# 后端序列化层直接替换昵称，前端无需逐处判断（见 SimpleUserSerializer）。
+DELETED_ACCOUNT_LABEL = "该用户已注销"
+
+
+def is_deleted_user(user):
+    """账号是否已注销：唯一真源是 ``Profile.deleted_at``。"""
+    profile = profile_of(user)
+    return bool(profile is not None and profile.deleted_at is not None)
 
 
 def _policy_attr(attr):
@@ -403,7 +420,10 @@ class ValidityNotice(models.Model):
 
 
 class IdentityProof(models.Model):
-    """身份证明材料（学生证照片等）——审计留底，永久保存（审核通过后也不删）。
+    """身份证明材料（学生证照片等）——审计留底，默认长期保存（审核通过后也不删）。
+
+    例外：账号**注销**时连同文件一并删除（ADR-0027）——注销即撤回对敏感材料的授权，
+    不再保留审计证据。
 
     与「附件」子系统隔离：附件绑定单一父级并随父级回收（ADR 0002）；身份证明无父级、
     供事后追溯。文件存 PRIVATE_MEDIA_ROOT 私有存储，仅本人或持 can_review_identity 者可读。

@@ -86,6 +86,14 @@ export const api = {
       headers: stepup,
     }),
 
+  // 账号注销（ADR-0025）：不可逆；须当前密码 + 逐字确认，敏感操作另需安全验证 grant。
+  deleteAccount: (password: string, stepup?: Record<string, string>) =>
+    request("/account/delete/", {
+      method: "POST",
+      body: JSON.stringify({ password, confirm: "注销账号" }),
+      headers: stepup,
+    }) as Promise<{ message: string }>,
+
   listUsers: () =>
     request("/users/"),
 

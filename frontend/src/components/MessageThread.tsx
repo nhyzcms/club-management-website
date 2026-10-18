@@ -18,11 +18,14 @@ export default function MessageThread({
   currentUser,
   autoScroll = true,
   onCountChange,
+  peerDeleted = false,
 }: {
   conversationId: number;
   currentUser: TaskUser;
   autoScroll?: boolean;
   onCountChange?: (count: number) => void;
+  /** 对方账号已注销：历史消息可读，发送输入被禁用（ADR-0025）。 */
+  peerDeleted?: boolean;
 }) {
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [page, setPage] = useState(1);
@@ -136,7 +139,7 @@ export default function MessageThread({
   };
 
   const handleSend = async () => {
-    if (!input.trim() || sending || siteMuted) return;
+    if (!input.trim() || sending || siteMuted || peerDeleted) return;
     setSending(true);
     setError("");
     try {
@@ -165,6 +168,11 @@ export default function MessageThread({
 
   return (
     <>
+      {peerDeleted && (
+        <div className="msg-deleted-banner" role="status">
+          该用户已注销，无法继续发送私信。历史消息仍可查看。
+        </div>
+      )}
       <div
         className="msg-bubbles"
         ref={listRef}
@@ -221,12 +229,22 @@ export default function MessageThread({
           className="input"
           value={input}
           onChange={setInput}
-          placeholder={siteMuted ? "你已被全站禁言，暂时不能发言" : "输入消息，@ 可搜索并提及他人"}
-          disabled={siteMuted}
+          placeholder={
+            peerDeleted
+              ? "该用户已注销，无法继续发送私信"
+              : siteMuted
+                ? "你已被全站禁言，暂时不能发言"
+                : "输入消息，@ 可搜索并提及他人"
+          }
+          disabled={siteMuted || peerDeleted}
           excludeIds={[currentUser.id]}
           onSubmit={handleSend}
         />
-        <button className="btn btn-primary" onClick={handleSend} disabled={siteMuted || !input.trim() || sending}>
+        <button
+          className="btn btn-primary"
+          onClick={handleSend}
+          disabled={siteMuted || peerDeleted || !input.trim() || sending}
+        >
           {sending ? "发送中…" : "发送"}
         </button>
       </div>

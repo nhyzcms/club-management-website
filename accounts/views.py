@@ -30,6 +30,7 @@ from common.policy import get_policy
 
 from . import stepup
 from .authcode import AuthCodeError, redeem_authcode
+from .deletion import AccountDeletionError, delete_account
 from .email_domains import (
     EMAIL_DOMAIN_BLOCKED_MESSAGE,
     EMAIL_DOMAIN_BLOCKED_REASON,
@@ -1166,6 +1167,45 @@ def change_password_view(request):
     return JsonResponse({"message": "密码修改成功"})
 
 
+@require_POST
+@login_required
+def delete_account_view(request):
+    """自助注销账号（ADR-0027）：密码 + 逐字确认口令，成功后立即登出。
+
+    软删除：账号行保留（后台可见「已注销」）、真实姓名与账号编码不删；
+    邮箱 / 验证材料 / 会话等敏感信息由 ``accounts.deletion.delete_account`` 清除。
+    """
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    # 敏感操作：有可用安全验证方式时必须先完成 Step-up（ADR-0026）；
+    # 既没认证邮箱也没设安全问题的账号退回「密码 + 逐字确认」。
+    if not stepup.grant_from_request(request, "delete_account") and stepup.stepup_available(request.user):
+        return stepup.stepup_required_response("delete_account")
+
+    if (body.get("confirm") or "") != "注销账号":
+        return JsonResponse(
+            {"error": "请完整输入「注销账号」以确认。", "reason": "confirmation_required"},
+            status=400,
+        )
+    password = body.get("password") or ""
+    if not password:
+        return JsonResponse({"error": "请输入当前密码。", "reason": "password_required"}, status=400)
+    if not request.user.check_password(password):
+        return JsonResponse({"error": "密码不正确。", "reason": "password_incorrect"}, status=400)
+
+    try:
+        delete_account(request.user)
+    except AccountDeletionError as exc:
+        return JsonResponse(
+            {"error": exc.message, "reason": exc.reason}, status=exc.status,
+        )
+
+    auth_logout(request)
+    return JsonResponse({"message": "账号已注销"})
+
+
 @require_GET
 @login_required
 def users_view(request):
@@ -1206,12 +1246,36 @@ def users_view(request):
 @require_GET
 @login_required
 def user_profile_view(request, id):
-    """查看任意用户的主页资料（按请求者身份裁剪字段，委托可见性模块）。"""
-    viewed = User.objects.filter(pk=id, is_active=True).first()
+    """查看任意用户的主页资料（按请求者身份裁剪字段，委托可见性模块）。
+
+    已注销账号（``Profile.deleted_at``）返回**墓碑响应**（``deleted: true``）：只给 id /
+    注册时间，不泄露用户名 / 昵称 / 资料 / 权限；前端渲染「该用户已注销」。
+    其它已停用账号仍按「用户不存在」处理（不暴露停用状态）。
+    """
+    viewed = User.objects.select_related("profile").filter(pk=id).first()
     if viewed is None:
         return JsonResponse({"error": "用户不存在"}, status=404)
 
     profile = _get_or_create_profile(viewed)
+    if profile.deleted_at is not None:
+        return JsonResponse({
+            "deleted": True,
+            "user": {
+                "id": viewed.id,
+                "username": "",
+                "date_joined": viewed.date_joined.isoformat(),
+            },
+            "profile": {"avatar": None, "nickname": "", "bio": ""},
+            "role": {"label": "已注销", "variant": "visitor"},
+            "viewer": {
+                "is_owner": False,
+                "is_admin": profile_view_for(request.user, viewed).is_admin,
+            },
+        })
+
+    if not viewed.is_active:
+        return JsonResponse({"error": "用户不存在"}, status=404)
+
     visibility = profile_view_for(request.user, viewed)
 
     data = {

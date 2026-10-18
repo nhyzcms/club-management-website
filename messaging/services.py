@@ -352,8 +352,10 @@ def start_private(user, target) -> tuple[Conversation, bool]:
     """返回 ``(conversation, created)``。"""
     if target.pk == user.pk:
         raise MessagingError("不能和自己对话")
-    from accounts.models import is_verified
+    from accounts.models import is_deleted_user, is_verified
 
+    if is_deleted_user(target):
+        raise MessagingForbidden("该用户已注销，无法发起私信")
     if not is_verified(target):
         raise MessagingError("对方尚未完成认证")
     if is_muted(user):
@@ -377,6 +379,9 @@ def send_dm(conversation: Conversation, sender, content: str) -> Message:
         raise MessagingError("消息内容不能为空")
     if not conversation.participants.filter(pk=sender.pk).exists():
         raise MessagingForbidden("不是该会话的参与者")
+    if conversation.participants.filter(profile__deleted_at__isnull=False).exclude(pk=sender.pk).exists():
+        # 对方已注销：历史消息可读，但不能继续发（ADR-0025）。
+        raise MessagingForbidden("该用户已注销，无法继续发送私信")
     if is_muted(sender):
         raise MessagingForbidden("你已被全站禁言，暂时不能发言")
     message = Message.objects.create(

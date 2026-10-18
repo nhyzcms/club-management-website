@@ -50,6 +50,7 @@ SCOPES = {
     "change_password": "修改密码",
     "manage_questions": "管理安全问题",
     "change_email": "换绑邮箱",
+    "delete_account": "注销账号",
 }
 
 # 预设题库（不出自定义题——防「答案就写在题干里」）
@@ -129,6 +130,15 @@ def check_security_answer(user, question_id: int, answer: str) -> None:
 def email_available(user) -> bool:
     """邮箱验证方式可用性：只发**已认证邮箱**（``User.email`` 非空）。"""
     return bool((user.email or "").strip())
+
+
+def stepup_available(user) -> bool:
+    """该账号是否至少有一种可用的安全验证方式（邮箱码 / 已设安全问题）。
+
+    供「有方法就必须验证、没有方法则退回密码确认」的端点使用（如账号注销）——
+    否则从未认证邮箱、也没设过安全问题的用户会被永久挡在敏感操作之外。
+    """
+    return email_available(user) or user.security_questions.exists()
 
 
 def email_cooldown_remaining(user) -> int:

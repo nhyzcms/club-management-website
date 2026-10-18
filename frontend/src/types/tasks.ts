@@ -8,6 +8,8 @@ export interface TaskUser {
   email: string;
   nickname: string;
   avatar: string | null;
+  /** 已注销账号（ADR-0025）：后端把 username/avatar 置空、nickname 换成「该用户已注销」。 */
+  is_deleted?: boolean;
 }
 
 export interface Tag {
