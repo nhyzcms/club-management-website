@@ -35,7 +35,7 @@ export default function RegisterPage() {
   const [claimed, setClaimed] = useState(false);
   const [skipped, setSkipped] = useState(false);
   const navigate = useNavigate();
-  const { openLogin } = useLoginModal();
+  const { openLogin, notifyAuthChange } = useLoginModal();
   const policy = useSitePolicy();
   const { containerRef, token: turnstileToken, reset: resetTurnstile, enabled: turnstileOn, policyReady } =
     useTurnstile();
@@ -83,6 +83,7 @@ export default function RegisterPage() {
     try {
       await api.register(fd);
       setDone(true);
+      notifyAuthChange(); // 注册即登录：通知 AppShell / 首页刷新为已登录态
       // 注册即登录（ADR-0025）：直接核对社员名册，进入认领阶段。
       setMemberLoading(true);
       api.memberIdentity()
