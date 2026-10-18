@@ -68,13 +68,14 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 
 | 块 | 位置 | 用途 |
 |---|---|---|
-| **编辑器** | 门户 `SurveyCreatorPage.tsx`；后台 `common/surveyjs_admin.py` + `editor.html` | 拖拽编辑 Schema（含逻辑页签） |
+| **编辑器** | 门户 `SurveyCreatorPage.tsx`（详情页「编辑问卷」）与 `components/SurveyDesignerModal.tsx`（活动发起 / 编辑表单里的弹层）；后台 `common/surveyjs_admin.py` + `editor.html` | 拖拽编辑 Schema（含逻辑页签） |
 | **渲染（作答）** | `components/SurveyFill.tsx` | 门户填问卷（调研详情 + 加入页共用） |
 | **结果（单份）** | `SurveyResponsesPage.tsx`；后台 `response.html` + `response.js` | display 模式只读阅读一份作答 |
 | **统计（聚合）** | `SurveyStatsPage.tsx`；后台 `results.html` + `results.js` | 图表看板（survey-analytics Dashboard） |
 
 要点：
 
+- **设计入口**：`/#/activity/new`（发起活动）与 `/#/activity/{id}/edit`（待开始）表单里就有「设计问卷 / 编辑问卷」——SurveyJS Creator 以**弹层**加载（`components/SurveyDesignerModal.tsx`，portal 到 `body`，避免 Creator 的输入控件误触发表单提交；编辑器的 chunk 按需下载）。点「完成」只回填到表单状态，创建时随 `POST /activities/activities/` 的 `schema` 一起落库，编辑时随「保存修改」提交。创建后仍可从详情页「编辑问卷」（`SurveyEditorPage`，待开始或开放且零作答时可用）。
 - **作答模型**由 `frontend/src/utils/survey.ts:createSurveyModel` 统一构造：`widthMode="responsive"` + `onComplete` 回调；`SurveyFill` 把提交错误就地显示在问卷上方。
 - **只读阅读**统一用 display 模式：`mode="display"`、`questionsOnPageMode="singlePage"`、`showCompletedPage=false`、`widthMode="responsive"`（门户与后台同款）。
 - **统计看板**用 `survey-analytics` 的 `Dashboard`，`allowHideQuestions: true`（可隐藏不关心的题）；无作答时不渲染图表，只给空态文案。

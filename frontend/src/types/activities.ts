@@ -180,6 +180,8 @@ export interface SurveyFormData {
   title: string;
   body: string;
   audience: SurveyAudience;
+  /** 问卷 Schema：创建时即可随活动提交；编辑时只在待开始（或有改动且可改）时提交。 */
+  schema?: Record<string, unknown>;
   start_at?: string;
   end_at?: string | null;
   is_permanent?: boolean;
