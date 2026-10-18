@@ -3,7 +3,8 @@
 职责：
 - 解析 CSV / XLSX（表头识别；值宽松、关键字段严格）；
 - 预检（不落库）：逐行校验 + 与库内对账（新增 / 更新 / 冲突 / 错误）；
-- 确认导入：事务内落库（幂等：识别码 → 姓名+电话 → 同届+姓名 认行）；
+- 确认导入：事务内落库（幂等：姓名+电话 → 同届+姓名 认行；**识别码一律自动生成**，
+  表格中的「识别码」列仅作参照、导入时忽略）；
 - 自动匹配：按真实姓名把名册行绑到已有账号（唯一命中才自动，歧义进人工）；
 - 自助认领：候选（本人真实姓名匹配的未绑定行）/ 手机后四位校验 / 绑定。
 """
@@ -18,7 +19,7 @@ from dataclasses import dataclass, field
 from django.db import transaction
 from django.utils import timezone
 
-from .member_codes import MemberCodeError, generate_code, is_valid_code
+from .member_codes import MemberCodeError, generate_code
 from .models import IdentityImportBatch, MemberIdentity, Profile
 
 HEADERS = [
@@ -171,26 +172,15 @@ def _validate_row(pr: ParsedRow) -> None:
     else:
         pr.warnings.append("未登记电话号码：该身份不可自助认领，只能由管理员绑定")
 
-    code = v["识别码"]
-    if code and not is_valid_code(code):
-        pr.errors.append("识别码格式不支持（应为 4-16 位字母 / 数字 / 短横线）")
+    # 注：「识别码」列内容忽略——识别码一律由系统按规则生成（ADR-0025）。
 
 
 def _flag_file_duplicates(rows: list[ParsedRow]) -> None:
-    by_code: dict[str, list[int]] = defaultdict(list)
     by_name_phone: dict[tuple, list[int]] = defaultdict(list)
     for pr in rows:
         v = pr.values
-        if v["识别码"]:
-            by_code[v["识别码"]].append(pr.row_no)
         if v["姓名"] and v["电话号码"]:
             by_name_phone[(normalize_name(v["姓名"]), v["电话号码"])].append(pr.row_no)
-    for code, nos in by_code.items():
-        if len(nos) > 1:
-            for pr in rows:
-                if pr.values["识别码"] == code:
-                    others = [f"第 {n} 行" for n in nos if n != pr.row_no]
-                    pr.errors.append(f"识别码 {code} 在文件内重复（与{'、'.join(others)}）")
     for _, nos in by_name_phone.items():
         if len(nos) > 1:
             for pr in rows:
@@ -203,10 +193,11 @@ def _flag_file_duplicates(rows: list[ParsedRow]) -> None:
 def plan_import(rows: list[ParsedRow]) -> dict:
     """与库内对账 → 逐行动作（create / update / conflict / error），不落库。
 
-    认行键：识别码（表带码）→ 姓名+电话 → （无电话时）届数+姓名。
+    认行键：姓名+电话 →（无电话时）届数+姓名。识别码一律自动生成
+    （表格「识别码」列内容忽略；更新行保留既有编码、新增行按规则取号）。
     """
     existing = list(MemberIdentity.objects.all())
-    by_code = {r.code: r for r in existing}
+    taken = {r.code for r in existing}
     by_name_phone: dict[tuple, list[MemberIdentity]] = defaultdict(list)
     by_cohort_name: dict[tuple, list[MemberIdentity]] = defaultdict(list)
     for r in existing:
@@ -215,7 +206,6 @@ def plan_import(rows: list[ParsedRow]) -> dict:
             by_name_phone[(n, r.phone)].append(r)
         by_cohort_name[(r.cohort, n)].append(r)
 
-    taken = set(by_code.keys())
     items: list[dict] = []
     counts = {"create": 0, "update": 0, "conflict": 0, "error": 0}
 
@@ -230,52 +220,35 @@ def plan_import(rows: list[ParsedRow]) -> dict:
 
         v = pr.values
         name_n = normalize_name(v["姓名"])
-        given = v["识别码"]
         notes = list(pr.warnings)
         target = None
 
-        if given and given in by_code:
-            target = by_code[given]
-            if normalize_name(target.name) != name_n:
-                notes.append(f"识别码已存在且姓名不同（库内：{target.name}），按识别码更新")
+        if v["电话号码"]:
+            matches = by_name_phone.get((name_n, v["电话号码"]), [])
         else:
-            if v["电话号码"]:
-                matches = by_name_phone.get((name_n, v["电话号码"]), [])
-            else:
-                matches = by_cohort_name.get((v["届数"], name_n), [])
-            if len(matches) == 1:
-                target = matches[0]
-                if given and given != target.code:
-                    notes.append(f"表内识别码 {given} 与既有 {target.code} 不一致——保留既有识别码")
-            elif len(matches) > 1:
-                counts["conflict"] += 1
-                items.append({
-                    "row": pr, "action": "conflict", "target": None, "code": None,
-                    "note": f"库内 {len(matches)} 条既有行匹配（同名同电话 / 同名同届），需人工处理",
-                })
-                continue
+            matches = by_cohort_name.get((v["届数"], name_n), [])
+        if len(matches) == 1:
+            target = matches[0]
+        elif len(matches) > 1:
+            counts["conflict"] += 1
+            items.append({
+                "row": pr, "action": "conflict", "target": None, "code": None,
+                "note": f"库内 {len(matches)} 条既有行匹配（同名同电话 / 同名同届），需人工处理",
+            })
+            continue
 
         if target is not None:
             counts["update"] += 1
             items.append({"row": pr, "action": "update", "target": target, "code": target.code, "note": "；".join(notes)})
             continue
 
-        # 新增：表带码照用（唯一性已校验），空码按规则生成。
-        code = given
-        if code:
-            if code in taken:
-                # 与库内重复的场景已被 by_code 分支处理；这里只剩批内重复（文件查重已拦）
-                counts["conflict"] += 1
-                items.append({"row": pr, "action": "conflict", "target": None, "code": None,
-                              "note": f"识别码 {code} 与本次导入的其它行冲突"})
-                continue
-        else:
-            try:
-                code = generate_code(v["入学年份"], v["届数"], taken)
-            except MemberCodeError as exc:
-                counts["error"] += 1
-                items.append({"row": pr, "action": "error", "target": None, "code": None, "note": str(exc)})
-                continue
+        # 新增：识别码一律按规则生成（表格该列忽略）。
+        try:
+            code = generate_code(v["入学年份"], v["届数"], taken)
+        except MemberCodeError as exc:
+            counts["error"] += 1
+            items.append({"row": pr, "action": "error", "target": None, "code": None, "note": str(exc)})
+            continue
         taken.add(code)
         counts["create"] += 1
         items.append({"row": pr, "action": "create", "target": None, "code": code, "note": "；".join(notes)})

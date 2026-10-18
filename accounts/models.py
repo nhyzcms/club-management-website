@@ -542,7 +542,7 @@ class IdentityImportBatch(models.Model):
 class MemberIdentity(models.Model):
     """社员身份：一届名册中的一行（工牌识别码本体，ADR-0025）。
 
-    - ``code`` 识别码全库唯一：导入时「表带码原样保留、空码按规则生成」；
+    - ``code`` 识别码全库唯一：一律按规则自动生成（表格「识别码」列内容忽略）；
     - ``user`` 绑定的站内账号（OneToOne，未绑 = null，多行 null 不冲突）。
       绑定三条路径：导入自动匹配（真实姓名唯一命中）/ 管理员手动 / 用户自助认领；
     - ``phone`` 仅后台可见，只用于认领校验（后四位），绝不在校验页等公开面出现。

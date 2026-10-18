@@ -134,9 +134,14 @@ class RosterParseTest(TestCase):
         rows = parse_roster("a.csv", csv_bytes([bad]))
         self.assertTrue(rows[0].errors)
 
-    def test_duplicate_code_in_file_flagged(self):
-        rows = parse_roster("a.csv", csv_bytes([sample_row(code="26020001"), sample_row(name="李四", code="26020001")]))
-        self.assertTrue(all(r.errors for r in rows))
+    def test_given_code_column_ignored(self):
+        # 识别码一律自动生成：表格该列内容忽略（含非法内容与文件内重复）。
+        rows = parse_roster("a.csv", csv_bytes([
+            sample_row(code="!!bad!!"),
+            sample_row(name="李四", phone="13900001111", code="26020001"),
+        ]))
+        self.assertFalse(rows[0].errors)
+        self.assertFalse(rows[1].errors)
 
     def test_duplicate_name_phone_in_file_flagged(self):
         rows = parse_roster("a.csv", csv_bytes([sample_row(), sample_row()]))
@@ -151,10 +156,6 @@ class RosterParseTest(TestCase):
         rows = parse_roster("a.csv", csv_bytes([sample_row(phone="")]))
         self.assertTrue(rows[0].warnings)
         self.assertEqual(rows[0].values["电话号码"], "")
-
-    def test_invalid_given_code_flagged(self):
-        rows = parse_roster("a.csv", csv_bytes([sample_row(code="!!bad!!")]))
-        self.assertTrue(rows[0].errors)
 
 
 class ImportPlanTest(TestCase):
@@ -173,17 +174,27 @@ class ImportPlanTest(TestCase):
         self.assertEqual(plan["counts"]["create"], 0)
         self.assertEqual(plan["items"][0]["target"].code, "26020001")
 
-    def test_plan_match_by_code_keeps_existing_code(self):
+    def test_plan_reimport_keeps_existing_code_ignoring_given(self):
+        # 表内带码（哪怕同码）不参与认行：仍按 姓名+电话 命中 → 保留既有编码。
         commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")
         rows = parse_roster("a.csv", csv_bytes([sample_row(code="26020001", grade="高二")]))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["update"], 1)
         self.assertEqual(plan["items"][0]["code"], "26020001")
 
-    def test_plan_given_new_code_used_for_create(self):
+    def test_plan_ignores_given_code_uses_generated(self):
         rows = parse_roster("a.csv", csv_bytes([sample_row(code="26027777")]))
         plan = plan_import(rows)
-        self.assertEqual(plan["items"][0]["code"], "26027777")
+        self.assertEqual(plan["items"][0]["code"], "26020001")
+
+    def test_given_code_not_used_for_matching(self):
+        # 表带码与库内既有行相同、但姓名不同 → 不按码更新：作为新行处理并自动生成新码。
+        commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")
+        rows = parse_roster("a.csv", csv_bytes([sample_row(name="李四", phone="13900001111", code="26020001")]))
+        plan = plan_import(rows)
+        self.assertEqual(plan["counts"]["create"], 1)
+        self.assertEqual(plan["counts"]["update"], 0)
+        self.assertEqual(plan["items"][0]["code"], "26020002")
 
     def test_plan_conflict_on_multiple_existing_matches(self):
         user = User.objects.create_user(username="u1", password="x")

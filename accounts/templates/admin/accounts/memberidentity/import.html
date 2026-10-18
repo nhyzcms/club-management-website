@@ -3,7 +3,7 @@
 <div id="content-main">
 
   <p><a href="{% url 'admin:accounts_memberidentity_import_template' %}">下载导入模板（xlsx）</a>
-     · 识别码留空会自动生成（规则：[入学年份后2位][届数2位][届内序号4位]）</p>
+     · 识别码由系统自动生成（规则：[入学年份后2位][届数2位][届内序号4位]；表格中该列内容将被忽略）</p>
 
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
