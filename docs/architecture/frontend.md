@@ -102,7 +102,7 @@ frontend/
 - **字体**：Sora + Noto Sans SC，Google Fonts `@import` 引入，中文正文 15px / line-height 1.6。
 - **域样式**：各域 CSS 与页面就近 import；移动版共享 `mobile.css` 并以 `m-` 前缀隔离。
 - **写入习惯**：新域样式尽量用 `var(--token, 兜底值)` 写法（token 改名时不会整块“无样式”，深色模式下也不会突然不可读）。
-- **深色模式**：全局主题系统（`theme.ts`）支持浅色 / 深色 / 跟随系统三态，偏好按设备存 localStorage（`cobalt:theme`）；解析结果写入 `<html data-theme>` 并同步 `color-scheme` 与页面 `<meta name="theme-color">`（地址栏配色），同时镜像到 Django admin 约定的 `theme` 键（`auto/light/dark`），使后台自动跟随。切换入口为顶栏 `ThemeToggle`（`AppShell`）；`template.html` 内联脚本在首屏前预应用主题、避免闪白；深色配色在 `styles/theme-dark.css`（覆盖 cobalt token）。
+- **深色模式**：全局主题系统（`theme.ts`）支持浅色 / 深色 / 跟随系统三态，偏好按设备存 localStorage（`cobalt:theme`）；解析结果写入 `<html data-theme>` 并同步 `color-scheme` 与页面 `<meta name="theme-color">`（地址栏配色），同时镜像到 Django admin 约定的 `theme` 键（`auto/light/dark`），使后台自动跟随。切换入口为顶栏 `ThemeToggle`（`AppShell`）；`template.html` 内联脚本在首屏前预应用主题、避免闪白；深色配色在 `styles/theme-dark.css`（覆盖 cobalt token）。App 壳内（`device.ts::isAppShell`）无存储偏好时默认「跟随系统」，并对旧版壳存下的「浅色」做一次性迁移；该逻辑在 `template.html` 与 `theme.ts` 各有一份，改动需两处同步。
 
 ## 路由与页面
 
@@ -303,10 +303,12 @@ try {
 | `/m/activity` · `/m/activity/:id` | `MobileActivityPage` · `MobileActivityDetailPage` | 活动列表与详情（信息徽章 / 众议投票 / 调研作答 / 展示画廊；受限活动给登录入口） |
 | `/m/tutorials` · `/m/tutorials/:id` | `MobileTutorialsPage` · `MobileTutorialDetailPage` | 教程列表与详情（视频播放 / 文档下载 / 收藏） |
 | `/m/join` · `/m/join/form` | `MobileJoinPage` · `MobileJoinFormPage` | 加入公告（阅读确认）与自我介绍问卷（SurveyJS） |
-| `/m/me` | `MobileMePage` | 「我的」：资料卡 + 服务入口 + 登录/退出 |
+| `/m/me` | `MobileMePage` | 「我的」：资料卡 + 工作 / 常用服务入口 + 外观切换 + 登录/退出 |
+| `/m/review` · `/m/inbox` · `/m/notifications` · `/m/tasks` · `/m/tasks/:id` | `MobileReviewPage` 等 | 工作台：审核台 / 待办 / 通知 / 任务列表与详情（见「手机版工作台」） |
 
 - 手机版内闭环：首页快捷格、列表卡片与「更多」一律指向 `/m/*`——列表进详情、教程、加入都不跳出手机版。
 - 共享外壳：样式 `styles/mobile.css`（`.m-app` 作用域：topbar / 渐变 hero / 四宫格快捷入口 / 卡片流 / 固定底部 tab），每个页面自渲染 `<MobileTabBar />`（`components/MobileTabBar.tsx`，四个 tab：首页/活动/新闻/我的，`NavLink` 指向 `/m/*`，首页用 `end` 精确匹配）。
+- 未读红点：底部 tab、首页铃铛与「我的」入口的未读数字（私信 + 通知）来自 `api/unreadBadges.ts` 的模块级 store（30 s 轮询 + 窗口可见 / 聚焦刷新 + App 壳 `club:unread` 事件）。
 - 自动改道：`HomeRoute` 在根路径用 `utils/device.ts::isMobileDevice()`（UA 正则命中 iPhone/Android/Windows Phone 等）判断手机浏览器，渲染 `<Navigate to="/m" replace />`；深链接、桌面端与「请求桌面站点」模式不受影响。
 - UA 变化改道：`index.tsx` 在 React 渲染前调用 `utils/uaSwitch.ts::applyUaSwitch()`，把当前 UA 归为三档（`app` / `mobile` / `desktop`，见 `device.ts::classifyUserAgent`）并与 `localStorage` 里的上一次类别比较。**只在跨「移动侧 / 桌面侧」变化时**跳一次：变成移动侧 → 手机版等价页（`/news/:id` → `/m/news/:id`，无对应页面则 `/m`），变成桌面侧 → 桌面版等价页（`/m/me` → `/profile`，其余回落 `/`）。只比类别不比字符串，浏览器版本号升级、壳版本升级都不会误跳；类别不变时深链接保持原样。跳转用 `history.replaceState` 改 hash，不新增历史记录、不产生闪屏。
 - `/m/me` 按真实契约 `{user, role, profile}` 渲染：显示名与头像取 `profile`、身份徽章取 `role.label`；`role.variant ∈ {admin, superadmin}` 时显示「进入后台管理」行（`window.location.href = "/admin/"`）；匿名显示登录 CTA；退出登录 = `api.logout()` + 刷新。
@@ -342,12 +344,12 @@ Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?emb
 - **页面元信息**：各页在 `useEffect` 里设置 `document.title`（如「待办 · 传媒社」）；列表页优先 `Pagination` + `usePagedList`（数据量小、需一次拉全的列表在 api 模块里逐页拉全亦可）。
 - **组件外壳**：页面默认套 `AppShell`（详情页用 `PageChrome`，等价但在 `?embed=1` 时跳过）；确需独立布局的页面（任务表单、考试看板、移动版）自持布局根类，并在本文件「路由与页面」的布局例外中登记。
 - **兼容与类型**：`strict` TypeScript；跨模块的响应形状允许先 `as Promise<T>` 收口，再在 `types/` 中补精确类型；不新增未使用的依赖，第三方库的使用方式（懒加载、按需注入）以现有模块为范本。
-- **可访问性与语义**：交互元素用真实 `<button>/<a>`（`role`/`aria-*` 标注到位：导航 `aria-current`、弹窗 `aria-modal`、徽标计数 `aria-label`、提醒条与横幅 `role="status"`），图标一律内联 SVG（无图标库）；键盘可达性以 `:focus-visible` 焦点环兜底。
+- **可访问性与语义**：交互元素用真实 `<button>/<a>`（`role`/`aria-*` 标注到位：导航 `aria-current`、弹窗 `aria-modal`、徽标计数 `aria-label`、提醒条与横幅 `role="status"`），图标统一收在 `components/icons.tsx`（内联 SVG、无图标库；24px 视框线性 / `stroke=currentColor`，实际尺寸由外层 `.ico` 控制）；键盘可达性以 `:focus-visible` 焦点环兜底。
 - **文案与注释**：UI 文案为内联中文（无 i18n 框架），代码注释以中文说明设计意图；日期时间展示用 `toLocaleString/toLocaleDateString("zh-CN")` 或手写「x月x日」格式。
 
 ## 已知边界
 
-- 前端测试：单元 / 组件测试用 Vitest + React Testing Library（测试文件在 `src/**/__tests__/*.test.ts(x)`，`cd frontend && npm test`）；浏览器 E2E 用 Playwright（chromium，用例在 `frontend/e2e/`，`cd frontend && npx playwright test` 自动起独立测试库与服务）。自动化关口另有构建断言脚本（`assert-*-dist.js`）与 TypeScript 编译；页面质量仍依赖逐页预览与人工验收。
+- 前端测试：单元 / 组件测试用 Vitest + React Testing Library（测试文件在 `src/**/__tests__/*.test.ts(x)`，`cd frontend && npm test`）；浏览器 E2E 用 Playwright（chromium，用例在 `frontend/e2e/`，`cd frontend && npx playwright test` 自动起独立测试库与服务）。E2E 登录态 setup 按可访问名「打开用户菜单」断言顶栏用户菜单触发器——修改 `UserMenu.tsx` 的 `aria-label` 时需同步 `e2e/auth.setup.ts` 与 `e2e/login.spec.ts`；自动化关口另有构建断言脚本（`assert-*-dist.js`）与 TypeScript 编译；页面质量仍依赖逐页预览与人工验收。
 - `user.permissions` 与 `available_actions` 等能力投影是 **UI 预判**，不是安全边界：任何被隐藏的操作在后端仍会做权限校验（403 已由类型化错误统一接住）。
 - **全景浏览页依赖自托管渲染器**：Marzipano 走 `/static/panorama/marzipano.js`（非 npm 包），故「静态资源缺失 / 改名」会让全景页报「全景渲染器加载失败」；两者必须同步变更（见「静态资源与第三方库」）。全景层级图走 `/media/panorama/...`，开发态由 `devServer.proxy` 的 `/media` 代理覆盖。
 - 移动版是独立布局站点：`/m` 页面与桌面页面**不共享**同一组件实现（共享的只有 `api/`、`types/`、`utils/`），桌面端的改动不会自动出现在手机版，反之亦然。
