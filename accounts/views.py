@@ -12,7 +12,7 @@ from django.http import FileResponse, Http404, HttpResponseForbidden, JsonRespon
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
-from django.contrib.auth import login, logout as auth_logout
+from django.contrib.auth import login, logout as auth_logout, update_session_auth_hash
 from django.contrib.auth.signals import user_login_failed
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -28,6 +28,7 @@ from rest_framework.request import Request
 
 from common.policy import get_policy
 
+from . import stepup
 from .authcode import AuthCodeError, redeem_authcode
 from .email_domains import (
     EMAIL_DOMAIN_BLOCKED_MESSAGE,
@@ -55,10 +56,12 @@ from .throttles import (
     MemberClaimThrottle,
     RegisterThrottle,
     ResendVerificationThrottle,
+    StepUpEmailIpThrottle,
+    StepUpEmailUserThrottle,
     login_blocked_response,
 )
 from .turnstile import passes_turnstile, turnstile_error_response
-from .utils import SESSION_HISTORY_LIMIT
+from .utils import SESSION_HISTORY_LIMIT, record_user_session
 from .validity import enforce_account_validity
 from .visibility import content_visibility, profile_view_for
 
@@ -278,6 +281,14 @@ def verification_email_bind_view(request):
 
     user = request.user
     existing = user.verifications.filter(channel=Verification.CHANNEL_EMAIL).first()
+    # 换绑（真正改地址）需安全验证（ADR-0026）；首次绑定 / 同址重发不拦（否则新用户无法开邮箱）。
+    same_address = existing is not None and existing.identifier == email
+    if (
+        not same_address
+        and (bool((user.email or "").strip()) or existing is not None)
+        and not stepup.grant_from_request(request, "change_email")
+    ):
+        return stepup.stepup_required_response("change_email")
     # 已认证且未过期同邮箱再绑 → no-op（不降级为 pending、不重发）
     if (
         existing is not None
@@ -543,6 +554,161 @@ def member_check_view(request):
         "status": row.status,
         "avatar": avatar_url,
     })
+
+
+# ---- 安全验证（Step-up，ADR-0026）----
+
+
+def _mask_email(address: str) -> str:
+    """邮箱打码：本地部分保留前 2 位（user@x.com → us***@x.com）。"""
+    local, _, domain = (address or "").partition("@")
+    if not domain:
+        return "***"
+    return f"{local[:2]}***@{domain}"
+
+
+@require_GET
+@login_required
+def stepup_status_view(request):
+    """验证方式总览：邮箱可用性 / 冷却剩余 / 安全问题设置情况。"""
+    user = request.user
+    questions = user.security_questions.all()
+    return JsonResponse({
+        "scopes": stepup.SCOPES,
+        "email": {
+            "available": stepup.email_available(user),
+            "address": _mask_email(user.email) if stepup.email_available(user) else "",
+            "cooldown_remaining": stepup.email_cooldown_remaining(user),
+        },
+        "questions": {
+            "configured": questions.exists(),
+            "count": questions.count(),
+        },
+        "grant_ttl": stepup.GRANT_TTL_SECONDS,
+    })
+
+
+@require_POST
+@login_required
+def stepup_email_send_view(request):
+    """发送安全验证码：60 秒冷却 + 账号 / IP 双通道小时上限（策略）。"""
+    user = request.user
+    if not stepup.email_available(user):
+        return JsonResponse(
+            {"error": "当前账号没有已认证邮箱，无法使用邮箱验证码。", "reason": "email_unavailable"},
+            status=400,
+        )
+    remaining = stepup.email_cooldown_remaining(user)
+    if remaining > 0:
+        return JsonResponse(
+            {"error": f"发送太频繁，请 {remaining} 秒后再试。", "reason": "cooldown", "retry_after": remaining},
+            status=429,
+        )
+    if not StepUpEmailUserThrottle().allow_request(request, None) or not StepUpEmailIpThrottle().allow_request(request, None):
+        return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+    try:
+        stepup.send_email_code(user)
+    except stepup.StepUpError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception:
+        logger.exception("发送安全验证码失败：user_pk=%s", user.pk)
+        return JsonResponse({"error": "邮件发送失败，请稍后重试。"}, status=500)
+    return JsonResponse({"message": "验证码已发送，请查收邮件。"})
+
+
+@require_POST
+@login_required
+def stepup_verify_view(request):
+    """验证：{method, scope, code / question_id+answer} → 签发 grant（TTL 10 分钟、同 scope 复用）。"""
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    scope = (body.get("scope") or "").strip()
+    method = (body.get("method") or "").strip()
+    if scope not in stepup.SCOPES:
+        return JsonResponse({"error": "未知的验证作用域。"}, status=400)
+    if method not in ("email", "question"):
+        return JsonResponse({"error": "请选择验证方式。"}, status=400)
+
+    user = request.user
+    try:
+        if method == "email":
+            stepup.verify_email_code(user, body.get("code") or "")
+        else:
+            question_id = body.get("question_id")
+            try:
+                question_id = int(question_id)
+            except (TypeError, ValueError):
+                return JsonResponse({"error": "题目不存在。"}, status=400)
+            stepup.check_security_answer(user, question_id, body.get("answer") or "")
+    except stepup.StepUpError as exc:
+        stepup.record_event(user, scope, method, "fail", request)
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    stepup.record_event(user, scope, method, "ok", request)
+    return JsonResponse({
+        "message": "验证通过。",
+        "grant": stepup.issue_grant(user, scope),
+        "expires_in": stepup.GRANT_TTL_SECONDS,
+    })
+
+
+@login_required
+def stepup_questions_view(request):
+    """GET：题库 + 本人已设（只出题干）；POST：设置 / 更换 / 清除（首设＝密码确认，之后＝grant）。"""
+    user = request.user
+    if request.method == "GET":
+        return JsonResponse({
+            "bank": stepup.question_bank(),
+            "mine": [
+                {"id": q.id, "key": q.question_key, "text": q.question_text}
+                for q in user.security_questions.all()
+            ],
+        })
+    if request.method != "POST":
+        return JsonResponse({"error": "Method Not Allowed"}, status=405)
+
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    items = body.get("items")
+    if not isinstance(items, list):
+        return JsonResponse({"error": "items 须为数组。"}, status=400)
+
+    if not user.security_questions.exists():
+        # 首次设置＝重输登录密码（防「偷到会话但没有密码」的人自设验证方式再改密码）
+        password = body.get("password") or ""
+        if not password or not user.check_password(password):
+            return JsonResponse(
+                {"error": "请输入当前登录密码以确认身份。", "reason": "password_required"},
+                status=400,
+            )
+    elif not stepup.grant_from_request(request, "manage_questions"):
+        return stepup.stepup_required_response("manage_questions")
+
+    try:
+        stepup.set_security_questions(user, items)
+    except stepup.StepUpError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    return JsonResponse({"message": "安全问题已更新。", "count": user.security_questions.count()})
+
+
+@require_GET
+@login_required
+def stepup_events_view(request):
+    """本人最近的安全验证记录（轻量审计，倒序 20 条）。"""
+    rows = request.user.stepup_events.all()[:20]
+    return JsonResponse({"results": [
+        {
+            "scope": row.scope,
+            "scope_label": stepup.SCOPES.get(row.scope, row.scope),
+            "method": row.method,
+            "result": row.result,
+            "ip": row.ip,
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]})
 
 
 @login_required
@@ -974,6 +1140,11 @@ def profile_update_view(request):
 @require_POST
 @login_required
 def change_password_view(request):
+    # 敏感操作：需安全验证（ADR-0026）。缺 grant → 403 step_up_required，
+    # 前端跳 /#/verify?action=change_password&next=…，验证完成后回跳重试。
+    if not stepup.grant_from_request(request, "change_password"):
+        return stepup.stepup_required_response("change_password")
+
     body = _json_body(request)
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
@@ -987,6 +1158,11 @@ def change_password_view(request):
 
     request.user.set_password(form.cleaned_data["new_password"])
     request.user.save()
+    # 保持当前会话（否则改密后本会话立即失效）——安全验证「完成即回跳重试」流程的前提。
+    # update_session_auth_hash 会轮换 session key（防会话固定），须同步单会话中间件的
+    # UserSession 行到新 key，否则下一次请求被判「他设备登录」而挤下线。
+    update_session_auth_hash(request, request.user)
+    record_user_session(request, request.user, request.session.session_key)
     return JsonResponse({"message": "密码修改成功"})
 
 

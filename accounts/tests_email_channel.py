@@ -14,14 +14,21 @@ from django.test import Client, TestCase
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
+from accounts import stepup
 from accounts.models import Verification
 from accounts.tokens import email_verification_token
 
 BIND = "/auth/verification/email/bind/"
 
 
-def _bind(client, email):
-    return client.post(BIND, data=json.dumps({"email": email}), content_type="application/json")
+def _grant(user):
+    """换绑邮箱需安全验证（ADR-0026）：测试内直签 grant。"""
+    return stepup.issue_grant(user, "change_email")
+
+
+def _bind(client, email, grant=""):
+    headers = {"HTTP_X_STEPUP_GRANT": grant} if grant else {}
+    return client.post(BIND, data=json.dumps({"email": email}), content_type="application/json", **headers)
 
 
 def _login(client, **fields):
@@ -51,7 +58,7 @@ class EmailBindTest(TestCase):
         return c
 
     def test_bind_creates_pending_channel_user_email_untouched(self):
-        resp = _bind(self._client(), "new@163.com")
+        resp = _bind(self._client(), "new@163.com", grant=_grant(self.user))
         self.assertEqual(resp.status_code, 200, resp.content)
 
         v = Verification.objects.get(user=self.user, channel=Verification.CHANNEL_EMAIL)
@@ -101,7 +108,7 @@ class EmailBindTest(TestCase):
             user=self.user, channel=Verification.CHANNEL_EMAIL,
             status=Verification.STATUS_APPROVED, identifier="old@163.com",
         )
-        resp = _bind(self._client(), "new@163.com")
+        resp = _bind(self._client(), "new@163.com", grant=_grant(self.user))
         self.assertEqual(resp.status_code, 200, resp.content)
         v = Verification.objects.get(user=self.user, channel=Verification.CHANNEL_EMAIL)
         self.assertEqual(v.status, Verification.STATUS_PENDING)
@@ -130,7 +137,7 @@ class EmailBindTest(TestCase):
             user=self.user, channel=Verification.CHANNEL_EMAIL,
             status=Verification.STATUS_APPROVED, identifier="old@163.com",
         )
-        _bind(self._client(), "new@163.com")
+        _bind(self._client(), "new@163.com", grant=_grant(self.user))
         # 点新邮箱的认证链接
         uid = urlsafe_base64_encode(force_bytes(self.user.pk))
         token = email_verification_token.make_token(self.user)

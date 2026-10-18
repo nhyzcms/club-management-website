@@ -33,6 +33,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from about.models import AboutBlock, AboutPage
+from accounts import stepup
 from accounts.member_codes import make_signature
 from accounts.models import IdentityProof, MemberIdentity, Profile, UserSession, Verification
 from activities.models import Activity, Questionnaire, VoteOption, default_join_schema
@@ -120,6 +121,9 @@ class Command(BaseCommand):
         fixture_path = Path(settings.BASE_DIR) / "frontend" / "e2e" / ".member-qr.json"
         fixture_path.parent.mkdir(parents=True, exist_ok=True)
         fixture_path.write_text(json.dumps(qr_fixture, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 安全验证（ADR-0026）：为 e2e_info 预置安全问题（答案 e2e-answer，归一化比对）
+        stepup.set_security_questions(info, [{"key": "primary_school", "answer": "e2e-answer"}])
 
         tag_notice, _ = Tag.objects.get_or_create(name="E2E公告")
         tag_event, _ = Tag.objects.get_or_create(name="E2E活动")

@@ -15,6 +15,7 @@ const RegisterPage = lazy(() => import("./pages/RegisterPage"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
 const VerifyEmailPendingPage = lazy(() => import("./pages/VerifyEmailPendingPage"));
 const MemberVerifyPage = lazy(() => import("./pages/MemberVerifyPage"));
+const StepUpPage = lazy(() => import("./pages/StepUpPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
 const UserProfile = lazy(() => import("./pages/UserProfile"));
 const ProfileRedirect = lazy(() => import("./pages/ProfileRedirect"));
@@ -118,6 +119,7 @@ export default function App() {
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/verify-email-pending" element={<VerifyEmailPendingPage />} />
           <Route path="/v/:code" element={<MemberVerifyPage />} />
+          <Route path="/verify" element={<ProtectedRoute><StepUpPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProfileRedirect />} />
           <Route path="/u/:id" element={<UserProfile />} />
           <Route path="/tasks" element={<MobileAware to="/m/tasks"><ProtectedRoute><TaskListPage /></ProtectedRoute></MobileAware>} />

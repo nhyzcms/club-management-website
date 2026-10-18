@@ -30,6 +30,7 @@
 
 - [访问控制](guides/access-control.md) —— 身份、权限与可见性模型
 - [身份认证](guides/certification.md) —— 认证通道与流程
+- [安全验证](guides/security-verification.md) —— 敏感操作的本人确认（Step-up）
 - [审核系统](guides/moderation.md) —— 四张桌与处理流程
 - [问卷系统](guides/surveys.md) —— SurveyJS 问卷与作答规则
 

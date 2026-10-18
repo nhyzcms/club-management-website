@@ -613,3 +613,69 @@ class MemberIdentity(models.Model):
 
     def __str__(self):
         return f"{self.name} · {self.cohort}届 · {self.code}"
+
+
+# ---- 安全验证（Step-up，ADR-0026）----
+
+class SecurityQuestion(models.Model):
+    """安全问题（安全验证方式①）：预设题库、答案哈希（make_password）；每账号 1–3 条。"""
+
+    user = models.ForeignKey(
+        User, verbose_name="账号", on_delete=models.CASCADE, related_name="security_questions",
+    )
+    question_key = models.CharField("题库键", max_length=40)
+    question_text = models.CharField("题干快照", max_length=200)
+    answer_hash = models.CharField("答案哈希", max_length=128)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        verbose_name = "安全问题"
+        verbose_name_plural = "安全问题"
+        ordering = ["user", "id"]
+
+    def __str__(self):
+        return f"{self.user_id} · {self.question_text}"
+
+
+class StepUpEmailCode(models.Model):
+    """邮箱验证码（安全验证方式②）：6 位、一次性、哈希存储、限试 5 次、TTL 10 分钟。"""
+
+    user = models.ForeignKey(
+        User, verbose_name="账号", on_delete=models.CASCADE, related_name="stepup_email_codes",
+    )
+    code_hash = models.CharField("验证码哈希", max_length=128)
+    sent_to = models.CharField("发送至", max_length=254)
+    expires_at = models.DateTimeField("有效期至")
+    attempts = models.PositiveSmallIntegerField("已尝试次数", default=0)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+    used_at = models.DateTimeField("使用时间", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "安全验证码"
+        verbose_name_plural = "安全验证码"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user_id} · {self.sent_to} · {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class StepUpEvent(models.Model):
+    """安全验证审计（轻量）：谁 / 何时 / 哪种方式 / 成败 / IP。"""
+
+    user = models.ForeignKey(
+        User, verbose_name="账号", on_delete=models.CASCADE, related_name="stepup_events",
+    )
+    scope = models.CharField("作用域", max_length=40)
+    method = models.CharField("验证方式", max_length=16)  # email / question
+    result = models.CharField("结果", max_length=16)  # ok / fail
+    ip = models.CharField("IP", max_length=45, null=True, blank=True)
+    created_at = models.DateTimeField("时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "安全验证记录"
+        verbose_name_plural = "安全验证记录"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user_id} · {self.scope} · {self.method} · {self.result}"

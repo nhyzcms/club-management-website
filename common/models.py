@@ -18,6 +18,8 @@ from .policy import (
     DEFAULT_MEMBER_CLAIM_ENABLED,
     DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
     DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
+    DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
+    DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_REGISTRATION_ENABLED,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
@@ -131,6 +133,18 @@ class SiteSettings(models.Model):
         default=DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
         validators=[MinValueValidator(1)],
         help_text="工牌二维码校验的公开端点频控（计全部请求）。",
+    )
+    stepup_email_per_user_per_hour = models.PositiveIntegerField(
+        "安全验证：每账号每小时验证码次数",
+        default=DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="安全验证邮箱验证码的每小时上限（按账号）。",
+    )
+    stepup_email_per_ip_per_hour = models.PositiveIntegerField(
+        "安全验证：每 IP 每小时验证码次数",
+        default=DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="安全验证邮箱验证码的每小时上限（按 IP）。",
     )
     sync_upload_max_bytes = models.PositiveBigIntegerField(
         "同步上传单文件上限（字节）",
