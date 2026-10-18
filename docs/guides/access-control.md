@@ -1,6 +1,6 @@
 # 访问控制
 
-> 相关：[账号 API](../api/accounts.md) · [身份验证](verification.md) · [ADR-0005](../adr/0005-access-control-principle.md)
+> 相关：[账号 API](../api/accounts.md) · [身份认证](certification.md) · [ADR-0005](../adr/0005-access-control-principle.md)
 
 ## 一句话原则
 
@@ -10,7 +10,7 @@
 
 | 轴 | 来源 | 用途 |
 |---|---|---|
-| **身份徽章** | 登录态 + `is_superuser` / `is_staff` / 已验证 | 展示（访客 / 用户 / 管理员 / 超级管理员） |
+| **身份徽章** | 登录态 + `is_superuser` / `is_staff` / 已认证 | 展示（访客 / 用户 / 管理员 / 超级管理员） |
 | **角色能力** | `user.has_perm(…)` | **全部访问控制**（API 门禁、按钮显隐、可见性、通知路由） |
 | **组成员身份** | `user.groups` | 仅作「所属组: X」纯文本展示 |
 | **对象所有权** | `creator == user`、`viewer == viewed` | 每行的组合规则 |
@@ -38,7 +38,7 @@
 | `reviews.force_publish` | 可免审发布 |
 | `reviews.read_feedback` | 可查看并了结意见反馈 |
 | `reviews.handle_report` | 可处理举报案 |
-| `accounts.can_review_identity` | 可审核身份验证 |
+| `accounts.can_review_identity` | 可审核身份认证 |
 | `accounts.manage_validity` | 可管理账号 / 认证有效期（对下位用户延 / 缩） |
 | `messaging.manage_comment_thread` | 评论区协管 |
 | `messaging.manage_announcement` | 管理横幅公告 |
@@ -92,11 +92,11 @@
 ```
 is_superuser                   → 超级管理员（最高，盖一切）
 否则 is_staff                  → 管理员
-否则 已登录且已验证              → 用户
-否则（匿名 或 已登录未验证）      → 访客
+否则 已登录且已认证              → 用户
+否则（匿名 或 已登录未认证）      → 访客
 ```
 
-徽章**与组、权限完全解耦**，不参与任何鉴权判定。「访客」= 匿名 ∪ 已登录未验证（未验证还不算正式用户，见 [身份验证](verification.md)）。
+徽章**与组、权限完全解耦**，不参与任何鉴权判定。「访客」= 匿名 ∪ 已登录未认证（未认证还不算正式用户，见 [身份认证](certification.md)）。
 
 ## 执行纪律
 

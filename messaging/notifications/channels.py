@@ -69,7 +69,7 @@ def _copy_for(category: str, event: str, payload: dict) -> str:
         if event == "identity_resolved":
             if payload.get("result") == "approved":
                 return "你的身份认证已通过审核，现在可以使用全部功能了。"
-            return "你的身份证明材料未通过审核，可在「账号验证」面板重新提交更清晰的材料。"
+            return "你的身份证明材料未通过审核，可在「账号认证」面板重新提交更清晰的材料。"
         if event == "report_resolved":
             if payload.get("result") == "upheld":
                 return "你提交的举报已成立并完成处置，感谢你的反馈。"
@@ -101,7 +101,7 @@ def _copy_for(category: str, event: str, payload: dict) -> str:
         when = f"（{expires_on} 到期）" if expires_on else ""
         return (
             f"你的{label}即将到期{when}。到期后相关权限会被收回（管理员身份被撤销、"
-            "成员验证状态回落为访客）；如仍需保留，请尽快联系社长或服务器管理员续期。"
+            "成员认证状态回落为访客）；如仍需保留，请尽快联系社长或服务器管理员续期。"
         )
     return "你有一条新通知，登录站点即可查看完整内容。"
 
@@ -120,7 +120,7 @@ class SiteChannel(BaseChannel):
 
 @register_channel
 class EmailChannel(BaseChannel):
-    """邮件：发送带社团徽标的 HTML 通知到用户已验证邮箱（每源独立配色）。
+    """邮件：发送带社团徽标的 HTML 通知到用户已认证邮箱（每源独立配色）。
 
     ``connection``：由投递队列传入的复用 SMTP 连接（批量发送共享一个会话）；
     ``None`` 时自建连接（与历史行为一致）。
@@ -128,7 +128,7 @@ class EmailChannel(BaseChannel):
 
     key = "email"
     name = "邮件"
-    description = "将通知摘要发送到邮箱（需已完成验证）"
+    description = "将通知摘要发送到邮箱（需已完成认证）"
     uses_shared_connection = True  # 复用投递队列的 SMTP 连接
 
     def is_available(self, user) -> bool:

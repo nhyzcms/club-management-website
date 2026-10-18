@@ -1,8 +1,8 @@
-"""注册（ADR-0006 注册↔验证分离，2026-09 修订）：建登录身份（用户名 + 密码 + Turnstile）
+"""注册（ADR-0006 注册↔认证分离，2026-09 修订）：建登录身份（用户名 + 密码 + Turnstile）
 + 真实姓名 / 身份（必填，写入 Profile），邮箱可选。
 
 覆盖：最小注册建 User+Profile（无 Verification 行 ⇒ 访客）；带邮箱注册建 email 通道 pending
-并发验证信（User.email 保持空）；必填 real_name/identity；用户名/邮箱唯一；密码校验；
+并发认证信（User.email 保持空）；必填 real_name/identity；用户名/邮箱唯一；密码校验；
 注册限流；Turnstile 接线；证明材料落私有存储（IdentityProof 在 #38 人工通道经 ORM 造）。
 
 用例邮箱统一用白名单内域名（@163.com），否则会被后缀白名单拦下（见 tests_email_domain / ADR-0023）。
@@ -58,9 +58,9 @@ class RegisterViewTest(TestCase):
         self.assertEqual(resp.status_code, 201, resp.content)
 
         user = User.objects.get(username="newbie")
-        self.assertEqual(user.email, "")  # 无邮箱 → User.email 空（只装已验证邮箱）
+        self.assertEqual(user.email, "")  # 无邮箱 → User.email 空（只装已认证邮箱）
         self.assertTrue(user.is_active)
-        # 新号无 Verification 行 ⇒ 未验证（访客）
+        # 新号无 Verification 行 ⇒ 未认证（访客）
         self.assertEqual(Verification.objects.filter(user=user).count(), 0)
         self.assertFalse(is_verified(user))
         # 无邮箱不发信
@@ -69,7 +69,7 @@ class RegisterViewTest(TestCase):
     def test_register_creates_profile_without_legacy_verification_fields(self):
         self.post(valid_payload())
         user = User.objects.get(username="newbie")
-        # Profile 存在；验证态不在 Profile 上（已删四字段）
+        # Profile 存在；认证态不在 Profile 上（已删四字段）
         self.assertTrue(user.profile)
         for gone in ("email_verified", "identity_verified", "verified_at", "verified_by"):
             self.assertFalse(hasattr(user.profile, gone))
@@ -80,13 +80,13 @@ class RegisterViewTest(TestCase):
         self.assertEqual(resp.status_code, 201, resp.content)
 
         user = User.objects.get(username="newbie")
-        self.assertEqual(user.email, "")  # 待验邮箱不住 User.email
+        self.assertEqual(user.email, "")  # 待认证邮箱不住 User.email
         v = Verification.objects.get(user=user, channel=Verification.CHANNEL_EMAIL)
         self.assertEqual(v.status, Verification.STATUS_PENDING)
         self.assertEqual(v.identifier, "newbie@163.com")
-        # 仅 email 通道 pending（未 approved）⇒ 仍未验证
+        # 仅 email 通道 pending（未 approved）⇒ 仍未认证
         self.assertFalse(is_verified(user))
-        # 验证信发往待验地址
+        # 认证信发往待认证地址
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("newbie@163.com", mail.outbox[0].to)
         self.assertIn("/#/verify-email?uid=", mail.outbox[0].body)
@@ -150,7 +150,7 @@ class RegisterViewTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_email_taken_by_verified_user_email_rejected(self):
-        # 一个已验证用户 User.email 占了该地址 → 新注册判重
+        # 一个已认证用户 User.email 占了该地址 → 新注册判重
         u = User.objects.create_user(username="verified", password="p")
         u.email = "taken@163.com"
         u.save()

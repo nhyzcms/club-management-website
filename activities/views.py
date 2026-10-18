@@ -1,6 +1,6 @@
 """活动视图集（ADR 0007 / 0011）。
 
-创建（已验证成员）+ 列表/详情（成员可读；访客仅公开调研）+ 正文图片上传。
+创建（已认证成员）+ 列表/详情（成员可读；访客仅公开调研）+ 正文图片上传。
 众议投票 / 征集投稿复审 / 展示布展 / 调研作答。
 """
 import os
@@ -84,7 +84,7 @@ def _parse_extensions(raw):
 
 
 class ActivityViewSet(viewsets.ModelViewSet):
-    """活动（众议/征集）：已验证成员可发起与投票；成员可读。"""
+    """活动（众议/征集）：已认证成员可发起与投票；成员可读。"""
 
     filterset_fields = ["type", "status", "creator"]
     search_fields = ["title", "body"]
@@ -140,7 +140,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if self.action == "responses":
             return [IsAuthenticated()]
         if self.action == "vote":
-            # 公开受众允许游客投票；成员受众的登录 / 验证门禁在视图内按受众把关。
+            # 公开受众允许游客投票；成员受众的登录 / 认证门禁在视图内按受众把关。
             return [AllowAny()]
         if self.action == "submit":
             return [IsAuthenticated(), IsVerified()]
@@ -155,7 +155,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if self.action in ("add_exhibit", "update_exhibit", "delete_exhibit", "import_from_collection"):
             return [IsAuthenticated(), CanModifyActivity()]
         if self.action == "upload_image":
-            # 正文插图：能发起活动的已验证成员即可（与创建同门禁）
+            # 正文插图：能发起活动的已认证成员即可（与创建同门禁）
             return [IsAuthenticated(), IsVerified()]
         if self.action == "survey_upload":
             # 问卷文件题：填答者含未登录游客（与 respond 同开放度），靠类型/大小限制兜底
@@ -210,7 +210,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
         super().perform_update(serializer)
 
-    # ── 众议投票（公开受众任何人；仅成员须登录 + 已验证）──
+    # ── 众议投票（公开受众任何人；仅成员须登录 + 已认证）──
     @action(detail=True, methods=["post"])
     def vote(self, request, pk=None):
         activity = self.get_object()  # 触发惰性结算（若已到点则已 closed）
@@ -219,7 +219,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             if user is None:
                 return Response({"detail": "仅成员可投票，请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
             if not is_verified(user):
-                return Response({"detail": "请先完成账号验证后再投票。"}, status=status.HTTP_403_FORBIDDEN)
+                return Response({"detail": "请先完成账号认证后再投票。"}, status=status.HTTP_403_FORBIDDEN)
         try:
             voting.cast_ballot(
                 activity=activity,
@@ -509,7 +509,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="upload_image")
     def upload_image(self, request):
-        """正文内嵌图片上传（已验证成员）：返回 {url}。供编辑器「插入图片」与 Word 导入共用。"""
+        """正文内嵌图片上传（已认证成员）：返回 {url}。供编辑器「插入图片」与 Word 导入共用。"""
         file = request.FILES.get("image")
         if not file:
             return Response({"detail": "请选择图片。"}, status=status.HTTP_400_BAD_REQUEST)

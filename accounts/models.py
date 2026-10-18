@@ -49,14 +49,14 @@ class Profile(models.Model):
     bio = models.TextField(blank=True)
 
     # 可选资料（ADR-0006 决策 3）：real_name 不公开（仅本人 / 审核员可见），在提交身份证明
-    # 时收集；identity 是纯元数据，不影响权限。验证态不在 Profile 上——见 Verification。
+    # 时收集；identity 是纯元数据，不影响权限。认证态不在 Profile 上——见 Verification。
     real_name = models.CharField("真实姓名", max_length=100, blank=True)
     identity = models.CharField("身份", max_length=10, choices=IDENTITY_CHOICES, blank=True)
 
-    # 身份有效期（ADR-0041）：注册验证宽限覆盖 + 因超期停用标记。
-    # registration_deadline 为 null = 按 date_joined + 站点「注册后验证宽限」起算；
+    # 身份有效期（ADR-0041）：注册认证宽限覆盖 + 因超期停用标记。
+    # registration_deadline 为 null = 按 date_joined + 站点「注册后认证宽限」起算；
     # 持 manage_validity 者可对下位用户显式延/缩。
-    registration_deadline = models.DateTimeField("注册验证截止", null=True, blank=True)
+    registration_deadline = models.DateTimeField("注册认证截止", null=True, blank=True)
     # expiry_disabled_at 标记「因注册超期未认证被系统停用」，用于登录时给专属提示；
     # 系统维护，不可手改。
     expiry_disabled_at = models.DateTimeField("因超期停用时间", null=True, blank=True)
@@ -66,13 +66,13 @@ class Profile(models.Model):
 
 
 class Verification(models.Model):
-    """验证通道当前状态（ADR-0006）：每 (user, channel) 一行，in-place 更新。
+    """认证通道当前状态（ADR-0006）：每 (user, channel) 一行，in-place 更新。
 
-    账号「已验证」⇔ 任一通道 ``status=approved`` 且未过期（见 :func:`is_verified`）。
+    账号「已认证」⇔ 任一通道 ``status=approved`` 且未过期（见 :func:`is_verified`）。
     通道是一等公民：邮箱、人工审批、后台委任、认证码是通道；加通道 = 加 choices + 实现
     该通道流程，核心判定（任一 approved）不动。
 
-    - ``identifier`` 是通道主体：邮箱=待验地址（验证前住此、不进 ``User.email``）；人工=空；
+    - ``identifier`` 是通道主体：邮箱=待认证地址（认证前住此、不进 ``User.email``）；人工=空；
       后台委任=``staff`` / ``superuser``。
     - ``expires_at``（ADR-0041）是该通道的认证有效期：认证通道 = 通过日 + 认证有效期；
       委任通道 = 委任日 + 管理员有效期（超管 null=永久）。null=永久不过期。
@@ -94,7 +94,7 @@ class Verification(models.Model):
     STATUS_APPROVED = "approved"
     STATUS_REJECTED = "rejected"
     STATUSES = [
-        (STATUS_PENDING, "待验证"),
+        (STATUS_PENDING, "待认证"),
         (STATUS_APPROVED, "已通过"),
         (STATUS_REJECTED, "已驳回"),
     ]
@@ -113,8 +113,8 @@ class Verification(models.Model):
     expires_at = models.DateTimeField("有效期至", null=True, blank=True)
 
     class Meta:
-        verbose_name = "验证通道"
-        verbose_name_plural = "验证通道"
+        verbose_name = "认证通道"
+        verbose_name_plural = "认证通道"
         constraints = [
             models.UniqueConstraint(fields=["user", "channel"], name="unique_user_channel"),
         ]
@@ -175,15 +175,15 @@ def _prefetched_channels(user):
 
 
 def prefetch_verifications_for(user):
-    """把 ``user.verifications`` 一次读进内存，使本次请求后续的验证判定零 SQL。
+    """把 ``user.verifications`` 一次读进内存，使本次请求后续的认证判定零 SQL。
 
-    为什么需要它：列表序列化会对**同一行**反复判定「当前用户是否已验证」
+    为什么需要它：列表序列化会对**同一行**反复判定「当前用户是否已认证」
     （活动列表的 ``owed``、收件箱的活动债），实测 20 行 = 20 条完全相同的通道查询。
     在取 queryset 前调一次本函数，这些判定就都走内存缓存。
 
     幂等：同一对象只预取一次（``prefetch_related_objects`` 重复调用会再查一次库）。
     安全性：预取缓存的生命周期只在这一个请求内，且调用点（列表 / 聚合视图）本身不写
-    验证行；各验证通道的写路径照常直接查库，不会读到陈旧状态。返回原 user，便于链式写。
+    认证行；各认证通道的写路径照常直接查库，不会读到陈旧状态。返回原 user，便于链式写。
     """
     if user is None or not getattr(user, "pk", None):
         return user
@@ -195,9 +195,9 @@ def prefetch_verifications_for(user):
 
 
 def has_ever_verified(user):
-    """是否曾完成过任一验证（``verified_at`` 非空）。
+    """是否曾完成过任一认证（``verified_at`` 非空）。
 
-    用于区分「从未验证」（适用注册 60 天宽限停用）与「验证后过期」（不适用该停用，
+    用于区分「从未认证」（适用注册 60 天宽限停用）与「认证后过期」（不适用该停用，
     只回落为访客、需重新认证）。
     """
     if user is None or not getattr(user, "is_authenticated", False):
@@ -209,10 +209,10 @@ def has_ever_verified(user):
 
 
 def is_verified(user):
-    """账号「已验证」单一计算源（ADR-0006 + ADR-0041）。
+    """账号「已认证」单一计算源（ADR-0006 + ADR-0041）。
 
-    任一验证通道 ``approved`` 且未过期即真。``expires_at=null`` 视为永久（超管委任 /
-    后台显式延长）。过期通道不再算已验证，账号回落为访客、需重新认证。
+    任一认证通道 ``approved`` 且未过期即真。``expires_at=null`` 视为永久（超管委任 /
+    后台显式延长）。过期通道不再算已认证，账号回落为访客、需重新认证。
 
     纯计算：不读 ``is_staff`` / ``is_superuser``（ADR-0013）。超管 / 管理员经后台委任通道
     计入（超管委任 expires_at=null 永久），不在本函数内特判标志位。权限轴逃生舱仍是
@@ -262,7 +262,7 @@ def admin_identity_valid(user):
 
 
 def rank_of(user):
-    """权限层级：超级管理员(3) > 管理员(2) > 已验证用户(1) > 未验证/访客(0)。"""
+    """权限层级：超级管理员(3) > 管理员(2) > 已认证用户(1) > 未认证/访客(0)。"""
     if user is None or not getattr(user, "is_authenticated", False):
         return 0
     if user.is_superuser:
@@ -294,7 +294,7 @@ def can_manage_validity_for(actor, target):
 def sync_appointment_channel(user):
     """后台委任通道（ADR-0013 + ADR-0041）：管理员或超级管理员 ⇒ approved 行；否则删行。
 
-    委任是后台副作用，不是用户走通道，故不受站点「验证通道开/关」约束。
+    委任是后台副作用，不是用户走通道，故不受站点「认证通道开/关」约束。
     ``identifier`` 记委任档（``superuser`` 优先于 ``staff``）。``verified_by`` 空（系统）。
     有效期：超管 null（永久）；管理员 = 委任日 + 管理员有效期；仅在「未设 / 已过期」时
     重算（即首次授予或过期后重新授予），不因无关的 user.save 顺延。
@@ -346,7 +346,7 @@ def sync_appointment_channel(user):
 
 
 def verified_member_count():
-    """已验证成员数（任一未过期 approved 通道的活跃用户）——众议「全员投完即结算」的分母。
+    """已认证成员数（任一未过期 approved 通道的活跃用户）——众议「全员投完即结算」的分母。
 
     distinct：一个用户可能有多条 approved 通道，按用户去重。后台委任会使管理员/超管计入
     （他们有 appointment 行）；本函数不另读 ``is_staff`` / ``is_superuser``。
@@ -365,7 +365,7 @@ def verified_member_count():
 class ValidityNotice(models.Model):
     """身份有效期预警的发送台账（幂等 + 审计）。
 
-    通道 ``expires_at`` 到期会带来**降权**（认证通道：已验证 → 未验证；委任通道：撤销
+    通道 ``expires_at`` 到期会带来**降权**（认证通道：已认证 → 未认证；委任通道：撤销
     ``is_staff``），故在到期前两个月 / 一个月各发一次站内提醒，见 ``accounts.validity_notices``。
 
     唯一键含 **``expires_at`` 快照**：同一通道行换了到期时间（续期 / 过期后重新委任）
@@ -380,7 +380,7 @@ class ValidityNotice(models.Model):
     ]
 
     verification = models.ForeignKey(
-        Verification, verbose_name="验证通道", on_delete=models.CASCADE,
+        Verification, verbose_name="认证通道", on_delete=models.CASCADE,
         related_name="validity_notices",
     )
     expires_at = models.DateTimeField("到期时间快照")
@@ -451,7 +451,7 @@ class UserSession(models.Model):
 class AuthCode(models.Model):
     """认证码（ADR-0020）：后台生成、成员兑换即通过；有效期 × 可用次数。
 
-    归属验证体系：兑换直接写 authcode 通道 approved（identifier=码原文，后台可读）。
+    归属认证体系：兑换直接写 authcode 通道 approved（identifier=码原文，后台可读）。
     码的寿命（过期 / 吊销 / 用尽）只停止**后续**兑换，**不回溯**已通过者；兑换记录
     （AuthCodeRedemption）为审计留底。生成侧只在 Django 后台（不建前端管理页）。
     """

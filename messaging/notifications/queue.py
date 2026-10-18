@@ -163,13 +163,13 @@ def _process_one(delivery_id: int) -> str:
             _mark_failed(delivery, f"未知通道：{delivery.channel_key}")
             return "failed"
 
-        # 建行与发送存在时间差：发送前复查通道可用性（邮箱被撤验证等情形不再打扰）。
+        # 建行与发送存在时间差：发送前复查通道可用性（邮箱被撤认证等情形不再打扰）。
         try:
             available = channel.is_available(delivery.notification.recipient)
         except Exception:  # pragma: no cover - 防御性
             available = False
         if not available:
-            _mark_failed(delivery, "收件人当前不可用（邮箱未验证或已停用）")
+            _mark_failed(delivery, "收件人当前不可用（邮箱未认证或已停用）")
             return "failed"
 
         try:

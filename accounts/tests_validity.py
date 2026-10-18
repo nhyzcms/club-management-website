@@ -74,7 +74,7 @@ class IsVerifiedExpiryTest(TestCase):
         u = User.objects.create_user(username="u", password="p")
         approve(u, expires_at=timezone.now() - timedelta(days=1))
         self.assertFalse(is_verified(u))
-        # 曾验证过 → 不触发 60 天停用
+        # 曾认证过 → 不触发 60 天停用
         self.assertTrue(has_ever_verified(u))
 
     def test_permanent_channel_never_expires(self):

@@ -1,6 +1,6 @@
 """活动 HTTP 黑盒测试（主 seam：经 APIClient 打端点，断言状态码 + 响应形状 + DB 副作用）。
 
-T1 范围：创建（已验证成员）+ 列表/详情（成员可读）+ 正文消毒 + 正文图片上传。
+T1 范围：创建（已认证成员）+ 列表/详情（成员可读）+ 正文消毒 + 正文图片上传。
 投票/投稿/复审在后续切片的测试类里增补。
 """
 import json
@@ -46,7 +46,7 @@ class ActivityCreateReadTest(TestCase):
 
     def setUp(self):
         self.author = grant_verification(User.objects.create_user(username="author", password="x"))
-        self.visitor = User.objects.create_user(username="visitor", password="x")  # 未验证 = 访客
+        self.visitor = User.objects.create_user(username="visitor", password="x")  # 未认证 = 访客
         self.other = grant_verification(User.objects.create_user(username="other", password="x"))
         self.client = APIClient()
 
@@ -69,7 +69,7 @@ class ActivityCreateReadTest(TestCase):
         self.assertEqual(resp.data["status"], "collecting")  # 征集创建即收件中
 
     def test_unverified_member_cannot_create(self):
-        # 访客（未验证）发起 → IsVerified 门禁拒绝
+        # 访客（未认证）发起 → IsVerified 门禁拒绝
         resp = _json(self.client, "post", "/activities/activities/", self.visitor,
                      {"type": "deliberation", "title": "x"})
         self.assertEqual(resp.status_code, 403)
@@ -264,7 +264,7 @@ class DeliberationVotingTest(TestCase):
         self.author = grant_verification(User.objects.create_user(username="author", password="x"))
         self.m1 = grant_verification(User.objects.create_user(username="m1", password="x"))
         self.m2 = grant_verification(User.objects.create_user(username="m2", password="x"))
-        self.visitor = User.objects.create_user(username="visitor", password="x")  # 未验证
+        self.visitor = User.objects.create_user(username="visitor", password="x")  # 未认证
         self.client = APIClient()
 
     def _create(self, user, **payload):
@@ -449,7 +449,7 @@ class CollectionSubmissionTest(TestCase):
         self.author = grant_verification(User.objects.create_user(username="author", password="x"))
         self.m1 = grant_verification(User.objects.create_user(username="m1", password="x"))
         self.m2 = grant_verification(User.objects.create_user(username="m2", password="x"))
-        self.visitor = User.objects.create_user(username="visitor", password="x")  # 未验证
+        self.visitor = User.objects.create_user(username="visitor", password="x")  # 未认证
         self.client = APIClient()
 
     def _collection(self, user, **cfg):
@@ -774,10 +774,10 @@ class SchedulingTest(TestCase):
 
 
 class AutoCloseOnFullVoteTest(TestCase):
-    """全员投完即提前结算：众议票数达已验证成员数时自动 closed。"""
+    """全员投完即提前结算：众议票数达已认证成员数时自动 closed。"""
 
     def setUp(self):
-        # 本测试下已验证成员恰好 = author + m1 = 2 人（TestCase 隔离，无其他用户）
+        # 本测试下已认证成员恰好 = author + m1 = 2 人（TestCase 隔离，无其他用户）
         self.author = grant_verification(User.objects.create_user(username="author", password="x"))
         self.m1 = grant_verification(User.objects.create_user(username="m1", password="x"))
         self.client = APIClient()
@@ -816,7 +816,7 @@ class ExhibitionTest(TestCase):
         self.curator = grant_verification(User.objects.create_user(username="curator", password="x"))
         self.member = grant_verification(User.objects.create_user(username="member", password="x"))
         self.m2 = grant_verification(User.objects.create_user(username="m2", password="x"))
-        self.visitor = User.objects.create_user(username="visitor", password="x")  # 未验证
+        self.visitor = User.objects.create_user(username="visitor", password="x")  # 未认证
         self.client = APIClient()
 
     def _img(self, name="a.png", data=b"x", ct="image/png"):
@@ -1578,7 +1578,7 @@ class PublicVotingGuestTest(TestCase):
     def setUp(self):
         self.author = grant_verification(User.objects.create_user(username="pauthor", password="x"))
         self.member = grant_verification(User.objects.create_user(username="pmember", password="x"))
-        self.visitor = User.objects.create_user(username="pvisitor", password="x")  # 未验证
+        self.visitor = User.objects.create_user(username="pvisitor", password="x")  # 未认证
         self.client = APIClient()
 
     def _create(self, **extra):
@@ -1736,10 +1736,10 @@ class PublicVotingGuestTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["audience"], "public")
 
-    # ---- 提前结算只数已验证成员的票 ----
+    # ---- 提前结算只数已认证成员的票 ----
 
     def test_guest_votes_do_not_trigger_early_close(self):
-        # 2 名已验证成员（author/member）；游客票不参与提前结算
+        # 2 名已认证成员（author/member）；游客票不参与提前结算
         a = self._create()
         aid, oid = a.data["id"], a.data["options"][0]["id"]
         self.assertEqual(self._guest_vote(aid, [oid], device=self.DEV1).status_code, 200)

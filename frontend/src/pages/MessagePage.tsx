@@ -144,7 +144,7 @@ export default function MessagePage() {
                 className="btn btn-ghost btn-sm"
                 type="button"
                 disabled={!verified}
-                title={verified ? "搜索用户发起私信" : "验证后才能发私信"}
+                title={verified ? "搜索用户发起私信" : "认证后才能发私信"}
                 onClick={() => { setComposing((v) => !v); setStartError(""); }}
               >
                 {composing ? "取消" : "写私信"}
@@ -161,7 +161,7 @@ export default function MessagePage() {
                     onChange={(users) => { if (users[0]) startWith(users[0]); }}
                   />
                 ) : (
-                  <p className="msg-compose-hint">验证后才能发私信</p>
+                  <p className="msg-compose-hint">认证后才能发私信</p>
                 )}
                 {startError && <p className="msg-compose-error">{startError}</p>}
               </div>

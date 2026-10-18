@@ -73,7 +73,7 @@
 .profile-perm-icon svg { width: 100%; height: 100%; }
 .badge-ghost { background: var(--surface-2); color: var(--muted); }
 
-/* 账号验证面板（#36）：数据驱动，每通道一卡 */
+/* 账号认证面板（#36）：数据驱动，每通道一卡 */
 .verify-overview { margin-bottom: var(--s-4); }
 .verify-cards { display: grid; gap: var(--s-3); }
 .verify-card { padding: var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-1); }

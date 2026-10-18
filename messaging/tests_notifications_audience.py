@@ -171,7 +171,7 @@ class WiringTest(TestCase):
     # ---- 审核系统：身份认证 ----
 
     def test_identity_submit_notifies_reviewer(self):
-        submitter = User.objects.create_user(username="proof_sub", password="x")  # 未验证，可提交
+        submitter = User.objects.create_user(username="proof_sub", password="x")  # 未认证，可提交
         grant(self.handler, "accounts", "can_review_identity")
         self.client.force_login(submitter)  # Django 会话（该视图非 DRF）
         resp = self.client.post(

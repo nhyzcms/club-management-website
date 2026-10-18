@@ -11,7 +11,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (
-            "验证",
+            "认证",
             {
                 "fields": (
                     "verification_enabled",

@@ -1,20 +1,20 @@
 # 账号与认证 API
 
-账号体系：注册 / 登录 / 登出 / 会话记录、验证通道（邮箱、人工审批、后台委任）、密码重置、资料与头像、能力投影（`can_*`）、用户检索，以及人工身份审核队列与待办收件箱。端点全部由 `accounts/urls.py` 暴露（前缀 `/auth/`，其中 `identity-reviews` 由 `DefaultRouter` 注册）。
+账号体系：注册 / 登录 / 登出 / 会话记录、认证通道（邮箱、人工审批、后台委任）、密码重置、资料与头像、能力投影（`can_*`）、用户检索，以及人工身份审核队列与待办收件箱。端点全部由 `accounts/urls.py` 暴露（前缀 `/auth/`，其中 `identity-reviews` 由 `DefaultRouter` 注册）。
 
 > 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005](../adr/0005-access-control-principle.md)、[ADR-0006](../adr/0006-verification-model.md)、[ADR-0008](../adr/0008-list-pagination.md)、[ADR-0010](../adr/0010-runtime-site-policy.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0023](../adr/0023-email-domain-allowlist.md)、[ADR-0025](../adr/0025-member-identity.md)
 
 ## 模块约定
 
 - **路径前缀**：`config/urls.py` 把本 app 挂在 `/auth/`，故端点形如 `/auth/login/`。
-- **认证口径**（本文件「认证」列）：公开 = 匿名可用；登录 = 仅要求已登录；已验证 = 登录且 `is_verified`（任一验证通道 `approved` 且未过期，[ADR-0006](../adr/0006-verification-model.md)）。
+- **认证口径**（本文件「认证」列）：公开 = 匿名可用；登录 = 仅要求已登录；已认证 = 登录且 `is_verified`（任一认证通道 `approved` 且未过期，[ADR-0006](../adr/0006-verification-model.md)）。
 - **未登录行为分两类**：`@login_required` 的函数视图未登录时 302 重定向到 `/login/`；DRF 端点（`identity-reviews`、`inbox`）会话认证无跳转，未登录 / 无权限均返回 403 JSON（`{"detail": …}`）。
 - **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed` / `account_expired_unverified`。
 - **Session + CSRF**：登录态走 Django Session cookie；非 GET 请求须带 `X-CSRFToken`（可先 `GET /auth/csrf/` 取 cookie）。
 - **单会话与挤号**（`accounts.middleware.SingleSessionMiddleware`）：同一账号仅一个当前会话；他设备登录成功后旧会话的下一次请求返回 401 `{"detail": "您的账号在其他设备登录，您已被迫下线。", "reason": "session_superseded", "takeover": {"device_name": …, "device_type": …, "ip": …, "time": …}}`（浏览器导航 Accept 含 `text/html` 时改返 401 HTML 下线页）。
 - **登录保护与限流**：账号已有未满 10 分钟的当前会话、且本次非同一会话再认证 → 409 `login_protection`；登录失败按 IP（`login_per_ip_per_hour`）与按用户名 / 邮箱（`login_per_username_per_hour`）双维度计数（只计失败），命中返回 429 `login_throttled` + `Retry-After` 头。
-- **站点策略门禁**：`verification_enabled=false` 时新开 / 完成通道的端点返回 403 `verification_closed`（已通过者仍算已验证）；`registration_enabled=false` 时注册 403 `registration_closed`。旋钮见[公共 API](common.md)。
-- **邮箱后缀白名单**（[ADR-0023](../adr/0023-email-domain-allowlist.md)）：仅注册带邮箱与邮箱绑定 / 换绑判定；不在白名单（`accounts/email_domains.py`）→ 400 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "<命中的域名>"}`。不回溯既有地址、重发与验证链接落地。
+- **站点策略门禁**：`verification_enabled=false` 时新开 / 完成通道的端点返回 403 `verification_closed`（已通过者仍算已认证）；`registration_enabled=false` 时注册 403 `registration_closed`。旋钮见[公共 API](common.md)。
+- **邮箱后缀白名单**（[ADR-0023](../adr/0023-email-domain-allowlist.md)）：仅注册带邮箱与邮箱绑定 / 换绑判定；不在白名单（`accounts/email_domains.py`）→ 400 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "<命中的域名>"}`。不回溯既有地址、重发与认证链接落地。
 
 ## 端点一览
 
@@ -24,8 +24,8 @@
 | POST | `/auth/logout/` | 登录 | — | 登出并清当前会话标记 |
 | GET | `/auth/csrf/` | 公开 | — | 下发 `csrftoken` cookie |
 | POST | `/auth/register/` | 公开 | — | 自助注册（multipart） |
-| GET | `/auth/verify-email/` | 公开 | — | 邮箱验证链接落地 |
-| POST | `/auth/resend-verification/` | 公开 | — | 重发验证邮件 |
+| GET | `/auth/verify-email/` | 公开 | — | 邮箱认证链接落地 |
+| POST | `/auth/resend-verification/` | 公开 | — | 重发认证邮件 |
 | GET | `/auth/me/` | 登录 | — | 当前用户（资料 + 能力投影） |
 | GET | `/auth/profile/` | 登录 | — | 同上（同一响应，历史别名） |
 | POST | `/auth/profile/update/` | 登录 | — | 更新资料 / 头像（multipart） |
@@ -33,8 +33,8 @@
 | GET | `/auth/sessions/` | 登录 | — | 本人最近登录记录 |
 | POST | `/auth/password-reset/` | 公开 | — | 发起密码重置 |
 | POST | `/auth/password-reset/confirm/` | 公开 | — | 确认新密码 |
-| GET | `/auth/verification/` | 登录 | — | 账号验证状态总览 |
-| POST | `/auth/verification/email/bind/` | 登录 | — | 绑定 / 换邮 / 重发邮箱验证 |
+| GET | `/auth/verification/` | 登录 | — | 账号认证状态总览 |
+| POST | `/auth/verification/email/bind/` | 登录 | — | 绑定 / 换邮 / 重发邮箱认证 |
 | POST | `/auth/verification/manual/submit/` | 登录 | — | 提交人工通道身份证明（multipart） |
 | POST | `/auth/verification/authcode/redeem/` | 登录 | — | 兑换认证码（即时通过） |
 | GET | `/auth/member/` | 登录 | — | 本人社员身份 + 可认领候选（[ADR-0025](../adr/0025-member-identity.md)） |
@@ -46,7 +46,7 @@
 | POST | `/auth/identity-reviews/{pk}/approve/` | 登录 | `accounts.can_review_identity` | 通过身份审核 |
 | POST | `/auth/identity-reviews/{pk}/reject/` | 登录 | `accounts.can_review_identity` | 驳回身份审核 |
 | POST | `/auth/identity-reviews/{pk}/disable/` | 登录 | `accounts.can_review_identity` | 停用账号 |
-| GET | `/auth/inbox/` | 已验证 | — | 待办收件箱（活动债 + 任务债） |
+| GET | `/auth/inbox/` | 已认证 | — | 待办收件箱（活动债 + 任务债） |
 | GET | `/auth/users/` | 登录 | — | 用户列表（`?search=` 搜人） |
 | GET | `/auth/users/{id}/profile/` | 登录 | — | 他人主页资料（按查看者身份裁剪） |
 | GET | `/auth/users/{id}/content/` | 登录 | — | 用户内容 tab（按查看者身份裁剪） |
@@ -58,7 +58,7 @@
 
 `POST /auth/login/`
 
-**认证**：公开；**权限**：—。请求体 JSON：`username` / `email`（二选一；`email` 仅匹配**已绑定**邮箱 `User.email`，待验邮箱登不进）、`password`（必填）。
+**认证**：公开；**权限**：—。请求体 JSON：`username` / `email`（二选一；`email` 仅匹配**已绑定**邮箱 `User.email`，待认证邮箱登不进）、`password`（必填）。
 
 **响应 `200 OK`**
 
@@ -66,7 +66,7 @@
 {"user": {"id": 7, "username": "zhangsan", "email": "zs@example.com"}}
 ```
 
-`email` 未绑定时为空字符串。未验证账号照常登录（登录与验证解耦）；停用账号被拒，普通停用与「超期未认证被系统停用」返回不同的错误提示（见下表）。
+`email` 未绑定时为空字符串。未认证账号照常登录（登录与认证解耦）；停用账号被拒，普通停用与「超期未认证被系统停用」返回不同的错误提示（见下表）。
 
 **错误**
 
@@ -97,7 +97,7 @@
 |---|---|---|---|
 | username | string | 是 | 站点内唯一（大小写不敏感） |
 | password / password2 | string | 是 | 密码（走 Django 密码校验器）与确认密码，须一致 |
-| email | string | 否 | 提供则建 `email` 通道 `pending`（`identifier`=待验地址，归一化小写）并发验证信；**后缀须在白名单内**（[ADR-0023](../adr/0023-email-domain-allowlist.md)） |
+| email | string | 否 | 提供则建 `email` 通道 `pending`（`identifier`=待认证地址，归一化小写）并发认证信；**后缀须在白名单内**（[ADR-0023](../adr/0023-email-domain-allowlist.md)） |
 | real_name | string | 是 | 真实姓名，写入 `Profile.real_name`（不公开展示） |
 | identity | string | 是 | 身份，写入 `Profile.identity`；∈ `student` / `external` / `graduate` / `parent` / `teacher` |
 | turnstile_token | string | 条件 | Turnstile 启用时必填 |
@@ -105,26 +105,26 @@
 **响应 `201 Created`**
 
 ```json
-{"message": "注册成功。请查收邮件完成邮箱验证。", "user": {"id": 8, "username": "newuser"}}
+{"message": "注册成功。请查收邮件完成邮箱认证。", "user": {"id": 8, "username": "newuser"}}
 ```
 
-`User.email` 保持空（待验邮箱住通道 `identifier`，验证通过才晋升）；未提供邮箱或验证通道关闭时 `message` 为 `"注册成功。"` 且不建通道。
+`User.email` 保持空（待认证邮箱住通道 `identifier`，认证通过才晋升）；未提供邮箱或认证通道关闭时 `message` 为 `"注册成功。"` 且不建通道。
 
 **错误**：400 字段校验（用户名 / 邮箱占用、两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、邮箱格式，单条或数组）、邮箱后缀不在白名单 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`，或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
 
-### 邮箱验证与重发
+### 邮箱认证与重发
 
 `GET /auth/verify-email/?uid=<uid>&token=<token>`
 
-**认证**：公开；**权限**：—。`uid` 为 urlsafe base64 的用户 pk；`token` 绑 email 通道 `identifier` + `status`（改待验邮箱或验证通过后旧令牌立即失效，不可重放）。不校验后缀白名单（令牌已限定既有待验地址）。
+**认证**：公开；**权限**：—。`uid` 为 urlsafe base64 的用户 pk；`token` 绑 email 通道 `identifier` + `status`（改待认证邮箱或认证通过后旧令牌立即失效，不可重放）。不校验后缀白名单（令牌已限定既有待认证地址）。
 
-**响应 `200 OK`**：`{"message": "邮箱验证成功。"}`。通过后：email 通道置 `approved` 并记 `verified_at`（`verified_by` 空），`identifier` 晋升写入 `User.email`——绑定邮箱生效，可用于邮箱登录与密码重置。
+**响应 `200 OK`**：`{"message": "邮箱认证成功。"}`。通过后：email 通道置 `approved` 并记 `verified_at`（`verified_by` 空），`identifier` 晋升写入 `User.email`——绑定邮箱生效，可用于邮箱登录与密码重置。
 
-**错误**：400 `{"error": "验证链接无效或已过期。", "reason": "invalid"}`；403 `{"error": "验证通道已关闭", "reason": "verification_closed"}`。
+**错误**：400 `{"error": "认证链接无效或已过期。", "reason": "invalid"}`；403 `{"error": "认证通道已关闭", "reason": "verification_closed"}`。
 
 `POST /auth/resend-verification/`
 
-**认证**：公开；**权限**：—。请求体 JSON：`email`（是）、`turnstile_token`（条件）。**响应 `200 OK`**：`{"message": "如果该邮箱正在验证中，验证邮件已重发。"}`。
+**认证**：公开；**权限**：—。请求体 JSON：`email`（是）、`turnstile_token`（条件）。**响应 `200 OK`**：`{"message": "如果该邮箱正在认证中，认证邮件已重发。"}`。
 
 不泄露邮箱是否存在 / 是否在验；仅「存在 `email` 通道 `pending` 且账号启用」的账号真正发信（发往待验 `identifier`）；不校验后缀白名单（只重发既有地址）。**错误**：403 `verification_closed`；429 每 IP 每小时重发次数超限；400 邮箱缺失（`{"error": "请输入邮箱。"}`）/ JSON 非法 / Turnstile 失败。
 
@@ -152,7 +152,7 @@
 }
 ```
 
-`avatar` 无头像时为 `null`；`birthday` 未填为 `null`；`gender` 可为 `""` / `M` / `F` / `O`（男 / 女 / 其他）。`profile.is_verified` 为账号总验证态（任一通道 `approved` 且未过期）。`role` 四档：`superadmin` 超级管理员（`is_superuser`）＞ `admin` 管理员（`is_staff`，仅徽章展示）＞ `user` 用户（`is_verified`，后台委任通道计入）＞ `visitor` 访客（匿名或已登录未验证）。
+`avatar` 无头像时为 `null`；`birthday` 未填为 `null`；`gender` 可为 `""` / `M` / `F` / `O`（男 / 女 / 其他）。`profile.is_verified` 为账号总认证态（任一通道 `approved` 且未过期）。`role` 四档：`superadmin` 超级管理员（`is_superuser`）＞ `admin` 管理员（`is_staff`，仅徽章展示）＞ `user` 用户（`is_verified`，后台委任通道计入）＞ `visitor` 访客（匿名或已登录未认证）。
 
 ### 能力投影（`permissions.can_*`）
 
@@ -217,11 +217,11 @@
 
 **认证**：公开；**权限**：—。请求体 JSON：`uid`（string，是）、`token`（string，是）、`new_password`（string，是）。校验 `default_token_generator.check_token`；`new_password` 仅必填校验（不走密码强度校验器）。响应 `200`：`{"message": "Password has been reset successfully."}`；错误：400 `{"error": "Invalid reset link"}`（`uid` 无法解出用户）或 `{"error": "Invalid or expired token"}`。
 
-### 验证状态
+### 认证状态
 
 `GET /auth/verification/`
 
-**认证**：登录；**权限**：—。总验证态 + 各通道当前状态（数据驱动面板铺卡），每通道一卡、按 `CHANNELS` 序（`appointment` → `email` → `manual`），无记录行的通道 `status="none"`。
+**认证**：登录；**权限**：—。总认证态 + 各通道当前状态（数据驱动面板铺卡），每通道一卡、按 `CHANNELS` 序（`appointment` → `email` → `manual`），无记录行的通道 `status="none"`。
 
 **响应 `200 OK`**
 
@@ -236,15 +236,15 @@
 }
 ```
 
-`status` ∈ `none` / `pending` / `approved` / `rejected`；`identifier`：email = 待验地址（验证通过后即提升为 `User.email`）、manual = 空、appointment = `staff` / `superuser`、authcode = 码原文（后台可读，供追溯）。
+`status` ∈ `none` / `pending` / `approved` / `rejected`；`identifier`：email = 待认证地址（认证通过后即提升为 `User.email`）、manual = 空、appointment = `staff` / `superuser`、authcode = 码原文（后台可读，供追溯）。
 
 ### 邮箱通道：绑定 / 换邮 / 重发
 
 `POST /auth/verification/email/bind/`
 
-**认证**：登录；**权限**：—。请求体 JSON：`email`（是）。统一置 email 通道 `pending` + `identifier`=新地址并发信，`User.email` 不动，验证通过才晋升。首次绑定 / 重发同邮箱 → 建或刷新 `pending` 行；换邮箱（含已验证旧邮箱）→ 回 `pending` 且旧 `verified_at` 失效；已验证同邮箱再绑 → no-op：`{"message": "该邮箱已验证。"}`。**后缀须在白名单内**；与既有 `identifier` 相同的重发 / 复绑不重复判定（不回溯旧地址）。
+**认证**：登录；**权限**：—。请求体 JSON：`email`（是）。统一置 email 通道 `pending` + `identifier`=新地址并发信，`User.email` 不动，认证通过才晋升。首次绑定 / 重发同邮箱 → 建或刷新 `pending` 行；换邮箱（含已认证旧邮箱）→ 回 `pending` 且旧 `verified_at` 失效；已认证同邮箱再绑 → no-op：`{"message": "该邮箱已认证。"}`。**后缀须在白名单内**；与既有 `identifier` 相同的重发 / 复绑不重复判定（不回溯旧地址）。
 
-**响应 `200 OK`**：`{"message": "验证邮件已发送，请查收。"}`；**错误**：400 邮箱缺失 / 格式非法 / 后缀不在白名单（`{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`）/ 已被占用（`{"error": "该邮箱已被占用"}`，含他人 `pending`）/ JSON 非法；403 `verification_closed`；429 每 IP 每小时重发次数超限。
+**响应 `200 OK`**：`{"message": "认证邮件已发送，请查收。"}`；**错误**：400 邮箱缺失 / 格式非法 / 后缀不在白名单（`{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`）/ 已被占用（`{"error": "该邮箱已被占用"}`，含他人 `pending`）/ JSON 非法；403 `verification_closed`；429 每 IP 每小时重发次数超限。
 
 ### 人工通道：提交身份证明
 
@@ -264,9 +264,9 @@
 
 `POST /auth/verification/authcode/redeem/`
 
-**认证**：登录；**权限**：—。请求体 JSON：`code`（是）。码经归一化（去空格 / 连字符、转大写）后按序校验：无效 / 已吊销 / 已过期 / 已用尽 / 同一码每账号至多兑一次；通过即写 `authcode` 通道 `approved`（`identifier` = 码原文，`verified_by` = 发码人）、`used_count + 1` 并落兑换记录（审计留底），认证有效期 = 兑换日 + `verification_valid_days`（默认 365 天）。**已通过且未过期**（任一通道）的账号再兑换 → 400 `{"error": "账号已完成验证，无需使用认证码。"}` 且不消耗任何码；认证过期后可用新码重新兑换。
+**认证**：登录；**权限**：—。请求体 JSON：`code`（是）。码经归一化（去空格 / 连字符、转大写）后按序校验：无效 / 已吊销 / 已过期 / 已用尽 / 同一码每账号至多兑一次；通过即写 `authcode` 通道 `approved`（`identifier` = 码原文，`verified_by` = 发码人）、`used_count + 1` 并落兑换记录（审计留底），认证有效期 = 兑换日 + `verification_valid_days`（默认 365 天）。**已通过且未过期**（任一通道）的账号再兑换 → 400 `{"error": "账号已完成认证，无需使用认证码。"}` 且不消耗任何码；认证过期后可用新码重新兑换。
 
-**响应 `200 OK`**：`{"message": "认证码验证通过，账号已完成验证。"}`；**错误**：403 `verification_closed`；429 `{"error": "请求过于频繁，请稍后再试。"}`（每账号每小时失败次数超限，**只计失败**、成功不占额度）；400 `{"error": "…"}`（无效 / 已吊销 / 已过期 / 已用尽 / 账号已完成验证 / 空码 / JSON 非法）。
+**响应 `200 OK`**：`{"message": "认证码认证通过，账号已完成认证。"}`；**错误**：403 `verification_closed`；429 `{"error": "请求过于频繁，请稍后再试。"}`（每账号每小时失败次数超限，**只计失败**、成功不占额度）；400 `{"error": "…"}`（无效 / 已吊销 / 已过期 / 已用尽 / 账号已完成认证 / 空码 / JSON 非法）。
 
 码的生成与吊销**只在 Django 后台**（`账户 → 认证码`），前端无生成入口；过期 / 吊销只停后续兑换，不回溯已通过者。
 
@@ -311,7 +311,7 @@
 
 `GET /auth/inbox/`
 
-**认证**：已验证（DRF `IsVerified`，未登录 / 未验证 403）；**权限**：—。混合时间线：48 小时内截止的活动债置顶（`end_at` 升序），其余按 `updated_at` 降序；不分页（直接返回全量信封）。私信未读不进待办。
+**认证**：已认证（DRF `IsVerified`，未登录 / 未认证 403）；**权限**：—。混合时间线：48 小时内截止的活动债置顶（`end_at` 升序），其余按 `updated_at` 降序；不分页（直接返回全量信封）。私信未读不进待办。
 
 **响应 `200 OK`**
 

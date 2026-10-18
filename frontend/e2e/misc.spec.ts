@@ -21,12 +21,12 @@ test("任务：编辑任务表单", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "编辑任务", level: 1 })).toBeVisible({ timeout: 10_000 });
 });
 
-test("邮箱验证：无效链接兜底与重发页", async ({ page }) => {
+test("邮箱认证：无效链接兜底与重发页", async ({ page }) => {
   await page.goto("/#/verify-email");
-  await expect(page.getByRole("heading", { name: "验证失败" })).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByRole("button", { name: "重新发送验证邮件" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "认证失败" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "重新发送认证邮件" })).toBeVisible();
 
   await page.goto("/#/verify-email-pending");
-  await expect(page.getByRole("heading", { name: "重发验证邮件" })).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByRole("button", { name: "发送验证邮件" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "重发认证邮件" })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "发送认证邮件" })).toBeVisible();
 });

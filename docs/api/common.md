@@ -68,11 +68,11 @@
 
 | 字段 | 类型 | 默认 | 含义 / 消费方 |
 |---|---|---|---|
-| verification_enabled | bool | `true` | 验证通道总开关；关闭后不可新开 / 完成任何通道，已通过者仍算已验证。消费方：`accounts`（注册建通道、绑邮 / 换邮、人工提交、验证链接落地、身份审核通过 / 驳回） |
+| verification_enabled | bool | `true` | 认证通道总开关；关闭后不可新开 / 完成任何通道，已通过者仍算已认证。消费方：`accounts`（注册建通道、绑邮 / 换邮、人工提交、认证链接落地、身份审核通过 / 驳回） |
 | content_review_enabled | bool | `true` | 内容审核总开关；关闭后新建新闻 / 活动 / 教程直接通过、不进待审队列（已有待审条目不批量通过）。消费方：`reviews.lifecycle` |
 | registration_enabled | bool | `true` | 自助注册开关；关闭后注册返回 403。消费方：`accounts` 注册视图 |
 | register_per_ip_per_day | int | `5` | 每 IP 每日注册次数上限（`accounts.throttles.RegisterThrottle`，校验前先限流） |
-| resend_verification_per_ip_per_hour | int | `5` | 每 IP 每小时重发验证邮件次数（`ResendVerificationThrottle`；绑定邮箱与重发两条路径共用） |
+| resend_verification_per_ip_per_hour | int | `5` | 每 IP 每小时重发认证邮件次数（`ResendVerificationThrottle`；绑定邮箱与重发两条路径共用） |
 | login_per_ip_per_hour | int | `30` | 每 IP 每小时**登录失败**次数（门户与 Django admin 共用；成功登录不占额度） |
 | login_per_username_per_hour | int | `10` | 每用户名 / 邮箱每小时登录失败次数（防针对单一账号撞库） |
 | feedback_anon_per_ip_per_day | int | `10` | 每 IP 每日匿名反馈次数（`reviews` 限流） |
@@ -91,10 +91,10 @@
 | comments_enabled | bool | `true` | 评论区开关；关闭后前端不显示评论区且无法发新评论，已有评论保留。消费方：`messaging` |
 | comment_max_depth | int | `8` | 评论最大嵌套深度（1–32；超深拒绝，不改挂） |
 | dms_enabled | bool | `true` | 私信开关；关闭后不显示入口且无法发起 / 发送，已有会话保留。消费方：`messaging` |
-| verification_valid_days | int | `365` | 认证有效期（天）：邮箱 / 人工 / 认证码通道通过后的有效期；到期后不再算已验证，需重新认证。消费方：`accounts`（通道通过时写 `expires_at`、`is_verified` 判定） |
+| verification_valid_days | int | `365` | 认证有效期（天）：邮箱 / 人工 / 认证码通道通过后的有效期；到期后不再算已认证，需重新认证。消费方：`accounts`（通道通过时写 `expires_at`、`is_verified` 判定） |
 | admin_valid_days | int | `730` | 管理员身份有效期（天）：后台委任通道的有效期；到期后系统撤销 `is_staff`。超级管理员不受限（永久）。消费方：`accounts`（委任通道、有效期执行） |
-| registration_verify_days | int | `60` | 注册后验证宽限（天）：注册后从未验证、超期将停用账号；可被 `Profile.registration_deadline` 显式覆盖。消费方：`accounts`（有效期执行） |
-| turnstile_enabled | bool | `false` | Turnstile 是否启用；前端据此挂载挂件。校验点：注册、找回密码、重发验证信（登录不校验）、未登录匿名反馈 |
+| registration_verify_days | int | `60` | 注册后认证宽限（天）：注册后从未认证、超期将停用账号；可被 `Profile.registration_deadline` 显式覆盖。消费方：`accounts`（有效期执行） |
+| turnstile_enabled | bool | `false` | Turnstile 是否启用；前端据此挂载挂件。校验点：注册、找回密码、重发认证信（登录不校验）、未登录匿名反馈 |
 | turnstile_site_key | string | `""` | 公开 sitekey（未启用时为空串；secret 永不下发） |
 
 > 前端（`frontend/src/api/sitePolicy.ts`）内置同名默认值，`/site-policy/` 不可达时回退；`turnstile_enabled` / `turnstile_site_key` 用于挂载挂件并随请求带 `turnstile_token`。
@@ -149,7 +149,7 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 | 调试 / 主机 | `DJANGO_DEBUG`、`ALLOWED_HOSTS` | DEBUG 控制 HSTS 与 Secure cookie 开关 |
 | Turnstile secret | `TURNSTILE_SECRET_KEY` | 仅进程内使用，永不下发 |
 | 邮件 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | 配了即切 163 SMTP（SSL 465），否则 dev 用 console 后端 |
-| 前端地址 | `FRONTEND_URL` | 用于拼验证邮件 / 重置链接（默认 `http://localhost:3000`） |
+| 前端地址 | `FRONTEND_URL` | 用于拼认证邮件 / 重置链接（默认 `http://localhost:3000`） |
 | 媒体路径 | — | `MEDIA_ROOT`（公开）、`PRIVATE_MEDIA_ROOT`（身份证明，鉴权下载） |
 | 自动更新凭据 | `UPDATE_GITHUB_TOKEN`、`UPDATE_GITHUB_REPO` | token 为密钥；repo 默认 `nhyzcms/club-management-website` |
 | 数据库 / Redis / worker | `DB_ENGINE` 等 `DB_*`、`REDIS_URL`、`GUNICORN_WORKERS` | 缺省 SQLite + 单 worker；可选 PostgreSQL + Redis 多 worker（[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)） |

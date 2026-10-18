@@ -20,7 +20,7 @@ export type ApiError =
   | { kind: "login_protection"; retryAfter: number }
   | { kind: "login_throttled"; retryAfter: number }
   | { kind: "account_disabled" }            // 账号已停用（自助注册三态之一）
-  | { kind: "email_not_verified"; email: string }  // 邮箱未验证，登录被拒（提示重发）
+  | { kind: "email_not_verified"; email: string }  // 邮箱未认证，登录被拒（提示重发）
   | { kind: "email_domain_not_allowed"; domain: string }  // 邮箱后缀不在白名单（ADR-0023）
   | { kind: "network" }              // 断网 / 超时 / 响应非 JSON
   | { kind: "auth" }                 // 401（非挤号）
@@ -124,7 +124,7 @@ export function humanizeApiError(err: ApiError): string {
     case "account_disabled":
       return "账号已被停用，请联系信息组。";
     case "email_not_verified":
-      return "请先验证邮箱后再登录。";
+      return "请先认证邮箱后再登录。";
     case "email_domain_not_allowed":
       return EMAIL_DOMAIN_BLOCKED_MESSAGE;
     case "network":

@@ -128,7 +128,7 @@ class RedeemViewTest(TestCase):
         code = make_code("AAAAAAAAAAAA", created_by=maker)
         resp = self.post({"code": "AAAAAAAAAAAA"})
         self.assertEqual(resp.status_code, 200)
-        self.assertIn("完成验证", resp.json()["message"])
+        self.assertIn("完成认证", resp.json()["message"])
 
         self.assertTrue(is_verified(self.user))
         v = Verification.objects.get(user=self.user, channel=Verification.CHANNEL_AUTHCODE)
@@ -191,7 +191,7 @@ class RedeemViewTest(TestCase):
         code = make_code("KEEPME123456")
         resp = self.post({"code": "KEEPME123456"})
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("已完成验证", resp.json()["error"])
+        self.assertIn("已完成认证", resp.json()["error"])
         code.refresh_from_db()
         self.assertEqual(code.used_count, 0)
         self.assertFalse(AuthCodeRedemption.objects.filter(user=self.user).exists())
@@ -248,7 +248,7 @@ class RedeemThrottleTest(TestCase):
         # 若成功被计数（rec=2=limit）这里应是 429；实际应停在「已通过」400
         resp = self.post({"code": "WHATEVER0000"})
         self.assertEqual(resp.status_code, 400)
-        self.assertIn("已完成验证", resp.json()["error"])
+        self.assertIn("已完成认证", resp.json()["error"])
 
     def test_empty_code_is_not_counted(self):
         set_policy(authcode_redeem_per_user_per_hour=1)

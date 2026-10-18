@@ -1,8 +1,8 @@
-"""验证模型单元 + 迁移默认信任（ADR-0006）+ 后台委任通道（ADR-0013）。
+"""认证模型单元 + 迁移默认信任（ADR-0006）+ 后台委任通道（ADR-0013）。
 
 - ``is_verified``：纯计算（任一通道 approved 即真；匿名 / 无行 / pending / rejected ⇒ 假）。
   不读 ``is_staff`` / ``is_superuser``；委任走通道行。
-- ``IsVerified`` 门禁：只读 ``is_verified``；超管无委任行亦不放行（验证轴无逃生舱）。
+- ``IsVerified`` 门禁：只读 ``is_verified``；超管无委任行亦不放行（认证轴无逃生舱）。
 - 迁移：存量账号默认信任（旧布尔为真或无 profile ⇒ 造 manual approved 行）。
 """
 from django.contrib.auth.models import AnonymousUser, User
@@ -52,7 +52,7 @@ class IsVerifiedComputationTest(TestCase):
         self.assertTrue(is_verified(self.user))
 
     def test_any_approved_suffices(self):
-        # 一个 rejected + 一个 approved ⇒ 已验证（any-of）
+        # 一个 rejected + 一个 approved ⇒ 已认证（any-of）
         Verification.objects.create(
             user=self.user, channel=Verification.CHANNEL_MANUAL, status=Verification.STATUS_REJECTED,
         )
@@ -63,7 +63,7 @@ class IsVerifiedComputationTest(TestCase):
         self.assertTrue(is_verified(self.user))
 
     def test_is_verified_pure_no_superuser_special_case(self):
-        # 纯计算不读标志位：超级用户若无 approved 行 ⇒ 未验证
+        # 纯计算不读标志位：超级用户若无 approved 行 ⇒ 未认证
         # 委任通道会在 save 时自动建行，这里删掉以钉死「函数不读 is_superuser」。
         self.user.is_superuser = True
         self.user.save()
@@ -106,7 +106,7 @@ class IsVerifiedGateTest(TestCase):
         self.assertTrue(IsVerified().has_permission(req, None))
 
     def test_staff_blocked_without_appointment_row(self):
-        # 标志位不是验证逃生舱：删委任行后写动作仍拒（ADR-0013）
+        # 标志位不是认证逃生舱：删委任行后写动作仍拒（ADR-0013）
         u = User.objects.create_user(username="st", password="p", is_staff=True)
         Verification.objects.filter(user=u, channel=Verification.CHANNEL_APPOINTMENT).delete()
         req = RequestFactory().post("/")
@@ -159,7 +159,7 @@ class VerificationDefaultTrustMigrationTest(TransactionTestCase):
         Profile.objects.create(user=trusted)
         # 2) 无 profile（懒创建）——旧逻辑亦视为信任
         User.objects.create_user(username="noprofile", password="p")
-        # 3) 显式未验证的自助注册账号（旧 register 曾设两布尔 False）——不应被信任
+        # 3) 显式未认证的自助注册账号（旧 register 曾设两布尔 False）——不应被信任
         unverified = User.objects.create_user(username="selfreg", password="p")
         Profile.objects.create(user=unverified, identity_verified=False, email_verified=False)
 
@@ -221,7 +221,7 @@ class VerificationStatusEndpointTest(TestCase):
             status=Verification.STATUS_PENDING, identifier="u@e.com",
         )
         data = self._get(u).json()
-        self.assertFalse(data["is_verified"])  # pending 不算已验证
+        self.assertFalse(data["is_verified"])  # pending 不算已认证
         email = {c["channel"]: c for c in data["channels"]}["email"]
         self.assertEqual(email["status"], "pending")
         self.assertEqual(email["identifier"], "u@e.com")

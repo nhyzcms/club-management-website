@@ -234,7 +234,7 @@ export default function CommentSection({ host }: { host: CommentHost }) {
   const composerHint = !loggedIn
     ? "登录后参与评论"
     : !verified
-      ? "验证后才能发言"
+      ? "认证后才能发言"
       : siteMuted
         ? "你已被全站禁言，暂时不能发言"
         : thread?.status === "muted"

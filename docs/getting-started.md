@@ -5,7 +5,7 @@
 
 ## 项目是什么
 
-南汇一中传媒社的内部协作平台。它是一个 **Django 单体应用**：DRF 提供 JSON API，Django admin 提供后台管理，前端是一个 **React 单页应用（SPA）**，构建产物由 Django 直接托管（不需要单独部署前端服务）。功能覆盖账号与验证、任务协作、活动（众议 / 征集 / 展示 / 调研）、新闻与教程发布、发布审核与意见反馈、评论与私信、通知与横幅公告、考试看板等社团日常运营场景。
+南汇一中传媒社的内部协作平台。它是一个 **Django 单体应用**：DRF 提供 JSON API，Django admin 提供后台管理，前端是一个 **React 单页应用（SPA）**，构建产物由 Django 直接托管（不需要单独部署前端服务）。功能覆盖账号与认证、任务协作、活动（众议 / 征集 / 展示 / 调研）、新闻与教程发布、发布审核与意见反馈、评论与私信、通知与横幅公告、考试看板等社团日常运营场景。
 
 ## 技术栈
 
@@ -176,7 +176,7 @@ cd frontend && npx playwright test                        # e2e job（需已装�
 ```text
 club-management-website/
 ├── config/            # Django 项目配置：settings.py / urls.py / asgi.py / wsgi.py
-├── accounts/          # 账号、登录、邮箱验证、身份审核、会话、能力投影
+├── accounts/          # 账号、登录、邮箱认证、身份审核、会话、能力投影
 ├── about/             # 关于页内容
 ├── activities/        # 活动（众议 / 征集 / 展示 / 调研）与问卷
 ├── attachments/       # 统一附件与 tus 可续传上传

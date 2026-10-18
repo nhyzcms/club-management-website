@@ -42,15 +42,15 @@ class SiteSettings(models.Model):
     """Singleton operational knobs (pk always 1). Edit in Django admin."""
 
     verification_enabled = models.BooleanField(
-        "验证通道开启",
+        "认证通道开启",
         default=DEFAULT_VERIFICATION_ENABLED,
-        help_text="关闭后不可新开或完成任何验证通道；已通过者仍算已验证。",
+        help_text="关闭后不可新开或完成任何认证通道；已通过者仍算已认证。",
     )
     verification_valid_days = models.PositiveIntegerField(
         "认证有效期（天）",
         default=DEFAULT_VERIFICATION_VALID_DAYS,
         validators=[MinValueValidator(1)],
-        help_text="认证码 / 人工核验 / 邮箱验证通过后，认证状态的有效天数；过期需重新认证。",
+        help_text="认证码 / 人工核验 / 邮箱认证通过后，认证状态的有效天数；过期需重新认证。",
     )
     admin_valid_days = models.PositiveIntegerField(
         "管理员身份有效期（天）",
@@ -59,10 +59,10 @@ class SiteSettings(models.Model):
         help_text="管理员身份自授予之日起的有效天数；过期需重新授予。超级管理员不受限。",
     )
     registration_verify_days = models.PositiveIntegerField(
-        "注册后验证宽限（天）",
+        "注册后认证宽限（天）",
         default=DEFAULT_REGISTRATION_VERIFY_DAYS,
         validators=[MinValueValidator(1)],
-        help_text="注册后未完成验证的宽限天数；超期将停用该账号。",
+        help_text="注册后未完成认证的宽限天数；超期将停用该账号。",
     )
     content_review_enabled = models.BooleanField(
         "开启内容审核",
@@ -79,7 +79,7 @@ class SiteSettings(models.Model):
         default=DEFAULT_REGISTER_PER_IP_PER_DAY,
     )
     resend_verification_per_ip_per_hour = models.PositiveIntegerField(
-        "每 IP 每小时重发验证邮件次数",
+        "每 IP 每小时重发认证邮件次数",
         default=DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
     )
     login_per_ip_per_hour = models.PositiveIntegerField(
@@ -102,7 +102,7 @@ class SiteSettings(models.Model):
         "每用户每日举报次数",
         default=DEFAULT_REPORTS_PER_USER_PER_DAY,
         validators=[MinValueValidator(1)],
-        help_text="已验证成员提交举报的日上限。",
+        help_text="已认证成员提交举报的日上限。",
     )
     authcode_redeem_per_user_per_hour = models.PositiveIntegerField(
         "每账号每小时认证码兑换失败次数",

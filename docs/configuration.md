@@ -19,7 +19,7 @@
 | `SECRET_KEY` | Django 签名密钥（session cookie、密码重置 token 等） | 生产必填 | 空。留空且 `DEBUG` 开时回退 `settings.py` 里的公开占位；`DJANGO_DEBUG=0` 且留空则 **拒绝启动**（`ImproperlyConfigured`） |
 | `DJANGO_DEBUG` | 调试模式开关 | 否 | `1`（开）。生产务必设 `0` / `false`；取值 `1/true/yes/on`（不区分大小写）为真 |
 | `ALLOWED_HOSTS` | 允许的 Host 头，逗号分隔 | 生产必填 | 空 → `[]`（本地由 DEBUG 兜底）。示例：`media-club.example.com,api.example.com` |
-| `FRONTEND_URL` | 前端来源，用于拼接发给用户的邮件链接（邮箱验证、密码重置） | 生产建议填 | `http://localhost:3000`。示例：`https://media-club.example.com` |
+| `FRONTEND_URL` | 前端来源，用于拼接发给用户的邮件链接（邮箱认证、密码重置） | 生产建议填 | `http://localhost:3000`。示例：`https://media-club.example.com` |
 | `EMAIL_HOST_USER` | 163 邮箱账号；**配了就切到 SMTP 后端** | 否 | 空。留空 → dev 用 console 后端（邮件打印到终端） |
 | `EMAIL_HOST_PASSWORD` | 163 邮箱的「SMTP 授权码」（不是登录密码） | 配了 `EMAIL_HOST_USER` 就必填 | 空 |
 | `TURNSTILE_SITE_KEY` | Cloudflare Turnstile 站点公钥；经 `GET /site-policy/` 下发给前端 | 否 | 空。两项都空 = 关闭人机校验；**都填了才启用**（只填一半视为关闭） |
@@ -165,7 +165,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | 设置 | 值 | 原因 |
 |---|---|---|
 | `PASSWORD_HASHERS` | `["django.contrib.auth.hashers.MD5PasswordHasher"]` | 默认 PBKDF2 约 374ms/次；测试库每次清空、绝不进生产 |
-| `EMAIL_BACKEND` | `django.core.mail.backends.locmem.EmailBackend` | 注册 / 验证 / 重置路径发信不触网、不阻塞，可断言 `mail.outbox`（防御性：本地 `.env` 若配了 SMTP 也会被切回内存后端） |
+| `EMAIL_BACKEND` | `django.core.mail.backends.locmem.EmailBackend` | 注册 / 认证 / 重置路径发信不触网、不阻塞，可断言 `mail.outbox`（防御性：本地 `.env` 若配了 SMTP 也会被切回内存后端） |
 
 ## 三、运行时站点策略（`SiteSettings`）
 
@@ -173,14 +173,14 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 
 | 字段 | 默认值 | 作用 |
 |---|---|---|
-| `verification_enabled` | `True` | 验证通道总开关 |
+| `verification_enabled` | `True` | 认证通道总开关 |
 | `verification_valid_days` | `365` | 认证有效期（天）：认证通过后的有效期，过期需重新认证 |
 | `admin_valid_days` | `730` | 管理员身份有效期（天）：过期自动撤销 `is_staff`；超管不受限 |
-| `registration_verify_days` | `60` | 注册后验证宽限（天）：超期未认证自动停用 |
+| `registration_verify_days` | `60` | 注册后认证宽限（天）：超期未认证自动停用 |
 | `content_review_enabled` | `True` | 内容审核；关闭后新建内容直接通过 |
 | `registration_enabled` | `True` | 自助注册；关闭后接口 403 |
 | `register_per_ip_per_day` | `5` | 每 IP 每日注册次数 |
-| `resend_verification_per_ip_per_hour` | `5` | 每 IP 每小时重发验证邮件次数 |
+| `resend_verification_per_ip_per_hour` | `5` | 每 IP 每小时重发认证邮件次数 |
 | `login_per_ip_per_hour` | `30` | 每 IP 每小时登录**失败**次数（门户与 admin 共用，只计失败） |
 | `login_per_username_per_hour` | `10` | 每用户名 / 邮箱每小时登录失败次数 |
 | `feedback_anon_per_ip_per_day` | `10` | 每 IP 每日匿名反馈次数 |
@@ -251,7 +251,7 @@ CI 另外断言 `frontend/dist/surveyjs/survey.core.min.js` 存在（`.github/wo
 |---|---|---|
 | 密钥 / 域名 / SMTP / Turnstile / 更新 token | `.env` | 重启进程（生产 `sudo systemctl restart club`） |
 | 数据库 / Redis / worker 数 | `.env`（`DB_*` / `REDIS_URL` / `GUNICORN_WORKERS`） | 重启进程；数据迁移与回滚见 deployment.md |
-| 限流额度、上传上限、评论 / 私信开关、验证有效期、更新窗口 | Django admin「站点策略」 | 即时（`save()` 失效缓存） |
+| 限流额度、上传上限、评论 / 私信开关、认证有效期、更新窗口 | Django admin「站点策略」 | 即时（`save()` 失效缓存） |
 | 全站维护拦截 | `uv run python manage.py maintenance on --message "..."` | 即时（文件旗标，无需重启） |
 | CORS 来源、DRF 全局配置、中间件、分页大小 | `config/settings.py` | 改代码 + 重启 |
 | 前端构建行为 | `frontend/webpack.config.js` / `package.json` / `tsconfig.json` | 重新 `npm run build` |
