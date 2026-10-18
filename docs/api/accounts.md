@@ -35,6 +35,8 @@
 | POST | `/auth/password-reset/` | 公开 | — | 发起密码重置 |
 | POST | `/auth/password-reset/confirm/` | 公开 | — | 确认新密码 |
 | GET | `/auth/verification/` | 登录 | — | 账号认证状态总览 |
+| GET | `/auth/validity/` | 登录 | — | 账号有效期快照（状态 / 到期时间 / 剩余天数 / 提示键） |
+| POST | `/auth/validity/ack/` | 登录 | — | 标记「账号有效期」弹窗已读（写回快照键） |
 | POST | `/auth/verification/email/bind/` | 登录 | — | 绑定 / 换邮 / 重发邮箱认证 |
 | POST | `/auth/verification/manual/submit/` | 登录 | — | 提交人工通道身份证明（multipart） |
 | POST | `/auth/verification/authcode/redeem/` | 登录 | — | 兑换认证码（即时通过） |
@@ -209,6 +211,8 @@
 
 注销语义见 [ADR-0027](../adr/0027-account-deletion.md)：`User` / `Profile` 行保留（`Profile.deleted_at` 标记），邮箱、头像、身份证明材料、验证通道、登录设备、通知与安全验证残留删除；真实姓名、账号唯一编码与社员编号（`MemberIdentity`）保留。
 
+> 前端（`AccountDeletionPanel`）在表单填对后**不会直接调本端点**：先弹一次二次确认弹窗，点「确认注销」才发请求；取消 / Esc / 点遮罩都不发。这是纯前端防误触，后端的三重校验不变。
+
 ### 登录记录（会话列表）
 
 `GET /auth/sessions/`
@@ -259,6 +263,37 @@
 ```
 
 `status` ∈ `none` / `pending` / `approved` / `rejected`；`identifier`：email = 待认证地址（认证通过后即提升为 `User.email`）、manual = 空、appointment = `staff` / `superuser`、authcode = 码原文（后台可读，供追溯）。
+
+### 账号有效期（快照 / 弹窗已读）
+
+`GET /auth/validity/`
+
+**认证**：登录；**权限**：—。只读快照，口径见 `accounts/validity_summary.py`（与执行模块 `accounts/validity.py`、到期前提醒 `accounts/validity_notices.py` 分工不同）。前端用它渲染「账号有效期」弹窗（注册成功 / 认证通过后各弹一次）与认证面板上的到期提示；字段与 `frontend/src/utils/validity.ts` 一一对应。**匿名访问返回 401 JSON**（`{"error": "未登录。"}`，不跳转），便于匿名页面静默处理。
+
+```json
+{
+  "status": "verified",
+  "status_label": "已认证用户",
+  "expires_at": "2027-10-18T20:00:00+08:00",
+  "remaining_days": 365,
+  "registration_deadline": null,
+  "channels": [
+    {"channel": "email", "label": "邮箱认证", "expires_at": "2027-10-18T20:00:00+08:00", "remaining_days": 365}
+  ],
+  "policy": {"verification_valid_days": 365, "admin_valid_days": 730, "registration_verify_days": 60},
+  "key": "verified:2027-10-18T20:00:00+08:00",
+  "notice_pending": true
+}
+```
+
+- `status`：`permanent`（超级管理员） / `admin`（委任管理员，取委任到期） / `verified`（取仍在有效期内、到期最晚的通道；任一通道永久则 `expires_at=null`） / `expired`（曾认证但已全部到期，需重新认证） / `unverified`（从未认证，取注册宽限截止）。
+- `expires_at` / `remaining_days`：`null` = 永久；`remaining_days` 向下取整，`0` = 不足 24 小时，负数 = 已到期。
+- `key`：状态快照键（`<status>:<到期时间>`），状态或到期时间变化即换键；`notice_pending` = 该键 ≠ `Profile.validity_notice_ack`。
+- `channels`：未过期的 approved 通道（含通道短名与各自到期），供多通道并列展示。
+
+`POST /auth/validity/ack/`
+
+**认证**：登录；**权限**：—。请求体 JSON：`key`（是，取自上面响应的 `key`）。仅当 `key` 等于**当前**快照键时才写回（防止用旧键吞掉新状态）；响应 `200`：`{"acknowledged": true}`，键已过期 / 不匹配返回 `{"acknowledged": false}`；缺 `key` → 400。已读标记存服务端（跨设备一致），续期 / 重新认证后键变化，弹窗会再次出现。
 
 ### 邮箱通道：绑定 / 换邮 / 重发
 

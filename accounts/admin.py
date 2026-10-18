@@ -176,8 +176,9 @@ class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
         return obj.deleted_at is not None
 
     def get_readonly_fields(self, request, obj=None):
-        # expiry_disabled_at / deleted_at 系统维护；registration_deadline 仅持 manage_validity 且改下位可改。
-        ro = ["expiry_disabled_at", "deleted_at"]
+        # expiry_disabled_at / deleted_at / validity_notice_ack 系统维护；registration_deadline
+        # 仅持 manage_validity 且改下位可改。
+        ro = ["expiry_disabled_at", "deleted_at", "validity_notice_ack"]
         if obj is not None and not can_manage_validity_for(request.user, obj.user):
             ro.append("registration_deadline")
         return ro
@@ -256,8 +257,9 @@ class ProfileInline(admin.StackedInline):
     fk_name = "user"  # Profile 仅 user 一个 FK→User；显式绑定，防后续新增 FK 时歧义
 
     def get_readonly_fields(self, request, obj=None):
-        # expiry_disabled_at / deleted_at 系统维护；registration_deadline 仅持 manage_validity 且改下位可改。
-        ro = ["expiry_disabled_at", "deleted_at"]
+        # expiry_disabled_at / deleted_at / validity_notice_ack 系统维护；registration_deadline
+        # 仅持 manage_validity 且改下位可改。
+        ro = ["expiry_disabled_at", "deleted_at", "validity_notice_ack"]
         if not can_manage_validity_for(request.user, obj):
             ro.append("registration_deadline")
         return ro

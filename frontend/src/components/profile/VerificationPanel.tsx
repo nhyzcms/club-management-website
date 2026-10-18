@@ -4,6 +4,7 @@ import { redirectToStepUp, stepupHeaders } from "../../api/stepup";
 import { EMAIL_DOMAIN_BLOCKED_MESSAGE } from "../../api/shared";
 import { useSitePolicy } from "../../api/sitePolicy";
 import { IDENTITY_OPTIONS } from "../../types/profile";
+import { formatExpiry, formatRemaining, VALIDITY_CHANGED_EVENT, type ValiditySummary } from "../../utils/validity";
 import NoticeModal from "../NoticeModal";
 import "../../styles/profile.css";
 
@@ -272,6 +273,7 @@ function CodeCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: (
 
 export default function VerificationPanel() {
   const [data, setData] = useState<VerificationStatus | null>(null);
+  const [validity, setValidity] = useState<ValiditySummary | null>(null);
   const [err, setErr] = useState("");
   const policy = useSitePolicy();
 
@@ -279,6 +281,15 @@ export default function VerificationPanel() {
     api.verificationStatus()
       .then((d: any) => setData(d as VerificationStatus))
       .catch((e: any) => setErr(e.message || "加载失败"));
+    // 有效期口径与弹窗同源（ADR-0041），面板上直接给出「到期时间 / 剩余天数」。
+    api.accountValidity()
+      .then((d: any) => setValidity(d as ValiditySummary))
+      .catch(() => setValidity(null));
+  };
+  // 认证动作成功后：刷新面板 + 通知全局宿主复核有效期（通过认证会弹一次说明）。
+  const onChanged = () => {
+    load();
+    window.dispatchEvent(new Event(VALIDITY_CHANGED_EVENT));
   };
   useEffect(load, []);
 
@@ -307,19 +318,32 @@ export default function VerificationPanel() {
           ? "你的账号已认证。"
           : "你的账号尚未认证（访客）——完成下列任一通道即成为已认证用户，解锁发帖 / 发消息 / 建申报等。"}
       </p>
+      {validity && (
+        <p className="muted verify-overview" role="status">
+          {validity.status === "unverified"
+            ? `认证截止时间：${formatExpiry(validity.registration_deadline)}（剩余 ${formatRemaining(
+                validity.remaining_days,
+                validity.expires_at,
+              )}）。逾期未认证的账号将被停用。`
+            : `账号有效期至：${formatExpiry(validity.expires_at)}（剩余 ${formatRemaining(
+                validity.remaining_days,
+                validity.expires_at,
+              )}）。到期后完成认证即可恢复。`}
+        </p>
+      )}
       {!policy.verification_enabled && (
         <p className="muted verify-overview">认证通道已关闭</p>
       )}
       <div className="verify-cards">
         {data.channels.filter(visibleChannel).map((c) => {
           if (c.channel === "email") {
-            return <EmailCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />;
+            return <EmailCard key={c.channel} card={c} onChanged={onChanged} closed={!policy.verification_enabled} />;
           }
           if (c.channel === "manual") {
-            return <ManualCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />;
+            return <ManualCard key={c.channel} card={c} onChanged={onChanged} closed={!policy.verification_enabled} />;
           }
           if (c.channel === "authcode") {
-            return <CodeCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />;
+            return <CodeCard key={c.channel} card={c} onChanged={onChanged} closed={!policy.verification_enabled} />;
           }
           return <CardShell key={c.channel} card={c} />;
         })}

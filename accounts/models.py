@@ -67,6 +67,14 @@ class Profile(models.Model):
     # 见 accounts/deletion.py 与 messaging.serializers.SimpleUserSerializer（展示为「该用户已注销」）。
     deleted_at = models.DateTimeField("注销时间", null=True, blank=True)
 
+    # 账号有效期一次性提示「已读」标记：存 ``accounts.validity_summary.account_validity()``
+    # 生成的状态快照键（如 ``verified:2027-10-18T12:00:00+08:00``）。注册后 / 认证通过后
+    # 前端弹窗展示到期时间与规则，点「我知道了」写回；键随状态或到期时间变化而失效，
+    # 因而续期 / 重新认证后会再提示一次。
+    validity_notice_ack = models.CharField(
+        "有效期提示已读标记", max_length=80, blank=True, default="",
+    )
+
     def __str__(self):
         return f"{self.user.username}'s profile"
 

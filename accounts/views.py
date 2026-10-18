@@ -50,6 +50,7 @@ from .models import (
     verification_valid_days,
 )
 from .tokens import email_verification_token
+from .validity_summary import account_validity, ack_notice
 from .throttles import (
     AuthCodeRedeemThrottle,
     MemberCheckThrottle,
@@ -248,6 +249,38 @@ def verification_status_view(request):
             "verified_at": v.verified_at.isoformat() if v and v.verified_at else None,
         })
     return JsonResponse({"is_verified": is_verified(user), "channels": channels})
+
+
+@require_GET
+def validity_summary_view(request):
+    """账号有效期快照（ADR-0041）：状态 / 到期时间 / 剩余天数 / 一次性提示键。
+
+    只读、无副作用；前端在注册后、认证通过后与每次进入站点时各取一次，据
+    ``notice_pending`` 决定是否弹「有效期说明」。
+
+    匿名访问返回 **401 JSON**（而不是 ``@login_required`` 的 302）：本端点只被 XHR
+    调用，跳转到 ``/login/`` 会让匿名访客多下载一份 SPA HTML；前端把 401 当「未登录」静默。
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "未登录。"}, status=401)
+    return JsonResponse(account_validity(request.user))
+
+
+@require_POST
+@login_required
+def validity_ack_view(request):
+    """标记有效期提示已读：body ``{"key": "..."}``。
+
+    键必须是**当前**快照键（状态或到期时间已变则拒绝），防止客户端拿旧键把新提示
+    一并吞掉。返回 ``{"acknowledged": bool}``。
+    """
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+    key = (body.get("key") or "").strip()
+    if not key:
+        return JsonResponse({"error": "缺少 key。"}, status=400)
+    return JsonResponse({"acknowledged": ack_notice(request.user, key)})
 
 
 @require_POST

@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { api } from "../../api/client";
 import { redirectToStepUp, stepupHeaders } from "../../api/stepup";
+import ConfirmModal from "../ConfirmModal";
 import PasswordInput from "../PasswordInput";
 import "../../styles/form.css";
 
@@ -15,6 +16,9 @@ const CONFIRM_PHRASE = "注销账号";
  * 3. 当前密码；账号配置了安全验证方式（认证邮箱 / 安全问题）时还需 Step-up grant——
  *    缺 grant 后端回 403 `step_up_required`，这里跳验证页，完成即回本页重试。
  *
+ * 表单填对后**不直接调接口**：先弹二次确认弹窗（ConfirmModal），确认后才真正注销，
+ * 避免回车 / 误点把账号删掉。
+ *
  * 成功后账号立即登出，`window.location.replace("/")` 清掉 SPA 里的登录态。
  */
 export default function AccountDeletionPanel() {
@@ -23,11 +27,12 @@ export default function AccountDeletionPanel() {
   const [ack, setAck] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
 
   const canSubmit = ack && confirmText.trim() === CONFIRM_PHRASE && password.length > 0 && !busy;
 
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
     setError("");
     if (!ack) { setError("请先勾选「我已了解注销后果」。"); return; }
@@ -40,7 +45,12 @@ export default function AccountDeletionPanel() {
       passwordRef.current?.focus();
       return;
     }
+    // 表单已填对 → 弹二次确认，确认后才真正调用注销接口。
+    setConfirming(true);
+  };
 
+  const doDelete = async () => {
+    setError("");
     setBusy(true);
     try {
       await api.deleteAccount(password, stepupHeaders("delete_account"));
@@ -50,11 +60,13 @@ export default function AccountDeletionPanel() {
       if (err?.status === 403) {
         // 需要安全验证：验证完成后回到本面板重试。
         setBusy(false);
+        setConfirming(false);
         redirectToStepUp("delete_account", "/profile?tab=delete");
         return;
       }
       setError(err?.message || "注销失败，请稍后重试。");
       setBusy(false);
+      setConfirming(false);
     }
   };
 
@@ -118,6 +130,26 @@ export default function AccountDeletionPanel() {
           </button>
         </div>
       </form>
+
+      {confirming && (
+        <ConfirmModal
+          title="确认永久注销账号？"
+          confirmLabel="确认注销"
+          cancelLabel="再想想"
+          danger
+          busy={busy}
+          onConfirm={doDelete}
+          onCancel={() => setConfirming(false)}
+        >
+          <p style={{ margin: "0 0 8px" }}>注销后账号无法恢复，并将立即执行：</p>
+          <ul style={{ margin: "0 0 10px", paddingLeft: 20 }}>
+            <li>删除登录邮箱、头像、生日、性别、简介与身份证明材料；</li>
+            <li>退出所有设备，之后无法登录、发私信或被 @ 提及；</li>
+            <li>历史内容保留，展示为「该用户已注销」。</li>
+          </ul>
+          <p style={{ margin: 0 }}>确定要永久注销当前账号吗？</p>
+        </ConfirmModal>
+      )}
     </div>
   );
 }

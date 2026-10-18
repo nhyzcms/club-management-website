@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import AppShell from "../components/AppShell";
 import { useLoginModal } from "../components/LoginModalProvider";
+import { VALIDITY_CHANGED_EVENT } from "../utils/validity";
 
 /**
  * 邮箱认证页（#29）：点邮件链接落地（#/verify-email?uid=&token=）。
@@ -25,7 +26,12 @@ export default function VerifyEmailPage() {
     api
       .verifyEmail(uid, token)
       .then(() => {
-        if (!cancelled) setStatus("success");
+        if (!cancelled) {
+          setStatus("success");
+          // 已登录的浏览器（同标签点开邮件链接）立即弹「账号有效期」；未登录时宿主的请求
+          // 会被 302 掉，静默忽略，登录后 authNonce 变化会再拉一次。
+          window.dispatchEvent(new Event(VALIDITY_CHANGED_EVENT));
+        }
       })
       .catch(() => {
         if (!cancelled) setStatus("error");
