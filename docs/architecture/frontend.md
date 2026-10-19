@@ -159,9 +159,11 @@ frontend/
 | `/join` | `JoinPage` |  | 加入社团（自我介绍问卷入口） |
 | `/join/form` | `JoinFormPage` |  | 填写自我介绍问卷（`SurveyFill`） |
 | `/join/editor` | `JoinEditorPage` | ✅ | 编辑自我介绍问卷（复用 `SurveyCreatorPage`） |
-| `/register` | `RegisterPage` |  | 自助注册（用户名 + 双密码 + Turnstile） |
+| `/register` | `RegisterPage` |  | 自助注册（用户名 + 双密码 + 真实姓名 / 身份 + Turnstile；成功即登录、进入社员认领阶段） |
 | `/verify-email` | `VerifyEmailPage` |  | 邮箱认证落地页（邮件链接带 `?uid=&token=`） |
 | `/verify-email-pending` | `VerifyEmailPendingPage` |  | 重发认证邮件（`?email=` 可预填） |
+| `/v/:code` | `MemberVerifyPage` |  | 社员识别码公开校验页（`?s=` 签名；只出最小公开字段） |
+| `/verify` | `StepUpPage` | ✅ | 安全验证（Step-up）：`?action=&next=`，完成回跳原操作 |
 | `/forgot-password` | `ForgotPasswordPage` |  | 忘记密码 |
 | `/reset-password` | `ResetPasswordPage` |  | 重置密码落地页 |
 | `/profile` | `ProfileRedirect` |  | 取 `me.id` 后 `replace` 到 `/u/<id>` |
@@ -259,6 +261,7 @@ try {
         <Routes>…</Routes>
       </Suspense>
     </SessionGuard>
+    <ValidityNoticeHost />     {/* 账号有效期弹窗（ADR-0041）：桌面 / 手机版共用一份快照 */}
   </LoginModalProvider>
   <MaybeMascot />             {/* embed 模式不渲染看板娘 */}
 </HashRouter>
@@ -268,7 +271,7 @@ try {
 - **受保护路由**：`ProtectedRoute` 在挂载与每次 `authNonce` 变化后调 `api.me()` 校验；未登录时 `openLogin(location.pathname + location.search)` 记录回跳地址并渲染空（弹窗遮罩在前）。弹窗带 `redirectTo` 时关闭会先回首页，避免用户停在空白受保护页。
 - **单会话提示（挤号）**：`SessionGuard` 注册挤号回调并在已登录时每 15s 轮询 `api.me()`；被挤号的响应（类型化 `session_superseded`，含接管设备名/IP/时间）触发 `SessionSupersedeModal`（幂等展示，已显示则不覆盖），确认后重新打开登录弹窗。未登录则不轮询——没有会话就不会被挤号。
 - **登录态变化广播**：登录（`LoginModal` 的 `onLoggedIn`）与登出（`AppShell` 用户菜单的 `api.logout()`）都自增 `authNonce`；`AppShell`、受保护路由、`SessionGuard` 据此重新拉取身份，避免同页登出后本地 `user` 状态过期。
-- **注册与认证链路**：`/register` 只创建登录身份（用户名 + 双密码 + Turnstile），邮箱绑定与身份证明在登录后的「账号认证」面板（`components/profile/VerificationPanel`）；邮箱认证走邮件链接到 `/verify-email`，未认证登录被拒时跳 `/verify-email-pending` 重发。身份状态徽章由 `me.role` 驱动（见「能力投影」）。
+- **注册与认证链路**：`/register` 建登录身份（用户名 + 双密码 + 真实姓名 / 身份 + Turnstile），**注册成功即登录**；若名册存在匹配的未绑定行，进入**社员身份认领**阶段（可跳过、之后在个人中心「社员身份」补办——[ADR-0025](../adr/0025-member-identity.md)）。邮箱绑定与身份证明在登录后的「账号认证」面板（`components/profile/VerificationPanel`）；邮箱认证走邮件链接到 `/verify-email`，未认证登录被拒时跳 `/verify-email-pending` 重发。身份状态徽章由 `me.role` 驱动（见「能力投影」）。
 
 ## 能力投影（permissions → UI）
 

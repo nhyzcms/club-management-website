@@ -31,7 +31,7 @@
 | `GUNICORN_WORKERS` | ASGI worker 进程数 | 否 | `1`；**只有配了 `REDIS_URL` 才允许 >1** |
 | `NOTIFICATIONS_DELIVERY_ASYNC` | 通知外发投递模式：默认异步（进程内队列 + 守护线程；失败退避自动重试）；`=0` 回退旧同步投递 | 否 | 留空 = 异步（默认）。示例 `NOTIFICATIONS_DELIVERY_ASYNC=0` |
 | `CLUB_UPDATER_PROXY` / `CLUB_UPDATER_NO_PROXY` | 更新器出站代理（只注入更新守护进程，加速 GitHub API/Release 下载） | 否 | 空 = 不注入；示例 `CLUB_UPDATER_PROXY=http://127.0.0.1:7891` |
-| `CLUB_DATA_DIR` | 统一数据根：媒体等持久数据的存放位置（`MEDIA_ROOT` / `PRIVATE_MEDIA_ROOT` 由它派生） | 否 | 空 = 安装目录（历史布局，行为不变）；示例 `<安装目录>/data`。见[统一数据根](../operations/data-root.md) |
+| `CLUB_DATA_DIR` | 统一数据根：媒体等持久数据的存放位置（`MEDIA_ROOT` / `PRIVATE_MEDIA_ROOT` 由它派生） | 否 | 空 = 安装目录（历史布局，行为不变）；示例 `<安装目录>/data`。见[统一数据根](operations/data-root.md) |
 
 注意事项：
 
@@ -120,7 +120,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `STATIC_URL` | `static/` | |
 | `STATIC_ROOT` | `BASE_DIR / "staticfiles"` | `collectstatic` 输出（生产由 nginx 服务） |
 | `STATICFILES_DIRS` | `[frontend/dist, static]` 中**存在**的目录 | `frontend/dist` 是 webpack 产物（gitignored）；目录缺失时自动跳过，保证全新 clone 跑测试不触发 `staticfiles.W004` |
-| `DATA_DIR` | `CLUB_DATA_DIR` 环境变量；缺省 `BASE_DIR`，相对值按 `BASE_DIR` 锚定 | 统一数据根（见[统一数据根](../operations/data-root.md)）；下列媒体路径全部由它派生 |
+| `DATA_DIR` | `CLUB_DATA_DIR` 环境变量；缺省 `BASE_DIR`，相对值按 `BASE_DIR` 锚定 | 统一数据根（见[统一数据根](operations/data-root.md)）；下列媒体路径全部由它派生 |
 | `MEDIA_URL` / `MEDIA_ROOT` | `/media/` / `DATA_DIR / "media"` | 公开用户上传（头像等）。注意 DEBUG 下 `config/urls.py` 会用 `static(MEDIA_URL)` 公开服务整个 `MEDIA_ROOT` |
 | `PRIVATE_MEDIA_ROOT` | `DATA_DIR / "private_media"` | 私有媒体（身份证明等审计留底），**必须落在 `MEDIA_ROOT` 之外**，由带鉴权的视图服务；有测试断言其隔离性 |
 
@@ -186,6 +186,12 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `feedback_anon_per_ip_per_day` | `10` | 每 IP 每日匿名反馈次数 |
 | `reports_per_user_per_day` | `10` | 每用户每日举报次数 |
 | `authcode_redeem_per_user_per_hour` | `10` | 每账号每小时认证码兑换**失败**次数（只计失败） |
+| `member_claim_enabled` | `True` | 开放社员身份自助认领；关闭后认领接口 403、注册后认领阶段不展示（已绑定不受影响） |
+| `member_claim_per_user_per_hour` | `5` | 每账号每小时认领**失败**次数（只计失败） |
+| `member_claim_per_ip_per_day` | `20` | 每 IP 每日认领**失败**次数 |
+| `member_check_per_ip_per_hour` | `60` | 每 IP 每小时扫码校验次数（公开端点，计全部请求） |
+| `stepup_email_per_user_per_hour` | `5` | 安全验证邮箱验证码每小时上限（按账号） |
+| `stepup_email_per_ip_per_hour` | `10` | 安全验证邮箱验证码每小时上限（按 IP） |
 | `sync_upload_max_bytes` | `52428800`（50MB） | 同步上传单文件上限 |
 | `tus_media_max_bytes` | `524288000`（500MB） | tus 图 / 视频上限 |
 | `auto_update_enabled` | `True` | 自动更新总开关 |

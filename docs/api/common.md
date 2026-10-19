@@ -41,6 +41,12 @@
   "feedback_anon_per_ip_per_day": 10,
   "reports_per_user_per_day": 10,
   "authcode_redeem_per_user_per_hour": 10,
+  "member_claim_enabled": true,
+  "member_claim_per_user_per_hour": 5,
+  "member_claim_per_ip_per_day": 20,
+  "member_check_per_ip_per_hour": 60,
+  "stepup_email_per_user_per_hour": 5,
+  "stepup_email_per_ip_per_hour": 10,
   "sync_upload_max_bytes": 52428800,
   "tus_media_max_bytes": 524288000,
   "auto_update_enabled": true,
@@ -78,6 +84,12 @@
 | feedback_anon_per_ip_per_day | int | `10` | 每 IP 每日匿名反馈次数（`reviews` 限流） |
 | reports_per_user_per_day | int | `10` | 每用户每日举报次数（`reviews` 限流） |
 | authcode_redeem_per_user_per_hour | int | `10` | 每账号每小时认证码兑换**失败**次数（`accounts.throttles.AuthCodeRedeemThrottle`；只计失败，成功不占额度） |
+| member_claim_enabled | bool | `true` | 社员身份自助认领开关；关闭后认领接口 403、注册后认领阶段不展示（已绑定不受影响）。消费方：`accounts` |
+| member_claim_per_user_per_hour | int | `5` | 每账号每小时认领**失败**次数（只计失败） |
+| member_claim_per_ip_per_day | int | `20` | 每 IP 每日认领**失败**次数 |
+| member_check_per_ip_per_hour | int | `60` | 每 IP 每小时扫码校验次数（公开端点；计全部请求） |
+| stepup_email_per_user_per_hour | int | `5` | 安全验证邮箱验证码每小时上限（按账号） |
+| stepup_email_per_ip_per_hour | int | `10` | 安全验证邮箱验证码每小时上限（按 IP） |
 | sync_upload_max_bytes | int | `52428800`（50MB） | 同步上传单文件上限（任意类型）；超过则仅图片 / 视频可走 tus。消费方：`attachments` |
 | tus_media_max_bytes | int | `524288000`（500MB） | tus 通路图 / 视频上限（`TusUploadViewSet.max_file_size`，admin 改后无需重启即生效） |
 | auto_update_enabled | bool | `true` | 自动更新总开关；关闭后守护进程跳过下载与应用。消费方：`common.updater` |

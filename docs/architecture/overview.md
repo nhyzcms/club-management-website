@@ -56,7 +56,7 @@
 
 | App | 职责 | 关键概念 | 参考 |
 |---|---|---|---|
-| `accounts` | 账号、登录 / 会话、身份认证、资料与头像 | 单会话、登录保护、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) |
+| `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、资料与头像 | 单会话、登录保护、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) |
 | `common` | 站点策略、维护模式 | `SiteSettings` 运行时策略 | [API](../api/common.md) |
 | `news` | 社团新闻 | 发布审核门控 | [API](../api/news.md) |
 | `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
@@ -81,7 +81,7 @@
 
 ### 身份认证
 
-- 登录后需通过身份认证（人工审核 / 委任 / 认证码通道：见 [ADR-0006](../adr/0006-verification-model.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0020](../adr/0020-authcode-verification-channel.md)）才计为正式「用户」；门禁分级：公开 → 登录 → 已认证 → 权限。
+- 登录后需通过身份认证（邮箱 / 人工审核 / 委任 / 认证码通道：见 [ADR-0006](../adr/0006-verification-model.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0020](../adr/0020-authcode-verification-channel.md)）才计为正式「用户」；门禁分级：公开 → 登录 → 已认证 → 权限。
 - 详见 [身份认证指南](../guides/certification.md)。
 
 ### 单会话与登录保护
@@ -113,5 +113,5 @@ Nginx（一层代理）→ Gunicorn ASGI（worker 数由 `GUNICORN_WORKERS` 控�
 
 ## 设计记录
 
-- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0024）。
+- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0027 与 0041）。
 - 领域术语与项目概览：仓库根目录 [CONTEXT.md](../../CONTEXT.md)。

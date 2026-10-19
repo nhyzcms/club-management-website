@@ -1,6 +1,6 @@
 # 身份认证
 
-> 相关：[账号 API](../api/accounts.md) · [访问控制](access-control.md) · [ADR-0006](../adr/0006-verification-model.md) · [ADR-0013](../adr/0013-appointment-verification-channel.md) · [ADR-0020](../adr/0020-authcode-verification-channel.md) · [ADR-0023](../adr/0023-email-domain-allowlist.md)
+> 相关：[账号 API](../api/accounts.md) · [访问控制](access-control.md) · [ADR-0006](../adr/0006-verification-model.md) · [ADR-0013](../adr/0013-appointment-verification-channel.md) · [ADR-0020](../adr/0020-authcode-verification-channel.md) · [ADR-0023](../adr/0023-email-domain-allowlist.md) · [ADR-0025](../adr/0025-member-identity.md)
 
 ## 为什么要认证
 
@@ -73,6 +73,14 @@
 6. **结果**：通过 → 徽章变「用户」，受限功能放开；驳回 → 邮件通知，可重新提交。
 
 > 没收到邮件可用 `/auth/resend-verification/` 重发；邮箱登录**只认已认证邮箱**，待认证地址登不进。
+
+## 社员身份编号（名册认领）
+
+学校各届社员名册导入后，每个名册行持有 8 位**识别码**（工牌二维码本体）；账号可绑定到自己的名册行（[ADR-0025](../adr/0025-member-identity.md)）。这是独立于认证通道的一条名册线：认证回答「账号是否可信」，它回答「你在名册里是谁」。
+
+- **认领**：注册成功时，若名册中有与本人真实姓名匹配的未绑定行，注册页进入认领阶段（**手机号后四位**核验；可跳过，之后在个人中心「社员身份」补办）。绑定后识别码随时可查；重导名册保留既有绑定。
+- **扫码校验**：工牌二维码指向 `/#/v/<识别码>?s=<签名>`（HMAC-SHA256 防枚举）——只显示姓名 / 届数 / 组别 / 在册状态，**电话 / 学号 / 邮箱绝不下发**。发放与管理（名册导入 / 重匹配 / 解绑 / 二维码导出）在 Django 后台「账户 → 社员身份编号」（见[管理后台指南](../operations/admin-guide.md)）。
+- **开关与额度**：认领开关（默认开）与认领 / 扫码校验的限流在站点策略；关闭后认领接口 403 `claim_closed`、注册页不再展示认领阶段（已绑定不受影响）。接口见[账号 API](../api/accounts.md)。
 
 ## 邮箱后缀白名单
 

@@ -293,6 +293,14 @@ uv run python manage.py enforce_validity --dry-run       # 只统计，不改动
 uv run python manage.py enforce_validity --skip-notices  # 只做降权 / 停用，不发提醒
 ```
 
+账号有效期说明群发（一次性运营动作：给全体启用用户发个性化站内私信 + 「收到新私信」通知；跳过发送者本人 / 已注销 / 停用账号，同一会话 `--dedupe-days` 天内重跑会跳过）：
+
+```bash
+uv run python manage.py send_validity_broadcast --dry-run     # 只统计与预览，不落库
+uv run python manage.py send_validity_broadcast --from admin  # 发送者（缺省取最早创建的超级管理员）
+uv run python manage.py send_validity_broadcast --limit 5     # 限量试发
+```
+
 通知外发（邮件）默认**异步**投递（进程内队列 + 守护线程，失败自动退避重试、重启不丢，见 [ADR-0024](../adr/0024-async-notification-delivery.md)）——手动补投 / 排障入口：
 
 ```bash

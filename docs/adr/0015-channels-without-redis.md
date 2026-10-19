@@ -6,7 +6,7 @@
 
 生产今日是 **Gunicorn WSGI、2 worker**。消息重置需要把**私信 / 通知 / 当前打开的评论区**推到已登录客户端。SQLite 本就怕多写者；Channels 的 `InMemoryChannelLayer` 也不能跨进程扇出。v1 的约束是：**一个 ASGI 进程，进程内内存层，WebSocket 只推不聊。**
 
-这与 [`docs/specs/2026-07-11-single-session-kickout-design.md`](../specs/2026-07-11-single-session-kickout-design.md) **不冲突**。该文否掉 WebSocket，是因为**仅为挤号**引入 Channels + Redis + ASGI 过重，改走 HTTP 中间件 + 401 + 60s 轮询。本 ADR 为消息推送引入 Channels，**挤号仍走那条 HTTP 路径**，不把强制下线挂上本 socket。
+这与 `docs/specs/2026-07-11-single-session-kickout-design.md` **不冲突**。该文否掉 WebSocket，是因为**仅为挤号**引入 Channels + Redis + ASGI 过重，改走 HTTP 中间件 + 401 + 60s 轮询。本 ADR 为消息推送引入 Channels，**挤号仍走那条 HTTP 路径**，不把强制下线挂上本 socket。
 
 ## 决策
 
@@ -17,7 +17,7 @@
 5. **横幅公告不靠 socket。** 访客无连接；AppShell 在加载 / 聚焦 / 导航时轮询 `GET /messaging/banners/current/`。
 6. **挤号继续 HTTP。** `SingleSessionMiddleware` + 401 `session_superseded` 仍是唯一挤号通道；本 socket 不发下线事件。
 
-Nginx **对上游**须 `proxy_http_version 1.1` 并转发 `Upgrade` / `Connection`（Uvicorn unix socket 只说 HTTP/1.1；WebSocket 的 Upgrade 也在这一段）。浏览器到 nginx 可以是 HTTP/2 或 HTTP/3，写在 `listen` 上，不要按路径拆 `location`，也不要对 unix socket 写 `proxy_http_version 2`。开发代理给 `/ws` 开 `ws: true`。完整站点配置见 [deployment.md](../deployment.md#nginx-两段协议)。
+Nginx **对上游**须 `proxy_http_version 1.1` 并转发 `Upgrade` / `Connection`（Uvicorn unix socket 只说 HTTP/1.1；WebSocket 的 Upgrade 也在这一段）。浏览器到 nginx 可以是 HTTP/2 或 HTTP/3，写在 `listen` 上，不要按路径拆 `location`，也不要对 unix socket 写 `proxy_http_version 2`。开发代理给 `/ws` 开 `ws: true`。完整站点配置见 [deployment.md](../operations/deployment.md#nginx-两段协议)。
 
 ## 被否的方案
 
