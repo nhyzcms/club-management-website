@@ -37,33 +37,96 @@ export default function AboutPage() {
   const [saveError, setSaveError] = useState("");
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 悬停用两个互不干扰的计时器：
+  //  openTimer 属于「即将展开的块」，closeTimer 属于「已经展开的块」。
+  // 早先两者共用一个 ref，指针从一个块掠过另一个块时会顺手清掉上一块的收起倒计时，
+  // 导致上一个块永远停在展开状态（失去「鼠标焦点」（指针）也不收起）。
+  const hoveredRef = useRef<string | null>(null);
+  const openTimer = useRef<{ key: string; id: ReturnType<typeof setTimeout> } | null>(null);
+  const closeTimer = useRef<{ key: string; id: ReturnType<typeof setTimeout> } | null>(null);
   const pinnedInit = useRef(false);
 
   const load = () => aboutApi.get().then(setPage);
 
-  const clearHoverTimer = () => {
-    if (hoverTimer.current) {
-      clearTimeout(hoverTimer.current);
-      hoverTimer.current = null;
+  const cancelOpenTimer = () => {
+    if (openTimer.current) {
+      clearTimeout(openTimer.current.id);
+      openTimer.current = null;
     }
+  };
+
+  const cancelCloseTimer = (key?: string) => {
+    if (closeTimer.current && (key === undefined || closeTimer.current.key === key)) {
+      clearTimeout(closeTimer.current.id);
+      closeTimer.current = null;
+    }
+  };
+
+  const applyHover = (key: string | null) => {
+    hoveredRef.current = key;
+    setHoveredKey(key);
+  };
+
+  // 一次性收起所有悬停展开：用于指针移出窗口、窗口失焦、切到别的标签页等
+  // 浏览器不会派发 mouseleave 的场景。
+  const clearHover = () => {
+    cancelOpenTimer();
+    cancelCloseTimer();
+    if (hoveredRef.current !== null) applyHover(null);
   };
 
   const onBlockEnter = (key: string) => {
     if (!finePointer()) return;
-    clearHoverTimer();
-    hoverTimer.current = setTimeout(() => setHoveredKey(key), OPEN_DWELL_MS);
+    // 回到刚刚离开的块：撤销它的收起倒计时，保持展开
+    cancelCloseTimer(key);
+    if (hoveredRef.current === key) return;
+    cancelOpenTimer();
+    openTimer.current = {
+      key,
+      id: setTimeout(() => {
+        openTimer.current = null;
+        applyHover(key);
+      }, OPEN_DWELL_MS),
+    };
   };
 
   const onBlockLeave = (key: string) => {
     if (!finePointer()) return;
-    clearHoverTimer();
-    hoverTimer.current = setTimeout(() => {
-      setHoveredKey((current) => (current === key ? null : current));
-    }, CLOSE_LINGER_MS);
+    // 只撤销「本块自己」还没生效的展开请求，不能碰别的块已经排上的收起倒计时
+    if (openTimer.current?.key === key) cancelOpenTimer();
+    if (hoveredRef.current !== key) return;
+    cancelCloseTimer();
+    closeTimer.current = {
+      key,
+      id: setTimeout(() => {
+        closeTimer.current = null;
+        if (hoveredRef.current === key) applyHover(null);
+      }, CLOSE_LINGER_MS),
+    };
   };
 
-  useEffect(() => () => clearHoverTimer(), []);
+  // 兜底：指针移出窗口 / 窗口失焦 / 标签页隐藏时没有 mouseleave，主动收起。
+  useEffect(() => {
+    const onPointerGone = (e: MouseEvent) => {
+      // relatedTarget 为空 = 指针离开了文档（移出浏览器窗口）
+      if (!e.relatedTarget) clearHover();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") clearHover();
+    };
+    document.addEventListener("mouseout", onPointerGone);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", clearHover);
+    return () => {
+      document.removeEventListener("mouseout", onPointerGone);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", clearHover);
+      cancelOpenTimer();
+      cancelCloseTimer();
+    };
+    // clearHover 只读写 ref 与 setState，首帧闭包即可长期使用
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 首次加载完成后默认展开第一块（访客第一眼即可看到正文）
   useEffect(() => {
