@@ -22,11 +22,21 @@ from django.utils import timezone
 from .member_codes import MemberCodeError, generate_code, name_sort_key, next_serial
 from .models import IdentityImportBatch, MemberIdentity, Profile
 
+# 列清单（2026-10-23 修订）：只收「不会随时间变」的档案信息。
+# - 不含「年级」：年级每年随升学年变动，需要时按「入学年份 + 当前学年」推算；
+# - 「校牌号」取代旧「学号」列（同一栏位改名；旧表头「学号」按别名读入，见 HEADER_ALIASES）；
+# - 不含「年龄」：每年 +1，静态快照无意义；
+# - 不含「识别码」：一律由系统按规则生成（ADR-0025），表里写了也忽略。
+# 除「姓名 / 入学年份 / 届数」外（认人 + 生成识别码所需），其余列都可留空；
+# 旧模板带的「年级 / 学号 / 年龄 / 识别码」等列按未知列忽略，不影响导入。
 HEADERS = [
-    "姓名", "年级", "班级", "学号", "入学年份", "入社时间",
-    "届数", "组别", "性别", "年龄", "电话号码", "识别码",
+    "姓名", "班级", "校牌号", "入学年份", "入社时间",
+    "届数", "组别", "性别", "电话号码",
 ]
-REQUIRED_COLUMNS = ["姓名", "入学年份", "届数", "组别"]
+# 旧表头别名：改名前的「学号」列仍读入「校牌号」（两列同时存在时以「校牌号」为准）。
+HEADER_ALIASES = {"学号": "校牌号"}
+# 必需列 = 生成识别码与认人所必需：姓名（GBK 序序号）/ 入学年份 / 届数。
+REQUIRED_COLUMNS = ["姓名", "入学年份", "届数"]
 
 _WS_RE = re.compile(r"\s+")
 _DIGIT_RE = re.compile(r"\D")
@@ -111,7 +121,13 @@ def parse_roster(filename: str, content: bytes) -> list[ParsedRow]:
     missing = [h for h in REQUIRED_COLUMNS if h not in header]
     if missing:
         raise RosterParseError(f"缺少必需列：{'、'.join(missing)}。")
-    index = {h: i for i, h in enumerate(header) if h in HEADERS}
+    # 按表头名定位列：先认规范列名，再认旧表头别名（如「学号」→「校牌号」）；
+    # 同名重复时取最左一列，其余未知列一律忽略。
+    index: dict[str, int] = {}
+    for i, h in enumerate(header):
+        canon = h if h in HEADERS else HEADER_ALIASES.get(h)
+        if canon is not None and canon not in index:
+            index[canon] = i
 
     rows: list[ParsedRow] = []
     for offset, raw_row in enumerate(grid[1:]):
@@ -149,19 +165,7 @@ def _validate_row(pr: ParsedRow) -> None:
     else:
         v["届数"] = cohort
 
-    if not v["组别"]:
-        pr.errors.append("组别不能为空")
-
-    age_raw = v["年龄"]
-    if age_raw:
-        age = _int_or_none(age_raw)
-        if age is None or not (5 <= age <= 100):
-            pr.errors.append("年龄须为 5-100 的整数")
-            v["年龄"] = None
-        else:
-            v["年龄"] = age
-    else:
-        v["年龄"] = None
+    # 其余列（班级 / 校牌号 / 入社时间 / 组别 / 性别 / 电话号码）都可留空。
 
     phone_raw = v["电话号码"]
     if phone_raw:
@@ -290,16 +294,22 @@ def commit_import(rows: list[ParsedRow], *, file_name: str, operator=None) -> Id
                 v = item["row"].values
                 MemberIdentity.objects.create(
                     import_batch=batch, code=item["code"],
-                    name=v["姓名"], grade=v["年级"], class_no=v["班级"], student_no=v["学号"],
+                    name=v["姓名"], class_no=v["班级"], card_no=v["校牌号"],
                     admit_year=v["入学年份"], joined_on_raw=v["入社时间"], cohort=v["届数"],
-                    group=v["组别"], gender=v["性别"], age=v["年龄"], phone=v["电话号码"],
+                    group=v["组别"], gender=v["性别"], phone=v["电话号码"],
                 )
                 created += 1
             elif action == "update":
                 obj, v = item["target"], item["row"].values
-                obj.name, obj.grade, obj.class_no, obj.student_no = v["姓名"], v["年级"], v["班级"], v["学号"]
-                obj.admit_year, obj.joined_on_raw, obj.cohort = v["入学年份"], v["入社时间"], v["届数"]
-                obj.group, obj.gender, obj.age, obj.phone = v["组别"], v["性别"], v["年龄"], v["电话号码"]
+                obj.name = v["姓名"]
+                obj.admit_year, obj.cohort = v["入学年份"], v["届数"]
+                # 其余列都可以留空：空白格 = 「这一项没填」，不覆盖库内已有值。
+                for field, key in (
+                    ("class_no", "班级"), ("card_no", "校牌号"), ("joined_on_raw", "入社时间"),
+                    ("group", "组别"), ("gender", "性别"), ("phone", "电话号码"),
+                ):
+                    if v[key]:
+                        setattr(obj, field, v[key])
                 obj.import_batch = batch
                 obj.save()
                 updated += 1

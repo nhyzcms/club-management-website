@@ -595,16 +595,15 @@ class MemberIdentity(models.Model):
     ]
 
     # ---- 名册快照 ----
+    # 注：不存「年级」——年级每年变动，快照一年后必失真；需要时按 admit_year 推算。
     name = models.CharField("姓名", max_length=100)
-    grade = models.CharField("年级", max_length=20, blank=True, default="")
     class_no = models.CharField("班级", max_length=20, blank=True, default="")
-    student_no = models.CharField("学号", max_length=20, blank=True, default="")
+    card_no = models.CharField("校牌号", max_length=20, blank=True, default="")
     admit_year = models.PositiveIntegerField("入学年份")
     joined_on_raw = models.CharField("入社时间", max_length=20, blank=True, default="")
     cohort = models.PositiveIntegerField("届数")
     group = models.CharField("组别", max_length=50, blank=True, default="")
     gender = models.CharField("性别", max_length=8, blank=True, default="")
-    age = models.PositiveIntegerField("年龄", null=True, blank=True)
     phone = models.CharField("电话号码", max_length=20, blank=True, default="")
 
     # ---- 编号与绑定 ----

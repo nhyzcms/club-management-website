@@ -624,8 +624,8 @@ class MemberIdentityAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "名册信息",
-            {"fields": ("name", "grade", "class_no", "student_no", "admit_year",
-                        "joined_on_raw", "cohort", "group", "gender", "age", "phone")},
+            {"fields": ("name", "class_no", "card_no", "admit_year",
+                        "joined_on_raw", "cohort", "group", "gender", "phone")},
         ),
         ("编号", {"fields": ("code", "status")}),
         ("绑定", {"fields": ("user", "bind_method", "bound_at", "bound_by", "import_batch")}),
@@ -780,7 +780,7 @@ class MemberIdentityAdmin(admin.ModelAdmin):
         sheet = workbook.active
         sheet.title = "名册"
         sheet.append(HEADERS)
-        sheet.append(["张三", "高一", "1", "1", 2026, "20260303", 2, "摄影", "男", 16, "13800000000", ""])
+        sheet.append(["张三", "1", "1", 2026, "20260303", 2, "摄影", "男", "13800000000"])
         buffer = io.BytesIO()
         workbook.save(buffer)
         response = HttpResponse(

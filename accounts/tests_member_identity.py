@@ -32,7 +32,11 @@ from accounts.member_roster import (
 )
 from accounts.models import IdentityImportBatch, MemberIdentity, Profile
 
-HEADERS = ["姓名", "年级", "班级", "学号", "入学年份", "入社时间", "届数", "组别", "性别", "年龄", "电话号码", "识别码"]
+HEADERS = ["姓名", "班级", "校牌号", "入学年份", "入社时间", "届数", "组别", "性别", "电话号码"]
+# 旧模板（含 年级 / 学号 / 年龄 / 识别码）仍要能导入：未知列忽略，「学号」按别名读入「校牌号」。
+WITH_CODE_HEADERS = HEADERS + ["识别码"]
+# 旧模板（含「年级」列）仍要能导入：年级不再是名册列，按未知列忽略。
+LEGACY_HEADERS = ["姓名", "年级", "班级", "学号", "入学年份", "入社时间", "届数", "组别", "性别", "年龄", "电话号码", "识别码"]
 
 
 def xlsx_bytes(rows, headers=None):
@@ -54,8 +58,13 @@ def csv_bytes(rows, headers=None, encoding="utf-8-sig"):
     return ("\n".join(lines)).encode(encoding)
 
 
-def sample_row(name="张三", cohort=2, phone="13800008888", code="", grade="高一", admit=2026):
-    return [name, grade, "1", "1", admit, "20260303", cohort, "摄影", "男", 16, phone, code]
+def sample_row(name="张三", cohort=2, phone="13800008888", class_no="1", card_no="1", admit=2026):
+    return [name, class_no, card_no, admit, "20260303", cohort, "摄影", "男", phone]
+
+
+def sample_row_with_code(code, **kwargs):
+    """旧模板多一列「识别码」：该列内容一律忽略（识别码由系统生成）。"""
+    return sample_row(**kwargs) + [code]
 
 
 class MemberCodesTest(TestCase):
@@ -132,7 +141,27 @@ class RosterParseTest(TestCase):
         self.assertEqual(v["姓名"], "张三")
         self.assertEqual(v["届数"], 2)  # 转成 int
         self.assertEqual(v["入学年份"], 2026)
-        self.assertEqual(v["年龄"], 16)
+        self.assertEqual(v["校牌号"], "1")
+        self.assertNotIn("年龄", v)  # 年龄不再进名册
+
+    def test_legacy_headers_ignored_and_student_no_aliased(self):
+        # 旧模板（年级 / 学号 / 年龄 / 识别码）仍能导入：前三个未知列忽略，
+        # 「学号」按别名读入「校牌号」。
+        rows = parse_roster(
+            "a.csv",
+            csv_bytes([["张三", "高二", "1", "1", 2026, "20260303", 2, "摄影", "男", 16, "13800008888", ""]],
+                      headers=LEGACY_HEADERS),
+        )
+        self.assertFalse(rows[0].errors)
+        self.assertNotIn("年级", rows[0].values)
+        self.assertNotIn("年龄", rows[0].values)
+        self.assertEqual(rows[0].values["校牌号"], "1")  # 「学号」列 → 校牌号
+        commit_import(rows, file_name="a.csv")
+        row = MemberIdentity.objects.get()
+        self.assertFalse(hasattr(row, "grade"))
+        self.assertFalse(hasattr(row, "age"))
+        self.assertEqual(row.card_no, "1")
+        self.assertEqual(row.admit_year, 2026)  # 入学年份保留
 
     def test_csv_gbk_encoding(self):
         rows = parse_roster("a.csv", csv_bytes([sample_row()], encoding="gbk"))
@@ -143,27 +172,52 @@ class RosterParseTest(TestCase):
         self.assertEqual([r.values["姓名"] for r in rows], ["张三", "李四"])
 
     def test_missing_required_column_raises(self):
+        for column in ("姓名", "入学年份", "届数"):
+            headers = [h for h in HEADERS if h != column]
+            row = [c for i, c in enumerate(sample_row()) if i != HEADERS.index(column)]
+            with self.assertRaises(RosterParseError):
+                parse_roster("a.csv", csv_bytes([row], headers=headers))
+
+    def test_optional_columns_can_be_missing(self):
+        # 除姓名 / 入学年份 / 届数 外，整列缺失也不报错。
         headers = [h for h in HEADERS if h != "组别"]
-        with self.assertRaises(RosterParseError):
-            parse_roster("a.csv", csv_bytes([sample_row()], headers=headers))
+        row = [c for i, c in enumerate(sample_row()) if i != HEADERS.index("组别")]
+        rows = parse_roster("a.csv", csv_bytes([row], headers=headers))
+        self.assertFalse(rows[0].errors)
+        self.assertEqual(rows[0].values["组别"], "")
+
+    def test_only_code_columns_required_in_row(self):
+        # 其余列留空也能导入：班 / 校牌号 / 入社时间 / 组别 / 性别 / 电话 全空。
+        rows = parse_roster("a.csv", csv_bytes([["张三", "", "", 2026, "", 2, "", "", ""]]))
+        self.assertFalse(rows[0].errors)
+        commit_import(rows, file_name="a.csv")
+        obj = MemberIdentity.objects.get()
+        self.assertEqual(obj.name, "张三")
+        self.assertEqual(obj.admit_year, 2026)
+        self.assertEqual(obj.cohort, 2)
+        self.assertEqual(
+            (obj.class_no, obj.card_no, obj.joined_on_raw, obj.group, obj.gender, obj.phone),
+            ("", "", "", "", "", ""),
+        )
+        self.assertTrue(obj.code.startswith("2602"))
 
     def test_blank_rows_skipped(self):
-        rows = parse_roster("a.csv", csv_bytes([sample_row(), ["", "", "", "", "", "", "", "", "", "", "", ""]]))
+        rows = parse_roster("a.csv", csv_bytes([sample_row(), [""] * len(HEADERS)]))
         self.assertEqual(len(rows), 1)
 
     def test_bad_types_flagged(self):
         bad = sample_row()
-        bad[6] = "abc"  # 届数
-        bad[4] = "??"  # 入学年份
+        bad[HEADERS.index("届数")] = "abc"
+        bad[HEADERS.index("入学年份")] = "??"
         rows = parse_roster("a.csv", csv_bytes([bad]))
         self.assertTrue(rows[0].errors)
 
     def test_given_code_column_ignored(self):
         # 识别码一律自动生成：表格该列内容忽略（含非法内容与文件内重复）。
         rows = parse_roster("a.csv", csv_bytes([
-            sample_row(code="!!bad!!"),
-            sample_row(name="李四", phone="13900001111", code="26020001"),
-        ]))
+            sample_row_with_code("!!bad!!"),
+            sample_row_with_code("26020001", name="李四", phone="13900001111"),
+        ], headers=WITH_CODE_HEADERS))
         self.assertFalse(rows[0].errors)
         self.assertFalse(rows[1].errors)
 
@@ -193,7 +247,7 @@ class ImportPlanTest(TestCase):
 
     def test_plan_reimport_updates(self):
         commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")
-        rows = parse_roster("a.csv", csv_bytes([sample_row(grade="高二")]))
+        rows = parse_roster("a.csv", csv_bytes([sample_row(class_no="2")]))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["update"], 1)
         self.assertEqual(plan["counts"]["create"], 0)
@@ -202,20 +256,20 @@ class ImportPlanTest(TestCase):
     def test_plan_reimport_keeps_existing_code_ignoring_given(self):
         # 表内带码（哪怕同码）不参与认行：仍按 姓名+电话 命中 → 保留既有编码。
         commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")
-        rows = parse_roster("a.csv", csv_bytes([sample_row(code="26020154", grade="高二")]))
+        rows = parse_roster("a.csv", csv_bytes([sample_row_with_code("26020154", class_no="2")], headers=WITH_CODE_HEADERS))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["update"], 1)
         self.assertEqual(plan["items"][0]["code"], "26020154")
 
     def test_plan_ignores_given_code_uses_generated(self):
-        rows = parse_roster("a.csv", csv_bytes([sample_row(code="26027777")]))
+        rows = parse_roster("a.csv", csv_bytes([sample_row_with_code("26027777")], headers=WITH_CODE_HEADERS))
         plan = plan_import(rows)
         self.assertEqual(plan["items"][0]["code"], "26020154")
 
     def test_given_code_not_used_for_matching(self):
         # 表带码与库内既有行相同、但姓名不同 → 不按码更新：作为新行处理并自动生成新码。
         commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")
-        rows = parse_roster("a.csv", csv_bytes([sample_row(name="李四", phone="13900001111", code="26020001")]))
+        rows = parse_roster("a.csv", csv_bytes([sample_row_with_code("26020001", name="李四", phone="13900001111")], headers=WITH_CODE_HEADERS))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 1)
         self.assertEqual(plan["counts"]["update"], 0)
@@ -245,13 +299,13 @@ class ImportPlanTest(TestCase):
         row.user = user
         row.bind_method = MemberIdentity.BIND_ADMIN
         row.save()
-        batch2 = commit_import(parse_roster("a.csv", csv_bytes([sample_row(grade="高二")])), file_name="a.csv")
+        batch2 = commit_import(parse_roster("a.csv", csv_bytes([sample_row(class_no="2")])), file_name="a.csv")
         row.refresh_from_db()
         self.assertEqual(batch2.summary["created"], 0)
         self.assertEqual(batch2.summary["updated"], 1)
         self.assertEqual(row.user_id, user.id)  # 绑定保留
         self.assertEqual(row.code, "26020154")  # 识别码保留
-        self.assertEqual(row.grade, "高二")  # 动态字段更新
+        self.assertEqual(row.class_no, "2")  # 动态字段更新
 
     def test_plan_second_batch_appends_serials(self):
         """同届追加导入：新行序号接续已有最大序号（不重排已发码）。"""
