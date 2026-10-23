@@ -143,6 +143,7 @@ class MeViewTest(TestCase):
         self.assertTrue(perms["can_manage_news"])
         self.assertFalse(perms["can_manage_tasks"])
         self.assertTrue(perms["can_manage_announcement"])
+        self.assertTrue(perms["can_manage_announcements"])
         self.assertFalse(perms["can_mute_user"])
         self.assertFalse(perms["can_manage_comment_thread"])
 
@@ -721,6 +722,35 @@ class RoleForTest(TestCase):
         self.assertEqual(_role_for(AnonymousUser()), {"label": "访客", "variant": "visitor"})
 
 
+class PublicRoleMaskTest(TestCase):
+    """对外徽章遮蔽超管（ADR-0042）：别人看不到「超级管理员」，本人与后台不受影响。"""
+
+    def setUp(self):
+        self.boss = User.objects.create_user(
+            username="boss", password="p", is_staff=True, is_superuser=True,
+        )
+        self.member = User.objects.create_user(username="member", password="p")
+
+    def test_public_role_masks_superadmin_for_others_and_guests(self):
+        from .views import _public_role_for
+        self.assertEqual(_public_role_for(self.boss, self.member),
+                         {"label": "管理员", "variant": "admin"})
+        self.assertEqual(_public_role_for(self.boss, None),
+                         {"label": "管理员", "variant": "admin"})
+
+    def test_public_role_keeps_superadmin_for_self(self):
+        from .views import _public_role_for
+        self.assertEqual(_public_role_for(self.boss, self.boss),
+                         {"label": "超级管理员", "variant": "superadmin"})
+
+    def test_profile_endpoint_does_not_leak_superadmin_badge(self):
+        c = Client()
+        c.force_login(self.member)
+        data = c.get(f"/auth/users/{self.boss.id}/profile/").json()
+        self.assertEqual(data["role"]["variant"], "admin")
+        self.assertEqual(data["role"]["label"], "管理员")
+
+
 class CapabilityKeysContractTest(TestCase):
     """前后端能力键集契约（ADR-0005 决策 4）：后端 _capabilities 键集必须与
     前端 PermissionsPanel.tsx 的 CAP_LABELS 键集一致，防漂移（后端加键、前端漏显）。
@@ -774,6 +804,7 @@ class CapabilityKeysContractTest(TestCase):
             "can_manage_comment_thread",
             "can_mute_user",
             "can_manage_announcement",
+            "can_manage_announcements",
         }
         user = User.objects.create_user(username="cap", password="p")
         keys = set(_capabilities(user).keys())

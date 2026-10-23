@@ -20,6 +20,7 @@ const CAP_LABELS: Record<string, string> = {
   can_manage_comment_thread: "评论区协管",
   can_mute_user: "全站禁言",
   can_manage_announcement: "管理横幅公告",
+  can_manage_announcements: "发布全站弹窗公告",
 };
 
 /** 统一的 24x24 线性图标外壳，沿用项目内联 SVG 约定（stroke=currentColor）。 */
@@ -142,6 +143,13 @@ const CAP_ICONS: Record<string, ReactNode> = {
       <path d="M4 10v4" />
       <path d="M4 12h3l9-5v10l-9-5H4z" />
       <path d="M18 9.5v5" />
+    </Svg>
+  ),
+  can_manage_announcements: (
+    <Svg>
+      <rect x={3} y={5} width={18} height={14} rx={2.5} />
+      <path d="M3 8h18" />
+      <path d="M7 15h6" />
     </Svg>
   ),
 };

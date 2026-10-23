@@ -65,6 +65,14 @@ module.exports = {
           from: path.resolve(__dirname, "vendor/live2d"),
           to: "live2d",
         },
+        {
+          // pdf.js（全站公告的 PDF 原件预览，components/PdfPreview.tsx）：PDF 解析器 +
+          // worker + CJK CMap。与 live2d 同样理由直拷而不进 bundle——它们是运行期按需
+          // 加载的独立文件（worker 必须能被 new Worker(url) 访问，cmaps 由 pdf.js 内部
+          // 按需 fetch），放进 bundle 反而用不了。
+          from: path.resolve(__dirname, "vendor/pdfjs"),
+          to: "pdfjs",
+        },
       ],
     }),
   ],

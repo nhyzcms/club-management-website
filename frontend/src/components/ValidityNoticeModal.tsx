@@ -44,7 +44,7 @@ export default function ValidityNoticeModal({
 
   const rules = [
     `认证有效期 ${policy.verification_valid_days} 天：完成邮箱认证、学生证人工核验或认证码兑换任一通道后生效；到期后回落为未认证，重新认证即可恢复。`,
-    `管理员委任有效期 ${policy.admin_valid_days} 天：到期自动撤销管理员身份；超级管理员永久有效。`,
+    `管理员委任有效期 ${policy.admin_valid_days} 天：到期自动撤销管理员身份，需要续期请联系社长。`,
     `注册宽限 ${policy.registration_verify_days} 天：注册后须在宽限期内完成任一认证，逾期未认证的账号将被停用（需联系管理员恢复）。`,
   ];
 

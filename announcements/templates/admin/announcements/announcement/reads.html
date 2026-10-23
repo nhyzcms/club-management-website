@@ -1,0 +1,58 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">首页</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:announcements_announcement_changelist' %}">{{ opts.verbose_name_plural }}</a>
+  &rsaquo; <a href="{% url 'admin:announcements_announcement_change' announcement.pk %}">{{ announcement.title }}</a>
+  &rsaquo; 已读明细
+</div>
+{% endblock %}
+
+{% block content %}
+{# 标题由 admin/base.html 的 content_title 块渲染（context["title"]），这里不要再写 h1。 #}
+<p style="margin: 12px 0 18px">
+  受众范围：<b>{{ announcement.get_audience_display }}</b> ·
+  受众 <b>{{ stats.recipients }}</b> 人 ·
+  已读 <b>{{ stats.read_count }}</b> 人（{{ stats.read_rate }}%）·
+  未读 <b>{{ stats.unread_count }}</b> 人
+  {% if announcement.send_email %}
+    · 邮件 入队 {{ stats.email_queued }} / 已送达 {{ stats.email_sent }}
+  {% endif %}
+</p>
+
+{% if announcement.audience == "all" %}
+<p class="help" style="margin-bottom: 18px">
+  提示：受众含未登录访客，访客的「已看过」只记在浏览器本地，无法计入已读人数，
+  所以这里的受众数与已读率只统计已注册账号。
+</p>
+{% endif %}
+
+<table id="result_list" style="width: 100%">
+  <thead>
+    <tr>
+      <th scope="col">用户</th>
+      <th scope="col">昵称</th>
+      <th scope="col">状态</th>
+      <th scope="col">已读时间</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><a href="{% url 'admin:auth_user_change' row.user.pk %}">{{ row.user.username }}</a></td>
+      <td>{{ row.nickname|default:"—" }}</td>
+      <td>{% if row.read_at %}<span style="color:#1a7f37">已读</span>{% else %}<span style="color:#b42318">未读</span>{% endif %}</td>
+      <td>{% if row.read_at %}{{ row.read_at|date:"Y-m-d H:i:s" }}{% else %}—{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4">该受众下没有账号。</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p style="margin-top: 18px">
+  <a class="button" href="{% url 'admin:announcements_announcement_change' announcement.pk %}">返回公告</a>
+</p>
+{% endblock %}

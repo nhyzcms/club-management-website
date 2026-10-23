@@ -57,6 +57,9 @@ const TO_DESKTOP: Record<string, string> = {
 /** 有移动版详情页的模块：/news/:id ↔ /m/news/:id。 */
 const DETAIL_MODULES = ["news", "activity", "tutorials"];
 
+/** 两边共用同一个路由、页面内部自行适配的模块（UA 变化时不跳，保住深链接）。 */
+const SHARED_PREFIXES = ["/announcements"];
+
 /** 把 location.hash（如 "#/m/news/3?x=1"）归一成路由路径（"/m/news/3"）。 */
 export function normalizeHashPath(raw: string): string {
   let path = (raw || "").trim();
@@ -113,6 +116,9 @@ export function decideUaSwitch(
   const nowMobile = isMobileUaClass(current);
   if (wasMobile === nowMobile) return null;
   const path = normalizeHashPath(hash);
+  if (SHARED_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+    return null; // 共用路由（如全站公告详情）：页面自己按 UA 换外壳，不跳转
+  }
   if (nowMobile) return isMobilePath(path) ? null : desktopToMobile(path);
   return isMobilePath(path) ? mobileToDesktop(path) : null;
 }

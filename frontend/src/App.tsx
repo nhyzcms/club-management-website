@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, type ReactElement } from "react";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
 import ValidityNoticeHost from "./components/ValidityNoticeHost";
+import AnnouncementHost from "./components/AnnouncementHost";
 import LoginModalProvider from "./components/LoginModalProvider";
 import MascotHost from "./components/mascot/MascotHost";
 import { useEmbedMode } from "./embed";
@@ -25,6 +26,7 @@ const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const TaskFormPage = lazy(() => import("./pages/TaskFormPage"));
 const MessagePage = lazy(() => import("./pages/MessagePage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
+const AnnouncementPage = lazy(() => import("./pages/AnnouncementPage"));
 const FeedbackPage = lazy(() => import("./pages/FeedbackPage"));
 const FeedbackDetailPage = lazy(() => import("./pages/FeedbackDetailPage"));
 const ActivityListPage = lazy(() => import("./pages/ActivityListPage"));
@@ -130,6 +132,8 @@ export default function App() {
           <Route path="/messages" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
           <Route path="/messages/:id" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
           <Route path="/notifications" element={<MobileAware to="/m/notifications"><ProtectedRoute><NotificationsPage /></ProtectedRoute></MobileAware>} />
+          {/* 全站公告详情：匿名也能看「全站」受众的公告，鉴权由接口按受众判定 */}
+          <Route path="/announcements/:id" element={<AnnouncementPage />} />
           <Route path="/activity" element={<ActivityListPage />} />
           <Route path="/activity/new" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
           <Route path="/activity/:id" element={<ActivityDetailPage />} />
@@ -179,6 +183,8 @@ export default function App() {
       </SessionGuard>
       {/* 账号有效期弹窗（ADR-0041）：挂在根部，桌面 / 手机版共用同一份快照。 */}
       <ValidityNoticeHost />
+      {/* 全站弹窗公告（ADR-0042）：等其它弹窗关掉后再弹，关闭即已读。 */}
+      <AnnouncementHost />
       </LoginModalProvider>
       <MaybeMascot />
     </HashRouter>
