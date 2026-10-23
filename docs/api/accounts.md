@@ -108,6 +108,7 @@
 | email | string | 否 | 提供则建 `email` 通道 `pending`（`identifier`=待认证地址，归一化小写）并发认证信；**后缀须在白名单内**（[ADR-0023](../adr/0023-email-domain-allowlist.md)） |
 | real_name | string | 是 | 真实姓名，写入 `Profile.real_name`（不公开展示） |
 | identity | string | 是 | 身份，写入 `Profile.identity`；∈ `student` / `external` / `graduate` / `parent` / `teacher` |
+| card_no | string | 否 | **校牌号**（≤20 字符）。仅 `student` / `graduate` 登记，其余身份传了也忽略；写入 `Profile.card_no`（与名册行 `MemberIdentity.card_no` 是同一个值）。见下方「校牌号与自动绑定」 |
 | turnstile_token | string | 条件 | Turnstile 启用时必填 |
 
 **响应 `201 Created`**
@@ -117,6 +118,8 @@
 ```
 
 `User.email` 保持空（待认证邮箱住通道 `identifier`，认证通过才晋升）；未提供邮箱或认证通道关闭时 `message` 为 `"注册成功。"` 且不建通道。**注册成功即建立登录会话（自动登录）**；若名册存在姓名匹配的未绑定行，前端随后进入社员身份认领阶段（可跳过，见 `/auth/member/`）。
+
+**校牌号与自动绑定**（2026-10-23）：带 `card_no` 注册时，若名册中存在**姓名（归一）+ 校牌号（归一：去空白、大小写不敏感）都一致**且未绑定的**唯一**一行 → 直接绑定（`bind_method=register`），前端无需再走手机号后四位。没命中（名册未导入 / 校牌号不同 / 同名多行）**不报错**：`Profile.card_no` 先保存，名册导入或「重新运行自动匹配」时按姓名写回名册行（`sync_card_numbers`）；名册有值时以名册为准，两边始终对齐。
 
 **错误**：400 字段校验（用户名 / 邮箱占用、两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、邮箱格式，单条或数组）、邮箱后缀不在白名单 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`，或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
 
@@ -458,7 +461,7 @@
 
 ### 社员身份（[ADR-0025](../adr/0025-member-identity.md)）
 
-`GET /auth/member/`：**认证**登录。本人绑定状态 + 可认领候选。未绑定且认领开关开启时，候选 = 「未绑定且姓名（归一化）与本人 `real_name` 一致」的名册行，仅含 `id` / `name` / `cohort` / `group`（**电话绝不下发**）；绑定后 `bound` 含 `code`（识别码）/ `status`（`active` / `graduated` / `left`）。
+`GET /auth/member/`：**认证**登录。本人绑定状态 + 可认领候选。未绑定且认领开关开启时，候选 = 「未绑定且姓名（归一化）与本人 `real_name` 一致」的名册行，仅含 `id` / `name` / `cohort` / `group`（**电话、校牌号绝不下发**）；绑定后 `bound` 含 `code`（识别码）/ `card_no`（校牌号，仅本人可见）/ `status`（`active` / `graduated` / `left`）。
 
 **响应 `200 OK`**
 

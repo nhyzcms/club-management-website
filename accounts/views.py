@@ -39,7 +39,7 @@ from .email_domains import (
 )
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .member_codes import verify_signature
-from .member_roster import ClaimError, claim_candidates, claim_identity
+from .member_roster import ClaimError, auto_bind_on_register, claim_candidates, claim_identity
 from .models import (
     MemberIdentity,
     Profile,
@@ -484,6 +484,7 @@ def _member_identity_payload(row: MemberIdentity) -> dict:
         "cohort": row.cohort,
         "group": row.group,
         "code": row.code,
+        "card_no": row.card_no,
         "status": row.status,
         "bound_at": row.bound_at.isoformat() if row.bound_at else None,
     }
@@ -842,6 +843,9 @@ def register_view(request):
     若提供邮箱：须过**后缀白名单**（ADR-0023），再建 email 通道 pending（identifier=待认证地址）
     并发认证信，``User.email`` 保持空（待认证邮箱不住 User.email）——认证通过才晋升
     （见 verify_email_view）。
+
+    2026-10-23（ADR-0025 增补）：在校生 / 毕业生可选填「校牌号」（``card_no``），
+    先存 ``Profile.card_no``，并尝试按「姓名 + 校牌号」唯一命中名册行直接绑定。
     """
     if not get_policy().registration_enabled:
         return JsonResponse(
@@ -857,6 +861,7 @@ def register_view(request):
     password2 = request.POST.get("password2") or ""
     real_name = (request.POST.get("real_name") or "").strip()
     identity = (request.POST.get("identity") or "").strip()
+    card_no = (request.POST.get("card_no") or "").strip()
     email = (request.POST.get("email") or "").strip().lower()  # 邮箱大小写不敏感：归一化小写
     turnstile_token = request.POST.get("turnstile_token") or ""
 
@@ -886,6 +891,13 @@ def register_view(request):
     elif identity not in IDENTITY_CHOICE_KEYS:
         errors.append("请选择有效身份")
 
+    # 校牌号（ADR-0025 2026-10-23 增补）：只有在校生 / 毕业生登记，其余身份忽略；
+    # 选填——没填不影响注册，填了先存 Profile，与名册行 MemberIdentity.card_no 是同一个值。
+    if identity not in Profile.CARD_NO_IDENTITIES:
+        card_no = ""
+    elif len(card_no) > 20:
+        errors.append("校牌号过长（最多 20 个字符）")
+
     # 邮箱可选；填了须格式合法 + 唯一（User.email 或他人 pending identifier 均判重）。
     if email:
         try:
@@ -913,7 +925,7 @@ def register_view(request):
             user = User.objects.create_user(
                 username=username, email="", password=password, is_active=True
             )
-            Profile.objects.create(user=user, real_name=real_name, identity=identity)
+            Profile.objects.create(user=user, real_name=real_name, identity=identity, card_no=card_no)
             if email and get_policy().verification_enabled:
                 Verification.objects.create(
                     user=user, channel=Verification.CHANNEL_EMAIL,
@@ -926,6 +938,14 @@ def register_view(request):
 
     if started_email:
         _send_verification_email(user)
+
+    # 注册即匹配（ADR-0025 2026-10-23 增补）：姓名 + 校牌号都与名册一致且唯一 → 直接绑定；
+    # 没命中不报错（名册可能还没导入），Profile.card_no 留待导入时写回名册行。
+    if card_no:
+        try:
+            auto_bind_on_register(user, user.profile)
+        except Exception:  # 绑定失败不能拖垮注册（资料已经落库，可稍后认领）
+            logger.exception("注册自动绑定社员身份失败: username=%s", username)
 
     # 注册即登录（ADR-0025）：认领等注册后置步骤需要在登录态下完成。
     # 会话记录由 user_logged_in 信号统一写 UserSession（accounts/signals.py）。

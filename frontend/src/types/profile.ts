@@ -49,3 +49,6 @@ export const IDENTITY_OPTIONS: { value: string; label: string }[] = [
   { value: "parent", label: "家长" },
   { value: "teacher", label: "教师" },
 ];
+
+/** 需要登记「校牌号」的身份（与后端 Profile.CARD_NO_IDENTITIES 对齐）：在校生 / 毕业生。 */
+export const CARD_NO_IDENTITIES: string[] = ["student", "graduate"];

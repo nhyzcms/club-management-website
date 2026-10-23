@@ -163,9 +163,9 @@ class ManualChannelStatusFilter(admin.SimpleListFilter):
 
 
 class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
-    list_display = ("user", "real_name", "identity", "verified", "deleted", "registration_deadline")
+    list_display = ("user", "real_name", "identity", "card_no", "verified", "deleted", "registration_deadline")
     list_filter = (VerifiedFilter, "identity", "deleted_at")
-    search_fields = ("user__username", "user__email", "real_name")
+    search_fields = ("user__username", "user__email", "real_name", "card_no")
     actions = list(_IDENTITY_ACTIONS)
 
     @admin.display(boolean=True, description="已认证")
@@ -618,7 +618,7 @@ class MemberIdentityAdmin(admin.ModelAdmin):
         "bind_method_display", "status", "phone",
     )
     list_filter = (MemberIdentityBoundFilter, "cohort", "group", "status")
-    search_fields = ("name", "code", "phone", "user__username")
+    search_fields = ("name", "code", "card_no", "phone", "user__username")
     actions = (export_member_qr, export_member_barcode, rerun_member_match, unbind_member_identity)
     readonly_fields = ("bound_at", "bound_by", "bind_method", "created_at", "updated_at")
     fieldsets = (
