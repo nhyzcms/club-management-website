@@ -33,6 +33,9 @@ class Profile(models.Model):
         ("F", "女"),
         ("O", "其他"),
     ]
+    # 需要登记「校牌号」的身份（注册页与资料校验共用；前端 types/profile.ts 镜像）：
+    # 在校生 / 毕业生与社员名册相关，其余身份（外校生 / 家长 / 教师）不登记。
+    CARD_NO_IDENTITIES = ("student", "graduate")
     IDENTITY_CHOICES = [
         ("student", "在校生"),
         ("external", "外校生"),
@@ -52,6 +55,12 @@ class Profile(models.Model):
     # 时收集；identity 是纯元数据，不影响权限。认证态不在 Profile 上——见 Verification。
     real_name = models.CharField("真实姓名", max_length=100, blank=True)
     identity = models.CharField("身份", max_length=10, choices=IDENTITY_CHOICES, blank=True)
+
+    # 校牌号（2026-10-23）：与名册行 MemberIdentity.card_no 是**同一个值**。
+    # 在校生 / 毕业生可在注册时选填；名册里已导入时按「姓名 + 校牌号」唯一命中即自动绑定，
+    # 否则先存这里，等名册导入后按姓名写回名册行（accounts.member_roster.sync_card_numbers）。
+    # 名册有值时以名册为准（学校档案），两份始终对齐；绝不对外公开（校验页不下发）。
+    card_no = models.CharField("校牌号", max_length=20, blank=True, default="")
 
     # 身份有效期（ADR-0041）：注册认证宽限覆盖 + 因超期停用标记。
     # registration_deadline 为 null = 按 date_joined + 站点「注册后认证宽限」起算；
@@ -588,10 +597,12 @@ class MemberIdentity(models.Model):
     BIND_AUTO = "auto"
     BIND_ADMIN = "admin"
     BIND_SELF = "self"
+    BIND_REGISTER = "register"
     BIND_METHODS = [
         (BIND_AUTO, "自动匹配"),
         (BIND_ADMIN, "管理员绑定"),
         (BIND_SELF, "自助认领"),
+        (BIND_REGISTER, "注册时匹配"),
     ]
 
     # ---- 名册快照 ----

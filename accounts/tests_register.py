@@ -17,7 +17,7 @@ from django.conf import settings
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from accounts.models import IdentityProof, Verification, is_verified
+from accounts.models import IdentityProof, MemberIdentity, Verification, is_verified
 
 # 1x1 透明 PNG（合法图片，Pillow 可读）。
 PNG_BYTES = bytes.fromhex(
@@ -236,6 +236,77 @@ class RegisterViewTest(TestCase):
             self.assertIn("人机校验", str(resp.json()["error"]))
         finally:
             views.passes_turnstile = orig
+
+
+class RegisterCardNoTest(TestCase):
+    """注册页「校牌号」（ADR-0025 2026-10-23 增补）：在校生 / 毕业生选填，与名册同一字段。"""
+
+    def setUp(self):
+        cache.clear()  # 注册限流按 IP 计数；隔离每个用例。
+
+    def post(self, **overrides):
+        return self.client.post("/auth/register/", data=valid_payload(**overrides))
+
+    def make_row(self, name="张三", card_no="A001", phone="13800008888", code="26020001"):
+        return MemberIdentity.objects.create(
+            name=name, admit_year=2026, cohort=2, group="摄影", phone=phone,
+            code=code, card_no=card_no,
+        )
+
+    def test_card_no_stored_for_student_and_graduate(self):
+        for idx, identity in enumerate(("student", "graduate"), start=1):
+            username = f"newbie{idx}"
+            resp = self.post(username=username, identity=identity, card_no=" A-1024 ")
+            self.assertEqual(resp.status_code, 201, resp.content)
+            self.assertEqual(User.objects.get(username=username).profile.card_no, "A-1024")
+
+    def test_card_no_ignored_for_other_identities(self):
+        self.post(identity="teacher", card_no="A001")
+        self.assertEqual(User.objects.get(username="newbie").profile.card_no, "")
+
+    def test_card_no_too_long_rejected(self):
+        resp = self.post(card_no="X" * 21)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("校牌号", str(resp.json()["error"]))
+        self.assertFalse(User.objects.filter(username="newbie").exists())
+
+    def test_auto_bind_when_name_and_card_match(self):
+        row = self.make_row(card_no="A001")
+        resp = self.post(card_no="A001")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        row.refresh_from_db()
+        user = User.objects.get(username="newbie")
+        self.assertEqual(row.user_id, user.id)
+        self.assertEqual(row.bind_method, MemberIdentity.BIND_REGISTER)
+        self.assertEqual(user.profile.card_no, "A001")
+
+    def test_no_bind_when_card_differs(self):
+        row = self.make_row(card_no="A001")
+        self.post(card_no="A002")
+        row.refresh_from_db()
+        self.assertIsNone(row.user_id)
+        self.assertEqual(User.objects.get(username="newbie").profile.card_no, "A002")
+
+    def test_no_bind_when_roster_card_blank(self):
+        row = self.make_row(card_no="")
+        self.post(card_no="A001")
+        row.refresh_from_db()
+        self.assertIsNone(row.user_id)  # 名册没有校牌号 → 不猜，留给认领
+        self.assertEqual(User.objects.get(username="newbie").profile.card_no, "A001")
+
+    def test_binds_matching_row_among_same_name(self):
+        mine = self.make_row(card_no="A001", code="26020001")
+        other = self.make_row(card_no="A002", phone="13900001111", code="26020002")
+        self.post(card_no=" a001 ")  # 空白 / 大小写归一后比较
+        mine.refresh_from_db()
+        other.refresh_from_db()
+        self.assertIsNotNone(mine.user_id)
+        self.assertIsNone(other.user_id)
+
+    def test_register_without_card_no_still_works(self):
+        resp = self.post()
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(User.objects.get(username="newbie").profile.card_no, "")
 
 
 class IdentityProofStorageTest(TestCase):

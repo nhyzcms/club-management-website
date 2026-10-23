@@ -19,6 +19,7 @@ describe("MemberIdentityPanel（社员身份面板）", () => {
         cohort: 2,
         group: "摄影",
         code: "26020001",
+        card_no: "A001",
         status: "active",
         bound_at: null,
       },
@@ -27,6 +28,7 @@ describe("MemberIdentityPanel（社员身份面板）", () => {
     render(<MemberIdentityPanel />);
     expect(await screen.findByText("26020001")).toBeInTheDocument();
     expect(screen.getByText("第 2 届 · 摄影")).toBeInTheDocument();
+    expect(screen.getByText("校牌号 A001")).toBeInTheDocument();
   });
 
   it("未绑定且有候选：渲染认领引导与表单", async () => {

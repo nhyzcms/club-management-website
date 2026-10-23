@@ -7,7 +7,7 @@ import MemberClaimForm from "../components/member/MemberClaimForm";
 import PasswordInput from "../components/PasswordInput";
 import { useLoginModal } from "../components/LoginModalProvider";
 import { useTurnstile } from "../turnstile";
-import { IDENTITY_OPTIONS } from "../types/profile";
+import { CARD_NO_IDENTITIES, IDENTITY_OPTIONS } from "../types/profile";
 import type { MemberIdentityStatus } from "../types/member";
 
 /**
@@ -16,6 +16,8 @@ import type { MemberIdentityStatus } from "../types/member";
  *
  * 2026-10（ADR-0025）：注册成功即登录（服务端建会话），并进入「以下身份是否是你」的
  * 社员身份认领阶段（可跳过，之后在个人中心「社员身份」补办）。
+ * 2026-10-23：在校生 / 毕业生可**选填校牌号**——与名册「校牌号」是同一个值；
+ * 姓名 + 校牌号与名册唯一命中时，注册后直接绑定（不用再走手机号后四位）。
  *
  * 后端为权威校验源；前端只做轻量预检（必填、密码一致、长度），其余错误由后端返回展示。
  */
@@ -23,6 +25,7 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [realName, setRealName] = useState("");
   const [identity, setIdentity] = useState("");
+  const [cardNo, setCardNo] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [error, setError] = useState("");
@@ -39,6 +42,8 @@ export default function RegisterPage() {
   const policy = useSitePolicy();
   const { containerRef, token: turnstileToken, reset: resetTurnstile, enabled: turnstileOn, policyReady } =
     useTurnstile();
+  // 校牌号：只有在校生 / 毕业生登记（其余身份后端会忽略）。
+  const needsCardNo = CARD_NO_IDENTITIES.includes(identity);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -76,6 +81,7 @@ export default function RegisterPage() {
     fd.append("username", username.trim());
     fd.append("real_name", realName.trim());
     fd.append("identity", identity);
+    if (needsCardNo && cardNo.trim()) fd.append("card_no", cardNo.trim());
     fd.append("password", password);
     fd.append("password2", password2);
     if (turnstileToken) fd.append("turnstile_token", turnstileToken);
@@ -129,6 +135,24 @@ export default function RegisterPage() {
             onClick={() => setSkipped(true)}
           >
             暂时跳过
+          </button>
+        </>
+      );
+    }
+    if (memberStatus?.bound && !claimed) {
+      // 注册时已按「姓名 + 校牌号」自动绑定（ADR-0025 2026-10-23）：不再走认领表单。
+      return (
+        <>
+          <h2 style={{ marginBottom: "var(--s-4)" }}>注册成功</h2>
+          <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
+            你已自动登录，并已按「姓名 + 校牌号」绑定社员身份档案
+            {memberStatus.bound.card_no ? `（校牌号 ${memberStatus.bound.card_no}）` : ""}。
+            识别码 {memberStatus.bound.code} 见个人中心「社员身份」。
+            在个人中心「账号认证」完成认证（绑定邮箱或提交身份证明），
+            即可解锁发帖、发消息、建申报等全部功能。
+          </p>
+          <button className="btn btn-primary btn-block" type="button" onClick={() => navigate("/")}>
+            进入首页
           </button>
         </>
       );
@@ -252,6 +276,26 @@ export default function RegisterPage() {
                         ))}
                       </select>
                     </div>
+                    {needsCardNo && (
+                      <div className="field">
+                        <label className="label" htmlFor="reg-cardno">校牌号</label>
+                        <input
+                          className="input"
+                          id="reg-cardno"
+                          name="card_no"
+                          value={cardNo}
+                          onChange={(e) => setCardNo(e.target.value)}
+                          placeholder="校牌上的编号（选填）"
+                          autoComplete="off"
+                          spellCheck={false}
+                          maxLength={20}
+                        />
+                        <p className="hint" style={{ marginTop: "var(--s-2)" }}>
+                          选填。与社员名册里的校牌号一致时，注册后会自动绑定你的社员身份；
+                          名册还没导入也不影响注册，之后导入时会按姓名写回。
+                        </p>
+                      </div>
+                    )}
                     <div ref={containerRef} />
                     <button
                       className="btn btn-primary btn-block"

@@ -6,6 +6,7 @@ export interface MemberIdentityBound {
   cohort: number;
   group: string;
   code: string;
+  card_no: string;
   status: string;
   bound_at: string | null;
 }

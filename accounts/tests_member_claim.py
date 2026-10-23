@@ -9,15 +9,16 @@ from django.core.cache import cache
 from django.test import TestCase
 
 from accounts.member_codes import make_signature
-from accounts.member_roster import claim_candidates, claim_identity
+from accounts.member_roster import claim_candidates, claim_identity, commit_import, parse_roster
 from accounts.models import MemberIdentity, Profile, UserSession
 from accounts.tests_register import valid_payload
 from common.models import SiteSettings
 
 
-def make_row(name="张三", cohort=2, phone="11451419198", code="26020001"):
+def make_row(name="张三", cohort=2, phone="11451419198", code="26020001", card_no=""):
     return MemberIdentity.objects.create(
         name=name, admit_year=2026, cohort=cohort, group="摄影", phone=phone, code=code,
+        card_no=card_no,
     )
 
 
@@ -201,3 +202,58 @@ class ClaimServiceTest(TestCase):
         self.assertEqual([r.id for r in claim_candidates(user)], [row.id])
         bound = claim_identity(user, row.id, "9198")
         self.assertEqual(bound.user_id, user.id)
+
+class CardNoSyncTest(TestCase):
+    """校牌号在「注册资料 Profile.card_no」与「名册行 MemberIdentity.card_no」之间同步（同一个值）。"""
+
+    CSV_HEADER = "姓名,班级,校牌号,入学年份,入社时间,届数,组别,性别,电话号码\n"
+
+    def setUp(self):
+        cache.clear()
+
+    def test_bound_payload_has_card_no_candidates_do_not(self):
+        user = make_user()
+        row = make_row(card_no="A001")
+        self.client.force_login(user)
+        data = self.client.get("/auth/member/").json()
+        self.assertNotIn("card_no", data["candidates"][0])  # 候选不下发校牌号
+        row.user = user
+        row.save()
+        data = self.client.get("/auth/member/").json()
+        self.assertEqual(data["bound"]["card_no"], "A001")  # 自己的档案可见
+
+    def test_claim_fills_blank_row_card_no_from_profile(self):
+        user = make_user()
+        Profile.objects.filter(user=user).update(card_no="A009")
+        row = make_row()
+        self.client.force_login(user)
+        resp = self.client.post(
+            "/auth/member/claim/",
+            data={"identity_id": row.id, "phone_last4": "9198"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        row.refresh_from_db()
+        self.assertEqual(row.card_no, "A009")
+
+    def test_claim_roster_card_no_wins(self):
+        user = make_user()
+        Profile.objects.filter(user=user).update(card_no="B002")
+        row = make_row(card_no="A001")
+        self.client.force_login(user)
+        self.client.post(
+            "/auth/member/claim/",
+            data={"identity_id": row.id, "phone_last4": "9198"},
+            content_type="application/json",
+        )
+        user.profile.refresh_from_db()
+        self.assertEqual(user.profile.card_no, "A001")  # 名册是学校档案，为准
+
+    def test_import_writes_profile_card_no_back_to_row(self):
+        user = make_user()  # 张三，注册时填了校牌号但名册还没导入
+        Profile.objects.filter(user=user).update(card_no="A001")
+        content = (self.CSV_HEADER + "张三,1,,2026,20260303,2,摄影,男,11451419198\n").encode("utf-8-sig")
+        commit_import(parse_roster("a.csv", content), file_name="a.csv")
+        row = MemberIdentity.objects.get(name="张三")
+        self.assertEqual(row.card_no, "A001")
+        self.assertEqual(row.user_id, user.id)  # 同时按姓名自动匹配绑定

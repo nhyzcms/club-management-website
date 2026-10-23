@@ -55,6 +55,11 @@ def normalize_name(raw: str) -> str:
     return _WS_RE.sub("", (raw or "").replace("\u3000", " ")).strip().casefold()
 
 
+def normalize_card_no(raw: str) -> str:
+    """校牌号归一：去全部空白（含全角）、西文转大写——只用于比对，不改展示值。"""
+    return _WS_RE.sub("", (raw or "").replace("\u3000", " ")).upper()
+
+
 @dataclass
 class ParsedRow:
     row_no: int  # 文件里的行号（表头为 1，数据从 2 起）
@@ -336,8 +341,6 @@ def auto_match_identities(rows: list[MemberIdentity] | None = None) -> int:
     if rows is not None:
         qs = qs.filter(pk__in=[r.pk for r in rows])
     unbound = list(qs)
-    if not unbound:
-        return 0
 
     profiles = (
         Profile.objects.exclude(real_name="")
@@ -368,7 +371,96 @@ def auto_match_identities(rows: list[MemberIdentity] | None = None) -> int:
         row.save(update_fields=["user", "bound_at", "bound_by", "bind_method", "updated_at"])
         bound_ids.add(user.pk)
         matched += 1
+    sync_card_numbers()  # 收尾：资料里的校牌号写回名册 / 名册有值时覆盖资料
     return matched
+
+
+def _align_card_no(row: MemberIdentity, profile: Profile) -> str:
+    """让名册行与账号资料的校牌号对齐（同一个值）：名册有值以名册为准，否则用资料补。
+
+    返回 ``"row"``（写了名册）/ ``"profile"``（写了资料）/ ``""``（无需变更）。
+    """
+    row_card = (row.card_no or "").strip()
+    prof_card = (profile.card_no or "").strip()
+    if row_card:
+        if prof_card != row_card:
+            profile.card_no = row_card
+            profile.save(update_fields=["card_no"])
+            return "profile"
+        return ""
+    if prof_card:
+        row.card_no = prof_card
+        row.save(update_fields=["card_no", "updated_at"])
+        return "row"
+    return ""
+
+
+def auto_bind_on_register(user, profile) -> MemberIdentity | None:
+    """注册时按「姓名 + 校牌号」唯一命中未绑定名册行 → 自动绑定（ADR-0025 2026-10-23 增补）。
+
+    校牌号是半公开信息（印在校牌上），所以只在**姓名与校牌号都与名册一致**时绑定；
+    没命中（名册未导入 / 校牌号不同 / 同名多行）不报错，资料里的校牌号留待名册导入后
+    由 :func:`sync_card_numbers` 按姓名写回。返回绑定的名册行（没绑定则为 None）。
+    """
+    wanted = normalize_card_no(getattr(profile, "card_no", ""))
+    name_n = normalize_name(getattr(profile, "real_name", ""))
+    if not wanted or not name_n:
+        return None
+    if MemberIdentity.objects.filter(user=user).exists():
+        return None
+
+    matches = [
+        row
+        for row in MemberIdentity.objects.filter(user__isnull=True, card_no__iexact=profile.card_no.strip())
+        if normalize_name(row.name) == name_n and normalize_card_no(row.card_no) == wanted
+    ]
+    if len(matches) != 1:
+        return None
+
+    row = matches[0]
+    row.user = user
+    row.bound_at = timezone.now()
+    row.bound_by = None
+    row.bind_method = MemberIdentity.BIND_REGISTER
+    row.save(update_fields=["user", "bound_at", "bound_by", "bind_method", "updated_at"])
+    _align_card_no(row, profile)
+    return row
+
+
+def sync_card_numbers() -> dict:
+    """全库对齐「账号资料校牌号」与「名册行校牌号」，返回计数（导入 / 重跑匹配收尾调用）。
+
+    - 未绑定行：校牌号为空、且姓名唯一对应一个**还没绑定任何名册行**的账号 → 写回名册；
+      同名多账号不动作（避免张冠李戴，留给认领 / 人工）。
+    - 已绑定行：名册有值 → 覆盖资料；名册为空 → 用资料补（名册是学校档案，为准）。
+    """
+    profiles = list(
+        Profile.objects.filter(user__is_active=True, deleted_at__isnull=True).select_related("user")
+    )
+    by_user = {p.user_id: p for p in profiles}
+    by_name: dict[str, list[Profile]] = defaultdict(list)
+    for p in profiles:
+        if (p.card_no or "").strip() and (p.real_name or "").strip():
+            by_name[normalize_name(p.real_name)].append(p)
+    bound_user_ids = set(
+        MemberIdentity.objects.exclude(user__isnull=True).values_list("user_id", flat=True)
+    )
+
+    filled = mirrored = 0
+    for row in MemberIdentity.objects.all():
+        if row.user_id:
+            profile = by_user.get(row.user_id)
+            if profile is None:
+                continue
+            if _align_card_no(row, profile) == "profile":
+                mirrored += 1
+        elif not (row.card_no or "").strip():
+            pool = [p for p in by_name.get(normalize_name(row.name), []) if p.user_id not in bound_user_ids]
+            if len(pool) == 1:
+                row.card_no = pool[0].card_no.strip()
+                row.save(update_fields=["card_no", "updated_at"])
+                filled += 1
+    return {"filled_rows": filled, "mirrored_profiles": mirrored}
 
 
 def claim_candidates(user) -> list[MemberIdentity]:
@@ -414,4 +506,5 @@ def claim_identity(user, identity_id: int, phone_last4: str) -> MemberIdentity:
         row.bound_by = None
         row.bind_method = MemberIdentity.BIND_SELF
         row.save(update_fields=["user", "bound_at", "bound_by", "bind_method", "updated_at"])
+        _align_card_no(row, profile)
     return row

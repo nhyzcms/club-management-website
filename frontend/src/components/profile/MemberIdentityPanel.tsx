@@ -54,6 +54,9 @@ export default function MemberIdentityPanel() {
             <div className="member-card-code">{data.bound.code}</div>
             <div className="member-card-meta">
               <span><strong>{data.bound.name}</strong></span>
+              {data.bound.card_no && (
+                <span className="muted">校牌号 {data.bound.card_no}</span>
+              )}
               <span className="muted">
                 第 {data.bound.cohort} 届 · {data.bound.group}
               </span>
