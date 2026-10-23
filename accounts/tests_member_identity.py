@@ -337,3 +337,79 @@ class AdminImportTest(TestCase):
             names = sorted(zf.namelist())
             self.assertEqual(names, ["25010001_李四.png", "26020001_张三.png"])
             self.assertTrue(zf.read(names[0]).startswith(b"\x89PNG"))
+
+    def test_export_barcode_zip_action(self):
+        admin = User.objects.create_superuser(username="root", password="x", email="root@example.com")
+        self.client.force_login(admin)
+        row1 = MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, group="摄影", phone="13800008888", code="26020001")
+        row2 = MemberIdentity.objects.create(name="李四", admit_year=2025, cohort=1, group="信息", phone="13900001111", code="25010001")
+        resp = self.client.post(
+            reverse("admin:accounts_memberidentity_changelist"),
+            {"action": "export_member_barcode", "_selected_action": [str(row1.pk), str(row2.pk)]},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/zip")
+        self.assertIn("member-barcode-", resp["Content-Disposition"])
+        with ZipFile(io.BytesIO(resp.content)) as zf:
+            names = sorted(zf.namelist())
+            self.assertEqual(names, ["25010001_李四.png", "26020001_张三.png"])
+            self.assertTrue(zf.read(names[0]).startswith(b"\x89PNG"))
+
+
+class MemberBarcodeRenderTest(TestCase):
+    """Code128 条形码渲染（ADR-0025 工牌产物）：结构 / 编码 / 像素三层断言。"""
+
+    def test_render_png_magic_and_size(self):
+        from PIL import Image
+
+        from accounts.member_barcode import render_png
+
+        png = render_png("26020001")
+        self.assertTrue(png.startswith(b"\x89PNG"))
+        img = Image.open(io.BytesIO(png))
+        # 8 位数字走 Code128C：79 模块 + 两侧静区各 10 模块，×4px；高 = 条 60 + 文字 28
+        self.assertEqual(img.size, ((79 + 20) * 4, 60 + 28))
+        self.assertEqual(img.mode, "RGB")
+
+    def test_encode_is_code128c_with_valid_checksum(self):
+        """符号序列 = START C + 4 个数字对 + 校验位 + STOP；校验位按规范公式独立复算。"""
+        from accounts.member_barcode import _encode
+
+        symbols, pattern = _encode("26020001")
+        self.assertEqual(symbols[:5], [105, 26, 2, 0, 1])  # START C + "26" "02" "00" "01"
+        self.assertEqual(symbols[-1], 106)  # STOP
+        checksum = 105
+        for i, value in enumerate(symbols[1:-2], start=1):
+            checksum += i * value
+        self.assertEqual(symbols[-2], checksum % 103)
+        total_modules = sum(ord(ch.upper()) - ord("A") + 1 for ch in pattern)
+        self.assertEqual(total_modules, 79)
+
+    def test_pixel_runs_match_pattern(self):
+        """渲染忠实性：PNG 中条 / 空宽度序列逐段还原 = 编码器输出的字母宽度序列。"""
+        from PIL import Image
+
+        from accounts.member_barcode import _encode, render_png
+
+        _, pattern = _encode("26020001")
+        img = Image.open(io.BytesIO(render_png("26020001", module_px=4)))
+        px = [img.getpixel((x, 30)) for x in range(img.width)]
+        runs = []  # (颜色, 像素宽)
+        current, count = px[0], 0
+        for p in px:
+            if p == current:
+                count += 1
+            else:
+                runs.append((current, count))
+                current, count = p, 1
+        runs.append((current, count))
+        # 左右静区各 10 模块（白）
+        self.assertEqual(runs[0], ((255, 255, 255), 40))
+        self.assertEqual(runs[-1], ((255, 255, 255), 40))
+        rebuilt = []
+        for color, width in runs[1:-1]:
+            units = width // 4
+            base = ord("A") if color == (0, 0, 0) else ord("a")
+            rebuilt.append(chr(base + units - 1))
+        self.assertEqual("".join(rebuilt), pattern)
+

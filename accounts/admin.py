@@ -19,6 +19,7 @@ from common.policy import get_policy
 
 from .authcode import generate_authcode_value, normalize_authcode
 from .identity_review import approve_manual, disable_user, reject_manual
+from .member_barcode import export_zip as export_barcode_zip
 from .member_qr import export_zip
 from .member_roster import (
     HEADERS,
@@ -570,6 +571,20 @@ def export_member_qr(modeladmin, request, queryset):
     return response
 
 
+@admin.action(description="导出条形码（ZIP / PNG）")
+def export_member_barcode(modeladmin, request, queryset):
+    """批量导出所选社员身份的 Code128 条形码（文件名：识别码_姓名.png；内容 = 裸识别码）。"""
+    rows = list(queryset.order_by("code"))
+    if not rows:
+        modeladmin.message_user(request, "没有可导出的行。", level=messages.WARNING)
+        return
+    payload = export_barcode_zip(rows)
+    stamp = timezone.localtime().strftime("%Y%m%d-%H%M")
+    response = HttpResponse(payload, content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="member-barcode-{stamp}.zip"'
+    return response
+
+
 @admin.action(description="重新运行自动匹配（所选未绑定行）")
 def rerun_member_match(modeladmin, request, queryset):
     matched = auto_match_identities(rows=list(queryset))
@@ -600,7 +615,7 @@ class MemberIdentityAdmin(admin.ModelAdmin):
     )
     list_filter = (MemberIdentityBoundFilter, "cohort", "group", "status")
     search_fields = ("name", "code", "phone", "user__username")
-    actions = (export_member_qr, rerun_member_match, unbind_member_identity)
+    actions = (export_member_qr, export_member_barcode, rerun_member_match, unbind_member_identity)
     readonly_fields = ("bound_at", "bound_by", "bind_method", "created_at", "updated_at")
     fieldsets = (
         (
@@ -641,7 +656,7 @@ class MemberIdentityAdmin(admin.ModelAdmin):
     def get_actions(self, request):
         actions = super().get_actions(request)
         if not request.user.has_perm(_ROSTER_PERM):
-            for name in ("export_member_qr", "rerun_member_match", "unbind_member_identity"):
+            for name in ("export_member_qr", "export_member_barcode", "rerun_member_match", "unbind_member_identity"):
                 actions.pop(name, None)
         return actions
 
