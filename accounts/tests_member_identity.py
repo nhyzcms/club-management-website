@@ -242,7 +242,7 @@ class ImportPlanTest(TestCase):
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 2)
         codes = [i["code"] for i in plan["items"]]  # 输出顺序 = 行顺序
-        # 姓名 GBK 序：李四(li) < 张三(zhang) → 李四序号 01、张三序号 02
+        # 姓名首字母序：李四(L) < 张三(Z) → 李四序号 01、张三序号 02
         self.assertEqual(codes, ["26020251", "26020154"])
 
     def test_plan_reimport_updates(self):
@@ -314,6 +314,49 @@ class ImportPlanTest(TestCase):
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 1)
         self.assertEqual(plan["items"][0]["code"], "26020251")  # 接续序号 02
+
+    def test_plan_mixed_cohorts_in_one_batch(self):
+        """单次导入可混多届：各组独立从 01 起编号，组内按姓名首字母。"""
+        rows = parse_roster("a.csv", csv_bytes([
+            sample_row(name="张三", phone="13800000001"),                          # 2026 / 第 2 届
+            sample_row(name="李四", phone="13800000002"),                          # 2026 / 第 2 届
+            sample_row(name="赵六", cohort=1, admit=2025, phone="13800000003"),    # 2025 / 第 1 届
+            sample_row(name="陈一", cohort=1, admit=2025, phone="13800000004"),    # 2025 / 第 1 届
+        ]))
+        plan = plan_import(rows)
+        self.assertEqual(plan["counts"]["create"], 4)
+        codes = {item["row"].values["姓名"]: item["code"] for item in plan["items"]}
+        self.assertEqual(codes["李四"], "26020154")   # 第 2 届 序号 01（L）
+        self.assertEqual(codes["张三"], "26020251")   # 第 2 届 序号 02（Z）
+        self.assertEqual(codes["陈一"], "25010190")   # 第 1 届 序号 01（C）
+        self.assertEqual(codes["赵六"], "25010287")   # 第 1 届 序号 02（Z）
+
+    def test_plan_same_cohort_sorted_by_name_initial(self):
+        """同届按姓名拼音首字母排——多音字姓氏按姓氏读音（单 shàn → S，排在 李 之后）。"""
+        rows = parse_roster("a.csv", csv_bytes([
+            sample_row(name="张三", phone="13800000001"),
+            sample_row(name="单田芳", phone="13800000002"),
+            sample_row(name="李四", phone="13800000003"),
+        ]))
+        plan = plan_import(rows)
+        codes = {item["row"].values["姓名"]: item["code"] for item in plan["items"]}
+        self.assertEqual(codes["李四"], "26020154")    # L → 01
+        self.assertEqual(codes["单田芳"], "26020251")  # S → 02（不是按 GBK 的 «dan» 排到最前）
+        self.assertEqual(codes["张三"], "26020348")    # Z → 03
+
+    def test_plan_supplement_sorts_new_rows_by_initial_after_existing(self):
+        """补录：接在既有最大序号之后，新行之间仍按首字母（即使首字母排在已发码的人之前）。"""
+        commit_import(parse_roster("a.csv", csv_bytes([
+            sample_row(name="张三", phone="13800000001"),
+        ])), file_name="a.csv")  # 张三 → 01
+        rows = parse_roster("b.csv", csv_bytes([
+            sample_row(name="周八", phone="13800000002"),
+            sample_row(name="艾七", phone="13800000003"),  # A，比已发码的 张(Z) 靠前
+        ]))
+        plan = plan_import(rows)
+        codes = {item["row"].values["姓名"]: item["code"] for item in plan["items"]}
+        self.assertEqual(codes["艾七"], "26020251")  # 接续 02（不重排，张三仍是 01）
+        self.assertEqual(codes["周八"], "26020348")  # 接续 03
 
     def test_plan_serial_exhaustion_marks_error(self):
         """单届序号上限 99：第 100 行标记错误，其余 99 行正常创建。"""

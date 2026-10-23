@@ -3,9 +3,11 @@
 识别码 = 8 位数字：
 ``[入学年份后 2 位][首次入社届数 2 位][姓名排序序号 2 位][校验码 2 位]``，例：``26020542``。
 
-- **姓名排序序号**：按**当次导入名单**的姓名 GBK 编码序分配（GB2312 一级字 3755 个按拼音
-  排列，常用姓名≈拼音序；生僻字按部首会偏），01 起、单届上限 99；同届追加导入接续
-  已有最大序号（不重排已发码）；重复导入按身份键认行、保留原码。
+- **姓名排序序号**：按**当次导入名单**的姓名**拼音首字母**分配（多音字姓氏按姓氏读音，
+  如 单 shàn→S、解 xiè→X、查 zhā→Z；同首字母内按 GBK 编码序细排——GB2312 一级字
+  3755 个本身按拼音排列），01 起、单届上限 99；同届追加导入**接续**已有最大序号
+  （不重排已发码，续号内部仍按首字母排）；重复导入按身份键认行、保留原码。
+  首字母判定见 ``accounts/name_order.py``（零依赖）。
 - **校验码**：ISO 7064 MOD 97-10——``check = 98 - (前 6 位 × 100 mod 97)``，
   完整 8 位数 ``mod 97 == 1``；手输 / 抄录错误可被自检发现。
 - 全库唯一由数据库约束兜底；表格中的「识别码」列内容忽略——编码一律走本生成器。
@@ -23,6 +25,8 @@ import os
 import re
 
 from django.conf import settings
+
+from .name_order import name_sort_key  # 排序键实现见 name_order.py（首字母 + GBK 序）
 
 MAX_SERIAL = 99
 SIG_HEX_LEN = 16
@@ -79,15 +83,6 @@ def next_serial(admit_year: int, cohort: int, taken: set[str]) -> int:
     if serial > MAX_SERIAL:
         raise MemberCodeError(f"该届序号已用尽（上限 {MAX_SERIAL}，前缀 {prefix}）")
     return serial
-
-
-def name_sort_key(name: str) -> bytes:
-    """姓名排序键：GBK 编码序（GB2312 一级字按拼音排列；生僻字退化为 UTF-8 码点序）。"""
-    text = name or ""
-    try:
-        return text.encode("gbk")
-    except UnicodeEncodeError:
-        return text.encode("utf-8")
 
 
 def is_valid_code(code: str) -> bool:
