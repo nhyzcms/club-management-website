@@ -35,7 +35,7 @@ HEADERS = [
 ]
 # 旧表头别名：改名前的「学号」列仍读入「校牌号」（两列同时存在时以「校牌号」为准）。
 HEADER_ALIASES = {"学号": "校牌号"}
-# 必需列 = 生成识别码与认人所必需：姓名（GBK 序序号）/ 入学年份 / 届数。
+# 必需列 = 生成识别码与认人所必需：姓名（首字母排序序号）/ 入学年份 / 届数。
 REQUIRED_COLUMNS = ["姓名", "入学年份", "届数"]
 
 _WS_RE = re.compile(r"\s+")
@@ -197,9 +197,15 @@ def _flag_file_duplicates(rows: list[ParsedRow]) -> None:
 def plan_import(rows: list[ParsedRow]) -> dict:
     """与库内对账 → 逐行动作（create / update / conflict / error），不落库。
 
-    认行键：姓名+电话 →（无电话时）届数+姓名。识别码一律自动生成
-    （表格「识别码」列内容忽略；更新行保留既有编码；新增行按「当届已有最大序号 + 1」
-    接续，同批新增之间按姓名 GBK 序排序分配——不重排已发码）。
+    认行键：姓名+电话 →（无电话时）届数+姓名。识别码一律自动生成（表格「识别码」列忽略；
+    更新行保留既有编码）。序号分配三条规则：
+
+    - **一次导入可混多届**：按（入学年份, 届数）分组，各组独立从 01 起编号——组间前缀不同，
+      互不干扰（同一届但入学年份不同也算两组，因前缀含入学年份）；
+    - **同届按姓名首字母**：组内按拼音首字母 A→Z 排（多音字姓氏按姓氏读音，见
+      ``accounts/name_order.py``），同首字母内按 GBK 序细排；
+    - **补录接续**：组内新行从「该组已有最大序号 + 1」起，按首字母排序后依次占用，
+      **不重排已发码**（所以先发的码不会因补录跳号）。
     """
     existing = list(MemberIdentity.objects.all())
     taken = {r.code for r in existing}
@@ -252,7 +258,8 @@ def plan_import(rows: list[ParsedRow]) -> dict:
         items.append({"row": pr, "action": "create", "target": None, "code": None, "note": "；".join(notes)})
         pending.append((len(items) - 1, pr))
 
-    # 第二遍：同届（入学年份 + 届数）内按姓名 GBK 序分配「接续序号」——不重排已发码。
+    # 第二遍：按（入学年份, 届数）分组，组内按**姓名首字母**排（同首字母再按 GBK 序），
+    # 从该组「已有最大序号 + 1」接续分配——不重排已发码。
     groups: dict[tuple[int, int], list[tuple[int, ParsedRow]]] = defaultdict(list)
     for idx, pr in pending:
         v = pr.values
