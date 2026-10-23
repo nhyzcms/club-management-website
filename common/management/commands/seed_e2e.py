@@ -141,7 +141,6 @@ class Command(BaseCommand):
                 "name": "谢二",
                 "admit_year": 2026,
                 "cohort": 9,
-                "group": "信息",
                 "phone": "13800001234",
             },
         )

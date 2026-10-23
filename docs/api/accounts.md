@@ -461,12 +461,12 @@
 
 ### 社员身份（[ADR-0025](../adr/0025-member-identity.md)）
 
-`GET /auth/member/`：**认证**登录。本人绑定状态 + 可认领候选。未绑定且认领开关开启时，候选 = 「未绑定且姓名（归一化）与本人 `real_name` 一致」的名册行，仅含 `id` / `name` / `cohort` / `group`（**电话、校牌号绝不下发**）；绑定后 `bound` 含 `code`（识别码）/ `card_no`（校牌号，仅本人可见）/ `status`（`active` / `graduated` / `left`）。
+`GET /auth/member/`：**认证**登录。本人绑定状态 + 可认领候选。未绑定且认领开关开启时，候选 = 「未绑定且姓名（归一化）与本人 `real_name` 一致」的名册行，仅含 `id` / `name` / `cohort`（**电话、校牌号绝不下发**）；绑定后 `bound` 含 `code`（识别码）/ `card_no`（校牌号，仅本人可见）/ `status`（`active` / `graduated` / `left`）。
 
 **响应 `200 OK`**
 
 ```json
-{"enabled": true, "bound": null, "candidates": [{"id": 3, "name": "张三", "cohort": 2, "group": "摄影"}]}
+{"enabled": true, "bound": null, "candidates": [{"id": 3, "name": "张三", "cohort": 2}]}
 ```
 
 `POST /auth/member/claim/`：**认证**登录。JSON `{"identity_id": <候选 id>, "phone_last4": "9198"}`。服务端强制「账号 `real_name` == 名册行姓名（归一）」并以**手机号后四位**校验；成功 `200`：`{"message": "认领成功。", "member": {…}}`。
@@ -480,7 +480,7 @@
 `GET /auth/member/check/`：**认证**公开。`?c=<识别码>&s=<签名>`。签名不符或码不存在一律 `404 {"found": false}`（语义不可区分，防枚举）；命中返回：
 
 ```json
-{"found": true, "name": "张三", "cohort": 2, "group": "摄影", "code": "26020542", "status": "active", "avatar": null}
+{"found": true, "name": "张三", "cohort": 2, "code": "26020542", "status": "active", "avatar": null}
 ```
 
 **绝不含**电话 / 学号 / 邮箱；按 IP 限流（60 次/时，计全部请求）→ `429`。签名 = HMAC-SHA256（密钥默认由 `SECRET_KEY` 派生，`MEMBER_QR_SECRET` 可覆盖）截断 16 位 hex——二维码内容如 `https://<站点>/#/v/26020542?s=b7951a1f144d7be0`。

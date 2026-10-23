@@ -27,14 +27,13 @@ describe("MemberVerifyPage（公开扫码校验页）", () => {
       found: true,
       name: "张三",
       cohort: 2,
-      group: "摄影",
       code: "26020001",
       status: "active",
       avatar: null,
     });
     renderAt("/v/26020001?s=sig123");
     expect(await screen.findByText("张三")).toBeInTheDocument();
-    expect(screen.getByText("第 2 届 · 摄影")).toBeInTheDocument();
+    expect(screen.getByText("第 2 届")).toBeInTheDocument();
     expect(screen.getByText("识别码 26020001")).toBeInTheDocument();
     expect(checkMock).toHaveBeenCalledWith("26020001", "sig123");
   });

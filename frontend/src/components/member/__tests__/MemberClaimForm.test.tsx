@@ -8,8 +8,8 @@ vi.mock("../../../api/client", () => ({ api: { memberClaim: claimMock } }));
 import MemberClaimForm from "../MemberClaimForm";
 
 const CANDIDATES = [
-  { id: 11, name: "张三", cohort: 2, group: "摄影" },
-  { id: 12, name: "张三", cohort: 1, group: "信息" },
+  { id: 11, name: "张三", cohort: 2 },
+  { id: 12, name: "张三", cohort: 1 },
 ];
 
 describe("MemberClaimForm（认领表单）", () => {

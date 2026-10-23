@@ -50,7 +50,7 @@ export default function MemberClaimForm({
             />
             <span className="member-claim-name">{c.name}</span>
             <span className="muted">
-              第 {c.cohort} 届 · {c.group}
+              第 {c.cohort} 届
             </span>
           </label>
         ))}

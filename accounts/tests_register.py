@@ -249,7 +249,7 @@ class RegisterCardNoTest(TestCase):
 
     def make_row(self, name="张三", card_no="A001", phone="13800008888", code="26020001"):
         return MemberIdentity.objects.create(
-            name=name, admit_year=2026, cohort=2, group="摄影", phone=phone,
+            name=name, admit_year=2026, cohort=2, phone=phone,
             code=code, card_no=card_no,
         )
 

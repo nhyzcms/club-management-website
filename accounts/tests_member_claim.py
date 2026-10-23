@@ -17,7 +17,7 @@ from common.models import SiteSettings
 
 def make_row(name="张三", cohort=2, phone="11451419198", code="26020001", card_no=""):
     return MemberIdentity.objects.create(
-        name=name, admit_year=2026, cohort=cohort, group="摄影", phone=phone, code=code,
+        name=name, admit_year=2026, cohort=cohort, phone=phone, code=code,
         card_no=card_no,
     )
 
@@ -159,7 +159,6 @@ class MemberCheckApiTest(TestCase):
         self.assertTrue(data["found"])
         self.assertEqual(data["name"], "张三")
         self.assertEqual(data["cohort"], 2)
-        self.assertEqual(data["group"], "摄影")
         self.assertNotIn("phone", data)
 
     def test_check_tampered_or_missing_signature(self):
@@ -206,7 +205,7 @@ class ClaimServiceTest(TestCase):
 class CardNoSyncTest(TestCase):
     """校牌号在「注册资料 Profile.card_no」与「名册行 MemberIdentity.card_no」之间同步（同一个值）。"""
 
-    CSV_HEADER = "姓名,班级,校牌号,入学年份,入社时间,届数,组别,性别,电话号码\n"
+    CSV_HEADER = "姓名,班级,校牌号,入学年份,入社时间,届数,性别,电话号码\n"
 
     def setUp(self):
         cache.clear()
@@ -252,7 +251,7 @@ class CardNoSyncTest(TestCase):
     def test_import_writes_profile_card_no_back_to_row(self):
         user = make_user()  # 张三，注册时填了校牌号但名册还没导入
         Profile.objects.filter(user=user).update(card_no="A001")
-        content = (self.CSV_HEADER + "张三,1,,2026,20260303,2,摄影,男,11451419198\n").encode("utf-8-sig")
+        content = (self.CSV_HEADER + "张三,1,,2026,20260303,2,男,11451419198\n").encode("utf-8-sig")
         commit_import(parse_roster("a.csv", content), file_name="a.csv")
         row = MemberIdentity.objects.get(name="张三")
         self.assertEqual(row.card_no, "A001")

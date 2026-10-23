@@ -35,7 +35,7 @@ test("注册 → 认领阶段：选身份 + 手机号后四位 → 认领成功"
 
   // 注册即登录 → 进入认领阶段
   await expect(page.getByRole("heading", { name: "以下身份是否是你？" })).toBeVisible();
-  await expect(page.getByText("第 9 届 · 信息")).toBeVisible();
+  await expect(page.getByText("第 9 届")).toBeVisible();
 
   await page.getByLabel("手机号后四位").fill("1234");
   await page.getByRole("button", { name: "确认绑定" }).click();
@@ -45,7 +45,7 @@ test("注册 → 认领阶段：选身份 + 手机号后四位 → 认领成功"
 test("扫码校验页：有效签名展示社员信息", async ({ page }) => {
   await page.goto(`/#/v/${qr.code}?s=${qr.sig}`);
   await expect(page.getByText(qr.name)).toBeVisible();
-  await expect(page.getByText("第 9 届 · 信息")).toBeVisible();
+  await expect(page.getByText("第 9 届")).toBeVisible();
   await expect(page.getByText(`识别码 ${qr.code}`)).toBeVisible();
 });
 

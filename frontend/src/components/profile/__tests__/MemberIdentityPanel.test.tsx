@@ -17,7 +17,6 @@ describe("MemberIdentityPanel（社员身份面板）", () => {
         id: 1,
         name: "张三",
         cohort: 2,
-        group: "摄影",
         code: "26020001",
         card_no: "A001",
         status: "active",
@@ -27,7 +26,7 @@ describe("MemberIdentityPanel（社员身份面板）", () => {
     });
     render(<MemberIdentityPanel />);
     expect(await screen.findByText("26020001")).toBeInTheDocument();
-    expect(screen.getByText("第 2 届 · 摄影")).toBeInTheDocument();
+    expect(screen.getByText("第 2 届")).toBeInTheDocument();
     expect(screen.getByText("校牌号 A001")).toBeInTheDocument();
   });
 
@@ -35,7 +34,7 @@ describe("MemberIdentityPanel（社员身份面板）", () => {
     identityMock.mockResolvedValueOnce({
       enabled: true,
       bound: null,
-      candidates: [{ id: 11, name: "张三", cohort: 2, group: "摄影" }],
+      candidates: [{ id: 11, name: "张三", cohort: 2 }],
     });
     render(<MemberIdentityPanel />);
     expect(

@@ -4,7 +4,6 @@ export interface MemberIdentityBound {
   id: number;
   name: string;
   cohort: number;
-  group: string;
   code: string;
   card_no: string;
   status: string;
@@ -15,7 +14,6 @@ export interface MemberIdentityCandidate {
   id: number;
   name: string;
   cohort: number;
-  group: string;
 }
 
 export interface MemberIdentityStatus {

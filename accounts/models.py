@@ -613,7 +613,6 @@ class MemberIdentity(models.Model):
     admit_year = models.PositiveIntegerField("入学年份")
     joined_on_raw = models.CharField("入社时间", max_length=20, blank=True, default="")
     cohort = models.PositiveIntegerField("届数")
-    group = models.CharField("组别", max_length=50, blank=True, default="")
     gender = models.CharField("性别", max_length=8, blank=True, default="")
     phone = models.CharField("电话号码", max_length=20, blank=True, default="")
 

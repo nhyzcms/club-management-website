@@ -58,7 +58,7 @@ export default function MemberIdentityPanel() {
                 <span className="muted">校牌号 {data.bound.card_no}</span>
               )}
               <span className="muted">
-                第 {data.bound.cohort} 届 · {data.bound.group}
+                第 {data.bound.cohort} 届
               </span>
               <span
                 className={
