@@ -571,9 +571,13 @@ def export_member_qr(modeladmin, request, queryset):
     return response
 
 
-@admin.action(description="导出条形码（ZIP / PNG）")
+@admin.action(description="导出条形码（扫码枪读取识别码 · ZIP / PNG）")
 def export_member_barcode(modeladmin, request, queryset):
-    """批量导出所选社员身份的 Code128 条形码（文件名：识别码_姓名.png；内容 = 裸识别码）。"""
+    """批量导出所选社员身份的 Code128 条形码（文件名：识别码_姓名.png；内容 = 裸识别码）。
+
+    定位：仅供扫码枪 / 手工输入到后台检索。微信等手机扫码软件扫一维条码只会显示数字、
+    不会打开链接（2026-10-19 实测）——「扫码打开校验页」请用二维码导出（带签名 URL）。
+    """
     rows = list(queryset.order_by("code"))
     if not rows:
         modeladmin.message_user(request, "没有可导出的行。", level=messages.WARNING)
