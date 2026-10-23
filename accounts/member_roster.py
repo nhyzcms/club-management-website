@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from django.db import transaction
 from django.utils import timezone
 
-from .member_codes import MemberCodeError, generate_code
+from .member_codes import MemberCodeError, generate_code, name_sort_key, next_serial
 from .models import IdentityImportBatch, MemberIdentity, Profile
 
 HEADERS = [
@@ -194,7 +194,8 @@ def plan_import(rows: list[ParsedRow]) -> dict:
     """与库内对账 → 逐行动作（create / update / conflict / error），不落库。
 
     认行键：姓名+电话 →（无电话时）届数+姓名。识别码一律自动生成
-    （表格「识别码」列内容忽略；更新行保留既有编码、新增行按规则取号）。
+    （表格「识别码」列内容忽略；更新行保留既有编码；新增行按「当届已有最大序号 + 1」
+    接续，同批新增之间按姓名 GBK 序排序分配——不重排已发码）。
     """
     existing = list(MemberIdentity.objects.all())
     taken = {r.code for r in existing}
@@ -207,6 +208,7 @@ def plan_import(rows: list[ParsedRow]) -> dict:
         by_cohort_name[(r.cohort, n)].append(r)
 
     items: list[dict] = []
+    pending: list[tuple[int, ParsedRow]] = []
     counts = {"create": 0, "update": 0, "conflict": 0, "error": 0}
 
     for pr in rows:
@@ -242,16 +244,34 @@ def plan_import(rows: list[ParsedRow]) -> dict:
             items.append({"row": pr, "action": "update", "target": target, "code": target.code, "note": "；".join(notes)})
             continue
 
-        # 新增：识别码一律按规则生成（表格该列忽略）。
-        try:
-            code = generate_code(v["入学年份"], v["届数"], taken)
-        except MemberCodeError as exc:
-            counts["error"] += 1
-            items.append({"row": pr, "action": "error", "target": None, "code": None, "note": str(exc)})
-            continue
-        taken.add(code)
-        counts["create"] += 1
-        items.append({"row": pr, "action": "create", "target": None, "code": code, "note": "；".join(notes)})
+        # 新增：先占位，第二遍按「当次名单姓名序」统一分配识别码。
+        items.append({"row": pr, "action": "create", "target": None, "code": None, "note": "；".join(notes)})
+        pending.append((len(items) - 1, pr))
+
+    # 第二遍：同届（入学年份 + 届数）内按姓名 GBK 序分配「接续序号」——不重排已发码。
+    groups: dict[tuple[int, int], list[tuple[int, ParsedRow]]] = defaultdict(list)
+    for idx, pr in pending:
+        v = pr.values
+        groups[(v["入学年份"], v["届数"])].append((idx, pr))
+
+    for (admit_year, cohort), members in groups.items():
+        members.sort(key=lambda pair: (
+            name_sort_key(pair[1].values["姓名"]),
+            pair[1].values["电话号码"] or "",
+            pair[1].row_no,
+        ))
+        for idx, pr in members:
+            try:
+                serial = next_serial(admit_year, cohort, taken)
+                code = generate_code(admit_year, cohort, serial)
+            except MemberCodeError as exc:
+                items[idx]["action"] = "error"
+                items[idx]["note"] = str(exc)
+                counts["error"] += 1
+                continue
+            taken.add(code)
+            items[idx]["code"] = code
+            counts["create"] += 1
 
     return {"items": items, "counts": counts}
 
