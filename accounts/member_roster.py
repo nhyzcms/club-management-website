@@ -26,12 +26,13 @@ from .models import IdentityImportBatch, MemberIdentity, Profile
 # - 不含「年级」：年级每年随升学年变动，需要时按「入学年份 + 当前学年」推算；
 # - 「校牌号」取代旧「学号」列（同一栏位改名；旧表头「学号」按别名读入，见 HEADER_ALIASES）；
 # - 不含「年龄」：每年 +1，静态快照无意义；
-# - 不含「识别码」：一律由系统按规则生成（ADR-0025），表里写了也忽略。
+# - 不含「识别码」：一律由系统按规则生成（ADR-0025），表里写了也忽略；
+# - 不含「组别」（2026-10-23 二次修订）：社内分组会调整、也不是认人/编号所需。
 # 除「姓名 / 入学年份 / 届数」外（认人 + 生成识别码所需），其余列都可留空；
-# 旧模板带的「年级 / 学号 / 年龄 / 识别码」等列按未知列忽略，不影响导入。
+# 旧模板带的「年级 / 学号 / 年龄 / 识别码 / 组别」等列按未知列忽略，不影响导入。
 HEADERS = [
     "姓名", "班级", "校牌号", "入学年份", "入社时间",
-    "届数", "组别", "性别", "电话号码",
+    "届数", "性别", "电话号码",
 ]
 # 旧表头别名：改名前的「学号」列仍读入「校牌号」（两列同时存在时以「校牌号」为准）。
 HEADER_ALIASES = {"学号": "校牌号"}
@@ -308,7 +309,7 @@ def commit_import(rows: list[ParsedRow], *, file_name: str, operator=None) -> Id
                     import_batch=batch, code=item["code"],
                     name=v["姓名"], class_no=v["班级"], card_no=v["校牌号"],
                     admit_year=v["入学年份"], joined_on_raw=v["入社时间"], cohort=v["届数"],
-                    group=v["组别"], gender=v["性别"], phone=v["电话号码"],
+                    gender=v["性别"], phone=v["电话号码"],
                 )
                 created += 1
             elif action == "update":
@@ -318,7 +319,7 @@ def commit_import(rows: list[ParsedRow], *, file_name: str, operator=None) -> Id
                 # 其余列都可以留空：空白格 = 「这一项没填」，不覆盖库内已有值。
                 for field, key in (
                     ("class_no", "班级"), ("card_no", "校牌号"), ("joined_on_raw", "入社时间"),
-                    ("group", "组别"), ("gender", "性别"), ("phone", "电话号码"),
+                    ("gender", "性别"), ("phone", "电话号码"),
                 ):
                     if v[key]:
                         setattr(obj, field, v[key])

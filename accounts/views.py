@@ -482,7 +482,6 @@ def _member_identity_payload(row: MemberIdentity) -> dict:
         "id": row.id,
         "name": row.name,
         "cohort": row.cohort,
-        "group": row.group,
         "code": row.code,
         "card_no": row.card_no,
         "status": row.status,
@@ -507,7 +506,7 @@ def member_identity_view(request):
         "enabled": policy.member_claim_enabled,
         "bound": _member_identity_payload(bound) if bound is not None else None,
         "candidates": [
-            {"id": row.id, "name": row.name, "cohort": row.cohort, "group": row.group}
+            {"id": row.id, "name": row.name, "cohort": row.cohort}
             for row in candidates
         ],
     })
@@ -584,7 +583,6 @@ def member_check_view(request):
         "found": True,
         "name": row.name,
         "cohort": row.cohort,
-        "group": row.group,
         "code": row.code,
         "status": row.status,
         "avatar": avatar_url,

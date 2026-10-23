@@ -9,7 +9,6 @@ interface CheckResult {
   found: boolean;
   name?: string;
   cohort?: number;
-  group?: string;
   code?: string;
   status?: string;
   avatar?: string | null;
@@ -62,7 +61,7 @@ export default function MemberVerifyPage() {
                   {result.avatar && <img className="member-verify-avatar" src={result.avatar} alt="" />}
                   <div className="member-verify-name">{result.name}</div>
                   <p className="muted">
-                    第 {result.cohort} 届 · {result.group}
+                    第 {result.cohort} 届
                   </p>
                   <p>
                     <span

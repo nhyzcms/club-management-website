@@ -39,7 +39,7 @@
   </form>
   <table style="width:100%">
     <thead>
-      <tr><th>行</th><th>姓名</th><th>届数</th><th>组别</th><th>动作</th><th>识别码</th><th>备注</th></tr>
+      <tr><th>行</th><th>姓名</th><th>届数</th><th>动作</th><th>识别码</th><th>备注</th></tr>
     </thead>
     <tbody>
       {% for item in preview.items %}
@@ -47,7 +47,6 @@
         <td>{{ item.row_no }}</td>
         <td>{{ item.name }}</td>
         <td>{{ item.cohort }}</td>
-        <td>{{ item.group }}</td>
         <td>{{ item.action }}</td>
         <td>{{ item.code }}</td>
         <td>{{ item.note }}</td>

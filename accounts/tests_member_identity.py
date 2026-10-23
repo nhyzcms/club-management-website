@@ -32,7 +32,7 @@ from accounts.member_roster import (
 )
 from accounts.models import IdentityImportBatch, MemberIdentity, Profile
 
-HEADERS = ["姓名", "班级", "校牌号", "入学年份", "入社时间", "届数", "组别", "性别", "电话号码"]
+HEADERS = ["姓名", "班级", "校牌号", "入学年份", "入社时间", "届数", "性别", "电话号码"]
 # 旧模板（含 年级 / 学号 / 年龄 / 识别码）仍要能导入：未知列忽略，「学号」按别名读入「校牌号」。
 WITH_CODE_HEADERS = HEADERS + ["识别码"]
 # 旧模板（含「年级」列）仍要能导入：年级不再是名册列，按未知列忽略。
@@ -59,7 +59,7 @@ def csv_bytes(rows, headers=None, encoding="utf-8-sig"):
 
 
 def sample_row(name="张三", cohort=2, phone="13800008888", class_no="1", card_no="1", admit=2026):
-    return [name, class_no, card_no, admit, "20260303", cohort, "摄影", "男", phone]
+    return [name, class_no, card_no, admit, "20260303", cohort, "男", phone]
 
 
 def sample_row_with_code(code, **kwargs):
@@ -180,15 +180,15 @@ class RosterParseTest(TestCase):
 
     def test_optional_columns_can_be_missing(self):
         # 除姓名 / 入学年份 / 届数 外，整列缺失也不报错。
-        headers = [h for h in HEADERS if h != "组别"]
-        row = [c for i, c in enumerate(sample_row()) if i != HEADERS.index("组别")]
+        headers = [h for h in HEADERS if h != "班级"]
+        row = [c for i, c in enumerate(sample_row()) if i != HEADERS.index("班级")]
         rows = parse_roster("a.csv", csv_bytes([row], headers=headers))
         self.assertFalse(rows[0].errors)
-        self.assertEqual(rows[0].values["组别"], "")
+        self.assertEqual(rows[0].values["班级"], "")
 
     def test_only_code_columns_required_in_row(self):
-        # 其余列留空也能导入：班 / 校牌号 / 入社时间 / 组别 / 性别 / 电话 全空。
-        rows = parse_roster("a.csv", csv_bytes([["张三", "", "", 2026, "", 2, "", "", ""]]))
+        # 其余列留空也能导入：班级 / 校牌号 / 入社时间 / 性别 / 电话 全空。
+        rows = parse_roster("a.csv", csv_bytes([["张三", "", "", 2026, "", 2, "", ""]]))
         self.assertFalse(rows[0].errors)
         commit_import(rows, file_name="a.csv")
         obj = MemberIdentity.objects.get()
@@ -196,8 +196,8 @@ class RosterParseTest(TestCase):
         self.assertEqual(obj.admit_year, 2026)
         self.assertEqual(obj.cohort, 2)
         self.assertEqual(
-            (obj.class_no, obj.card_no, obj.joined_on_raw, obj.group, obj.gender, obj.phone),
-            ("", "", "", "", "", ""),
+            (obj.class_no, obj.card_no, obj.joined_on_raw, obj.gender, obj.phone),
+            ("", "", "", "", ""),
         )
         self.assertTrue(obj.code.startswith("2602"))
 
@@ -277,8 +277,8 @@ class ImportPlanTest(TestCase):
 
     def test_plan_conflict_on_multiple_existing_matches(self):
         user = User.objects.create_user(username="u1", password="x")
-        MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, group="摄影", phone="13800008888", code="26020001")
-        MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, group="摄影", phone="13800008888", code="26020002")
+        MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, phone="13800008888", code="26020001")
+        MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, phone="13800008888", code="26020002")
         rows = parse_roster("a.csv", csv_bytes([sample_row()]))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["conflict"], 1)
@@ -376,7 +376,7 @@ class AutoMatchTest(TestCase):
 
     def _row(self, name, code):
         return MemberIdentity.objects.create(
-            name=name, admit_year=2026, cohort=2, group="摄影", phone="13800008888", code=code,
+            name=name, admit_year=2026, cohort=2, phone="13800008888", code=code,
         )
 
     def test_unique_name_binds(self):
@@ -464,8 +464,8 @@ class AdminImportTest(TestCase):
     def test_export_qr_zip_action(self):
         admin = User.objects.create_superuser(username="root", password="x", email="root@example.com")
         self.client.force_login(admin)
-        row1 = MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, group="摄影", phone="13800008888", code="26020001")
-        row2 = MemberIdentity.objects.create(name="李四", admit_year=2025, cohort=1, group="信息", phone="13900001111", code="25010001")
+        row1 = MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, phone="13800008888", code="26020001")
+        row2 = MemberIdentity.objects.create(name="李四", admit_year=2025, cohort=1, phone="13900001111", code="25010001")
         resp = self.client.post(
             reverse("admin:accounts_memberidentity_changelist"),
             {"action": "export_member_qr", "_selected_action": [str(row1.pk), str(row2.pk)]},
@@ -480,8 +480,8 @@ class AdminImportTest(TestCase):
     def test_export_barcode_zip_action(self):
         admin = User.objects.create_superuser(username="root", password="x", email="root@example.com")
         self.client.force_login(admin)
-        row1 = MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, group="摄影", phone="13800008888", code="26020001")
-        row2 = MemberIdentity.objects.create(name="李四", admit_year=2025, cohort=1, group="信息", phone="13900001111", code="25010001")
+        row1 = MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, phone="13800008888", code="26020001")
+        row2 = MemberIdentity.objects.create(name="李四", admit_year=2025, cohort=1, phone="13900001111", code="25010001")
         resp = self.client.post(
             reverse("admin:accounts_memberidentity_changelist"),
             {"action": "export_member_barcode", "_selected_action": [str(row1.pk), str(row2.pk)]},

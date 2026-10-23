@@ -614,10 +614,10 @@ class MemberIdentityAdmin(admin.ModelAdmin):
     change_list_template = "admin/accounts/memberidentity/change_list.html"
 
     list_display = (
-        "name", "cohort", "group", "code", "user_display",
+        "name", "cohort", "code", "user_display",
         "bind_method_display", "status", "phone",
     )
-    list_filter = (MemberIdentityBoundFilter, "cohort", "group", "status")
+    list_filter = (MemberIdentityBoundFilter, "cohort", "status")
     search_fields = ("name", "code", "card_no", "phone", "user__username")
     actions = (export_member_qr, export_member_barcode, rerun_member_match, unbind_member_identity)
     readonly_fields = ("bound_at", "bound_by", "bind_method", "created_at", "updated_at")
@@ -625,7 +625,7 @@ class MemberIdentityAdmin(admin.ModelAdmin):
         (
             "名册信息",
             {"fields": ("name", "class_no", "card_no", "admit_year",
-                        "joined_on_raw", "cohort", "group", "gender", "phone")},
+                        "joined_on_raw", "cohort", "gender", "phone")},
         ),
         ("编号", {"fields": ("code", "status")}),
         ("绑定", {"fields": ("user", "bind_method", "bound_at", "bound_by", "import_batch")}),
@@ -761,7 +761,6 @@ class MemberIdentityAdmin(admin.ModelAdmin):
                             "row_no": item["row"].row_no,
                             "name": item["row"].values.get("姓名", ""),
                             "cohort": item["row"].values.get("届数", ""),
-                            "group": item["row"].values.get("组别", ""),
                             "action": item["action"],
                             "code": item["code"] or "",
                             "note": item["note"],
@@ -780,7 +779,7 @@ class MemberIdentityAdmin(admin.ModelAdmin):
         sheet = workbook.active
         sheet.title = "名册"
         sheet.append(HEADERS)
-        sheet.append(["张三", "1", "1", 2026, "20260303", 2, "摄影", "男", "13800000000"])
+        sheet.append(["张三", "1", "1", 2026, "20260303", 2, "男", "13800000000"])
         buffer = io.BytesIO()
         workbook.save(buffer)
         response = HttpResponse(
