@@ -101,7 +101,7 @@ class DeleteAccountApiTest(TestCase):
 
         # 社员身份（名册行）：注销后必须原样保留（含识别码与绑定关系）。
         self.member = MemberIdentity.objects.create(
-            name="张三", class_no="1", student_no="2008001",
+            name="张三", class_no="1", card_no="2008001",
             admit_year=2024, cohort=2024, code="NH2024001",
             user=self.user, bind_method=MemberIdentity.BIND_SELF,
         )
