@@ -92,8 +92,8 @@ class DmSource(NotificationSource):
 @register_source
 class AnnouncementSource(NotificationSource):
     key = "announcement"
-    name = "横幅广播"
-    description = "全站公告发布"
+    name = "全站公告"
+    description = "全站弹窗公告（可在通知里回看）"
     color = "#d99a1f"
     emoji = "📢"
     events = (Event("published", "公告发布"),)

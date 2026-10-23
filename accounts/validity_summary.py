@@ -233,8 +233,8 @@ def format_dm_message(user, validity: dict) -> str:
         "有效期规则：",
         f"1. 认证有效期 {policy['verification_valid_days']} 天：完成邮箱认证 / 学生证人工核验 / "
         f"认证码兑换中任一通道后生效；到期后账号回落为未认证，需要重新认证。",
-        f"2. 管理员委任有效期 {policy['admin_valid_days']} 天：到期自动撤销管理员身份；"
-        "超级管理员永久有效。",
+        f"2. 管理员委任有效期 {policy['admin_valid_days']} 天：到期自动撤销管理员身份，"
+        "需要续期请联系社长。",
         f"3. 注册宽限 {policy['registration_verify_days']} 天：注册后须在宽限期内完成任一认证，"
         "逾期未认证的账号将被停用（需联系管理员恢复）。",
         "",

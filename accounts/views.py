@@ -1118,6 +1118,7 @@ def _capabilities(user):
         "can_manage_comment_thread": user.has_perm("messaging.manage_comment_thread"),
         "can_mute_user": user.has_perm("reviews.mute_user"),
         "can_manage_announcement": user.has_perm("messaging.manage_announcement"),
+        "can_manage_announcements": user.has_perm("announcements.manage_announcements"),
     }
 
 
@@ -1136,6 +1137,21 @@ def _role_for(user):
     if is_verified(user):
         return {"label": "用户", "variant": "user"}
     return {"label": "访客", "variant": "visitor"}
+
+
+def _public_role_for(viewed, viewer):
+    """**对外**展示的身份徽章：超级管理员一律显示为「管理员」（ADR-0042）。
+
+    超管的存在只在后台与本人可见——访客 / 普通成员查看他人主页时看不到
+    ``superadmin`` 徽章，避免通过徽章反推出站点存在超级管理员账户。
+    本人查看自己的快照仍走 :func:`_role_for`（``/auth/me/``），不受影响。
+    """
+    role = _role_for(viewed)
+    if role["variant"] == "superadmin" and (
+        viewer is None or getattr(viewer, "pk", None) != viewed.pk
+    ):
+        return {"label": "管理员", "variant": "admin"}
+    return role
 
 
 def _profile_response(user, profile):
@@ -1342,7 +1358,7 @@ def user_profile_view(request, id):
             "nickname": profile.nickname,
             "bio": profile.bio,
         },
-        "role": _role_for(viewed),
+        "role": _public_role_for(viewed, request.user),
         "viewer": {"is_owner": visibility.is_owner, "is_admin": visibility.is_admin},
     }
 

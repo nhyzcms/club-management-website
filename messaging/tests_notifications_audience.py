@@ -293,7 +293,8 @@ class EmailRenderingTest(TestCase):
     def test_relative_url_made_absolute_and_per_source_color(self):
         msg = self._send("comment", "comment_replied", {"url": "/news/42"})
         html = msg.alternatives[0][0]
-        self.assertIn("https://club.example.org/news/42", html)
+        # 前端是 HashRouter：邮件链接必须落在 #/news/42，否则会打开首页
+        self.assertIn("https://club.example.org/#/news/42", html)
         self.assertIn("#2e9e6b", html)  # 评论源主色
 
     def test_plain_text_fallback_contains_message(self):

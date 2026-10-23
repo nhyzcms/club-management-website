@@ -36,6 +36,7 @@ urlpatterns = [
     path('reviews/', include('reviews.urls')),
     path('about/', include('about.urls')),
     path('panorama/', include('panorama.urls')),
+    path('announcements/', include('announcements.urls')),
     path('tutorials/', include('tutorials.urls')),
     path('recruitment/', include('recruitment.urls')),
     path('attachments/', include('attachments.urls')),

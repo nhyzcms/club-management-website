@@ -56,6 +56,8 @@ export type NotificationCategory =
   | "review"
   | "discipline"
   | "dm"
+  | "activity"
+  | "announcement"
   | "validity";
 
 export interface Notification {
@@ -102,6 +104,8 @@ export const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, string> 
   review: "审核",
   discipline: "纪律",
   dm: "私信",
+  activity: "活动",
+  announcement: "全站公告",
   validity: "身份有效期",
 };
 
@@ -155,6 +159,11 @@ export function notificationHref(n: Notification): string | null {
  */
 export function notificationTitle(n: Notification): string {
   const payload = n.payload || {};
+  // 全站公告直接用公告标题（比「全站公告已发布」有用得多）。
+  if (n.category === "announcement") {
+    const title = payload.title;
+    return typeof title === "string" && title ? title : "全站公告";
+  }
   const count = payload.count;
   if (n.event === "new_message" && typeof count === "number" && count > 1) {
     return `你收到 ${count} 条新私信`;

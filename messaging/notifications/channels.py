@@ -29,14 +29,28 @@ def _event_name(source, event_key: str) -> str:
 
 
 def _absolute_url(path: str) -> str:
-    """相对路径 → 绝对 URL（邮件客户端无站点上下文）。"""
+    """相对路径 → 绝对 URL（邮件客户端无站点上下文）。
+
+    前端是 **HashRouter**（``/#/news/42``），payload 里的 url 一律是路由路径（``/news/42``）。
+    所以这里必须补上 ``/#`` 前缀——否则邮件里的链接打开的是 ``https://站点/news/42``：
+    服务端返回入口 HTML，HashRouter 看到空 hash 就落到首页，收件人永远到不了目标页。
+    已经是绝对地址或已带 ``/#`` 的原样返回。
+    """
     path = (path or "").strip()
     if not path:
         return ""
     if path.startswith(("http://", "https://")):
         return path
     base = (getattr(settings, "FRONTEND_URL", "") or "").rstrip("/")
-    return f"{base}{path}" if base else path
+    if not base:
+        return path
+    if base.endswith("#"):
+        base = base[:-1]
+    if path.startswith("/#"):
+        return f"{base}{path}"
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{base}/#{path}"
 
 
 def _tint(hex_color: str, ratio: float = 0.88) -> str:
@@ -89,7 +103,9 @@ def _copy_for(category: str, event: str, payload: dict) -> str:
     if category == "dm":
         return "你收到了一条新私信，登录后即可查看。"
     if category == "announcement":
-        return "全站发布了新的公告，点击查看。"
+        lead = f"全站公告{quoted}。" if quoted else "全站发布了新的公告。"
+        summary = (payload.get("summary") or "").strip()
+        return f"{lead}{summary}" if summary else f"{lead}点击查看全文。"
     if category == "discipline":
         if event == "muted":
             return "你的账号已被禁言，期间暂时无法发言。"
@@ -159,7 +175,12 @@ class EmailChannel(BaseChannel):
         url = _absolute_url(payload.get("url"))
         message = _copy_for(notification.category, notification.event, payload)
 
-        subject = f"【南汇一中传媒社·{source_name}】{event_name}"
+        # 公告以标题作邮件主题（比「公告发布」有用得多）；其余源保持「源·事件」。
+        obj_title = str(payload.get("title") or "").strip()
+        if notification.category == "announcement" and obj_title:
+            subject = f"【南汇一中传媒社】{obj_title}"
+        else:
+            subject = f"【南汇一中传媒社·{source_name}】{event_name}"
         html = render_to_string(
             "messaging/notifications/email.html",
             {

@@ -111,6 +111,7 @@ INSTALLED_APPS = [
     'accounts',
     'about',
     'panorama',
+    'announcements',
     'tasks',
     'messaging',
     'activities',
