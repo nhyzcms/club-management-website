@@ -18,6 +18,8 @@ from accounts.member_codes import (
     generate_code,
     is_valid_code,
     make_signature,
+    next_serial,
+    verify_code_checksum,
     verify_signature,
 )
 from accounts.member_roster import (
@@ -57,38 +59,60 @@ def sample_row(name="张三", cohort=2, phone="13800008888", code="", grade="高
 
 
 class MemberCodesTest(TestCase):
-    def test_generate_code_uses_prefix_and_first_free(self):
+    def test_generate_code_format_and_checksum(self):
+        """识别码 = 4 位前缀 + 2 位姓名序 + 2 位校验（ISO 7064 MOD 97-10）。"""
         self.assertEqual(code_prefix(2026, 2), "2602")
-        self.assertEqual(generate_code(2026, 2, set()), "26020001")
-        self.assertEqual(generate_code(2026, 2, {"26020001"}), "26020002")
-        self.assertEqual(generate_code(2026, 2, {"26020001", "26020002"}), "26020003")
+        self.assertEqual(generate_code(2026, 2, 1), "26020154")  # 姓名序 01
+        self.assertEqual(generate_code(2026, 2, 5), "26020542")  # 姓名序 05
+        self.assertTrue(verify_code_checksum("26020542"))
+        self.assertFalse(verify_code_checksum("26020541"))
+        self.assertFalse(verify_code_checksum("2602054"))   # 位数不足
+        self.assertFalse(verify_code_checksum("2602054a"))  # 非数字
 
-    def test_generate_code_independent_per_cohort(self):
-        taken = {"26020001"}
-        self.assertEqual(generate_code(2025, 1, taken), "25010001")
-        self.assertEqual(generate_code(2026, 2, taken), "26020002")
+    def test_checksum_detects_every_single_char_typo(self):
+        """单字符篡改（8 位 × 9 个替代数字）全部应被校验位拒绝。"""
+        code = generate_code(2026, 2, 5)
+        leaks = 0
+        for pos in range(8):
+            for d in "0123456789":
+                if d == code[pos]:
+                    continue
+                if verify_code_checksum(code[:pos] + d + code[pos + 1:]):
+                    leaks += 1
+        self.assertEqual(leaks, 0)
 
-    def test_generate_code_exhausted_raises(self):
-        prefix = code_prefix(2026, 2)
-        taken = {f"{prefix}{i:04d}" for i in range(1, 10000)}
+    def test_next_serial_continues_per_cohort(self):
+        """序号接续：同届取既有最大 +1；不同届互不影响。"""
+        taken = {"26020154"}
+        self.assertEqual(next_serial(2025, 1, taken), 1)
+        self.assertEqual(next_serial(2026, 2, taken), 2)
+        self.assertEqual(next_serial(2026, 2, {"26020154", "26020251"}), 3)
+
+    def test_serial_bounds(self):
         with self.assertRaises(Exception):
-            generate_code(2026, 2, taken)
+            generate_code(2026, 2, 0)
+        with self.assertRaises(Exception):
+            generate_code(2026, 2, 100)
+        full = {generate_code(2026, 2, i) for i in range(1, 100)}
+        self.assertEqual(len(full), 99)
+        with self.assertRaises(Exception):
+            next_serial(2026, 2, full)
 
     def test_signature_roundtrip_and_tamper(self):
-        code = "26020001"
+        code = "26020542"
         sig = make_signature(code)
         self.assertTrue(verify_signature(code, sig))
         self.assertFalse(verify_signature(code, sig[:-1] + ("0" if sig[-1] != "0" else "1")))
-        self.assertFalse(verify_signature("26020002", sig))
+        self.assertFalse(verify_signature("26020543", sig))
         self.assertFalse(verify_signature("", sig))
 
     def test_build_verify_url_contains_code_and_sig(self):
-        url = build_verify_url("26020001")
-        self.assertIn("#/v/26020001", url)
-        self.assertIn(f"s={make_signature('26020001')}", url)
+        url = build_verify_url("26020542")
+        self.assertIn("#/v/26020542", url)
+        self.assertIn(f"s={make_signature('26020542')}", url)
 
     def test_is_valid_code(self):
-        self.assertTrue(is_valid_code("26020001"))
+        self.assertTrue(is_valid_code("26020542"))
         self.assertTrue(is_valid_code("2602-0001"))
         self.assertFalse(is_valid_code(""))
         self.assertFalse(is_valid_code("短"))
@@ -163,8 +187,9 @@ class ImportPlanTest(TestCase):
         rows = parse_roster("a.csv", csv_bytes([sample_row(), sample_row(name="李四", phone="13900001111")]))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 2)
-        codes = [i["code"] for i in plan["items"]]
-        self.assertEqual(codes, ["26020001", "26020002"])
+        codes = [i["code"] for i in plan["items"]]  # 输出顺序 = 行顺序
+        # 姓名 GBK 序：李四(li) < 张三(zhang) → 李四序号 01、张三序号 02
+        self.assertEqual(codes, ["26020251", "26020154"])
 
     def test_plan_reimport_updates(self):
         commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")
@@ -172,20 +197,20 @@ class ImportPlanTest(TestCase):
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["update"], 1)
         self.assertEqual(plan["counts"]["create"], 0)
-        self.assertEqual(plan["items"][0]["target"].code, "26020001")
+        self.assertEqual(plan["items"][0]["target"].code, "26020154")
 
     def test_plan_reimport_keeps_existing_code_ignoring_given(self):
         # 表内带码（哪怕同码）不参与认行：仍按 姓名+电话 命中 → 保留既有编码。
         commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")
-        rows = parse_roster("a.csv", csv_bytes([sample_row(code="26020001", grade="高二")]))
+        rows = parse_roster("a.csv", csv_bytes([sample_row(code="26020154", grade="高二")]))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["update"], 1)
-        self.assertEqual(plan["items"][0]["code"], "26020001")
+        self.assertEqual(plan["items"][0]["code"], "26020154")
 
     def test_plan_ignores_given_code_uses_generated(self):
         rows = parse_roster("a.csv", csv_bytes([sample_row(code="26027777")]))
         plan = plan_import(rows)
-        self.assertEqual(plan["items"][0]["code"], "26020001")
+        self.assertEqual(plan["items"][0]["code"], "26020154")
 
     def test_given_code_not_used_for_matching(self):
         # 表带码与库内既有行相同、但姓名不同 → 不按码更新：作为新行处理并自动生成新码。
@@ -194,7 +219,7 @@ class ImportPlanTest(TestCase):
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 1)
         self.assertEqual(plan["counts"]["update"], 0)
-        self.assertEqual(plan["items"][0]["code"], "26020002")
+        self.assertEqual(plan["items"][0]["code"], "26020251")  # 李四接续序号 02
 
     def test_plan_conflict_on_multiple_existing_matches(self):
         user = User.objects.create_user(username="u1", password="x")
@@ -210,7 +235,7 @@ class ImportPlanTest(TestCase):
         self.assertEqual(IdentityImportBatch.objects.count(), 1)
         self.assertEqual(batch.summary["created"], 1)
         row = MemberIdentity.objects.get()
-        self.assertEqual(row.code, "26020001")
+        self.assertEqual(row.code, "26020154")
         self.assertEqual(row.import_batch_id, batch.id)
 
     def test_commit_idempotent_second_run_updates_and_preserves_binding(self):
@@ -225,8 +250,25 @@ class ImportPlanTest(TestCase):
         self.assertEqual(batch2.summary["created"], 0)
         self.assertEqual(batch2.summary["updated"], 1)
         self.assertEqual(row.user_id, user.id)  # 绑定保留
-        self.assertEqual(row.code, "26020001")  # 识别码保留
+        self.assertEqual(row.code, "26020154")  # 识别码保留
         self.assertEqual(row.grade, "高二")  # 动态字段更新
+
+    def test_plan_second_batch_appends_serials(self):
+        """同届追加导入：新行序号接续已有最大序号（不重排已发码）。"""
+        commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")  # 张三 → 序号 01
+        rows = parse_roster("a.csv", csv_bytes([sample_row(name="李四", phone="13900001111")]))
+        plan = plan_import(rows)
+        self.assertEqual(plan["counts"]["create"], 1)
+        self.assertEqual(plan["items"][0]["code"], "26020251")  # 接续序号 02
+
+    def test_plan_serial_exhaustion_marks_error(self):
+        """单届序号上限 99：第 100 行标记错误，其余 99 行正常创建。"""
+        rows = parse_roster("a.csv", csv_bytes([
+            sample_row(name=f"学生{i:03d}", phone=f"1380000{i:04d}") for i in range(1, 101)
+        ]))
+        plan = plan_import(rows)
+        self.assertEqual(plan["counts"]["create"], 99)
+        self.assertEqual(plan["counts"]["error"], 1)
 
 
 class AutoMatchTest(TestCase):

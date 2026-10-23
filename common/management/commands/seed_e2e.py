@@ -136,7 +136,7 @@ class Command(BaseCommand):
         # 「谢二」未被绑定：注册用例用同名真实姓名注册后可自助认领；
         # 签名参数另写入 frontend/e2e/.member-qr.json，供扫码校验用例直读。
         member_row, _ = MemberIdentity.objects.get_or_create(
-            code="26090001",
+            code="26090188",
             defaults={
                 "name": "谢二",
                 "admit_year": 2026,
