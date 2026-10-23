@@ -595,8 +595,8 @@ class MemberIdentity(models.Model):
     ]
 
     # ---- 名册快照 ----
+    # 注：不存「年级」——年级每年变动，快照一年后必失真；需要时按 admit_year 推算。
     name = models.CharField("姓名", max_length=100)
-    grade = models.CharField("年级", max_length=20, blank=True, default="")
     class_no = models.CharField("班级", max_length=20, blank=True, default="")
     student_no = models.CharField("学号", max_length=20, blank=True, default="")
     admit_year = models.PositiveIntegerField("入学年份")

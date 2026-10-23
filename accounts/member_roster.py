@@ -22,8 +22,11 @@ from django.utils import timezone
 from .member_codes import MemberCodeError, generate_code, name_sort_key, next_serial
 from .models import IdentityImportBatch, MemberIdentity, Profile
 
+# 列清单：**不含「年级」**——年级每年随升学年变动，静态快照一年后就失真；
+# 需要年级时一律由「入学年份」推算（入学年份 + 当前学年），名册只存不变量。
+# 旧模板若仍带「年级」列也没关系：未知列按表头名忽略（见 parse_roster）。
 HEADERS = [
-    "姓名", "年级", "班级", "学号", "入学年份", "入社时间",
+    "姓名", "班级", "学号", "入学年份", "入社时间",
     "届数", "组别", "性别", "年龄", "电话号码", "识别码",
 ]
 REQUIRED_COLUMNS = ["姓名", "入学年份", "届数", "组别"]
@@ -290,14 +293,14 @@ def commit_import(rows: list[ParsedRow], *, file_name: str, operator=None) -> Id
                 v = item["row"].values
                 MemberIdentity.objects.create(
                     import_batch=batch, code=item["code"],
-                    name=v["姓名"], grade=v["年级"], class_no=v["班级"], student_no=v["学号"],
+                    name=v["姓名"], class_no=v["班级"], student_no=v["学号"],
                     admit_year=v["入学年份"], joined_on_raw=v["入社时间"], cohort=v["届数"],
                     group=v["组别"], gender=v["性别"], age=v["年龄"], phone=v["电话号码"],
                 )
                 created += 1
             elif action == "update":
                 obj, v = item["target"], item["row"].values
-                obj.name, obj.grade, obj.class_no, obj.student_no = v["姓名"], v["年级"], v["班级"], v["学号"]
+                obj.name, obj.class_no, obj.student_no = v["姓名"], v["班级"], v["学号"]
                 obj.admit_year, obj.joined_on_raw, obj.cohort = v["入学年份"], v["入社时间"], v["届数"]
                 obj.group, obj.gender, obj.age, obj.phone = v["组别"], v["性别"], v["年龄"], v["电话号码"]
                 obj.import_batch = batch
