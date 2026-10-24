@@ -23,7 +23,8 @@ test.describe("改密安全验证（独立账号 e2e_stepup）", () => {
     });
     expect(resp.ok()).toBeTruthy();
 
-    await page.goto("/#/profile?tab=password");
+    await page.goto("/#/security");
+    await page.getByRole("button", { name: /修改密码/ }).click();
     await expect(page.getByRole("button", { name: "确认修改" })).toBeVisible();
 
     // 第一次提交 → 无 grant → 跳转验证页
@@ -54,8 +55,8 @@ test.describe("改密安全验证（独立账号 e2e_stepup）", () => {
   });
 });
 
-test("安全验证记录：个人中心「安全验证」面板可见", async ({ page }) => {
-  await page.goto("/#/profile?tab=security");
-  await expect(page.getByRole("heading", { name: "安全验证" })).toBeVisible();
+test("安全验证记录：账号安全中心「安全问题」面板可见", async ({ page }) => {
+  await page.goto("/#/security");
+  await page.getByRole("button", { name: /安全问题/ }).click();
   await expect(page.getByText("最近验证记录")).toBeVisible();
 });
