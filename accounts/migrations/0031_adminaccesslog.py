@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0029_loginchallenge'),
+        ('accounts', '0030_loginchallenge'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
