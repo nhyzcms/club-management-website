@@ -58,6 +58,7 @@ from .password_reset import (
 from .registration_guard import duplicate_message, find_duplicate
 from .tokens import email_verification_token
 from .devices import get_or_create_device, record_login_event
+from . import login_challenge as challenges
 from .validity_summary import account_validity, ack_notice
 from .throttles import (
     AuthCodeRedeemThrottle,
@@ -231,6 +232,26 @@ def login_view(request):
     previous_key = request.session.session_key
 
     device, is_new_device = get_or_create_device(candidate, request)
+    # 陌生设备（未通过过二次验证）→ 有 2FA 就挑战；没有任何 2FA 则本次豁免放行。
+    exempt = False
+    if settings.LOGIN_CHALLENGE_ENABLED and device is not None and not device.is_trusted:
+        methods = challenges.available_factors(candidate)
+        if methods:
+            challenge = challenges.create_challenge(
+                candidate, device.device_id, bool(form.cleaned_data.get("remember"))
+            )
+            record_login_event(
+                request,
+                user=candidate,
+                device=device,
+                status="challenge",
+                method="password",
+                second_factor="",
+                is_new_device=True,
+            )
+            return JsonResponse(challenges.challenge_payload(challenge), status=202)
+        exempt = True
+
     login(request, candidate)
     if previous_key and previous_key != request.session.session_key:
         # 同一浏览器重复登录 / 换账号：旧会话行让位，别让一台设备占掉两个名额。
@@ -256,14 +277,18 @@ def login_view(request):
         device=device,
         status="success",
         method="password",
-        second_factor="none",
+        second_factor="exempt" if exempt else "none",
         is_new_device=is_new_device,
         session_key=request.session.session_key or "",
     )
-    return JsonResponse({
+    payload = {
         "user": {"id": candidate.id, "username": candidate.username, "email": candidate.email},
         "must_change_password": must_change,
-    })
+    }
+    if exempt:
+        # 本次豁免不等于信任：设备仍陌生，下次登录仍会要求；前端提示尽快绑定。
+        payload["must_bind_2fa"] = True
+    return JsonResponse(payload)
 
 
 

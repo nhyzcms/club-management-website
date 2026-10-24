@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import security_center, views
+from . import security_center, login_challenge, views
 from .identity_review import IdentityReviewViewSet
 from .inbox import InboxView
 from .password_reset_review import PasswordResetRequestViewSet
@@ -15,6 +15,9 @@ router.register(
 urlpatterns = [
     path("inbox/", InboxView.as_view(), name="inbox"),
     path("login/", views.login_view, name="login"),
+    path("login/challenge/", login_challenge.challenge_send_view, name="login_challenge_send"),
+    path("login/challenge/verify/", login_challenge.challenge_verify_view, name="login_challenge_verify"),
+    path("login/challenge/status/", login_challenge.challenge_status_view, name="login_challenge_status"),
     path("register/", views.register_view, name="register"),
     path("verify-email/", views.verify_email_view, name="verify_email"),
     path("resend-verification/", views.resend_verification_view, name="resend_verification"),

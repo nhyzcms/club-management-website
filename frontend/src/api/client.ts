@@ -12,6 +12,12 @@ export const api = {
   logout: () =>
     request("/logout/", { method: "POST" }),
 
+  challengeSend: (token: string) =>
+    request("/login/challenge/", { method: "POST", body: JSON.stringify({ token }) }),
+
+  challengeVerify: (payload: Record<string, unknown>) =>
+    request("/login/challenge/verify/", { method: "POST", body: JSON.stringify(payload) }),
+
   me: () =>
     request("/me/"),
 
