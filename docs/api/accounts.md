@@ -259,8 +259,9 @@
   "is_verified": true,
   "channels": [
     {"channel": "appointment", "status": "approved", "identifier": "staff", "verified_at": "2026-09-19T02:00:00+00:00"},
-    {"channel": "email", "status": "pending", "identifier": "zs@example.com", "verified_at": null},
-    {"channel": "manual", "status": "none", "identifier": "", "verified_at": null}
+    {"channel": "email", "status": "not_required", "identifier": "zs@example.com", "verified_at": null},
+    {"channel": "manual", "status": "not_required", "identifier": "", "verified_at": null},
+    {"channel": "authcode", "status": "not_required", "identifier": "", "verified_at": null}
   ]
 }
 ```
