@@ -250,7 +250,7 @@
 
 `GET /auth/verification/`
 
-**认证**：登录；**权限**：—。总认证态 + 各通道当前状态（数据驱动面板铺卡），每通道一卡、按 `CHANNELS` 序（`appointment` → `email` → `manual`），无记录行的通道 `status="none"`。
+**认证**：登录；**权限**：—。总认证态 + 各通道当前状态（数据驱动面板铺卡），每通道一卡、按 `CHANNELS` 序（`appointment` → `email` → `manual` → `authcode`），无记录行的通道 `status="none"`。
 
 **响应 `200 OK`**
 
@@ -265,7 +265,9 @@
 }
 ```
 
-`status` ∈ `none` / `pending` / `approved` / `rejected`；`identifier`：email = 待认证地址（认证通过后即提升为 `User.email`）、manual = 空、appointment = `staff` / `superuser`、authcode = 码原文（后台可读，供追溯）。
+`status` ∈ `none` / `pending` / `approved` / `rejected` / `not_required`；`identifier`：email = 待认证地址（认证通过后即提升为 `User.email`）、manual = 空、appointment = `staff` / `superuser`、authcode = 码原文（后台可读，供追溯）。
+
+`not_required`（「无需再次认证」）是**派生态**，不落库：账号已认证（存在未过期 `approved` 通道）时，除该通道外的其余通道一律返回 `not_required`，前端据此收起表单；认证过期后自动消失、恢复真实状态。响应示例里若 `is_verified=true`，`status` 为 `pending`/`none`/`rejected` 的通道会显示成 `not_required`。
 
 ### 账号有效期（快照 / 弹窗已读）
 
