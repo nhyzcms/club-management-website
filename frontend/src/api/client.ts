@@ -31,6 +31,13 @@ export const api = {
   listSessions: () =>
     request("/sessions/"),
 
+  // 多端登录（ADR-0028）：在个人中心下线指定设备 / 下线其他所有设备。
+  revokeSession: (id: number) =>
+    request(`/sessions/${id}/revoke/`, { method: "POST" }),
+
+  revokeOtherSessions: () =>
+    request("/sessions/revoke-others/", { method: "POST" }),
+
   getCsrf: () =>
     request("/csrf/"),
 

@@ -45,12 +45,16 @@ def _send(user, subject, message):
 
 
 def revoke_user_sessions(user):
-    """立即吊销用户既有会话：删 Django Session 行（强制登出）+ 清 UserSession.is_current。
+    """立即吊销用户**所有**设备的会话（安全事件：停用 / 重置密码 / 撤销认证 / 注销）。
 
     is_active=False 只挡新登录；不吊销既有会话的话，被停用账号仍可用当前会话直到过期。
+    与「顶替 / 手动下线」不同，这里直接删 Django Session 行：安全事件要立即断线，
+    不需要给被吊销设备看「接管设备」提示。``revoked_reason`` 留 ``security`` 以便审计。
     """
     keys = list(UserSession.objects.filter(user=user).values_list("session_key", flat=True))
-    UserSession.objects.filter(user=user).update(is_current=False)
+    UserSession.objects.filter(user=user, revoked_at__isnull=True).update(
+        revoked_at=timezone.now(), revoked_reason=UserSession.REVOKE_SECURITY,
+    )
     if keys:
         Session.objects.filter(session_key__in=keys).delete()
 

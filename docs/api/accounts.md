@@ -11,8 +11,8 @@
 - **未登录行为分两类**：`@login_required` 的函数视图未登录时 302 重定向到 `/login/`；DRF 端点（`identity-reviews`、`inbox`）会话认证无跳转，未登录 / 无权限均返回 403 JSON（`{"detail": …}`）。
 - **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed` / `account_expired_unverified` / `step_up_required` / `account_exists` / `account_deleted` / `password_change_required` / `request_pending` / `account_not_found` / `account_ambiguous`。
 - **Session + CSRF**：登录态走 Django Session cookie；非 GET 请求须带 `X-CSRFToken`（可先 `GET /auth/csrf/` 取 cookie）。
-- **单会话与挤号**（`accounts.middleware.SingleSessionMiddleware`）：同一账号仅一个当前会话；他设备登录成功后旧会话的下一次请求返回 401 `{"detail": "您的账号在其他设备登录，您已被迫下线。", "reason": "session_superseded", "takeover": {"device_name": …, "device_type": …, "ip": …, "time": …}}`（浏览器导航 Accept 含 `text/html` 时改返 401 HTML 下线页）。
-- **登录保护与限流**：账号已有未满 10 分钟的当前会话、且本次非同一会话再认证 → 409 `login_protection`；登录失败按 IP（`login_per_ip_per_hour`）与按用户名 / 邮箱（`login_per_username_per_hour`）双维度计数（只计失败），命中返回 429 `login_throttled` + `Retry-After` 头。
+- **多端登录与下线**（`accounts.middleware.MultiDeviceSessionMiddleware`，[ADR-0028](../adr/0028-multi-device-login.md)）：同一账号最多 **3 台设备**同时保持登录态（全局名额，网页 / 手机浏览器 / App 各一台）。名额满时新登录自动顶掉「最久未活动」的那台；被下线设备的下一次请求返回 401 `{"detail": …, "reason": "session_superseded", "revoked_reason": "limit|manual|replaced|security", "takeover": {"device_name": …, "device_type": …, "ip": …, "time": …}}`（浏览器导航 Accept 含 `text/html` 时改返 401 HTML 下线页）。下线 / 踢出途径见「登录设备」。
+- **登录保护与限流**：10 分钟窗口内同一账号最多 5 次成功登录（三端依次登录不受影响），超出 → 409 `login_protection` + `retry_after`；登录失败按 IP（`login_per_ip_per_hour`）与按用户名 / 邮箱（`login_per_username_per_hour`）双维度计数（只计失败），命中返回 429 `login_throttled` + `Retry-After` 头。
 - **站点策略门禁**：`verification_enabled=false` 时新开 / 完成通道的端点返回 403 `verification_closed`（已通过者仍算已认证）；`registration_enabled=false` 时注册 403 `registration_closed`。旋钮见[公共 API](common.md)。
 - **邮箱后缀白名单**（[ADR-0023](../adr/0023-email-domain-allowlist.md)）：仅注册带邮箱与邮箱绑定 / 换绑判定；不在白名单（`accounts/email_domains.py`）→ 400 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "<命中的域名>"}`。不回溯既有地址、重发与认证链接落地。
 
@@ -21,7 +21,7 @@
 | 方法 | 路径 | 认证 | 权限 | 说明 |
 |---|---|---|---|---|
 | POST | `/auth/login/` | 公开 | — | 登录（用户名或绑定邮箱 + 密码） |
-| POST | `/auth/logout/` | 登录 | — | 登出并清当前会话标记 |
+| POST | `/auth/logout/` | 登录 | — | 退出当前设备（其余设备保持登录态） |
 | GET | `/auth/csrf/` | 公开 | — | 下发 `csrftoken` cookie |
 | POST | `/auth/register/` | 公开 | — | 自助注册（multipart） |
 | GET | `/auth/verify-email/` | 公开 | — | 邮箱认证链接落地 |
@@ -31,7 +31,9 @@
 | POST | `/auth/profile/update/` | 登录 | — | 更新资料 / 头像（multipart） |
 | POST | `/auth/profile/change-password/` | 登录 | — | 修改密码（需 Step-up） |
 | POST | `/auth/account/delete/` | 登录 | — | 注销账号（软删除 + 敏感信息清除，[ADR-0027](../adr/0027-account-deletion.md)） |
-| GET | `/auth/sessions/` | 登录 | — | 本人最近登录记录 |
+| GET | `/auth/sessions/` | 登录 | — | 登录设备与名额（在线 + 历史） |
+| POST | `/auth/sessions/<id>/revoke/` | 登录 | — | 下线指定设备（仅本人记录） |
+| POST | `/auth/sessions/revoke-others/` | 登录 | — | 下线其他所有设备 |
 | POST | `/auth/password-reset/` | 公开 | — | 邮箱链接自助重置（发起） |
 | POST | `/auth/password-reset/confirm/` | 公开 | — | 邮箱链接自助重置（确认新密码） |
 | POST | `/auth/password-reset/request/` | 公开 | — | 向管理员申请手动重置（multipart：账号 + 身份证明） |
@@ -244,25 +246,45 @@
 
 > 前端（`AccountDeletionPanel`）在表单填对后**不会直接调本端点**：先弹一次二次确认弹窗，点「确认注销」才发请求；取消 / Esc / 点遮罩都不发。这是纯前端防误触，后端的三重校验不变。
 
-### 登录记录（会话列表）
+### 登录设备（多端登录，[ADR-0028](../adr/0028-multi-device-login.md)）
 
 `GET /auth/sessions/`
 
-**认证**：登录；**权限**：—。按 `-created_at` 倒序；存储层按 `SESSION_HISTORY_LIMIT = 20` 裁剪，分页按同上限做单页，返回完整 DRF 信封。
+**认证**：登录；**权限**：—。按 `-created_at` 倒序；存储层按 `SESSION_HISTORY_LIMIT = 20` 裁剪
+（在线的设备一定保留），分页按同上限做单页，返回完整 DRF 信封 + 名额字段。
 
 **响应 `200 OK`**
 
 ```json
 {
   "count": 2, "next": null, "previous": null,
+  "max_active": 3, "active_count": 1,
   "results": [
-    {"id": 5, "device_name": "Chrome · Windows", "device_type": "Desktop", "ip_address": "127.0.0.1",
-     "created_at": "2026-09-19T02:00:00+00:00", "is_current": true}
+    {"id": 5, "device_name": "Chrome · Windows", "device_type": "Desktop", "client_kind": "web",
+     "ip_address": "127.0.0.1", "created_at": "2026-09-19T02:00:00+00:00",
+     "last_seen_at": "2026-09-19T02:05:00+00:00", "is_active": true, "is_this_device": true,
+     "revoked_at": null, "revoked_reason": ""}
   ]
 }
 ```
 
-`device_type` ∈ `Desktop` / `Mobile` / `Tablet` / `Bot` / `Unknown`；`device_name` 由 UA 解析（浏览器 · 系统），可为空串；`ip_address` 可为 `null`。
+- `device_type` ∈ `Desktop` / `Mobile` / `Tablet` / `Bot` / `Unknown`（UA 解析）；`client_kind` ∈
+  `web` / `mobile` / `app`（`app` = App 壳 UA 含 `NhyzClubApp/`）；`device_name` 可为空串；`ip_address` 可为 `null`。
+- `is_active` = 仍保持登录态（`revoked_at IS NULL`）；`is_this_device` = 当前请求所在设备（服务端比对 session key）。
+- `revoked_reason` ∈ `limit`（名额已满被替换）/ `manual`（个人中心手动下线）/ `logout`（主动退出）/
+  `replaced`（同一设备重登或改密轮换）/ `security`（停用 / 重置密码 / 撤销认证 / 注销）。
+
+`POST /auth/sessions/<id>/revoke/`
+
+**认证**：登录；**权限**：仅本人记录（他人记录 404）。只写 `revoked_at` / `revoked_reason=manual`，
+**不删 Django Session**：被下线设备的下一次请求会收到 401 `session_superseded`
+（`revoked_reason=manual`），从而看到「该设备已被下线」。下线本机等价于退出登录。
+响应 `200`：`{"revoked": true, "was_current": false, "active_count": 2, "max_active": 3}`。
+
+`POST /auth/sessions/revoke-others/`
+
+**认证**：登录；**权限**：—。下线其他所有设备、保留本机。
+响应 `200`：`{"revoked": 2, "active_count": 1, "max_active": 3}`。
 
 ### 密码重置（发起 / 确认）
 

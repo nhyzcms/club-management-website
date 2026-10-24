@@ -169,13 +169,13 @@ class IdentityReviewApiTest(TestCase):
             session_key=key, session_data="x",
             expire_date=timezone.now() + timedelta(days=1),
         )
-        UserSession.objects.create(user=self.target, session_key=key, is_current=True)
+        UserSession.objects.create(user=self.target, session_key=key)
         resp = self.client.post(f"{LIST}{self.v.pk}/disable/")
         self.assertEqual(resp.status_code, 200)
         self.target.refresh_from_db()
         self.assertFalse(self.target.is_active)
         self.assertFalse(Session.objects.filter(session_key=key).exists())
-        self.assertFalse(UserSession.objects.get(user=self.target, session_key=key).is_current)
+        self.assertIsNotNone(UserSession.objects.get(user=self.target, session_key=key).revoked_at)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("停用", mail.outbox[0].subject)
 

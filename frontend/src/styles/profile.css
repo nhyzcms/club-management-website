@@ -123,3 +123,13 @@
 .danger-zone-list { margin: 0 0 var(--s-4); padding-left: 1.2em; color: var(--ink-700); font-size: 14px; line-height: 1.7; }
 .danger-zone-ack { display: flex; align-items: flex-start; gap: var(--s-2); font-size: 14px; color: var(--ink-700); }
 .danger-zone-ack input[type="checkbox"] { margin-top: 3px; }
+
+/* 登录设备（多端登录，ADR-0028）：名额条 + 设备行 + 折叠的下线历史 */
+.ps-intro { margin: 0 0 var(--s-3); font-size: 13px; line-height: 1.7; }
+.ps-quota { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-2); }
+.ps-main { min-width: 0; }
+.ps-name { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); }
+.ps-kind { font-weight: 500; }
+.ps-hint { font-size: 13px; flex-shrink: 0; }
+.ps-history { margin-top: var(--s-3); border-top: 1px solid var(--line); padding-top: var(--s-3); }
+.ps-history summary { cursor: pointer; color: var(--muted); font-size: 13px; }

@@ -10,14 +10,16 @@ const POLL_INTERVAL_MS = 15000;
 
 export default function SessionGuard({ children }: { children: ReactNode }) {
   const [takeover, setTakeover] = useState<SupersedeTakeover | null>(null);
+  const [revokedReason, setRevokedReason] = useState<string | undefined>(undefined);
   const intervalRef = useRef<number | null>(null);
   const { openLogin, authNonce } = useLoginModal();
 
   // supersede 回调：显示挤号弹窗（幂等：已显示则不覆盖）并停轮询
   useEffect(() => {
     setSupersedeHandler((result) => {
-      // result 为类型化「会话被挤下线」结果（#16）；取其 takeover 渲染弹窗
+      // result 为类型化「会话被挤下线」结果（#16 / ADR-0028）；取 takeover + 下线原因渲染弹窗
       setTakeover((prev) => prev ?? result.takeover);
+      setRevokedReason((prev) => prev ?? result.revokedReason);
       if (intervalRef.current !== null) {
         window.clearInterval(intervalRef.current);
         intervalRef.current = null;
@@ -51,13 +53,18 @@ export default function SessionGuard({ children }: { children: ReactNode }) {
 
   function handleConfirm() {
     setTakeover(null);
+    setRevokedReason(undefined);
     openLogin();
   }
 
   return (
     <>
       {children}
-      <SessionSupersedeModal takeover={takeover} onConfirm={handleConfirm} />
+      <SessionSupersedeModal
+        takeover={takeover}
+        revokedReason={revokedReason}
+        onConfirm={handleConfirm}
+      />
     </>
   );
 }

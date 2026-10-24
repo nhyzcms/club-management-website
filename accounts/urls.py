@@ -36,6 +36,9 @@ urlpatterns = [
     path("stepup/questions/", views.stepup_questions_view, name="stepup_questions"),
     path("stepup/events/", views.stepup_events_view, name="stepup_events"),
     path("sessions/", views.sessions_view, name="sessions"),
+    # 多端登录（ADR-0028）：个人中心下线单台 / 下线其他所有设备。
+    path("sessions/revoke-others/", views.sessions_revoke_others_view, name="sessions_revoke_others"),
+    path("sessions/<int:session_id>/revoke/", views.session_revoke_view, name="session_revoke"),
     path("csrf/", views.csrf_token_view, name="csrf_token"),
     path("password-reset/", views.password_reset_view, name="password_reset"),
     path("password-reset/confirm/", views.password_reset_confirm_view, name="password_reset_confirm"),

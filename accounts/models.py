@@ -540,22 +540,66 @@ class PasswordResetRequest(models.Model):
 
 
 class UserSession(models.Model):
+    """登录设备（多端登录，ADR-0028）。
+
+    一行 = 一台设备上的一个会话。**唯一真源是 ``revoked_at``**：
+
+    * ``revoked_at IS NULL`` —— 该设备仍保持登录态（在线），普通请求放行；
+    * ``revoked_at`` 非空 —— 已被顶替 / 手动下线 / 安全吊销，只留历史记录，
+      该设备的下一请求被中间件判 401 ``session_superseded``（浏览器导航给 HTML 页）。
+
+    同一账号最多 ``MAX_ACTIVE_SESSIONS``（默认 3）个在线会话。第 4 台登录时由
+    ``accounts.utils.record_user_session`` 顶掉「最久未活动」的那台（全局名额，
+    不区分客户端类型：网页 / 手机浏览器 / App 天然各占一个）。
+    """
+
+    REVOKE_LIMIT = "limit"        # 名额已满，被新设备顶替
+    REVOKE_MANUAL = "manual"      # 在个人中心被本人下线
+    REVOKE_LOGOUT = "logout"      # 本机主动退出登录
+    REVOKE_REPLACED = "replaced"  # 同一设备重新登录 / 改密轮换 session key
+    REVOKE_SECURITY = "security"  # 安全事件（停用 / 重置密码 / 注销 / 撤销认证）
+    REVOKE_REASONS = (
+        (REVOKE_LIMIT, "名额顶替"),
+        (REVOKE_MANUAL, "手动下线"),
+        (REVOKE_LOGOUT, "主动退出"),
+        (REVOKE_REPLACED, "设备重登"),
+        (REVOKE_SECURITY, "安全吊销"),
+    )
+
+    CLIENT_KINDS = (
+        ("web", "网页"),
+        ("mobile", "手机浏览器"),
+        ("app", "App"),
+    )
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="login_sessions")
     session_key = models.CharField(max_length=40, db_index=True)
+    # 设备标识（club_device Cookie）：同一台设备重新登录时复用它的名额
+    device_id = models.CharField(max_length=40, blank=True, default="", db_index=True)
+    client_kind = models.CharField(max_length=8, blank=True, default="web")
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True, default="")
     device_type = models.CharField(max_length=16, default="Unknown")
     device_name = models.CharField(max_length=128, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
-    is_current = models.BooleanField(default=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_reason = models.CharField(max_length=16, blank=True, default="")
+    # 顶替本会话的那台设备的 session_key（用于「接管设备」提示）
+    replaced_by_session_key = models.CharField(max_length=40, blank=True, default="")
 
     class Meta:
-        indexes = [models.Index(fields=["user", "is_current"])]
-        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "revoked_at"])]
+        ordering = ["-created_at", "-id"]
 
     def __str__(self):
-        state = "current" if self.is_current else "old"
+        state = "active" if self.revoked_at is None else f"revoked:{self.revoked_reason}"
         return f"{self.user.username} @ {self.session_key[:8]} ({state})"
+
+    @property
+    def is_active(self):
+        """是否仍保持登录态（``revoked_at`` 为空的派生值，不落库）。"""
+        return self.revoked_at is None
 
 
 class AuthCode(models.Model):

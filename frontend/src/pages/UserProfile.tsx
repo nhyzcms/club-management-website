@@ -30,7 +30,7 @@ const SELF_TABS = [
   { key: "security", label: "安全验证" },
   { key: "notify", label: "通知" },
   { key: "password", label: "改密码" },
-  { key: "sessions", label: "登录记录" },
+  { key: "sessions", label: "登录设备" },
   { key: "news", label: "我的新闻", divider: true },
   { key: "activities", label: "我的活动" },
   { key: "tutorials", label: "我的教程" },

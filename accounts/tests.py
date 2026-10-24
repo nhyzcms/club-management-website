@@ -102,11 +102,16 @@ class LogoutViewTest(TestCase):
         response = self.client.post("/auth/logout/")
         self.assertEqual(response.status_code, 302)
 
-    def test_logout_clears_current_session_row(self):
+    def test_logout_revokes_only_this_device(self):
+        # 多端登录（ADR-0028）：退出当前设备只下线本机，其他设备保持登录态。
+        other = Client()
+        other.login(username="testuser", password="secret123")
         self.client.login(username="testuser", password="secret123")
-        self.assertTrue(UserSession.objects.filter(user=self.user, is_current=True).exists())
         self.client.post("/auth/logout/")
-        self.assertFalse(UserSession.objects.filter(user=self.user, is_current=True).exists())
+        self.assertEqual(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True).count(), 1
+        )
+        self.assertEqual(other.get("/auth/me/").status_code, 200)
 
 
 class MeViewTest(TestCase):
@@ -289,7 +294,7 @@ class UserSessionModelTest(TestCase):
 
     def test_create_session_defaults(self):
         s = UserSession.objects.create(user=self.user, session_key="abc")
-        self.assertTrue(s.is_current)
+        self.assertTrue(s.is_active)
         self.assertEqual(s.device_type, "Unknown")
         self.assertEqual(s.device_name, "")
 
@@ -346,26 +351,59 @@ class RecordUserSessionTest(TestCase):
             HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
         )
 
-    def test_creates_current_row(self):
+    def test_creates_online_row(self):
         record_user_session(self._req(), self.user, "keyA")
         s = UserSession.objects.get(session_key="keyA")
-        self.assertTrue(s.is_current)
+        self.assertTrue(s.is_active)
+        self.assertIsNotNone(s.last_seen_at)
+        self.assertEqual(s.client_kind, "web")
         self.assertEqual(s.ip_address, "9.9.9.9")
         self.assertEqual(s.device_type, "Desktop")
 
-    def test_second_login_supersedes_first(self):
-        record_user_session(self._req(), self.user, "keyA")
-        record_user_session(self._req(), self.user, "keyB")
-        # 历史保留：两行都在；is_current 仅 keyB
-        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 2)
-        current = UserSession.objects.get(user=self.user, is_current=True)
-        self.assertEqual(current.session_key, "keyB")
+    def test_three_devices_stay_online(self):
+        for key in ("keyA", "keyB", "keyC"):
+            record_user_session(self._req(), self.user, key)
+        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 3)
+        self.assertEqual(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True).count(), 3
+        )
+
+    def test_fourth_login_evicts_least_recently_used(self):
+        for key in ("keyA", "keyB", "keyC"):
+            record_user_session(self._req(), self.user, key)
+        now = timezone.now()
+        UserSession.objects.filter(session_key="keyA").update(last_seen_at=now - timedelta(hours=3))
+        UserSession.objects.filter(session_key="keyB").update(last_seen_at=now - timedelta(hours=2))
+        UserSession.objects.filter(session_key="keyC").update(last_seen_at=now - timedelta(hours=1))
+        record_user_session(self._req(), self.user, "keyD")
+        evicted = UserSession.objects.get(session_key="keyA")
+        self.assertIsNotNone(evicted.revoked_at)
+        self.assertEqual(evicted.revoked_reason, UserSession.REVOKE_LIMIT)
+        self.assertEqual(evicted.replaced_by_session_key, "keyD")
+        active = set(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True)
+            .values_list("session_key", flat=True)
+        )
+        self.assertEqual(active, {"keyB", "keyC", "keyD"})
 
     def test_same_key_updates_in_place(self):
         record_user_session(self._req(), self.user, "keyA")
         record_user_session(self._req(), self.user, "keyA")
         self.assertEqual(UserSession.objects.filter(session_key="keyA").count(), 1)
-        self.assertTrue(UserSession.objects.get(session_key="keyA").is_current)
+        self.assertTrue(UserSession.objects.get(session_key="keyA").is_active)
+
+    def test_same_device_relogin_reuses_its_slot(self):
+        # 同一台设备（相同 club_device Cookie）重新登录：旧会话让位，不额外占名额。
+        req = self.factory.get("/", HTTP_COOKIE="club_device=dev-1")
+        record_user_session(req, self.user, "keyA")
+        record_user_session(req, self.user, "keyB")
+        active = list(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True)
+            .values_list("session_key", flat=True)
+        )
+        self.assertEqual(active, ["keyB"])
+        old = UserSession.objects.get(session_key="keyA")
+        self.assertEqual(old.revoked_reason, UserSession.REVOKE_REPLACED)
 
     def test_history_pruned_to_limit(self):
         # 制造 25 次登录：保留最近 20 条，最旧的被裁掉
@@ -373,9 +411,9 @@ class RecordUserSessionTest(TestCase):
             record_user_session(self._req(), self.user, f"key{i:02d}")
         rows = list(UserSession.objects.filter(user=self.user).order_by("created_at", "id"))
         self.assertEqual(len(rows), 20, "应精确裁剪到 20 条")  # 改为精确断言确保失败
-        # 当前会话（最后一次 key24）必在保留之列且为 current
-        current = UserSession.objects.get(user=self.user, is_current=True)
-        self.assertEqual(current.session_key, "key24")
+        # 最新那次（key24）必在保留之列且在线
+        current = UserSession.objects.get(session_key="key24")
+        self.assertTrue(current.is_active)
         self.assertIn(current.id, [r.id for r in rows]) # type: ignore
 
 
@@ -387,7 +425,7 @@ class LoginSignalIntegrationTest(TestCase):
         c = Client()
         c.login(username="u", password="secret123")
         s = UserSession.objects.get(user=self.user)
-        self.assertTrue(s.is_current)
+        self.assertTrue(s.is_active)
         self.assertTrue(s.session_key)
 
     def test_login_records_device_info(self):
@@ -402,69 +440,91 @@ class LoginSignalIntegrationTest(TestCase):
         s = UserSession.objects.get(user=self.user)
         self.assertEqual(s.ip_address, "1.2.3.4")
         self.assertEqual(s.device_type, "Desktop")
+        self.assertEqual(s.client_kind, "web")
         self.assertIn("Chrome", s.device_name)
 
-    def test_second_device_login_leaves_single_current_row(self):
-        a = Client()
-        a.login(username="u", password="secret123")
-        b = Client()
-        b.login(username="u", password="secret123")
-        self.assertEqual(UserSession.objects.filter(user=self.user, is_current=True).count(), 1)
+    def test_three_devices_stay_online(self):
+        for _ in range(3):
+            Client().login(username="u", password="secret123")
+        self.assertEqual(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True).count(), 3
+        )
 
 
-class SingleSessionMiddlewareTest(TestCase):
+class MultiDeviceSessionMiddlewareTest(TestCase):
+    """多端登录（ADR-0028）：最多 3 台设备同时在线；第 4 台顶掉最久未活动的那台。"""
+
+    DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0"
+    MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari"
+    APP_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 NhyzClubApp/0.2.0"
+
     def setUp(self):
         self.user = User.objects.create_user(username="u", email="u@e.com", password="secret123")
 
-    def _login(self):
+    def _login(self, ua=DESKTOP_UA):
         c = Client()
-        c.login(username="u", password="secret123")
+        resp = c.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "secret123"}),
+            content_type="application/json",
+            HTTP_USER_AGENT=ua,
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
         return c
+
+    def _row(self, client):
+        return UserSession.objects.get(session_key=client.session.session_key)
 
     def test_first_device_can_access(self):
         a = self._login()
         self.assertEqual(a.get("/auth/me/").status_code, 200)
 
-    def test_superseded_device_gets_401_with_takeover(self):
-        a = self._login()
-        # 老化 a 的当前会话到保护期外（≥10 分钟），b 才能挤号
-        UserSession.objects.filter(user=self.user, is_current=True).update(
-            created_at=timezone.now() - timedelta(minutes=11)
+    def test_three_devices_online_at_once(self):
+        a = self._login(self.DESKTOP_UA)
+        b = self._login(self.MOBILE_UA)
+        c = self._login(self.APP_UA)
+        for client in (a, b, c):
+            self.assertEqual(client.get("/auth/me/").status_code, 200)
+        rows = UserSession.objects.filter(user=self.user, revoked_at__isnull=True)
+        self.assertEqual(rows.count(), 3)
+        self.assertEqual(
+            set(rows.values_list("client_kind", flat=True)), {"web", "mobile", "app"}
         )
-        b = Client()
-        b.post(
-            "/auth/login/",
-            data=json.dumps({"username": "u", "password": "secret123"}),
-            content_type="application/json",
-            HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari",
-        )
+
+    def _make_fourth_device(self):
+        """让 a/b/c 依次更「近来活跃」，再用第 4 台设备登录；返回 (a, b, c, d)。"""
+        a = self._login(self.DESKTOP_UA)
+        b = self._login(self.MOBILE_UA)
+        c = self._login(self.APP_UA)
+        now = timezone.now()
+        for client, hours in ((a, 3), (b, 2), (c, 1)):
+            UserSession.objects.filter(pk=self._row(client).pk).update(
+                last_seen_at=now - timedelta(hours=hours)
+            )
+        d = self._login(self.DESKTOP_UA)
+        return a, b, c, d
+
+    def test_fourth_device_evicts_least_recently_used(self):
+        a, b, c, d = self._make_fourth_device()
+        oldest = self._row(a)
+        self.assertIsNotNone(oldest.revoked_at)
+        self.assertEqual(oldest.revoked_reason, UserSession.REVOKE_LIMIT)
+        self.assertEqual(oldest.replaced_by_session_key, d.session.session_key)
+        # 契约（#10）：被顶设备 401 + reason + revoked_reason + takeover 四字段。
         resp = a.get("/auth/me/")
-        # 契约（#10）：被挤设备得到 401 + reason + takeover 四字段。前端适配器据此
-        # 映射成类型化「会话被挤下线」结果，故此处把响应形状钉死。
         data = resp.json()
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(data["reason"], "session_superseded")
+        self.assertEqual(data["revoked_reason"], "limit")
         takeover = data["takeover"]
-        self.assertIsInstance(takeover, dict)
-        # takeover 恰含四字段（前端 SessionSupersedeModal 直接消费）；ip 可为 null。
         self.assertEqual(set(takeover.keys()), {"device_name", "device_type", "ip", "time"})
-        self.assertEqual(takeover["device_type"], "Mobile")
-        self.assertIn("iOS", takeover["device_name"])
+        self.assertEqual(takeover["device_type"], "Desktop")
         self.assertIsInstance(takeover["time"], str)
+        for client in (b, c, d):
+            self.assertEqual(client.get("/auth/me/").status_code, 200)
 
-    def test_superseded_browser_navigation_gets_html_page(self):
-        # 浏览器导航（Accept 含 text/html）→ 渲染 HTML 下线页（而非裸 JSON）
-        a = self._login()
-        UserSession.objects.filter(user=self.user, is_current=True).update(
-            created_at=timezone.now() - timedelta(minutes=11)
-        )
-        b = Client()
-        b.post(
-            "/auth/login/",
-            data=json.dumps({"username": "u", "password": "secret123"}),
-            content_type="application/json",
-            HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari",
-        )
+    def test_evicted_browser_navigation_gets_html_page(self):
+        a, _b, _c, _d = self._make_fourth_device()
         resp = a.get(
             "/auth/me/",
             HTTP_ACCEPT="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -472,31 +532,15 @@ class SingleSessionMiddlewareTest(TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertIn("text/html", resp["Content-Type"])
         html = resp.content.decode()
-        self.assertIn("您已被迫下线", html)
-        self.assertIn("Mobile", html)  # 接管设备信息展示在页面上（来自 b 的 UA）
+        self.assertIn("该设备已退出登录", html)
+        self.assertIn("3 台设备", html)
         self.assertIn("重新登录", html)
 
-    def test_superseded_api_request_keeps_json_contract(self):
-        # Accept 不含 text/html（SPA fetch 默认 */*）→ 保持既有 JSON 契约（#10）
-        a = self._login()
-        UserSession.objects.filter(user=self.user, is_current=True).update(
-            created_at=timezone.now() - timedelta(minutes=11)
-        )
-        b = Client()
-        b.post(
-            "/auth/login/",
-            data=json.dumps({"username": "u", "password": "secret123"}),
-            content_type="application/json",
-            HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari",
-        )
+    def test_evicted_api_request_keeps_json_contract(self):
+        a, _b, _c, _d = self._make_fourth_device()
         resp = a.get("/auth/me/", HTTP_ACCEPT="*/*")
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.json()["reason"], "session_superseded")
-
-    def test_new_device_can_access_after_takeover(self):
-        a = self._login()
-        b = self._login()
-        self.assertEqual(b.get("/auth/me/").status_code, 200)
 
     def test_anonymous_request_passes_through(self):
         # /auth/me/ is login_required → anonymous gets 302, not a 500 from the middleware
@@ -506,7 +550,67 @@ class SingleSessionMiddlewareTest(TestCase):
         a = self._login()
         UserSession.objects.all().delete()  # simulate a session that predates this feature
         self.assertEqual(a.get("/auth/me/").status_code, 200)
-        self.assertTrue(UserSession.objects.filter(user=self.user, is_current=True).exists())
+        self.assertTrue(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True).exists()
+        )
+
+    def test_manual_revoke_kicks_device(self):
+        a = self._login(self.DESKTOP_UA)
+        b = self._login(self.MOBILE_UA)
+        row_a = self._row(a)
+        resp = b.post(f"/auth/sessions/{row_a.id}/revoke/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["revoked"])
+        kicked = a.get("/auth/me/")
+        self.assertEqual(kicked.status_code, 401)
+        self.assertEqual(kicked.json()["revoked_reason"], "manual")
+        self.assertEqual(b.get("/auth/me/").status_code, 200)
+
+    def test_revoke_others_keeps_current_device(self):
+        a = self._login(self.DESKTOP_UA)
+        b = self._login(self.MOBILE_UA)
+        c = self._login(self.APP_UA)
+        resp = b.post("/auth/sessions/revoke-others/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["revoked"], 2)
+        self.assertEqual(resp.json()["active_count"], 1)
+        self.assertEqual(a.get("/auth/me/").status_code, 401)
+        self.assertEqual(c.get("/auth/me/").status_code, 401)
+        self.assertEqual(b.get("/auth/me/").status_code, 200)
+
+    def test_cannot_revoke_other_users_session(self):
+        a = self._login()
+        User.objects.create_user(username="other", password="secret123")
+        other = Client()
+        other.login(username="other", password="secret123")
+        row = UserSession.objects.get(user__username="other")
+        self.assertEqual(a.post(f"/auth/sessions/{row.id}/revoke/").status_code, 404)
+
+    def test_device_cookie_issued_and_reused(self):
+        c = Client()
+        resp = c.get("/auth/csrf/")  # 任意匿名响应都会下发设备 Cookie
+        self.assertIn("club_device", resp.cookies)
+        cookie = resp.cookies["club_device"].value
+        self._login()  # 另一台设备，确保不影响下面的断言
+        UserSession.objects.all().delete()
+        c.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "secret123"}),
+            content_type="application/json",
+            HTTP_USER_AGENT=self.DESKTOP_UA,
+        )
+        first = UserSession.objects.get(user=self.user, revoked_at__isnull=True)
+        self.assertEqual(first.device_id, cookie)
+        # 同一设备重新登录 → 仍然只占一个名额
+        c.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "secret123"}),
+            content_type="application/json",
+            HTTP_USER_AGENT=self.DESKTOP_UA,
+        )
+        self.assertEqual(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True).count(), 1
+        )
 
 
 class CrossUserReloginTest(TestCase):
@@ -522,7 +626,7 @@ class CrossUserReloginTest(TestCase):
         bbb = User.objects.get(username="bbb")
         # B must have a current UserSession row:
         self.assertTrue(
-            UserSession.objects.filter(user=bbb, is_current=True).exists(),
+            UserSession.objects.filter(user=bbb, revoked_at__isnull=True).exists(),
             "second-user login on a shared session did not record a UserSession row",
         )
         # And B must be able to access an authenticated view (not kicked):
@@ -530,7 +634,11 @@ class CrossUserReloginTest(TestCase):
 
 
 class LoginProtectionTest(TestCase):
-    """10 分钟登录保护：登录后 10 分钟内，他方新会话登录该账号被拒绝。"""
+    """登录保护（ADR-0028）：10 分钟窗口内最多 5 次成功登录。
+
+    单会话时代的「他方 10 分钟内不许登录」已取消——三端同时登录是产品要求。
+    """
+
     def setUp(self):
         self.user = User.objects.create_user(username="u", email="u@e.com", password="secret123")
 
@@ -542,56 +650,38 @@ class LoginProtectionTest(TestCase):
             **extra,
         )
 
-    def test_second_login_within_window_is_blocked(self):
-        a = Client()
-        a.login(username="u", password="secret123")  # 建立当前会话（age≈0）
-        b = Client()
-        resp = self._post_login(b)
-        # 契约（#10）：保护期登录被拒 409 + reason + retry_after（数值，秒）。
-        # 注：本契约为 409（Conflict），非 401——后端语义自始如此，此处钉死
-        # （与挤号的 401 区分：挤号是「你已被顶下线」，保护期是「他方刚登录、暂拒」）。
+    def test_three_devices_login_back_to_back(self):
+        clients = []
+        for ua in (
+            "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari",
+            "Mozilla/5.0 (Linux; Android 14) NhyzClubApp/0.2.0",
+        ):
+            c = Client()
+            resp = self._post_login(c, HTTP_USER_AGENT=ua)
+            self.assertEqual(resp.status_code, 200, resp.content)
+            clients.append(c)
+        for c in clients:
+            self.assertEqual(c.get("/auth/me/").status_code, 200)
+        self.assertEqual(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True).count(), 3
+        )
+
+    def test_sixth_login_within_window_is_blocked(self):
+        for _ in range(5):
+            self.assertEqual(self._post_login(Client()).status_code, 200)
+        resp = self._post_login(Client())
         data = resp.json()
+        # 契约（#10）：409 + reason + retry_after（数值，秒）。
         self.assertEqual(resp.status_code, 409)
         self.assertEqual(data["reason"], "login_protection")
         self.assertIsInstance(data["retry_after"], int)
         self.assertGreater(data["retry_after"], 0)
         self.assertLessEqual(data["retry_after"], 600)
-        # a 仍是当前会话、可继续访问
-        self.assertEqual(UserSession.objects.filter(user=self.user, is_current=True).count(), 1)
-        self.assertEqual(a.get("/auth/me/").status_code, 200)
-
-    def test_second_login_after_window_is_allowed(self):
-        a = Client()
-        a.login(username="u", password="secret123")
-        UserSession.objects.filter(user=self.user, is_current=True).update(
-            created_at=timezone.now() - timedelta(minutes=11)
-        )
-        b = Client()
-        resp = self._post_login(b)
-        self.assertEqual(resp.status_code, 200)
-        # a 现已被挤下线
-        self.assertEqual(a.get("/auth/me/").status_code, 401)
-
-    def test_logout_releases_protection(self):
-        a = Client()
-        a.login(username="u", password="secret123")
-        a.post("/auth/logout/")  # 主动登出 → 清 is_current（依赖 Task 2）
-        b = Client()
-        resp = self._post_login(b)
-        self.assertEqual(resp.status_code, 200)
-
-    def test_same_session_reauth_is_exempt(self):
-        c = Client()
-        c.login(username="u", password="secret123")  # 当前会话 = c 的 session_key
-        # 同一 client（同一 session_key）再次提交登录 → 不拦截
-        resp = self._post_login(c)
-        self.assertEqual(resp.status_code, 200)
 
     def test_wrong_password_not_treated_as_protection(self):
-        a = Client()
-        a.login(username="u", password="secret123")
-        b = Client()
-        resp = b.post(
+        self._post_login(Client())
+        resp = Client().post(
             "/auth/login/",
             data=json.dumps({"username": "u", "password": "wrong"}),
             content_type="application/json",
@@ -601,7 +691,7 @@ class LoginProtectionTest(TestCase):
 
 
 class SessionsViewTest(TestCase):
-    """GET /auth/sessions/：返回本人最近 20 条登录记录（按时间倒序，含 is_current）。"""
+    """GET /auth/sessions/：登录设备与名额（ADR-0028）。"""
 
     def setUp(self):
         self.user = User.objects.create_user(
@@ -627,25 +717,42 @@ class SessionsViewTest(TestCase):
 
     def test_response_shape_and_device_info(self):
         c = self._login()
-        row = c.get("/auth/sessions/").json()["results"][0]
-        for key in ("id", "device_name", "device_type", "ip_address", "created_at", "is_current"):
+        data = c.get("/auth/sessions/").json()
+        self.assertEqual(data["max_active"], 3)
+        self.assertEqual(data["active_count"], 1)
+        row = data["results"][0]
+        for key in (
+            "id", "device_name", "device_type", "client_kind", "ip_address",
+            "created_at", "last_seen_at", "is_active", "is_this_device",
+            "revoked_at", "revoked_reason",
+        ):
             self.assertIn(key, row)
         self.assertEqual(row["ip_address"], "5.6.7.8")
         self.assertEqual(row["device_type"], "Desktop")
+        self.assertEqual(row["client_kind"], "web")
         self.assertIn("Chrome", row["device_name"])
-        self.assertTrue(row["is_current"])
+        self.assertTrue(row["is_this_device"])
+        self.assertTrue(row["is_active"])
+        self.assertIsNone(row["revoked_at"])
+        self.assertEqual(row["revoked_reason"], "")
 
     def test_ordered_desc_current_first(self):
         c = self._login()  # 当前会话：最新
         base = timezone.now() - timedelta(hours=2)
         # 先创建再 update created_at（auto_now_add 会覆盖 create 时的显式值）
-        h1 = UserSession.objects.create(user=self.user, session_key="h1", is_current=False)
-        h2 = UserSession.objects.create(user=self.user, session_key="h2", is_current=False)
+        h1 = UserSession.objects.create(
+            user=self.user, session_key="h1", revoked_at=timezone.now(),
+            revoked_reason=UserSession.REVOKE_LOGOUT,
+        )
+        h2 = UserSession.objects.create(
+            user=self.user, session_key="h2", revoked_at=timezone.now(),
+            revoked_reason=UserSession.REVOKE_LOGOUT,
+        )
         UserSession.objects.filter(pk=h1.pk).update(created_at=base)
         UserSession.objects.filter(pk=h2.pk).update(created_at=base + timedelta(minutes=30))
         results = c.get("/auth/sessions/").json()["results"]
         self.assertEqual(len(results), 3)
-        self.assertTrue(results[0]["is_current"])  # 最新（当前会话）排第一
+        self.assertTrue(results[0]["is_this_device"])  # 最新（本机）排第一
         times = [r["created_at"] for r in results]
         self.assertEqual(times, sorted(times, reverse=True))
 
@@ -666,7 +773,8 @@ class SessionsViewTest(TestCase):
             UserSession.objects.create(
                 user=self.user,
                 session_key=f"extra{i:02d}",
-                is_current=False,
+                revoked_at=timezone.now(),
+                revoked_reason=UserSession.REVOKE_LOGOUT,
                 created_at=base + timedelta(seconds=i),
             )
         results = c.get("/auth/sessions/").json()["results"]
@@ -1029,7 +1137,7 @@ class UsersViewTest(TestCase):
 
 
 class SessionsEnvelopeTest(TestCase):
-    """GET /auth/sessions/ —— 信封补全：count/next/previous/results 齐备（数据本身单页）。"""
+    """GET /auth/sessions/ —— 信封补全：count/next/previous/results + 名额字段。"""
 
     def setUp(self):
         self.user = User.objects.create_user(username="sess-env", password="secret123")
@@ -1044,7 +1152,12 @@ class SessionsEnvelopeTest(TestCase):
             HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
         )
         data = c.get("/auth/sessions/").json()
-        self.assertEqual(set(data.keys()), {"count", "next", "previous", "results"})
+        self.assertEqual(
+            set(data.keys()),
+            {"count", "next", "previous", "results", "max_active", "active_count"},
+        )
+        self.assertEqual(data["max_active"], 3)
+        self.assertEqual(data["active_count"], 1)
         self.assertEqual(data["count"], len(data["results"]))
         self.assertIsNone(data["next"])
         self.assertIsNone(data["previous"])

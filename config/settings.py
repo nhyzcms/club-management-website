@@ -140,7 +140,7 @@ MIDDLEWARE = [
     'accounts.middleware.ValidityEnforcementMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'accounts.middleware.SingleSessionMiddleware',
+    'accounts.middleware.MultiDeviceSessionMiddleware',
     'accounts.middleware.LoginThrottleMiddleware',
     # tus 可续传上传：把 Tus-* / Upload-* 请求头解析到 request 属性上。
     'rest_framework_tus.middleware.TusMiddleware',
