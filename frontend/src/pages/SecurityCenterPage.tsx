@@ -27,6 +27,7 @@ interface Row {
 export default function SecurityCenterPage() {
   const [overview, setOverview] = useState<SecurityOverview | null>(null);
   const [search] = useSearchParams();
+  const bindHint = search.get("bind") === "1";
   // 从验证页回跳时带 ?tab=password|questions|totp，自动展开对应面板
   const initialTab = search.get("tab");
   const [open, setOpen] = useState<RowKey | null>(
@@ -35,8 +36,6 @@ export default function SecurityCenterPage() {
       : null,
   );
   const [error, setError] = useState("");
-  const [search] = useSearchParams();
-  const bindHint = search.get("bind") === "1";
 
   const load = () => {
     securityApi
