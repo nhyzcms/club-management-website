@@ -1052,9 +1052,12 @@ def register_view(request):
     if errors:
         return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
 
-    # 注册查重（2026-10）：用户名 / 真实姓名 / 邮箱命中任一 → 视为同一账户，
-    # 不再允许重复注册，直接引导回登录（见 accounts.registration_guard）。
-    duplicate = find_duplicate(username=username, real_name=real_name, email=email)
+    # 注册查重（2026-10）：用户名 / 邮箱各自唯一；真实姓名**不单独**判重，
+    # 只有「姓名 + 校牌号」同时一致才视为同一账户（同名学生可以各自注册）。
+    # 命中即引导回登录（见 accounts.registration_guard）。
+    duplicate = find_duplicate(
+        username=username, real_name=real_name, card_no=card_no, email=email,
+    )
     if duplicate is not None:
         return JsonResponse(
             {

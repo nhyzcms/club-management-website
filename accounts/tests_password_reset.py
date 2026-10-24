@@ -14,7 +14,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 
-from .models import PasswordResetRequest, Profile, UserSession, Verification
+from .models import MemberIdentity, PasswordResetRequest, Profile, UserSession, Verification
 
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
@@ -45,7 +45,9 @@ class RegistrationDuplicateTest(TestCase):
         self.existing = User.objects.create_user(
             username="olduser", email="old@163.com", password="StrongPass123!",
         )
-        Profile.objects.create(user=self.existing, real_name="李四", identity="student")
+        Profile.objects.create(
+            user=self.existing, real_name="李四", identity="student", card_no="A-1024",
+        )
 
     def post(self, **overrides):
         return self.client.post("/auth/register/", data=register_payload(**overrides))
@@ -58,16 +60,44 @@ class RegistrationDuplicateTest(TestCase):
         self.assertEqual(body["field"], "username")
         self.assertIn("请登录原账户", body["error"])
 
-    def test_duplicate_real_name_rejected_even_with_new_username(self):
+    # 2026-10-24 调整：真实姓名不单独判重（校内同名同姓很常见），
+    # 只有「姓名 + 校牌号」同时一致才视为同一账户。
+    def test_same_real_name_without_card_allowed(self):
         resp = self.post(username="another", real_name="李四")
-        self.assertEqual(resp.status_code, 409, resp.content)
-        self.assertEqual(resp.json()["field"], "real_name")
+        self.assertEqual(resp.status_code, 201, resp.content)
 
-    def test_duplicate_real_name_normalized(self):
-        # 全角空格 / 连续空白 / 首尾空白归一后仍判重
-        resp = self.post(username="another2", real_name="  李　四 ")
+    def test_same_real_name_and_card_rejected(self):
+        resp = self.post(username="another2", real_name="李四", card_no=" a-1024 ")
         self.assertEqual(resp.status_code, 409, resp.content)
-        self.assertEqual(resp.json()["field"], "real_name")
+        body = resp.json()
+        self.assertEqual(body["field"], "real_name_card_no")
+        self.assertIn("请登录原账户", body["error"])
+
+    def test_same_name_and_card_normalized(self):
+        # 全角空格 / 连续空白 / 首尾空白归一后仍判重；校牌号去空白、大小写不敏感
+        resp = self.post(username="another3", real_name="  李　四 ", card_no="a-1024")
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["field"], "real_name_card_no")
+
+    def test_same_name_different_card_allowed(self):
+        resp = self.post(username="another4", real_name="李四", card_no="A-9999")
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_same_card_different_name_allowed(self):
+        resp = self.post(username="another5", real_name="王五", card_no="A-1024")
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_same_name_and_roster_card_rejected_when_profile_blank(self):
+        # 历史账号只绑了名册、Profile.card_no 还没回写：仍要拦住
+        self.existing.profile.card_no = ""
+        self.existing.profile.save(update_fields=["card_no"])
+        MemberIdentity.objects.create(
+            name="李四", card_no="B-2000", admit_year=2025, cohort=1,
+            code="25010101", user=self.existing, bind_method=MemberIdentity.BIND_ADMIN,
+        )
+        resp = self.post(username="another6", real_name="李四", card_no="b-2000")
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["field"], "real_name_card_no")
 
     def test_duplicate_bound_email_rejected(self):
         resp = self.post(username="another3", real_name="王五", email="OLD@163.com")

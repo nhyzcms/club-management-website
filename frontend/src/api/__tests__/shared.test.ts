@@ -118,8 +118,8 @@ describe("humanizeApiError", () => {
       .toContain("用户名已注册，请登录原账户");
     expect(humanizeApiError({ kind: "account_exists", field: "email" }))
       .toContain("邮箱已注册，请登录原账户");
-    expect(humanizeApiError({ kind: "account_exists", field: "real_name" }))
-      .toContain("真实姓名已注册，请登录原账户");
+    expect(humanizeApiError({ kind: "account_exists", field: "real_name_card_no" }))
+      .toContain("姓名 + 校牌号已注册，请登录原账户");
     expect(humanizeApiError({ kind: "account_deleted" })).toContain("已注销");
     expect(humanizeApiError({ kind: "password_change_required" })).toContain("修改密码");
   });

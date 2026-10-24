@@ -140,7 +140,13 @@ export function humanizeApiError(err: ApiError): string {
       return EMAIL_DOMAIN_BLOCKED_MESSAGE;
     case "account_exists": {
       const label =
-        err.field === "username" ? "用户名" : err.field === "email" ? "邮箱" : "真实姓名";
+        err.field === "username"
+          ? "用户名"
+          : err.field === "email"
+            ? "邮箱"
+            : err.field === "real_name_card_no"
+              ? "姓名 + 校牌号"
+              : "真实姓名";
       return `该${label}已注册，请登录原账户。`;
     }
     case "account_deleted":
