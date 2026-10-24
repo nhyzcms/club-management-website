@@ -295,6 +295,10 @@ SECURE_HSTS_SECONDS = _https["SECURE_HSTS_SECONDS"]
 SESSION_COOKIE_SECURE = _https["SESSION_COOKIE_SECURE"]
 CSRF_COOKIE_SECURE = _https["CSRF_COOKIE_SECURE"]
 
+# 「记住登录」勾选时的会话有效期（30 天）。不勾 → login_view 调 set_expiry(0)，
+# Django 按浏览器会话 cookie 处理（max-age 不下发，关闭浏览器即失效）。
+REMEMBER_LOGIN_SECONDS = 30 * 24 * 60 * 60
+
 # ---- 邮件 / SMTP ----
 # 163 邮箱 SMTP：配了 EMAIL_HOST_USER（+ EMAIL_HOST_PASSWORD 授权码）即切到 SMTP，
 # 否则 dev 用 console 后端（邮件打终端，便于本地调试注册 / 重置流程）。

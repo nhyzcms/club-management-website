@@ -241,6 +241,11 @@ def login_view(request):
         user=candidate, must_change_password=True,
     ).exists()
     request.session["pwd_change_required"] = must_change
+    # 「记住登录」：勾选 → 持久 cookie（settings.REMEMBER_LOGIN_SECONDS = 30 天）；
+    # 不勾 → set_expiry(0)，Django 视为浏览器会话 cookie（max-age 不下发，关浏览器失效）。
+    request.session.set_expiry(
+        settings.REMEMBER_LOGIN_SECONDS if form.cleaned_data.get("remember") else 0
+    )
     return JsonResponse({
         "user": {"id": candidate.id, "username": candidate.username, "email": candidate.email},
         "must_change_password": must_change,

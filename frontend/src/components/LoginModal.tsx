@@ -30,7 +30,11 @@ export default function LoginModal({
   const [method, setMethod] = useState<Method>("username");
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(false);
+  // 桌面默认不勾（公共设备安全）；移动端默认勾选——微信内置浏览器常被系统杀进程，
+  // 不勾会频繁要求重新登录。
+  const [remember, setRemember] = useState(
+    () => typeof navigator !== "undefined" && /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent),
+  );
   const [error, setError] = useState("");
   const [resendEmail, setResendEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -70,8 +74,8 @@ export default function LoginModal({
     try {
       const result: any =
         method === "username"
-          ? await api.login(account.trim(), password)
-          : await api.loginWithEmail(account.trim(), password);
+          ? await api.login(account.trim(), password, remember)
+          : await api.loginWithEmail(account.trim(), password, remember);
 
       // 管理员重置过密码：本次登录直接进强制改密页（后端中间件也会拦住其他接口）。
       if (result?.must_change_password) {

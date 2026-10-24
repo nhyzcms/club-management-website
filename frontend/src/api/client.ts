@@ -3,11 +3,11 @@ import { createRequest } from "./shared";
 const request = createRequest("/auth");
 
 export const api = {
-  login: (username: string, password: string) =>
-    request("/login/", { method: "POST", body: JSON.stringify({ username, password }) }),
+  login: (username: string, password: string, remember = false) =>
+    request("/login/", { method: "POST", body: JSON.stringify({ username, password, remember }) }),
 
-  loginWithEmail: (email: string, password: string) =>
-    request("/login/", { method: "POST", body: JSON.stringify({ email, password }) }),
+  loginWithEmail: (email: string, password: string, remember = false) =>
+    request("/login/", { method: "POST", body: JSON.stringify({ email, password, remember }) }),
 
   logout: () =>
     request("/logout/", { method: "POST" }),
