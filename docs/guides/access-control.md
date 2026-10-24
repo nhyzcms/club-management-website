@@ -84,6 +84,7 @@
 | `can_manage_comment_thread` | `messaging.manage_comment_thread` |
 | `can_manage_announcement` | `messaging.manage_announcement` |
 | `can_manage_announcements` | `announcements.manage_announcements` |
+| `can_review_password_reset` | `accounts.review_password_reset` |
 | `can_mute_user` | `messaging.mute_user` |
 
 - 能力是**纯角色投影**（“凭你的角色能不能做 X”）；对象级判断（“能不能动**这条**”）由前端拿 `is_owner` / 对象字段另行组合（如编辑按钮显隐 = `can_manage_tasks || is_creator`）。

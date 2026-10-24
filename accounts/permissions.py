@@ -32,3 +32,13 @@ class CanReviewIdentity(permissions.BasePermission):
         return bool(
             user and user.is_authenticated and user.has_perm("accounts.can_review_identity")
         )
+
+
+class CanReviewPasswordReset(permissions.BasePermission):
+    """密码重置申请审批：持 accounts.review_password_reset。"""
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user and user.is_authenticated and user.has_perm("accounts.review_password_reset")
+        )

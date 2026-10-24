@@ -134,6 +134,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # 管理员重置密码后的强制改密闸门：须在 AuthenticationMiddleware 之后。
+    'accounts.middleware.PasswordChangeRequiredMiddleware',
     # 身份有效期惰性执行（ADR-0041）：须在 AuthenticationMiddleware 之后（依赖 request.user）。
     'accounts.middleware.ValidityEnforcementMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',

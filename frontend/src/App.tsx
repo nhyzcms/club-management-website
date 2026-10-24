@@ -12,6 +12,7 @@ import { fetchSitePolicy } from "./api/sitePolicy";
 import { isMobileDevice } from "./utils/device";
 
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
+const ForcePasswordChangePage = lazy(() => import("./pages/ForcePasswordChangePage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
 const RegisterPage = lazy(() => import("./pages/RegisterPage"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
@@ -117,6 +118,10 @@ export default function App() {
       <Suspense fallback={<Loading />}>
         <Routes>
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route
+            path="/change-password-required"
+            element={<ProtectedRoute><ForcePasswordChangePage /></ProtectedRoute>}
+          />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />

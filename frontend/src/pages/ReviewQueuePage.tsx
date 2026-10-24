@@ -3,10 +3,16 @@ import { Link, useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import { api } from "../api/client";
 import { identityReviewsApi } from "../api/identityReviews";
+import { passwordResetApi } from "../api/passwordReset";
 import { reviewsApi } from "../api/reviews";
 import { feedbackApi } from "../api/feedback";
 import { reportsApi } from "../api/reports";
 import ReviewPreview from "./review/ReviewPreview";
+import PasswordResetPane from "./review/PasswordResetPane";
+import {
+  type PasswordResetRequestItem,
+  type PasswordResetStatus,
+} from "../types/passwordReset";
 import {
   IDENTITY_LABELS,
   IDENTITY_STATUS_BADGE,
@@ -24,6 +30,7 @@ import {
   firstContent,
   firstFeedback,
   firstIdentity,
+  firstPasswordReset,
   firstReport,
   type DeskKind,
 } from "../utils/reviewDesk";
@@ -59,6 +66,7 @@ export default function ReviewQueuePage() {
   const [canIdentity, setCanIdentity] = useState(false);
   const [canFeedback, setCanFeedback] = useState(false);
   const [canReports, setCanReports] = useState(false);
+  const [canPasswordReset, setCanPasswordReset] = useState(false);
   const [denied, setDenied] = useState(false);
   const [booting, setBooting] = useState(true);
 
@@ -67,11 +75,13 @@ export default function ReviewQueuePage() {
   const [contentStatus, setContentStatus] = useState<ReviewStatus | "">("pending");
   const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus | "">("pending");
   const [reportStatus, setReportStatus] = useState<ReportStatus | "">("open");
+  const [passwordResetStatus, setPasswordResetStatus] = useState<PasswordResetStatus>("pending");
 
   const [identityItem, setIdentityItem] = useState<IdentityReviewItem | null>(null);
   const [contentRow, setContentRow] = useState<ReviewItem | null>(null);
   const [feedbackItem, setFeedbackItem] = useState<FeedbackDetail | null>(null);
   const [reportItem, setReportItem] = useState<ReportCase | null>(null);
+  const [passwordResetItem, setPasswordResetItem] = useState<PasswordResetRequestItem | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -90,6 +100,7 @@ export default function ReviewQueuePage() {
     cStatus: ReviewStatus | "",
     fStatus: FeedbackStatus | "",
     rStatus: ReportStatus | "",
+    prStatus: PasswordResetStatus,
     excludeId?: number,
     token?: number,
   ): Promise<"ok" | "empty" | "error"> => {
@@ -105,6 +116,16 @@ export default function ReviewQueuePage() {
         setContentRow(null);
         setFeedbackItem(null);
         setReportItem(null);
+        setPasswordResetItem(null);
+        return item ? "ok" : "empty";
+      } else if (nextKind === "passwordReset") {
+        const item = await firstPasswordReset(prStatus, excludeId, skip);
+        if (token != null && token !== gen.current) return "ok";
+        setIdentityItem(null);
+        setContentRow(null);
+        setFeedbackItem(null);
+        setReportItem(null);
+        setPasswordResetItem(item);
         return item ? "ok" : "empty";
       } else if (nextKind === "feedback") {
         const row = await firstFeedback(fStatus, excludeId, skip);
@@ -114,6 +135,7 @@ export default function ReviewQueuePage() {
         setContentRow(null);
         setFeedbackItem(detail);
         setReportItem(null);
+        setPasswordResetItem(null);
         return row ? "ok" : "empty";
       } else if (nextKind === "reports") {
         const row = await firstReport(rStatus, excludeId, skip);
@@ -122,6 +144,7 @@ export default function ReviewQueuePage() {
         setContentRow(null);
         setFeedbackItem(null);
         setReportItem(row);
+        setPasswordResetItem(null);
         return row ? "ok" : "empty";
       } else {
         const row = await firstContent(nextKind, cStatus, excludeId, skip);
@@ -130,6 +153,7 @@ export default function ReviewQueuePage() {
         setContentRow(row);
         setFeedbackItem(null);
         setReportItem(null);
+        setPasswordResetItem(null);
         return row ? "ok" : "empty";
       }
     } catch (e: any) {
@@ -139,6 +163,7 @@ export default function ReviewQueuePage() {
       setContentRow(null);
       setFeedbackItem(null);
       setReportItem(null);
+      setPasswordResetItem(null);
       return "error";
     } finally {
       if (token == null || token === gen.current) setLoading(false);
@@ -153,24 +178,28 @@ export default function ReviewQueuePage() {
         const identity = !!d.user?.permissions?.can_review_identity;
         const feedback = !!d.user?.permissions?.can_view_feedback;
         const reports = !!d.user?.permissions?.can_handle_reports;
+        const passwordReset = !!d.user?.permissions?.can_review_password_reset;
         if (cancelled) return;
         setCanContent(content);
         setCanIdentity(identity);
         setCanFeedback(feedback);
         setCanReports(reports);
-        if (!content && !identity && !feedback && !reports) {
+        setCanPasswordReset(passwordReset);
+        if (!content && !identity && !feedback && !reports && !passwordReset) {
           setDenied(true);
           setBooting(false);
           return;
         }
         const order: DeskKind[] = [];
         if (identity) order.push("identity");
+        if (passwordReset) order.push("passwordReset");
         if (content) order.push(...CONTENT_KINDS);
         if (feedback) order.push("feedback");
         if (reports) order.push("reports");
         const probes = await Promise.all(order.map(async (k) => {
           try {
             if (k === "identity") return { k, hit: await firstIdentity("pending") };
+            if (k === "passwordReset") return { k, hit: await firstPasswordReset("pending") };
             if (k === "feedback") return { k, hit: await firstFeedback("pending") };
             if (k === "reports") return { k, hit: await firstReport("open") };
             return { k, hit: await firstContent(k, "pending") };
@@ -196,8 +225,14 @@ export default function ReviewQueuePage() {
     const token = ++gen.current;
     visitedRef.current = new Set();  // 切桌 / 切状态：新一轮浏览从头开始
     setFlash("");
-    loadPane(kind, identityStatus, contentStatus, feedbackStatus, reportStatus, undefined, token);
-  }, [booting, kind, identityStatus, contentStatus, feedbackStatus, reportStatus, loadPane]);
+    loadPane(
+      kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
+      passwordResetStatus, undefined, token,
+    );
+  }, [
+    booting, kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
+    passwordResetStatus, loadPane,
+  ]);
 
   useEffect(() => {
     if (!lightboxUrl) return;
@@ -214,6 +249,7 @@ export default function ReviewQueuePage() {
     setContentStatus("pending");
     setFeedbackStatus("pending");
     setReportStatus("open");
+    setPasswordResetStatus("pending");
     setFlash("");
     setCloseNote("");
     setDismissNote("");
@@ -227,26 +263,40 @@ export default function ReviewQueuePage() {
     await sleep(ADVANCE_MS);
     if (token !== gen.current || !kind) return;
     setFlash("");
-    await loadPane(kind, identityStatus, contentStatus, feedbackStatus, reportStatus, excludeId, token);
+    await loadPane(
+      kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
+      passwordResetStatus, excludeId, token,
+    );
   };
 
   // 「下一条」：不处理当前条目，直接跳到队列中下一条未浏览的
   const skipNext = async () => {
     if (!kind) return;
     const currentId = kind === "identity" ? identityItem?.id
+      : kind === "passwordReset" ? passwordResetItem?.id
       : kind === "feedback" ? feedbackItem?.id
       : kind === "reports" ? reportItem?.id
       : contentRow?.id;
     if (currentId == null) return;
     // 本轮浏览完时恢复当前显示，避免误显示「本队列已空」
-    const prev = { identity: identityItem, content: contentRow, feedback: feedbackItem, report: reportItem };
+    const prev = {
+      identity: identityItem,
+      passwordReset: passwordResetItem,
+      content: contentRow,
+      feedback: feedbackItem,
+      report: reportItem,
+    };
     visitedRef.current.add(currentId);
     const token = ++gen.current;
     setFlash("");
-    const result = await loadPane(kind, identityStatus, contentStatus, feedbackStatus, reportStatus, currentId, token);
+    const result = await loadPane(
+      kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
+      passwordResetStatus, currentId, token,
+    );
     if (token !== gen.current) return;
     if (result === "empty") {
       setIdentityItem(prev.identity);
+      setPasswordResetItem(prev.passwordReset);
       setContentRow(prev.content);
       setFeedbackItem(prev.feedback);
       setReportItem(prev.report);
@@ -266,6 +316,26 @@ export default function ReviewQueuePage() {
     try {
       const updated = await fn();
       setIdentityItem(updated);
+      await afterAction(updated.id, notice);
+    } catch (e: any) {
+      setError(e.message || "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runPasswordReset = async (
+    fn: () => Promise<PasswordResetRequestItem>,
+    notice: string,
+    confirmMsg?: string,
+  ) => {
+    if (!passwordResetItem) return;
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await fn();
+      setPasswordResetItem(updated);
       await afterAction(updated.id, notice);
     } catch (e: any) {
       setError(e.message || "操作失败");
@@ -341,6 +411,7 @@ export default function ReviewQueuePage() {
   };
 
   const empty = kind === "identity" ? !identityItem
+    : kind === "passwordReset" ? !passwordResetItem
     : kind === "feedback" ? !feedbackItem
     : kind === "reports" ? !reportItem
     : !contentRow;
@@ -360,7 +431,7 @@ export default function ReviewQueuePage() {
           <div className="page-head-row">
             <div>
               <h1>审核台</h1>
-              <p className="section-sub">发布审核、意见反馈、举报案与身份证明分桌处理，处理后自动进入下一条。</p>
+              <p className="section-sub">发布审核、意见反馈、举报案、身份证明与密码重置分桌处理，处理后自动进入下一条。</p>
             </div>
           </div>
         </div>
@@ -374,7 +445,7 @@ export default function ReviewQueuePage() {
         ) : (
           <>
             <div className="filter-bar" role="tablist" aria-label="审核类型">
-              {deskTabs({ canContent, canIdentity, canFeedback, canReports }).map((t) => (
+              {deskTabs({ canContent, canIdentity, canFeedback, canReports, canPasswordReset }).map((t) => (
                 <button key={t.kind} className="chip" aria-pressed={kind === t.kind}
                         onClick={() => pickKind(t.kind)}>{t.label}</button>
               ))}
@@ -386,6 +457,15 @@ export default function ReviewQueuePage() {
                   <button key={s} className="chip" aria-pressed={identityStatus === s}
                           onClick={() => setIdentityStatus(s)}>
                     {IDENTITY_STATUS_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            ) : kind === "passwordReset" ? (
+              <div className="filter-bar" role="tablist" aria-label="密码重置状态">
+                {(["pending", "approved", "rejected"] as PasswordResetStatus[]).map((s) => (
+                  <button key={s} className="chip" aria-pressed={passwordResetStatus === s}
+                          onClick={() => setPasswordResetStatus(s)}>
+                    {s === "pending" ? "待处理" : s === "approved" ? "已批准" : "已驳回"}
                   </button>
                 ))}
               </div>
@@ -495,6 +575,24 @@ export default function ReviewQueuePage() {
                           )}>停用账号</button>
                 </div>
               </div>
+            ) : kind === "passwordReset" && passwordResetItem ? (
+              <PasswordResetPane
+                item={passwordResetItem}
+                busy={busy}
+                loading={loading}
+                flash={flash}
+                onApprove={() => runPasswordReset(
+                  () => passwordResetApi.approve(passwordResetItem.id),
+                  "已批准并重置密码",
+                  "确定批准？对方密码将重置为 123456，且首次登录必须修改。",
+                )}
+                onReject={() => runPasswordReset(
+                  () => passwordResetApi.reject(passwordResetItem.id),
+                  "已驳回",
+                )}
+                onNext={skipNext}
+                onLightbox={setLightboxUrl}
+              />
             ) : kind === "feedback" && feedbackItem ? (
               <div className="desk-pane">
                 <div className="desk-meta">

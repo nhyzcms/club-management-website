@@ -22,6 +22,9 @@ export type ApiError =
   | { kind: "account_disabled" }            // 账号已停用（自助注册三态之一）
   | { kind: "email_not_verified"; email: string }  // 邮箱未认证，登录被拒（提示重发）
   | { kind: "email_domain_not_allowed"; domain: string }  // 邮箱后缀不在白名单（ADR-0023）
+  | { kind: "account_exists"; field: string }  // 注册查重命中（用户名/邮箱/真实姓名）
+  | { kind: "account_deleted" }      // 命中的是已注销账号
+  | { kind: "password_change_required" }  // 管理员重置后必须先改密
   | { kind: "network" }              // 断网 / 超时 / 响应非 JSON
   | { kind: "auth" }                 // 401（非挤号）
   | { kind: "forbidden" }            // 403
@@ -45,6 +48,9 @@ export const REASON = {
   ACCOUNT_DISABLED: "account_disabled",
   EMAIL_NOT_VERIFIED: "email_not_verified",
   EMAIL_DOMAIN_NOT_ALLOWED: "email_domain_not_allowed",
+  ACCOUNT_EXISTS: "account_exists",
+  ACCOUNT_DELETED: "account_deleted",
+  PASSWORD_CHANGE_REQUIRED: "password_change_required",
 } as const;
 
 /**
@@ -84,6 +90,11 @@ export function classifyHttpResponse(status: number, data: any): ApiError {
       domain: typeof data?.domain === "string" ? data.domain : "",
     };
   }
+  if (reason === REASON.ACCOUNT_EXISTS) {
+    return { kind: "account_exists", field: typeof data?.field === "string" ? data.field : "" };
+  }
+  if (reason === REASON.ACCOUNT_DELETED) return { kind: "account_deleted" };
+  if (reason === REASON.PASSWORD_CHANGE_REQUIRED) return { kind: "password_change_required" };
   if (status === 401) return { kind: "auth" };
   if (status === 403) return { kind: "forbidden" };
   if (status === 404) return { kind: "not_found" };
@@ -127,6 +138,15 @@ export function humanizeApiError(err: ApiError): string {
       return "请先认证邮箱后再登录。";
     case "email_domain_not_allowed":
       return EMAIL_DOMAIN_BLOCKED_MESSAGE;
+    case "account_exists": {
+      const label =
+        err.field === "username" ? "用户名" : err.field === "email" ? "邮箱" : "真实姓名";
+      return `该${label}已注册，请登录原账户。`;
+    }
+    case "account_deleted":
+      return "该账号已注销，无法登录。如有疑问请联系信息组。";
+    case "password_change_required":
+      return "请先修改密码后再继续使用。";
     case "network":
       return "网络连接失败，请检查网络后重试。";
     case "auth":
@@ -190,6 +210,11 @@ export function createRequest(base: string) {
     // 挤号：把类型化「会话被挤下线」结果交给守卫（幂等由 SessionGuard 保证），随后照常抛错。
     if (apiError.kind === "session_superseded") {
       supersedeHandler?.(apiError);
+    }
+    // 管理员重置密码后的强制改密：任何页面撞到都统一改道（登录页 / 强制页自身不打转）。
+    if (apiError.kind === "password_change_required") {
+      const target = "#/change-password-required";
+      if (window.location.hash !== target) window.location.hash = target;
     }
     const err = new Error(message) as Error & { status: number; apiError: ApiError };
     err.status = res.status;

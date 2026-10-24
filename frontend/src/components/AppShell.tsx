@@ -22,6 +22,7 @@ interface AppShellUser {
     can_review_identity?: boolean;
     can_view_feedback?: boolean;
     can_handle_reports?: boolean;
+    can_review_password_reset?: boolean;
   };
 }
 interface AppShellProfile {
@@ -211,6 +212,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     || user?.permissions?.can_review_identity
     || user?.permissions?.can_view_feedback
     || user?.permissions?.can_handle_reports
+    || user?.permissions?.can_review_password_reset
   );
 
   if (embed) {

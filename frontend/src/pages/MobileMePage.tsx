@@ -21,6 +21,7 @@ interface MeResponse {
       can_review_identity?: boolean;
       can_view_feedback?: boolean;
       can_handle_reports?: boolean;
+      can_review_password_reset?: boolean;
     };
   };
   role: { label: string; variant: RoleVariant };
@@ -67,7 +68,8 @@ export default function MobileMePage() {
     permissions.can_review_content ||
     permissions.can_review_identity ||
     permissions.can_view_feedback ||
-    permissions.can_handle_reports
+    permissions.can_handle_reports ||
+    permissions.can_review_password_reset
   );
   // 「进入后台管理」指向 Django admin（其门禁只认 is_staff），按身份徽章显示
   const isAdmin = me?.role?.variant === "admin" || me?.role?.variant === "superadmin";
@@ -83,7 +85,9 @@ export default function MobileMePage() {
   ];
 
   const work: Entry[] = [
-    ...(showReview ? [{ to: "/m/review", label: "审核台", hint: "身份 / 内容 / 反馈 / 举报" }] : []),
+    ...(showReview
+      ? [{ to: "/m/review", label: "审核台", hint: "身份 / 内容 / 反馈 / 举报 / 密码重置" }]
+      : []),
     ...(isAdmin ? [{ to: "/admin/", label: "进入后台管理" }] : []),
   ];
 

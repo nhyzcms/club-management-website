@@ -27,6 +27,12 @@ def identity_proof_upload_path(instance, filename):
     return f"identity_proofs/user_{instance.user_id}_{uuid.uuid4().hex}{ext}"
 
 
+def password_reset_proof_upload_path(instance, filename):
+    """密码重置申请的身份证明：同样落私有存储（仅申请人 / 审批人可读）。"""
+    ext = os.path.splitext(filename)[1].lower()
+    return f"password_reset_proofs/user_{instance.user_id}_{uuid.uuid4().hex}{ext}"
+
+
 class Profile(models.Model):
     GENDER_CHOICES = [
         ("M", "男"),
@@ -83,6 +89,11 @@ class Profile(models.Model):
     validity_notice_ack = models.CharField(
         "有效期提示已读标记", max_length=80, blank=True, default="",
     )
+
+    # 强制修改密码（管理员手动重置密码后置 True）：登录后除「改密 / 退出 / 读取会话」
+    # 外的请求由 accounts.middleware.PasswordChangeRequiredMiddleware 拦下。
+    # 用户自行改密成功或完成强制改密后清零。
+    must_change_password = models.BooleanField("需强制修改密码", default=False)
 
     def __str__(self):
         return f"{self.user.username}'s profile"
@@ -464,6 +475,64 @@ class IdentityProof(models.Model):
 
     def __str__(self):
         return f"{self.user.username} 的身份证明 ({self.uploaded_at:%Y-%m-%d})"
+
+
+class PasswordResetRequest(models.Model):
+    """忘记密码 → 向管理员申请手动重置（登录页自助提交）。
+
+    背景：邮箱找回依赖已认证邮箱；没有邮箱 / 邮箱已失效的社员无法自助重置。
+    本流程让申请人上传身份证明，由持 ``accounts.review_password_reset`` 的管理员在
+    审核台核对后批准：密码重置为 :data:`accounts.password_reset.DEFAULT_RESET_PASSWORD`
+    并置 ``Profile.must_change_password``，强制下次登录改密。
+
+    证明文件与身份证明一样落 **私有存储**（PRIVATE_MEDIA_ROOT），只经鉴权视图下发，
+    绝不经公开 MEDIA_URL 暴露；账号注销时随 Profile 级联删除（见 accounts/deletion.py）。
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUSES = [
+        (STATUS_PENDING, "待处理"),
+        (STATUS_APPROVED, "已批准"),
+        (STATUS_REJECTED, "已驳回"),
+    ]
+
+    user = models.ForeignKey(
+        User, verbose_name="申请人", on_delete=models.CASCADE,
+        related_name="password_reset_requests",
+    )
+    # 申请人填写的账号标识（用户名 / 邮箱），仅作审核时的对照信息。
+    identifier = models.CharField("申请填写的账号", max_length=254, blank=True, default="")
+    contact = models.CharField("联系方式", max_length=254, blank=True, default="")
+    note = models.TextField("申请说明", blank=True, default="")
+    proof = models.ImageField(
+        "身份证明", upload_to=password_reset_proof_upload_path, storage=private_media_storage,
+    )
+    status = models.CharField("状态", max_length=10, choices=STATUSES, default=STATUS_PENDING)
+    created_at = models.DateTimeField("提交时间", auto_now_add=True)
+    reviewed_at = models.DateTimeField("处理时间", null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        User, verbose_name="处理人", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="password_reset_reviews",
+    )
+    review_note = models.CharField("处理说明", max_length=200, blank=True, default="")
+    reset_at = models.DateTimeField("密码重置时间", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "密码重置申请"
+        verbose_name_plural = "密码重置申请"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["user", "status"]),
+        ]
+        permissions = [
+            ("review_password_reset", "可以审批密码重置申请"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} · 密码重置 · {self.get_status_display()}"
 
 
 class UserSession(models.Model):

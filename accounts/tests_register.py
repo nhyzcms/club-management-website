@@ -121,33 +121,48 @@ class RegisterViewTest(TestCase):
         self.assertFalse(User.objects.filter(username="newbie").exists())
 
     # ---- 唯一性 ----
+    # 2026-10 起重复注册统一 409 + reason=account_exists（提示登录原账户），
+    # 不再是 400 的普通字段错误。
     def test_duplicate_username_rejected(self):
         self.post(valid_payload())
-        resp = self.post(valid_payload(username="newbie", email="other@163.com"))
-        self.assertEqual(resp.status_code, 400)
+        resp = self.post(valid_payload(
+            username="newbie", real_name="李四", email="other@163.com",
+        ))
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["reason"], "account_exists")
+        self.assertEqual(resp.json()["field"], "username")
         self.assertIn("用户名", str(resp.json()["error"]))
+        self.assertIn("请登录原账户", str(resp.json()["error"]))
 
     def test_duplicate_username_case_insensitive_rejected(self):
         self.post(valid_payload())
-        resp = self.post(valid_payload(username="Newbie", email="other@163.com"))
-        self.assertEqual(resp.status_code, 400)
+        resp = self.post(valid_payload(
+            username="Newbie", real_name="李四", email="other@163.com",
+        ))
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["field"], "username")
 
     def test_duplicate_email_rejected(self):
         self.post(valid_payload(email="user@163.com"))
-        resp = self.post(valid_payload(username="another", email="user@163.com"))
-        self.assertEqual(resp.status_code, 400)
+        resp = self.post(valid_payload(
+            username="another", real_name="李四", email="user@163.com",
+        ))
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["field"], "email")
         self.assertIn("邮箱", str(resp.json()["error"]))
 
     def test_duplicate_email_case_insensitive_rejected(self):
         self.post(valid_payload(email="user@163.com"))
-        resp = self.post(valid_payload(username="another", email="USER@163.COM"))
-        self.assertEqual(resp.status_code, 400)
+        resp = self.post(valid_payload(
+            username="another", real_name="李四", email="USER@163.COM",
+        ))
+        self.assertEqual(resp.status_code, 409)
 
     def test_email_taken_by_pending_identifier_rejected(self):
         # A 正在验 user@163.com（pending identifier）；B 注册同邮箱应判重
-        self.post(valid_payload(username="a", email="user@163.com"))
-        resp = self.post(valid_payload(username="b", email="user@163.com"))
-        self.assertEqual(resp.status_code, 400)
+        self.post(valid_payload(username="a", real_name="甲", email="user@163.com"))
+        resp = self.post(valid_payload(username="b", real_name="乙", email="user@163.com"))
+        self.assertEqual(resp.status_code, 409)
 
     def test_email_taken_by_verified_user_email_rejected(self):
         # 一个已认证用户 User.email 占了该地址 → 新注册判重
@@ -158,8 +173,8 @@ class RegisterViewTest(TestCase):
             user=u, channel=Verification.CHANNEL_EMAIL, status=Verification.STATUS_APPROVED,
             identifier="taken@163.com",
         )
-        resp = self.post(valid_payload(username="fresh", email="taken@163.com"))
-        self.assertEqual(resp.status_code, 400)
+        resp = self.post(valid_payload(username="fresh", real_name="李四", email="taken@163.com"))
+        self.assertEqual(resp.status_code, 409)
 
     # ---- 字段校验 ----
     def test_invalid_identity_rejected(self):
@@ -256,7 +271,10 @@ class RegisterCardNoTest(TestCase):
     def test_card_no_stored_for_student_and_graduate(self):
         for idx, identity in enumerate(("student", "graduate"), start=1):
             username = f"newbie{idx}"
-            resp = self.post(username=username, identity=identity, card_no=" A-1024 ")
+            # 真实姓名也要不同：同名会被 2026-10 的三条件查重拦下（另见 tests_password_reset）
+            resp = self.post(
+                username=username, real_name=f"测试{idx}", identity=identity, card_no=" A-1024 ",
+            )
             self.assertEqual(resp.status_code, 201, resp.content)
             self.assertEqual(User.objects.get(username=username).profile.card_no, "A-1024")
 

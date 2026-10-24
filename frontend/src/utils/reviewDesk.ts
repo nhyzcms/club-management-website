@@ -1,9 +1,11 @@
 import { feedbackApi } from "../api/feedback";
 import { identityReviewsApi } from "../api/identityReviews";
+import { passwordResetApi } from "../api/passwordReset";
 import { reportsApi } from "../api/reports";
 import { reviewsApi } from "../api/reviews";
 import type { FeedbackListItem, FeedbackStatus } from "../types/feedback";
 import type { IdentityReviewItem, IdentityReviewStatus } from "../types/identityReviews";
+import type { PasswordResetRequestItem, PasswordResetStatus } from "../types/passwordReset";
 import type { ReportCase, ReportStatus } from "../types/reports";
 import type { ReviewItem, ReviewStatus, ReviewTargetType } from "../types/reviews";
 import { TARGET_TYPE_LABELS } from "../types/reviews";
@@ -17,7 +19,12 @@ import { TARGET_TYPE_LABELS } from "../types/reviews";
  * 因此抽到这里，避免两份实现逐渐漂移。
  */
 
-export type DeskKind = "identity" | ReviewTargetType | "feedback" | "reports";
+export type DeskKind =
+  | "identity"
+  | ReviewTargetType
+  | "feedback"
+  | "reports"
+  | "passwordReset";
 
 export const CONTENT_KINDS: ReviewTargetType[] = ["news", "activity", "tutorial"];
 
@@ -30,6 +37,8 @@ export interface DeskPermissions {
   canFeedback?: boolean;
   /** 举报案处理 */
   canReports?: boolean;
+  /** 密码重置审批（忘记密码 → 管理员手动重置） */
+  canPasswordReset?: boolean;
 }
 
 export interface DeskTab {
@@ -38,12 +47,14 @@ export interface DeskTab {
 }
 
 /**
- * 当前用户可见的「桌」清单：顺序固定为 身份 → 新闻 → 活动 → 教程 → 意见反馈 → 举报案。
+ * 当前用户可见的「桌」清单：顺序固定为
+ * 身份 → 密码重置 → 新闻 → 活动 → 教程 → 意见反馈 → 举报案。
  * 没有任何权限时返回空数组（调用方据此显示无权限提示）。
  */
 export function deskTabs(p: DeskPermissions): DeskTab[] {
   const tabs: DeskTab[] = [];
   if (p.canIdentity) tabs.push({ kind: "identity", label: "身份" });
+  if (p.canPasswordReset) tabs.push({ kind: "passwordReset", label: "密码重置" });
   if (p.canContent) {
     for (const kind of CONTENT_KINDS) {
       tabs.push({ kind, label: TARGET_TYPE_LABELS[kind] });
@@ -81,6 +92,18 @@ export async function firstIdentity(
     excludeId,
     skip,
   ) as Promise<IdentityReviewItem | null>;
+}
+
+export async function firstPasswordReset(
+  status: PasswordResetStatus,
+  excludeId?: number,
+  skip?: Set<number>,
+) {
+  return firstOf(
+    (page) => passwordResetApi.list({ status, page: String(page) }),
+    excludeId,
+    skip,
+  ) as Promise<PasswordResetRequestItem | null>;
 }
 
 export async function firstContent(

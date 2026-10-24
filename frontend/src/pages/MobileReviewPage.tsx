@@ -2,20 +2,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { identityReviewsApi } from "../api/identityReviews";
+import { passwordResetApi } from "../api/passwordReset";
 import { reviewsApi } from "../api/reviews";
 import { feedbackApi } from "../api/feedback";
 import { reportsApi } from "../api/reports";
 import MobilePage from "../components/MobilePage";
 import ReviewPreview from "./review/ReviewPreview";
+import PasswordResetPane from "./review/PasswordResetPane";
 import {
   CONTENT_KINDS,
   deskTabs,
   firstContent,
   firstFeedback,
   firstIdentity,
+  firstPasswordReset,
   firstReport,
   type DeskKind,
 } from "../utils/reviewDesk";
+import type {
+  PasswordResetRequestItem,
+  PasswordResetStatus,
+} from "../types/passwordReset";
 import {
   IDENTITY_LABELS,
   IDENTITY_STATUS_BADGE,
@@ -64,6 +71,7 @@ export default function MobileReviewPage() {
   const [canIdentity, setCanIdentity] = useState(false);
   const [canFeedback, setCanFeedback] = useState(false);
   const [canReports, setCanReports] = useState(false);
+  const [canPasswordReset, setCanPasswordReset] = useState(false);
   const [denied, setDenied] = useState(false);
   const [booting, setBooting] = useState(true);
 
@@ -72,11 +80,13 @@ export default function MobileReviewPage() {
   const [contentStatus, setContentStatus] = useState<ReviewStatus | "">("pending");
   const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus | "">("pending");
   const [reportStatus, setReportStatus] = useState<ReportStatus | "">("open");
+  const [passwordResetStatus, setPasswordResetStatus] = useState<PasswordResetStatus>("pending");
 
   const [identityItem, setIdentityItem] = useState<IdentityReviewItem | null>(null);
   const [contentRow, setContentRow] = useState<ReviewItem | null>(null);
   const [feedbackItem, setFeedbackItem] = useState<FeedbackDetail | null>(null);
   const [reportItem, setReportItem] = useState<ReportCase | null>(null);
+  const [passwordResetItem, setPasswordResetItem] = useState<PasswordResetRequestItem | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -96,6 +106,7 @@ export default function MobileReviewPage() {
       cStatus: ReviewStatus | "",
       fStatus: FeedbackStatus | "",
       rStatus: ReportStatus | "",
+      prStatus: PasswordResetStatus,
       excludeId?: number,
       token?: number,
     ): Promise<"ok" | "empty" | "error"> => {
@@ -111,6 +122,17 @@ export default function MobileReviewPage() {
           setContentRow(null);
           setFeedbackItem(null);
           setReportItem(null);
+          setPasswordResetItem(null);
+          return item ? "ok" : "empty";
+        }
+        if (nextKind === "passwordReset") {
+          const item = await firstPasswordReset(prStatus, excludeId, skip);
+          if (token != null && token !== gen.current) return "ok";
+          setIdentityItem(null);
+          setContentRow(null);
+          setFeedbackItem(null);
+          setReportItem(null);
+          setPasswordResetItem(item);
           return item ? "ok" : "empty";
         }
         if (nextKind === "feedback") {
@@ -121,6 +143,7 @@ export default function MobileReviewPage() {
           setContentRow(null);
           setFeedbackItem(detail);
           setReportItem(null);
+          setPasswordResetItem(null);
           return row ? "ok" : "empty";
         }
         if (nextKind === "reports") {
@@ -130,6 +153,7 @@ export default function MobileReviewPage() {
           setContentRow(null);
           setFeedbackItem(null);
           setReportItem(row);
+          setPasswordResetItem(null);
           return row ? "ok" : "empty";
         }
         const row = await firstContent(nextKind, cStatus, excludeId, skip);
@@ -138,6 +162,7 @@ export default function MobileReviewPage() {
         setContentRow(row);
         setFeedbackItem(null);
         setReportItem(null);
+        setPasswordResetItem(null);
         return row ? "ok" : "empty";
       } catch (e: any) {
         if (token != null && token !== gen.current) return "ok";
@@ -146,6 +171,7 @@ export default function MobileReviewPage() {
         setContentRow(null);
         setFeedbackItem(null);
         setReportItem(null);
+        setPasswordResetItem(null);
         return "error";
       } finally {
         if (token == null || token === gen.current) setLoading(false);
@@ -163,18 +189,21 @@ export default function MobileReviewPage() {
         const identity = !!d.user?.permissions?.can_review_identity;
         const feedback = !!d.user?.permissions?.can_view_feedback;
         const reports = !!d.user?.permissions?.can_handle_reports;
+        const passwordReset = !!d.user?.permissions?.can_review_password_reset;
         if (cancelled) return;
         setCanContent(content);
         setCanIdentity(identity);
         setCanFeedback(feedback);
         setCanReports(reports);
-        if (!content && !identity && !feedback && !reports) {
+        setCanPasswordReset(passwordReset);
+        if (!content && !identity && !feedback && !reports && !passwordReset) {
           setDenied(true);
           setBooting(false);
           return;
         }
         const order: DeskKind[] = [];
         if (identity) order.push("identity");
+        if (passwordReset) order.push("passwordReset");
         if (content) order.push(...CONTENT_KINDS);
         if (feedback) order.push("feedback");
         if (reports) order.push("reports");
@@ -183,6 +212,7 @@ export default function MobileReviewPage() {
           order.map(async (k) => {
             try {
               if (k === "identity") return { k, hit: await firstIdentity("pending") };
+              if (k === "passwordReset") return { k, hit: await firstPasswordReset("pending") };
               if (k === "feedback") return { k, hit: await firstFeedback("pending") };
               if (k === "reports") return { k, hit: await firstReport("open") };
               return { k, hit: await firstContent(k, "pending") };
@@ -211,8 +241,14 @@ export default function MobileReviewPage() {
     const token = ++gen.current;
     visitedRef.current = new Set();
     setFlash("");
-    loadPane(kind, identityStatus, contentStatus, feedbackStatus, reportStatus, undefined, token);
-  }, [booting, kind, identityStatus, contentStatus, feedbackStatus, reportStatus, loadPane]);
+    loadPane(
+      kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
+      passwordResetStatus, undefined, token,
+    );
+  }, [
+    booting, kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
+    passwordResetStatus, loadPane,
+  ]);
 
   useEffect(() => {
     if (!lightboxUrl) return;
@@ -229,6 +265,7 @@ export default function MobileReviewPage() {
     setContentStatus("pending");
     setFeedbackStatus("pending");
     setReportStatus("open");
+    setPasswordResetStatus("pending");
     setFlash("");
     setCloseNote("");
     setDismissNote("");
@@ -242,7 +279,10 @@ export default function MobileReviewPage() {
     await sleep(ADVANCE_MS);
     if (token !== gen.current || !kind) return;
     setFlash("");
-    await loadPane(kind, identityStatus, contentStatus, feedbackStatus, reportStatus, excludeId, token);
+    await loadPane(
+      kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
+      passwordResetStatus, excludeId, token,
+    );
   };
 
   const skipNext = async () => {
@@ -250,14 +290,17 @@ export default function MobileReviewPage() {
     const currentId =
       kind === "identity"
         ? identityItem?.id
-        : kind === "feedback"
-          ? feedbackItem?.id
-          : kind === "reports"
-            ? reportItem?.id
-            : contentRow?.id;
+        : kind === "passwordReset"
+          ? passwordResetItem?.id
+          : kind === "feedback"
+            ? feedbackItem?.id
+            : kind === "reports"
+              ? reportItem?.id
+              : contentRow?.id;
     if (currentId == null) return;
     const prev = {
       identity: identityItem,
+      passwordReset: passwordResetItem,
       content: contentRow,
       feedback: feedbackItem,
       report: reportItem,
@@ -271,6 +314,7 @@ export default function MobileReviewPage() {
       contentStatus,
       feedbackStatus,
       reportStatus,
+      passwordResetStatus,
       currentId,
       token,
     );
@@ -278,6 +322,7 @@ export default function MobileReviewPage() {
     if (result === "empty") {
       // 本轮浏览完时恢复当前显示，避免误显示「本队列已空」
       setIdentityItem(prev.identity);
+      setPasswordResetItem(prev.passwordReset);
       setContentRow(prev.content);
       setFeedbackItem(prev.feedback);
       setReportItem(prev.report);
@@ -297,6 +342,26 @@ export default function MobileReviewPage() {
     try {
       const updated = await fn();
       setIdentityItem(updated);
+      await afterAction(updated.id, notice);
+    } catch (e: any) {
+      setError(e?.message || "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runPasswordReset = async (
+    fn: () => Promise<PasswordResetRequestItem>,
+    notice: string,
+    confirmMsg?: string,
+  ) => {
+    if (!passwordResetItem) return;
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await fn();
+      setPasswordResetItem(updated);
       await afterAction(updated.id, notice);
     } catch (e: any) {
       setError(e?.message || "操作失败");
@@ -379,15 +444,19 @@ export default function MobileReviewPage() {
     }
   };
 
-  const tabs = deskTabs({ canContent, canIdentity, canFeedback, canReports });
+  const tabs = deskTabs({
+    canContent, canIdentity, canFeedback, canReports, canPasswordReset,
+  });
   const empty =
     kind === "identity"
       ? !identityItem
-      : kind === "feedback"
-        ? !feedbackItem
-        : kind === "reports"
-          ? !reportItem
-          : !contentRow;
+      : kind === "passwordReset"
+        ? !passwordResetItem
+        : kind === "feedback"
+          ? !feedbackItem
+          : kind === "reports"
+            ? !reportItem
+            : !contentRow;
   const identityLabel = identityItem
     ? IDENTITY_LABELS[identityItem.identity] || identityItem.identity || "未填写"
     : "";
@@ -425,6 +494,26 @@ export default function MobileReviewPage() {
                   onClick={() => setIdentityStatus(s)}
                 >
                   {IDENTITY_STATUS_LABELS[s]}
+                </button>
+              ))}
+            </div>
+          ) : kind === "passwordReset" ? (
+            <div className="mw-chips" role="tablist" aria-label="密码重置状态">
+              {(
+                [
+                  ["pending", "待处理"],
+                  ["approved", "已批准"],
+                  ["rejected", "已驳回"],
+                ] as [PasswordResetStatus, string][]
+              ).map(([s, label]) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="mw-chip"
+                  aria-pressed={passwordResetStatus === s}
+                  onClick={() => setPasswordResetStatus(s)}
+                >
+                  {label}
                 </button>
               ))}
             </div>
@@ -586,6 +675,28 @@ export default function MobileReviewPage() {
                 </button>
               </div>
             </div>
+          ) : kind === "passwordReset" && passwordResetItem ? (
+            <PasswordResetPane
+              item={passwordResetItem}
+              busy={busy}
+              loading={loading}
+              flash={flash}
+              onApprove={() =>
+                runPasswordReset(
+                  () => passwordResetApi.approve(passwordResetItem.id),
+                  "已批准并重置密码",
+                  "确定批准？对方密码将重置为 123456，且首次登录必须修改。",
+                )
+              }
+              onReject={() =>
+                runPasswordReset(
+                  () => passwordResetApi.reject(passwordResetItem.id),
+                  "已驳回",
+                )
+              }
+              onNext={skipNext}
+              onLightbox={setLightboxUrl}
+            />
           ) : kind === "feedback" && feedbackItem ? (
             <div className="desk-pane">
               <div className="desk-meta">

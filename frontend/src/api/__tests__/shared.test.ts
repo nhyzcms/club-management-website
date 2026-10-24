@@ -28,6 +28,17 @@ describe("classifyHttpResponse", () => {
       .toEqual({ kind: "email_domain_not_allowed", domain: "gmail.com" });
   });
 
+  it("注册查重 / 已注销 / 强制改密 reason 各自成 kind", () => {
+    expect(classifyHttpResponse(409, { reason: REASON.ACCOUNT_EXISTS, field: "real_name" }))
+      .toEqual({ kind: "account_exists", field: "real_name" });
+    expect(classifyHttpResponse(409, { reason: REASON.ACCOUNT_EXISTS }))
+      .toEqual({ kind: "account_exists", field: "" });
+    expect(classifyHttpResponse(409, { reason: REASON.ACCOUNT_DELETED }))
+      .toEqual({ kind: "account_deleted" });
+    expect(classifyHttpResponse(403, { reason: REASON.PASSWORD_CHANGE_REQUIRED }))
+      .toEqual({ kind: "password_change_required" });
+  });
+
   it("无 reason 时按状态码回退（401 / 403 / 404 / 其余）", () => {
     expect(classifyHttpResponse(401, {})).toEqual({ kind: "auth" });
     expect(classifyHttpResponse(403, {})).toEqual({ kind: "forbidden" });
@@ -100,6 +111,17 @@ describe("humanizeApiError", () => {
     expect(humanizeApiError({ kind: "auth" })).toContain("重新登录");
     expect(humanizeApiError({ kind: "network" })).toContain("网络");
     expect(humanizeApiError({ kind: "http", status: 500 })).toContain("请求失败");
+  });
+
+  it("注册重复命中按字段给「请登录原账户」", () => {
+    expect(humanizeApiError({ kind: "account_exists", field: "username" }))
+      .toContain("用户名已注册，请登录原账户");
+    expect(humanizeApiError({ kind: "account_exists", field: "email" }))
+      .toContain("邮箱已注册，请登录原账户");
+    expect(humanizeApiError({ kind: "account_exists", field: "real_name" }))
+      .toContain("真实姓名已注册，请登录原账户");
+    expect(humanizeApiError({ kind: "account_deleted" })).toContain("已注销");
+    expect(humanizeApiError({ kind: "password_change_required" })).toContain("修改密码");
   });
 
   it("邮箱后缀被拦：逐字回固定文案（与后端一致）", () => {
