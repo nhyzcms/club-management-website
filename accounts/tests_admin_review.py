@@ -108,10 +108,10 @@ class AdminReviewActionsTest(TestCase):
         key = "x" * 40
         Session.objects.create(session_key=key, session_data="x",
                                expire_date=timezone.now() + timedelta(days=1))
-        UserSession.objects.create(user=self.target, session_key=key, is_current=True)
+        UserSession.objects.create(user=self.target, session_key=key)
         disable_account(self.ma, self._req(self.reviewer), Profile.objects.filter(pk=self.target.profile.pk))
         self.assertFalse(Session.objects.filter(session_key=key).exists())  # 强制登出
-        self.assertFalse(UserSession.objects.get(user=self.target, session_key=key).is_current)
+        self.assertIsNotNone(UserSession.objects.get(user=self.target, session_key=key).revoked_at)
 
     def test_get_actions_hidden_without_perm(self):
         # 无 can_review_identity 的 staff 看不到审核动作

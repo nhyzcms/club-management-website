@@ -16,7 +16,12 @@ export interface SupersedeTakeover {
 
 /** 适配器产出的类型化错误/会话结果：消费方按 kind 分支，不读后端 reason 串。 */
 export type ApiError =
-  | { kind: "session_superseded"; takeover: SupersedeTakeover }
+  | {
+      kind: "session_superseded";
+      takeover: SupersedeTakeover;
+      /** 被下线的原因（ADR-0028 多端登录）：limit 名额顶替 / manual 手动下线 / … */
+      revokedReason?: string;
+    }
   | { kind: "login_protection"; retryAfter: number }
   | { kind: "login_throttled"; retryAfter: number }
   | { kind: "account_disabled" }            // 账号已停用（自助注册三态之一）
@@ -61,13 +66,39 @@ export const REASON = {
 export const EMAIL_DOMAIN_BLOCKED_MESSAGE =
   "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员";
 
+/**
+ * 「本设备已下线」文案（ADR-0028）：与后端 ``accounts.middleware.revoke_copy`` 语义一致。
+ * 名额顶替 / 手动下线 / 设备重登 / 安全吊销 各有说法，默认按「他设备登录」。
+ */
+export function sessionEndedMessage(reason?: string): string {
+  switch (reason) {
+    case "limit":
+      return (
+        "你的账号最多同时保持 3 台设备登录。有新设备登录时，最久未使用的那台会被替换下线——" +
+        "可在「个人中心 → 登录设备」查看与管理。"
+      );
+    case "manual":
+      return "这台设备已在「个人中心 → 登录设备」中被下线。";
+    case "replaced":
+      return "这台设备上的旧会话已被同一设备的新登录替换。";
+    case "security":
+      return "账号安全状态发生变化，请重新登录。";
+    default:
+      return "您的账号已在另一台设备登录，当前设备已退出登录。";
+  }
+}
+
 // ---- 纯映射：HTTP 响应 → 类型化结果 ----
 
 /** 把「状态码 + 已解析响应体」映射成类型化 ApiError。reason 串 → kind 的唯一归属。 */
 export function classifyHttpResponse(status: number, data: any): ApiError {
   const reason = typeof data?.reason === "string" ? data.reason : null;
   if (reason === REASON.SESSION_SUPERSEDED) {
-    return { kind: "session_superseded", takeover: data?.takeover ?? {} };
+    const error: ApiError = { kind: "session_superseded", takeover: data?.takeover ?? {} };
+    if (typeof data?.revoked_reason === "string" && data.revoked_reason) {
+      error.revokedReason = data.revoked_reason;
+    }
+    return error;
   }
   if (reason === REASON.LOGIN_PROTECTION && typeof data?.retry_after === "number") {
     return { kind: "login_protection", retryAfter: data.retry_after };
@@ -122,11 +153,11 @@ export async function readResponse<T>(res: Response): Promise<ResponseOutcome<T>
 export function humanizeApiError(err: ApiError): string {
   switch (err.kind) {
     case "session_superseded":
-      return "您的账号在其他设备登录，您已被迫下线。";
+      return sessionEndedMessage(err.revokedReason);
     case "login_protection": {
       const mins = Math.ceil(err.retryAfter / 60);
       return (
-        "该账号 10 分钟内在其他设备登录过，处于登录保护期，请稍后重试或由原设备退出登录。" +
+        "该账号短时间内登录次数过多，请稍后重试。" +
         (mins > 0 ? `（约 ${mins} 分钟后可重试）` : "")
       );
     }

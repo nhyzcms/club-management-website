@@ -96,7 +96,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `accounts.middleware.ValidityEnforcementMiddleware` | 身份有效期惰性执行（响应后、按会话节流 300 秒；须在 AuthenticationMiddleware 之后） |
 | `django.contrib.messages.middleware.MessageMiddleware` | |
 | `django.middleware.clickjacking.XFrameOptionsMiddleware` | |
-| `accounts.middleware.SingleSessionMiddleware` | 单会话（挤号）；内容协商：浏览器导航给 HTML 页，SPA/API 给 JSON 契约 |
+| `accounts.middleware.MultiDeviceSessionMiddleware` | 多端登录（最多 3 台设备，ADR-0028）；内容协商：浏览器导航给 HTML 下线页，SPA/API 给 JSON 契约 |
 | `accounts.middleware.LoginThrottleMiddleware` | 登录失败限流（额度来自站点策略） |
 | `rest_framework_tus.middleware.TusMiddleware` | 解析 `Tus-*` / `Upload-*` 请求头到 `request` 属性 |
 

@@ -258,7 +258,7 @@ try {
 ```tsx
 <HashRouter>
   <LoginModalProvider>        {/* 全局登录弹窗 + authNonce */}
-    <SessionGuard>            {/* 单会话轮询 + 挤号弹窗 */}
+    <SessionGuard>            {/* 多端登录轮询 + 下线弹窗 */}
       <Suspense fallback={<Loading />}>
         <Routes>…</Routes>
       </Suspense>
@@ -271,7 +271,7 @@ try {
 
 - **登录弹窗**：`LoginModalProvider` 提供 `openLogin(redirectTo?)` / `closeLogin` / `authNonce` / `notifyAuthChange`。`LoginModal` 由 Provider 常驻渲染，用户名/邮箱两种方式（`api.login` / `api.loginWithEmail`；手机号 tab 置灰「即将上线」）。登录成功后先自检一次 `api.me()`（防「假登录」：刚建会话即被挤下线时不进入已登录假态），成功则 `authNonce++` 并跳转 `redirectTo`；失败按类型化错误分支展示：登录保护期（含重试 ETA）、限流、账号停用、「邮箱未认证」（附「重发认证邮件」入口直达 `/verify-email-pending`）。
 - **受保护路由**：`ProtectedRoute` 在挂载与每次 `authNonce` 变化后调 `api.me()` 校验；未登录时 `openLogin(location.pathname + location.search)` 记录回跳地址并渲染空（弹窗遮罩在前）。弹窗带 `redirectTo` 时关闭会先回首页，避免用户停在空白受保护页。
-- **单会话提示（挤号）**：`SessionGuard` 注册挤号回调并在已登录时每 15s 轮询 `api.me()`；被挤号的响应（类型化 `session_superseded`，含接管设备名/IP/时间）触发 `SessionSupersedeModal`（幂等展示，已显示则不覆盖），确认后重新打开登录弹窗。未登录则不轮询——没有会话就不会被挤号。
+- **下线提示（多端登录 / 挤号）**：`SessionGuard` 注册回调并在已登录时每 15s 轮询 `api.me()`；被下线的响应（类型化 `session_superseded`，含 `revokedReason` + 接管设备名/IP/时间）触发 `SessionSupersedeModal`（幂等展示，已显示则不覆盖），文案按 `sessionEndedMessage()` 区分「名额已满被替换 / 在个人中心被下线 / 设备重登 / 安全吊销」，确认后重新打开登录弹窗。未登录则不轮询。
 - **登录态变化广播**：登录（`LoginModal` 的 `onLoggedIn`）与登出（`AppShell` 用户菜单的 `api.logout()`）都自增 `authNonce`；`AppShell`、受保护路由、`SessionGuard` 据此重新拉取身份，避免同页登出后本地 `user` 状态过期。
 - **注册与认证链路**：`/register` 建登录身份（用户名 + 双密码 + 真实姓名 / 身份 + Turnstile），**注册成功即登录**；若名册存在匹配的未绑定行，进入**社员身份认领**阶段（可跳过、之后在个人中心「社员身份」补办——[ADR-0025](../adr/0025-member-identity.md)）。邮箱绑定与身份证明在登录后的「账号认证」面板（`components/profile/VerificationPanel`）；邮箱认证走邮件链接到 `/verify-email`，未认证登录被拒时跳 `/verify-email-pending` 重发。身份状态徽章由 `me.role` 驱动（见「能力投影」）。
 

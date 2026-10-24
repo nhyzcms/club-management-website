@@ -9,7 +9,14 @@ from django.utils.html import escape
 
 from .models import Profile, UserSession
 from .throttles import login_blocked_response
-from .utils import record_user_session
+from .utils import (
+    DEVICE_COOKIE_MAX_AGE,
+    DEVICE_COOKIE_NAME,
+    device_id_from_request,
+    new_device_id,
+    record_user_session,
+    touch_user_session,
+)
 from .validity import enforce_account_validity
 
 # 惰性有效期检查的会话级节流间隔（秒）：同一会话内至多隔这么久做一次检查。
@@ -42,7 +49,7 @@ _SUPERSEDED_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>您已被迫下线</title>
+<title>{title}</title>
 <style>
   * {{ box-sizing: border-box; }}
   body {{
@@ -77,12 +84,9 @@ _SUPERSEDED_HTML = """<!DOCTYPE html>
 <body>
   <main class="card">
     <div class="badge">🔒</div>
-    <h1>您已被迫下线</h1>
-    <p>您的账号已在另一台设备登录，当前设备已退出登录。</p>
-    <div class="device">
-      <div>接管设备：<b>{device_name}</b>（{device_type}）</div>
-      <div>登录时间：<b>{time}</b></div>
-    </div>
+    <h1>{title}</h1>
+    <p>{message}</p>
+    <div class="device">{device_block}</div>
     <p>如非本人操作，请尽快重新登录并修改密码。</p>
     <a class="btn" href="{login_url}">重新登录</a>
     <div class="foot">南汇一中传媒社</div>
@@ -90,14 +94,48 @@ _SUPERSEDED_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
+# 下线原因 → （标题, 说明）。默认是「另一台设备登录顶替」。
+_REVOKE_COPY = {
+    UserSession.REVOKE_LIMIT: (
+        "该设备已退出登录",
+        "你的账号最多同时保持 3 台设备登录。有新设备登录时，最久未使用的那台会被替换下线——"
+        "可在「个人中心 → 登录设备」里查看与管理。",
+    ),
+    UserSession.REVOKE_MANUAL: (
+        "该设备已被下线",
+        "这台设备已在「个人中心 → 登录设备」中被下线。",
+    ),
+    UserSession.REVOKE_REPLACED: (
+        "该设备已重新登录",
+        "这台设备上的旧会话已被同一设备的新登录替换。",
+    ),
+    UserSession.REVOKE_SECURITY: (
+        "账号安全状态已变更",
+        "账号安全状态发生变化（停用 / 重置密码 / 撤销认证等），请重新登录。",
+    ),
+}
+_DEFAULT_REVOKE_COPY = ("您已被迫下线", "您的账号已在另一台设备登录，当前设备已退出登录。")
 
-def _superseded_page(current):
+
+def revoke_copy(reason):
+    return _REVOKE_COPY.get(reason, _DEFAULT_REVOKE_COPY)
+
+
+def _superseded_page(takeover, revoked_reason=""):
     """渲染下线页：登录时间转北京时间展示；所有插值先转义（device_name 来自 UA）。"""
-    local = current.created_at.astimezone(ZoneInfo("Asia/Shanghai"))
+    title, message = revoke_copy(revoked_reason)
+    device_block = ""
+    if takeover is not None:
+        local = takeover.created_at.astimezone(ZoneInfo("Asia/Shanghai"))
+        device_block = (
+            f"<div>接管设备：<b>{escape(takeover.device_name or '未知设备')}</b>"
+            f"（{escape(takeover.device_type or '未知')}）</div>"
+            f"<div>登录时间：<b>{escape(local.strftime('%Y-%m-%d %H:%M') + '（北京时间）')}</b></div>"
+        )
     return _SUPERSEDED_HTML.format(
-        device_name=escape(current.device_name or "未知设备"),
-        device_type=escape(current.device_type or "未知"),
-        time=escape(local.strftime("%Y-%m-%d %H:%M") + "（北京时间）"),
+        title=escape(title),
+        message=escape(message),
+        device_block=device_block,
         login_url=escape(getattr(settings, "FRONTEND_URL", "") or "/"),
     )
 
@@ -121,50 +159,97 @@ class LoginThrottleMiddleware:
         return self.get_response(request)
 
 
-class SingleSessionMiddleware:
+class MultiDeviceSessionMiddleware:
+    """多端登录（ADR-0028）：同一账号最多 ``MAX_ACTIVE_SESSIONS``（3）台设备同时在线。
+
+    判定唯一真源是 ``UserSession.revoked_at``：
+
+    * 本会话没有记录（早于本功能的老会话）→ 补登记（占用一个名额）；
+    * 本会话已下线 → ``flush()`` + 401（浏览器导航给 HTML 下线页，SPA / API 给
+      JSON 契约 ``session_superseded`` + ``revoked_reason`` + 接管设备信息）；
+    * 在线 → 补设备 Cookie、节流刷新 ``last_seen_at``。
+
+    同时给每位访客下发 ``club_device`` Cookie（HttpOnly，2 年）：同一台设备重新登录时
+    复用自己的名额，不会因为「重新登录」多占一个名额。
+    """
+
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
+        response = self._guard(request)
+        if response is None:
+            response = self.get_response(request)
+        if not device_id_from_request(request):
+            response.set_cookie(
+                DEVICE_COOKIE_NAME,
+                new_device_id(),
+                max_age=DEVICE_COOKIE_MAX_AGE,
+                httponly=True,
+                samesite="Lax",
+                secure=request.is_secure(),
+            )
+        return response
+
+    def _guard(self, request):
         user = getattr(request, "user", None)
-        if user is not None and user.is_authenticated:
-            session_key = request.session.session_key
-            current = (
+        if user is None or not user.is_authenticated:
+            return None
+        session_key = request.session.session_key
+        if not session_key:
+            return None
+        row = UserSession.objects.filter(session_key=session_key).first()
+        if row is None or row.user_id != user.id:
+            # 老会话 / 会话与设备记录不一致 → 按未登记处理，补一条在线记录。
+            record_user_session(request, user, session_key)
+            return None
+        if row.revoked_at is not None:
+            return self._kick_out(request, user, row)
+        if not row.device_id:
+            cookie = device_id_from_request(request)
+            if cookie:
+                row.device_id = cookie
+                row.save(update_fields=["device_id"])
+        touch_user_session(request, row)
+        return None
+
+    def _kick_out(self, request, user, row):
+        """已下线设备：清会话并返回 401（含下线原因与接管设备，供前端弹窗）。"""
+        request.session.flush()
+        takeover = None
+        if row.replaced_by_session_key:
+            takeover = (
                 UserSession.objects
-                .filter(user=user, is_current=True)
+                .filter(session_key=row.replaced_by_session_key)
+                .first()
+            )
+        if takeover is None:
+            takeover = (
+                UserSession.objects
+                .filter(user=user, revoked_at__isnull=True)
                 .order_by("-created_at")
                 .first()
             )
-            if current is None:
-                # Session that predates this feature: adopt it as the current one
-                if session_key:
-                    record_user_session(request, user, session_key)
-            elif current.session_key != session_key:
-                # Another device logged in → this session is superseded
-                request.session.flush()
-                takeover = {
-                    "device_name": current.device_name,
-                    "device_type": current.device_type,
-                    "ip": current.ip_address,
-                    "time": current.created_at.isoformat(),
-                }
-                if _prefers_html(request):
-                    # 浏览器直接访问（如手机打开站点）→ 友好 HTML 页；
-                    # SPA / API 请求（Accept 不含 text/html）保持 JSON 契约（#10）。
-                    return HttpResponse(
-                        _superseded_page(current),
-                        status=401,
-                        content_type="text/html; charset=utf-8",
-                    )
-                return JsonResponse(
-                    {
-                        "detail": "您的账号在其他设备登录，您已被迫下线。",
-                        "reason": "session_superseded",
-                        "takeover": takeover,
-                    },
-                    status=401,
-                )
-        return self.get_response(request)
+        payload = {
+            "detail": revoke_copy(row.revoked_reason)[1],
+            "reason": "session_superseded",
+            "revoked_reason": row.revoked_reason,
+            "takeover": {
+                "device_name": takeover.device_name,
+                "device_type": takeover.device_type,
+                "ip": takeover.ip_address,
+                "time": takeover.created_at.isoformat(),
+            } if takeover is not None else {},
+        }
+        if _prefers_html(request):
+            # 浏览器直接访问（如手机打开站点）→ 友好 HTML 页；
+            # SPA / API 请求（Accept 不含 text/html）保持 JSON 契约（#10）。
+            return HttpResponse(
+                _superseded_page(takeover, row.revoked_reason),
+                status=401,
+                content_type="text/html; charset=utf-8",
+            )
+        return JsonResponse(payload, status=401)
 
 
 # 强制改密期间仍放行的路径：读取自身状态、改密、退出、开关后台改密页与静态资源。

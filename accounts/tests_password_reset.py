@@ -261,7 +261,9 @@ class PasswordResetRequestTest(TestCase):
         self.assertIsNotNone(request_obj.reset_at)
         self.assertTrue(self.user.check_password("123456"))
         self.assertTrue(self.user.profile.must_change_password)
-        self.assertFalse(UserSession.objects.filter(user=self.user, is_current=True).exists())
+        self.assertFalse(
+            UserSession.objects.filter(user=self.user, revoked_at__isnull=True).exists()
+        )
 
     def test_cannot_approve_own_request(self):
         request_obj = PasswordResetRequest.objects.create(

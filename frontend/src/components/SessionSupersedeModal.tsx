@@ -1,10 +1,28 @@
-import { SupersedeTakeover } from "../api/shared";
+import { SupersedeTakeover, sessionEndedMessage } from "../api/shared";
+
+/** 下线原因 → 标题（ADR-0028 多端登录：名额顶替 / 手动下线 / 设备重登 / 安全吊销）。 */
+function titleFor(reason?: string): string {
+  switch (reason) {
+    case "limit":
+      return "设备名额已满";
+    case "manual":
+      return "该设备已被下线";
+    case "replaced":
+      return "该设备已重新登录";
+    case "security":
+      return "账号安全状态已变更";
+    default:
+      return "账号在其他设备登录";
+  }
+}
 
 export default function SessionSupersedeModal({
   takeover,
+  revokedReason,
   onConfirm,
 }: {
   takeover: SupersedeTakeover | null;
+  revokedReason?: string;
   onConfirm: () => void;
 }) {
   if (!takeover) return null;
@@ -37,11 +55,16 @@ export default function SessionSupersedeModal({
           boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
         }}
       >
-        <h3 style={{ margin: "0 0 12px", fontSize: 18 }}>账号在其他设备登录</h3>
+        <h3 style={{ margin: "0 0 12px", fontSize: 18 }}>{titleFor(revokedReason)}</h3>
         <p style={{ color: "var(--muted)", lineHeight: 1.6, margin: "0 0 8px" }}>
-          您的账号{when ? `于 ${when} ` : ""}
-          {where ? `在 ${where} ` : ""}登录，您已被迫下线。
+          {sessionEndedMessage(revokedReason)}
         </p>
+        {(when || where) && (
+          <p style={{ color: "var(--faint)", fontSize: 13, margin: "0 0 8px" }}>
+            {where ? `当前登录设备：${where}` : ""}
+            {when ? `${where ? "，" : ""}登录于 ${when}` : ""}
+          </p>
+        )}
         <p style={{ color: "var(--faint)", fontSize: 13, margin: "0 0 16px" }}>
           如非本人操作，请及时修改密码。
         </p>

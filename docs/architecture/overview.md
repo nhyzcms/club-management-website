@@ -30,7 +30,7 @@
 
 1. `MaintenanceModeMiddleware` —— 维护旗标；开启时全站 503，不触达数据库与会话
 2. Django 标准件：安全 → 会话 → CORS → Locale → Common → CSRF → 认证 → Messages → X-Frame-Options
-3. `SingleSessionMiddleware` —— 单会话：新登录挤掉旧会话
+3. `MultiDeviceSessionMiddleware` —— 多端登录：最多 3 台设备同时在线，第 4 台顶掉最久未活动的那台（[ADR-0028](../adr/0028-multi-device-login.md)）
 4. `LoginThrottleMiddleware` —— 登录保护与节流
 5. `TusMiddleware` —— TUS 可续传上传的请求头解析
 
@@ -56,7 +56,7 @@
 
 | App | 职责 | 关键概念 | 参考 |
 |---|---|---|---|
-| `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、资料与头像 | 单会话、登录保护、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) |
+| `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、资料与头像 | 多端登录（3 台）、登录保护、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) |
 | `common` | 站点策略、维护模式 | `SiteSettings` 运行时策略 | [API](../api/common.md) |
 | `news` | 社团新闻 | 发布审核门控 | [API](../api/news.md) |
 | `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
@@ -85,10 +85,14 @@
 - 登录后需通过身份认证（邮箱 / 人工审核 / 委任 / 认证码通道：见 [ADR-0006](../adr/0006-verification-model.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0020](../adr/0020-authcode-verification-channel.md)）才计为正式「用户」；门禁分级：公开 → 登录 → 已认证 → 权限。
 - 详见 [身份认证指南](../guides/certification.md)。
 
-### 单会话与登录保护
+### 多端登录与登录保护（[ADR-0028](../adr/0028-multi-device-login.md)）
 
-- 一个账号同一时间只有一个活跃会话；新登录接管后，旧会话下次请求收到 `session_superseded`（见 [API 总览](../api/README.md#错误格式)）。
-- 10 分钟内的其它设备登录会触发登录保护期，新登录被拒（`login_protection`）。
+- 一个账号最多 **3 台设备同时保持登录态**（`UserSession.revoked_at IS NULL`）。名额满时新登录
+  自动顶掉「最久未活动」的那台，被顶设备下次请求收到 `session_superseded` +
+  `revoked_reason=limit`（见 [API 总览](../api/README.md#错误格式)）。
+- 下线途径：本机主动退出（只下线本机）、个人中心「登录设备」手动下线单台 / 下线其他所有设备、
+  安全事件（停用 / 重置密码 / 撤销认证 / 注销）一次性吊销全部设备。
+- 登录保护改为**同账号 10 分钟内最多 5 次成功登录**（`login_protection`），三端依次登录不再互相阻塞。
 
 ### 审核轴（正交）
 

@@ -71,13 +71,21 @@ from .throttles import (
     login_blocked_response,
 )
 from .turnstile import passes_turnstile, turnstile_error_response
-from .utils import SESSION_HISTORY_LIMIT, record_user_session
+from .utils import (
+    MAX_ACTIVE_SESSIONS,
+    SESSION_HISTORY_LIMIT,
+    record_user_session,
+)
 from .validity import enforce_account_validity
 from .visibility import content_visibility, profile_view_for
 
 logger = logging.getLogger(__name__)
 
-LOGIN_PROTECTION_SECONDS = 600  # 登录保护窗口：登录后 10 分钟内他方新会话登录被拒
+# 登录保护（多端登录后重定义，ADR-0028）：10 分钟窗口内同一账号最多成功登录
+# LOGIN_PROTECTION_MAX_LOGINS 次。放开了「第二台设备必须等 10 分钟」的单会话限制
+# （三端同时登录是产品要求），仍保留对「账号密码共享 / 反复挤号」的节流。
+LOGIN_PROTECTION_SECONDS = 600
+LOGIN_PROTECTION_MAX_LOGINS = 5
 CONTENT_LIMIT = 15  # 个人中心每个内容 tab 返回的最近条数
 
 _EXPIRED_UNVERIFIED_MESSAGE = "本账户超过 60 日未认证，已被系统停用。请联系社长或服务器管理员处理。"
@@ -195,23 +203,38 @@ def login_view(request):
     # 登录与认证解耦（ADR-0006 决策 6）：未认证账号可登录为访客，仅 is_active 拒停用。
     # 写操作门禁由 IsVerified 单独管（未认证能登、能读，不能写）。
 
-    # 10 分钟登录保护：该账号已有当前会话且登录未满窗口、且非同一会话再认证 → 拒绝
-    existing = UserSession.objects.filter(user=candidate, is_current=True).first()
-    if existing:
-        age = timezone.now() - existing.created_at
-        same_session = existing.session_key == request.session.session_key
-        if not same_session and age < timedelta(seconds=LOGIN_PROTECTION_SECONDS):
-            retry_after = max(0, int(LOGIN_PROTECTION_SECONDS - age.total_seconds()))
-            return JsonResponse(
-                {
-                    "error": "Login protection active",
-                    "reason": "login_protection",
-                    "retry_after": retry_after,
-                },
-                status=409,
-            )
+    # 登录保护（ADR-0028）：10 分钟窗口内同一账号最多 5 次成功登录。
+    # 单会话时代的「他方 10 分钟内不许登录」已随多端登录取消（三端必须能立刻依次登录），
+    # 这里只保留对「账号密码共享 / 反复挤号」的节流；名额顶替交给 record_user_session。
+    window_start = timezone.now() - timedelta(seconds=LOGIN_PROTECTION_SECONDS)
+    recent_logins = list(
+        UserSession.objects.filter(user=candidate, created_at__gte=window_start)
+        .order_by("created_at")
+        .values_list("created_at", flat=True)
+    )
+    if len(recent_logins) >= LOGIN_PROTECTION_MAX_LOGINS:
+        retry_at = recent_logins[-LOGIN_PROTECTION_MAX_LOGINS] + timedelta(
+            seconds=LOGIN_PROTECTION_SECONDS
+        )
+        retry_after = max(1, int((retry_at - timezone.now()).total_seconds()))
+        return JsonResponse(
+            {
+                "error": "Login protection active",
+                "reason": "login_protection",
+                "retry_after": retry_after,
+            },
+            status=409,
+        )
 
+    previous_key = request.session.session_key
     login(request, candidate)
+    if previous_key and previous_key != request.session.session_key:
+        # 同一浏览器重复登录 / 换账号：旧会话行让位，别让一台设备占掉两个名额。
+        UserSession.objects.filter(session_key=previous_key, revoked_at__isnull=True).update(
+            revoked_at=timezone.now(),
+            revoked_reason=UserSession.REVOKE_REPLACED,
+            replaced_by_session_key=request.session.session_key,
+        )
     # 管理员手动重置过密码 → 本次登录必须先去改密（前端据 must_change_password 跳转；
     # 会话值供 PasswordChangeRequiredMiddleware 免查库判定）。
     must_change = Profile.objects.filter(
@@ -239,9 +262,13 @@ def csrf_token_view(request):
 @require_POST
 @login_required
 def logout_view(request):
-    user = request.user
+    """退出当前设备（只下线本机，其余设备保持登录态，ADR-0028）。"""
+    session_key = request.session.session_key
     auth_logout(request)
-    UserSession.objects.filter(user=user, is_current=True).update(is_current=False)
+    if session_key:
+        UserSession.objects.filter(session_key=session_key).update(
+            revoked_at=timezone.now(), revoked_reason=UserSession.REVOKE_LOGOUT,
+        )
     return JsonResponse({"message": "Logged out"})
 
 
@@ -787,30 +814,92 @@ def me_view(request):
 @require_GET
 @login_required
 def sessions_view(request):
-    """本人最近登录记录（设备/IP/时间，当前会话高亮），按时间倒序裁剪到历史上限。
+    """登录设备（多端登录，ADR-0028）：本人最近的登录记录 + 名额占用。
 
-    数据本身按用户裁剪到 SESSION_HISTORY_LIMIT 条，分页按同上限做单页，
+    ``revoked_at IS NULL`` 为在线设备（最多 ``max_active`` 台），其余是历史记录
+    （``revoked_reason`` 说明是被顶替、手动下线还是主动退出）。``is_this_device``
+    由服务端比对当前请求的 session key 得出，前端据此标「本机」。
+    数据按用户裁剪到 ``SESSION_HISTORY_LIMIT`` 条，分页沿用同一上限做单页，
     返回完整信封（count/next/previous/results）供前端统一消费。
     """
     qs = UserSession.objects.filter(user=request.user).order_by("-created_at", "-id")
     paginator = PageNumberPagination()
     paginator.page_size = SESSION_HISTORY_LIMIT
     page = paginator.paginate_queryset(qs, Request(request))  # 单页（存储层已裁剪）
+    current_key = request.session.session_key
     return JsonResponse({
         "count": paginator.page.paginator.count,
         "next": paginator.get_next_link(),
         "previous": paginator.get_previous_link(),
+        "max_active": MAX_ACTIVE_SESSIONS,
+        "active_count": _active_sessions(request.user).count(),
         "results": [
             {
                 "id": r.id, # type: ignore
                 "device_name": r.device_name,
                 "device_type": r.device_type,
+                "client_kind": r.client_kind,
                 "ip_address": r.ip_address,
                 "created_at": r.created_at.isoformat(),
-                "is_current": r.is_current,
+                "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else None,
+                "is_active": r.is_active,
+                "is_this_device": bool(current_key) and r.session_key == current_key,
+                "revoked_at": r.revoked_at.isoformat() if r.revoked_at else None,
+                "revoked_reason": r.revoked_reason,
             }
             for r in page
         ],
+    })
+
+
+def _active_sessions(user):
+    return UserSession.objects.filter(user=user, revoked_at__isnull=True)
+
+
+@require_POST
+@login_required
+def session_revoke_view(request, session_id):
+    """在个人中心下线一台设备（只限本人的记录）。
+
+    只写 ``revoked_at``、不删 Django Session：被下线设备的下一次请求会拿到
+    401 ``session_superseded`` + ``revoked_reason=manual``，前端弹「该设备已被下线」。
+    下线本机等价于退出登录。
+    """
+    row = UserSession.objects.filter(id=session_id, user=request.user).first()
+    if row is None:
+        return JsonResponse({"error": "登录记录不存在"}, status=404)
+    changed = False
+    if row.revoked_at is None:
+        row.revoked_at = timezone.now()
+        row.revoked_reason = UserSession.REVOKE_MANUAL
+        row.save(update_fields=["revoked_at", "revoked_reason"])
+        changed = True
+    is_this_device = bool(request.session.session_key) and (
+        row.session_key == request.session.session_key
+    )
+    if changed and is_this_device:
+        auth_logout(request)
+    return JsonResponse({
+        "revoked": changed,
+        "was_current": is_this_device,
+        "active_count": _active_sessions(request.user).count(),
+        "max_active": MAX_ACTIVE_SESSIONS,
+    })
+
+
+@require_POST
+@login_required
+def sessions_revoke_others_view(request):
+    """下线其他所有设备（保留本机）。"""
+    updated = (
+        _active_sessions(request.user)
+        .exclude(session_key=request.session.session_key)
+        .update(revoked_at=timezone.now(), revoked_reason=UserSession.REVOKE_MANUAL)
+    )
+    return JsonResponse({
+        "revoked": updated,
+        "active_count": _active_sessions(request.user).count(),
+        "max_active": MAX_ACTIVE_SESSIONS,
     })
 
 
@@ -1365,6 +1454,25 @@ def profile_update_view(request):
     return JsonResponse(_profile_response(request.user, profile))
 
 
+def _rotate_session_record(request, user):
+    """改密后同步本设备登录记录到轮换后的 session key（ADR-0028）。
+
+    ``update_session_auth_hash`` 会轮换 session key（防会话固定）：旧 key 的记录标为
+    「设备重登」让出名额，新 key 重新登记为本机，否则同一台设备会占掉两个名额 /
+    下一次请求被判「已下线」。
+    """
+    previous_key = request.session.session_key
+    update_session_auth_hash(request, user)
+    new_key = request.session.session_key
+    if previous_key and previous_key != new_key:
+        UserSession.objects.filter(session_key=previous_key).update(
+            revoked_at=timezone.now(),
+            revoked_reason=UserSession.REVOKE_REPLACED,
+            replaced_by_session_key=new_key or "",
+        )
+    record_user_session(request, user, new_key or "")
+
+
 @require_POST
 @login_required
 def force_change_password_view(request):
@@ -1406,8 +1514,7 @@ def force_change_password_view(request):
     request.user.save(update_fields=["password"])
     profile.must_change_password = False
     profile.save(update_fields=["must_change_password"])
-    update_session_auth_hash(request, request.user)
-    record_user_session(request, request.user, request.session.session_key)
+    _rotate_session_record(request, request.user)
     request.session["pwd_change_required"] = False
     return JsonResponse({"message": "密码已修改，请使用新密码继续使用。"})
 
@@ -1434,10 +1541,8 @@ def change_password_view(request):
     request.user.set_password(form.cleaned_data["new_password"])
     request.user.save()
     # 保持当前会话（否则改密后本会话立即失效）——安全验证「完成即回跳重试」流程的前提。
-    # update_session_auth_hash 会轮换 session key（防会话固定），须同步单会话中间件的
-    # UserSession 行到新 key，否则下一次请求被判「他设备登录」而挤下线。
-    update_session_auth_hash(request, request.user)
-    record_user_session(request, request.user, request.session.session_key)
+    # 轮换后的 session key 与本设备记录同步见 _rotate_session_record（ADR-0028）。
+    _rotate_session_record(request, request.user)
     # 自行改密同样解除强制改密（管理员重置后用户若从个人中心改密，也视为已完成）。
     profile = _get_or_create_profile(request.user)
     if profile.must_change_password:
