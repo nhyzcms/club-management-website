@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import AppShell from "../components/AppShell";
 import DeviceListPanel from "../components/security/DeviceListPanel";
@@ -25,7 +26,14 @@ interface Row {
  */
 export default function SecurityCenterPage() {
   const [overview, setOverview] = useState<SecurityOverview | null>(null);
-  const [open, setOpen] = useState<RowKey | null>(null);
+  const [search] = useSearchParams();
+  // 从验证页回跳时带 ?tab=password|questions|totp，自动展开对应面板
+  const initialTab = search.get("tab");
+  const [open, setOpen] = useState<RowKey | null>(
+    initialTab === "password" || initialTab === "questions" || initialTab === "totp"
+      ? initialTab
+      : null,
+  );
   const [error, setError] = useState("");
 
   const load = () => {

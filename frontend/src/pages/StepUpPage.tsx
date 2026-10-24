@@ -227,10 +227,10 @@ export default function StepUpPage() {
                             href="#"
                             onClick={(e) => {
                               e.preventDefault();
-                              navigate("/profile?tab=security");
+                              navigate("/security?tab=questions");
                             }}
                           >
-                            去个人中心「安全验证」设置
+                            去账号安全中心设置
                           </a>
                           （首次设置需输入登录密码）。
                         </p>

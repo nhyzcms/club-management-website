@@ -72,6 +72,15 @@ export default function UserProfile() {
       .catch(() => { setCanMute(false); setCanDm(false); });
   }, [uid, openLogin]);
 
+  // 旧链接（?tab=security / password / sessions）统一跳到账号安全中心。
+  // 必须放在早期 return 之前：hooks 顺序不能依赖 profile 是否加载完。
+  useEffect(() => {
+    const legacy = search.get("tab");
+    if (legacy && ["security", "password", "sessions"].includes(legacy)) {
+      navigate("/security", { replace: true });
+    }
+  }, [search, navigate]);
+
   if (notFound || loadErr) {
     return (
       <AppShell>
@@ -123,13 +132,6 @@ export default function UserProfile() {
   const tabKeys = tabs.map((t) => t.key);
   const rawTab = search.get("tab");
   const active = rawTab && tabKeys.includes(rawTab) ? rawTab : defaultTab;
-
-  // 旧链接（?tab=security / password / sessions）统一跳到账号安全中心
-  useEffect(() => {
-    if (rawTab && ["security", "password", "sessions"].includes(rawTab)) {
-      navigate("/security", { replace: true });
-    }
-  }, [rawTab, navigate]);
 
   const setTab = (k: string) => {
     // 「账号与安全」已迁到独立页面（设计稿 2026-10-24）
