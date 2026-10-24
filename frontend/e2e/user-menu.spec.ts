@@ -42,3 +42,18 @@ test("头像菜单：Tab 焦点离开时自动关闭", async ({ page }) => {
   await page.keyboard.press("Tab");
   await expect(menu).toBeHidden();
 });
+
+test("头像菜单：管理员（is_staff）可见「后台管理」，指向 /admin/", async ({ page }) => {
+  await page.goto("/");
+
+  const trigger = page.getByRole("button", { name: "打开用户菜单" });
+  await expect(trigger).toBeVisible({ timeout: 10_000 });
+  await trigger.click();
+
+  const menu = page.getByRole("menu", { name: "用户菜单" });
+  await expect(menu).toBeVisible();
+
+  // e2e_info 是超管（is_staff）→ 入口必须存在（无权限用户由 roles 单测与 UserMenu 单测覆盖）
+  const admin = menu.getByRole("menuitem", { name: "后台管理" });
+  await expect(admin).toBeVisible();
+});

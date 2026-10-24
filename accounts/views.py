@@ -253,19 +253,36 @@ def verification_status_view(request):
     每个已定义通道一卡，按 CHANNELS 序。无 Verification 行的通道 status="none"（前端映射
     「未绑定 / 未提交」；后台委任 none 不铺卡）。通道对象键集与前端 VerificationPanel 契约
     （见契约测试）。``is_verified`` 已含有效期判定（ADR-0041），键集契约保持不变。
+
+    单一认证路径：账号已认证（任一通道 approved 且未过期）后，其余通道一律返回派生状态
+    ``not_required``（「无需再次认证」），前端据此收掉表单。该状态**不落库**——认证过期后
+    ``is_verified`` 回落为 False，通道自动恢复真实状态、可重新申请，无需数据迁移或补偿任务。
     """
     user = request.user
     rows = {v.channel: v for v in user.verifications.all()}
+    now = timezone.now()
+    active_channels = {
+        v.channel
+        for v in rows.values()
+        if v.status == Verification.STATUS_APPROVED
+        and (v.expires_at is None or v.expires_at > now)
+    }
+    verified = is_verified(user)
     channels = []
     for channel, _label in Verification.CHANNELS:
         v = rows.get(channel)
+        status = v.status if v else "none"
+        # 已认证时，除生效中的那条 approved 通道外都收口为「无需再次认证」。
+        # active_channels 非空是保险：万一 is_verified 与本次查询不一致，不要把每张卡都锁死。
+        if verified and active_channels and channel not in active_channels:
+            status = Verification.STATUS_NOT_REQUIRED
         channels.append({
             "channel": channel,
-            "status": v.status if v else "none",
+            "status": status,
             "identifier": v.identifier if v else "",
             "verified_at": v.verified_at.isoformat() if v and v.verified_at else None,
         })
-    return JsonResponse({"is_verified": is_verified(user), "channels": channels})
+    return JsonResponse({"is_verified": verified, "channels": channels})
 
 
 @require_GET

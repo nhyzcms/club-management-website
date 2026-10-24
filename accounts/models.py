@@ -127,6 +127,10 @@ class Verification(models.Model):
     STATUS_PENDING = "pending"
     STATUS_APPROVED = "approved"
     STATUS_REJECTED = "rejected"
+    # 派生态（只在读取时计算，不落库、不进 STATUSES / choices）：
+    # 账号已通过某通道认证后，其余通道一律视为「无需再次认证」，避免用户误以为
+    # 还要把每个通道都走一遍（见 accounts.views.verification_status_view）。
+    STATUS_NOT_REQUIRED = "not_required"
     STATUSES = [
         (STATUS_PENDING, "待认证"),
         (STATUS_APPROVED, "已通过"),

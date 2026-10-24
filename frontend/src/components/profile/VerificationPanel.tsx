@@ -13,7 +13,7 @@ import "../../styles/profile.css";
 export const VERIFICATION_CHANNELS = ["appointment", "email", "manual", "authcode"];
 export const VERIFICATION_CARD_FIELDS = ["channel", "status", "identifier", "verified_at"];
 
-type ChannelStatus = "none" | "pending" | "approved" | "rejected";
+type ChannelStatus = "none" | "pending" | "approved" | "rejected" | "not_required";
 
 interface ChannelCard {
   channel: string;
@@ -28,8 +28,9 @@ interface VerificationStatus {
 }
 
 // 后台委任对普通人不可申请：status=none 不铺卡，避免空通道占位。委任通过后才显示。
+// not_required 同理：账号已用其他通道认证时，委任卡对本人没有意义。
 function visibleChannel(card: ChannelCard) {
-  return !(card.channel === "appointment" && card.status === "none");
+  return !(card.channel === "appointment" && (card.status === "none" || card.status === "not_required"));
 }
 
 const CHANNEL_META: Record<string, { label: string; desc: string }> = {
@@ -49,24 +50,40 @@ const STATE: Record<string, Record<ChannelStatus, { label: string; badge: string
     pending: { label: "待委任", badge: "badge-warning", hint: "" },
     approved: { label: "已委任", badge: "badge-success", hint: "身份已由后台委任确认，无需再认证。" },
     rejected: { label: "已撤销", badge: "badge-danger", hint: "" },
+    not_required: { label: "无需再次认证", badge: "badge-ghost", hint: "" },
   },
   email: {
     none: { label: "未绑定", badge: "badge-ghost", hint: "绑定邮箱后可用邮箱登录、找回密码。" },
     pending: { label: "待认证", badge: "badge-warning", hint: "认证邮件已发送，请查收并点击认证链接。" },
     approved: { label: "已通过", badge: "badge-success", hint: "邮箱已认证。" },
     rejected: { label: "已驳回", badge: "badge-danger", hint: "" }, // email 通道无驳回，保留数据驱动完备性
+    not_required: {
+      label: "无需再次认证",
+      badge: "badge-ghost",
+      hint: "账号已通过其他方式完成认证，无需再走邮箱认证；绑定邮箱仅用于登录与找回密码。",
+    },
   },
   manual: {
     none: { label: "未提交", badge: "badge-ghost", hint: "提交身份证明（学生证照片等），由管理员审核。" },
     pending: { label: "审核中", badge: "badge-warning", hint: "身份证明已提交，等待管理员审核。" },
     approved: { label: "已通过", badge: "badge-success", hint: "身份审核已通过。" },
     rejected: { label: "已驳回", badge: "badge-danger", hint: "身份证明被驳回，可重新提交。" },
+    not_required: {
+      label: "无需再次认证",
+      badge: "badge-ghost",
+      hint: "账号已通过其他方式完成认证，无需再提交身份证明。",
+    },
   },
   authcode: {
     none: { label: "未使用", badge: "badge-ghost", hint: "输入收到的认证码即可完成认证。" },
     pending: { label: "待兑换", badge: "badge-warning", hint: "" }, // 该通道无 pending，保留数据驱动完备性
     approved: { label: "已通过", badge: "badge-success", hint: "认证码已认证。" },
     rejected: { label: "已撤销", badge: "badge-danger", hint: "" }, // 该通道无 rejected，保留数据驱动完备性
+    not_required: {
+      label: "无需再次认证",
+      badge: "badge-ghost",
+      hint: "账号已通过其他方式完成认证，无需再使用认证码。",
+    },
   },
 };
 
@@ -75,6 +92,7 @@ function CardShell({ card, children }: { card: ChannelCard; children?: React.Rea
   const st = (STATE[card.channel] ?? STATE.manual)[card.status];
   const showPendingId = card.channel === "email" && card.status === "pending" && card.identifier;
   const showBoundId = card.channel === "email" && card.status === "approved" && card.identifier;
+  const showQuietId = card.channel === "email" && card.status === "not_required" && card.identifier;
   const appointmentLabel = card.identifier === "superuser" ? "超级管理员" : "管理员";
   const showAppointmentId = card.channel === "appointment" && card.status === "approved" && card.identifier;
   return (
@@ -86,6 +104,7 @@ function CardShell({ card, children }: { card: ChannelCard; children?: React.Rea
       {meta.desc && <p className="muted verify-card-desc">{meta.desc}</p>}
       {showPendingId && <p className="muted verify-card-id">待认证邮箱：{card.identifier}</p>}
       {showBoundId && <p className="muted verify-card-id">已绑定：{card.identifier}</p>}
+      {showQuietId && <p className="muted verify-card-id">邮箱：{card.identifier}</p>}
       {showAppointmentId && <p className="muted verify-card-id">委任身份：{appointmentLabel}</p>}
       {st.hint && <p className="muted verify-card-hint">{st.hint}</p>}
       {children}
@@ -100,8 +119,23 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
   const [err, setErr] = useState("");
   // 邮箱后缀不在白名单（ADR-0023）：后端回专属 reason，这里弹窗打断（不做行内小字）。
   const [domainBlocked, setDomainBlocked] = useState(false);
+  // 已通过其他通道认证（not_required）时表单默认收起：先给出「无需再次认证」，
+  // 确有需要（邮箱登录 / 找回密码）再手动展开，避免让人误以为还要继续认证。
+  const [showBind, setShowBind] = useState(false);
 
   if (closed) return <CardShell card={card} />;
+
+  if (card.status === "not_required" && !showBind) {
+    return (
+      <CardShell card={card}>
+        <div className="verify-card-actions">
+          <button className="btn btn-sm" type="button" onClick={() => setShowBind(true)}>
+            绑定邮箱（仅用于登录 / 找回密码）
+          </button>
+        </div>
+      </CardShell>
+    );
+  }
 
   const bind = (email: string) => {
     if (!email) return;
@@ -129,7 +163,7 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
       .finally(() => setSubmitting(false));
   };
 
-  const primaryLabel = card.status === "none" ? "绑定邮箱" : "换绑邮箱";
+  const primaryLabel = card.identifier ? "换绑邮箱" : "绑定邮箱";
 
   return (
     <CardShell card={card}>
@@ -138,7 +172,7 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
         三大运营商（移动 / 联通 / 电信）、新浪邮箱，以及中国高校校园邮箱（.edu.cn / .edu.hk / .edu.mo / .edu.tw）。
       </p>
       <div className="verify-card-actions">
-        {card.status === "pending" && (
+        {(card.status === "pending" || (card.status === "not_required" && card.identifier)) && (
           <button className="btn btn-sm" type="button" disabled={submitting}
                   onClick={() => bind(card.identifier)}>重发认证邮件</button>
         )}
@@ -310,12 +344,17 @@ export default function VerificationPanel() {
     );
   }
 
+  const approved = data.channels.find((c) => c.status === "approved");
+  const approvedLabel = approved
+    ? (CHANNEL_META[approved.channel]?.label ?? approved.channel)
+    : "";
+
   return (
     <div className="card card-pad">
       <h2 className="profile-panel-title">账号认证</h2>
       <p className="muted verify-overview">
         {data.is_verified
-          ? "你的账号已认证。"
+          ? `你的账号已通过${approvedLabel ? `「${approvedLabel}」` : "认证通道"}完成认证，其余认证方式已自动标记为「无需再次认证」，无需重复操作。`
           : "你的账号尚未认证（访客）——完成下列任一通道即成为已认证用户，解锁发帖 / 发消息 / 建申报等。"}
       </p>
       {validity && (
