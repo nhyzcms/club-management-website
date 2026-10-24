@@ -11,13 +11,9 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.test import TestCase
 
-from .devices import (
-    DEVICE_COOKIE_MAX_AGE,
-    DEVICE_COOKIE_NAME,
-    is_valid_device_id,
-    new_device_id,
-    parse_device,
-)
+from .devices import is_valid_device_id, parse_device
+# 设备 Cookie 由多端登录（#188）统一下发，常量住在 utils
+from .utils import DEVICE_COOKIE_MAX_AGE, DEVICE_COOKIE_NAME, new_device_id
 from .models import AccountDevice, LoginEvent
 
 
