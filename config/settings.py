@@ -304,8 +304,10 @@ REMEMBER_LOGIN_SECONDS = 30 * 24 * 60 * 60
 IP2REGION_DB = os.environ.get("IP2REGION_DB", str(BASE_DIR / "data" / "ip2region_v4.xdb"))
 
 # 陌生设备二次验证（P3）。测试环境默认关闭：数百个既有登录用例不必被迫走挑战流程，
-# P3 自己的测试用 override_settings 打开。生产可置 0 应急回滚。
-LOGIN_CHALLENGE_ENABLED = sys.argv[1:2] != ["test"]
+# P3 自己的测试用 override_settings 打开。生产可置 LOGIN_CHALLENGE=0 应急回滚。
+LOGIN_CHALLENGE_ENABLED = (
+    os.environ.get("LOGIN_CHALLENGE", "1") != "0" and sys.argv[1:2] != ["test"]
+)
 
 # ---- 邮件 / SMTP ----
 # 163 邮箱 SMTP：配了 EMAIL_HOST_USER（+ EMAIL_HOST_PASSWORD 授权码）即切到 SMTP，
