@@ -637,6 +637,39 @@ class LoginEvent(models.Model):
         return f"{self.user_id or '匿名'} {self.method}/{self.status} @ {self.created_at:%Y-%m-%d %H:%M}"
 
 
+class TotpDevice(models.Model):
+    """一台 TOTP 验证器（独立 secret，可绑定多台，上限见 accounts/totp.py）。"""
+
+    user = models.ForeignKey(User, verbose_name="用户", on_delete=models.CASCADE, related_name="totp_devices")
+    label = models.CharField("名称", max_length=64, blank=True, default="")
+    secret_enc = models.CharField("密钥（Fernet 加密）", max_length=255)
+    confirmed_at = models.DateTimeField("确认时间", null=True, blank=True)
+    last_used_step = models.BigIntegerField("最后使用的时间步", default=0)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "滚动密钥"
+        verbose_name_plural = "滚动密钥"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.username} · {self.label or 'TOTP'}"
+
+
+class RecoveryCode(models.Model):
+    """一次性恢复代码（只存 hash；明文仅在生成时展示一次）。"""
+
+    user = models.ForeignKey(User, verbose_name="用户", on_delete=models.CASCADE, related_name="recovery_codes")
+    code_hash = models.CharField("代码哈希", max_length=64)
+    used_at = models.DateTimeField("使用时间", null=True, blank=True)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "恢复代码"
+        verbose_name_plural = "恢复代码"
+        ordering = ["-created_at"]
+
+
 class UserSession(models.Model):
     """登录设备（多端登录，ADR-0028）。
 

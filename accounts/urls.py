@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views
+from . import security_center, views
 from .identity_review import IdentityReviewViewSet
 from .inbox import InboxView
 from .password_reset_review import PasswordResetRequestViewSet
@@ -35,6 +35,15 @@ urlpatterns = [
     path("stepup/verify/", views.stepup_verify_view, name="stepup_verify"),
     path("stepup/questions/", views.stepup_questions_view, name="stepup_questions"),
     path("stepup/events/", views.stepup_events_view, name="stepup_events"),
+    path("security/overview/", security_center.security_overview_view, name="security_overview"),
+    path("devices/", security_center.devices_view, name="devices"),
+    path("devices/<int:pk>/", security_center.device_revoke_view, name="device_revoke"),
+    path("login-events/", security_center.login_events_view, name="login_events"),
+    path("totp/", security_center.totp_list_view, name="totp_list"),
+    path("totp/setup/", security_center.totp_setup_view, name="totp_setup"),
+    path("totp/confirm/", security_center.totp_confirm_view, name="totp_confirm"),
+    path("totp/<int:pk>/", security_center.totp_delete_view, name="totp_delete"),
+    path("recovery-codes/", security_center.recovery_codes_view, name="recovery_codes"),
     path("sessions/", views.sessions_view, name="sessions"),
     # 多端登录（ADR-0028）：个人中心下线单台 / 下线其他所有设备。
     path("sessions/revoke-others/", views.sessions_revoke_others_view, name="sessions_revoke_others"),

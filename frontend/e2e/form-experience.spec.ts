@@ -36,10 +36,9 @@ test.describe("匿名表单（登录 / 注册 / 忘记密码）", () => {
 
 test.describe("登录态表单（改密面板）", () => {
   test("改密面板：两次密码不一致时聚焦确认框", async ({ page }) => {
-    await page.goto("/#/profile");
-    await expect(page).toHaveURL(/#\/u\/\d+/);
-    const uid = (page.url().match(/#\/u\/(\d+)/) || [])[1];
-    await page.goto(`/#/u/${uid}?tab=password`);
+    // 改密已迁到账号安全中心（2026-10-24 设计稿），从首页快捷卡展开
+    await page.goto("/#/security");
+    await page.getByRole("button", { name: /修改密码/ }).click();
     await expect(page.locator("#pw-old")).toBeVisible();
 
     await page.locator("#pw-old").fill("e2e-wrong-old-1");

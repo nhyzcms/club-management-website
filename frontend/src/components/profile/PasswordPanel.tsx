@@ -29,7 +29,7 @@ export default function PasswordPanel() {
       setTimeout(() => setSuccess(""), 3000);
     } catch (err: any) {
       if (err?.status === 403) {
-        redirectToStepUp("change_password", "/profile?tab=password");
+        redirectToStepUp("change_password", "/security?tab=password");
         return;
       }
       setError(err.message);

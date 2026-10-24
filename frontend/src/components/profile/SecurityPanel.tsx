@@ -70,7 +70,7 @@ export default function SecurityPanel() {
       })
       .catch((e: any) => {
         if (e?.status === 403) {
-          redirectToStepUp("manage_questions", "/profile?tab=security");
+          redirectToStepUp("manage_questions", "/security?tab=questions");
           return;
         }
         setErr(e.message || "保存失败");
@@ -89,7 +89,7 @@ export default function SecurityPanel() {
       })
       .catch((e: any) => {
         if (e?.status === 403) {
-          redirectToStepUp("manage_questions", "/profile?tab=security");
+          redirectToStepUp("manage_questions", "/security?tab=questions");
           return;
         }
         setErr(e.message || "清除失败");
