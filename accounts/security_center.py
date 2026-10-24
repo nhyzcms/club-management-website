@@ -73,7 +73,7 @@ def _device_payload(device: AccountDevice, current_ids: set[int]) -> dict:
         "last_seen": device.last_seen.isoformat(),
         "first_seen": device.first_seen.isoformat(),
         "trusted": device.is_trusted,
-        "is_current": device.id in current_ids,
+        "is_current": device.device_id in current_ids,
     }
 
 
@@ -88,7 +88,7 @@ def security_overview_view(request):
     remaining_codes = RecoveryCode.objects.filter(user=user, used_at__isnull=True).count()
     devices = AccountDevice.objects.filter(user=user, revoked_at__isnull=True)
     session_keys = set(
-        UserSession.objects.filter(user=user, is_current=True).values_list("device_id", flat=True)
+        UserSession.objects.filter(user=user, revoked_at__isnull=True).values_list("device_id", flat=True)
     )
 
     return JsonResponse(
@@ -126,7 +126,7 @@ def devices_view(request):
     current_ids = {
         device_id
         for device_id in UserSession.objects.filter(
-            user=request.user, is_current=True
+            user=request.user, revoked_at__isnull=True
         ).values_list("device_id", flat=True)
         if device_id
     }
@@ -147,11 +147,14 @@ def device_revoke_view(request, pk):
         device.save(update_fields=["revoked_at"])
 
     keys = list(
-        UserSession.objects.filter(user=request.user, device=device).values_list("session_key", flat=True)
+        UserSession.objects.filter(user=request.user, device_id=device.device_id).values_list("session_key", flat=True)
     )
     if keys:
         Session.objects.filter(session_key__in=keys).delete()
-        UserSession.objects.filter(session_key__in=keys).update(is_current=False)
+        UserSession.objects.filter(session_key__in=keys).update(
+            revoked_at=timezone.now(),
+            revoked_reason=UserSession.REVOKE_MANUAL,
+        )
     return JsonResponse({"message": "已退出该设备"})
 
 
