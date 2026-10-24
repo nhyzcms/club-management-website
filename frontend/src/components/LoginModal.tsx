@@ -89,6 +89,13 @@ export default function LoginModal({
       navigate("/change-password-required");
       return;
     }
+    // 陌生设备 + 没有任何二次验证：本次豁免放行，但必须尽快绑定
+    if (result?.must_bind_2fa) {
+      onLoggedIn();
+      onClose();
+      navigate("/security?bind=1");
+      return;
+    }
     try {
       await api.me();
     } catch (selfErr: any) {

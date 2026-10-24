@@ -692,6 +692,24 @@ class LoginChallenge(models.Model):
         ordering = ["-created_at"]
 
 
+class AdminAccessLog(models.Model):
+    """管理端查看社员登录记录 / 设备的留痕（谁看了谁、何时、从哪）。"""
+
+    actor = models.ForeignKey(User, verbose_name="操作者", on_delete=models.CASCADE, related_name="admin_access_logs")
+    target = models.ForeignKey(
+        User, verbose_name="被查看账号", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="admin_access_received",
+    )
+    scope = models.CharField("范围", max_length=32)
+    ip = models.GenericIPAddressField("IP", null=True, blank=True)
+    created_at = models.DateTimeField("时间", auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "管理端访问记录"
+        verbose_name_plural = "管理端访问记录"
+        ordering = ["-created_at"]
+
+
 class UserSession(models.Model):
     """登录设备（多端登录，ADR-0028）。
 

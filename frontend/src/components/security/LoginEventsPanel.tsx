@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { securityApi, type LoginEventRow } from "../../api/security";
+import LoginMap from "./LoginMap";
 
 const STATUS_LABEL: Record<string, string> = {
   success: "成功",
@@ -74,6 +75,7 @@ export default function LoginEventsPanel() {
         <p className="muted">暂无登录记录。</p>
       ) : (
         <>
+          <LoginMap row={rows[0] ?? null} />
           <ul className="sec-events">
             {rows.map((row) => (
               <li key={row.id} className={`sec-event ${row.status !== "success" ? "is-bad" : ""}`}>

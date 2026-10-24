@@ -14,6 +14,7 @@
  *   验收口径：构建输出里的 asset 体积列表（CI 的 frontend job summary 也会打印 dist 体积）。
  */
 const path = require("path");
+const webpack = require("webpack");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 
@@ -53,6 +54,10 @@ module.exports = {
     ],
   },
   plugins: [
+    // 高德地图 key（可选）：build 时 AMAP_KEY=xxx npm run build，未设置则前端降级为文字位置
+    new webpack.DefinePlugin({
+      "process.env.AMAP_KEY": JSON.stringify(process.env.AMAP_KEY || ""),
+    }),
     new HtmlWebpackPlugin({
       template: "./template.html",
       favicon: "./public/favicon.ico",
