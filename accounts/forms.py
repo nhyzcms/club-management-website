@@ -8,6 +8,8 @@ class LoginForm(forms.Form):
     password = forms.CharField(required=True)
     username = forms.CharField(required=False)
     email = forms.EmailField(required=False)
+    # 「记住登录」：勾选 → 持久 cookie（30 天）；不勾 → 会话 cookie（关浏览器失效）。
+    remember = forms.BooleanField(required=False)
 
     def clean(self):
         cleaned = super().clean()
