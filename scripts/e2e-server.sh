@@ -11,6 +11,9 @@ if [ ! -f frontend/dist/index.html ]; then
 fi
 
 export DJANGO_DB_FILE="${DJANGO_DB_FILE:-run/e2e.sqlite3}"
+# E2E 关闭「陌生设备二次验证」：seed 账号带安全问题，否则 API 登录只拿到 202 挑战、
+# storageState 无会话，全部登录态用例会级联失败。挑战流程本身由单测覆盖。
+export LOGIN_CHALLENGE=0
 mkdir -p run
 rm -f "$DJANGO_DB_FILE"
 

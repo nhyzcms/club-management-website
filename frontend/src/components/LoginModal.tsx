@@ -7,6 +7,13 @@ import PasswordInput from "./PasswordInput";
 
 type Method = "username" | "email" | "phone";
 
+const FACTOR_LABELS: Record<string, string> = {
+  totp: "滚动密钥",
+  email_code: "邮箱验证码",
+  question: "安全问题",
+  recovery: "恢复代码",
+};
+
 /**
  * 统一登录弹窗 —— 结构取自原型 index.html 的 #auth-modal。
  * 登录逻辑自旧 LoginPage 原样移植（用户名/邮箱 tab + api.login / loginWithEmail）。
@@ -35,6 +42,18 @@ export default function LoginModal({
   const [remember, setRemember] = useState(
     () => typeof navigator !== "undefined" && /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent),
   );
+  // 陌生设备二次验证（P3）：登录接口回 202 + challenge
+  const [challenge, setChallenge] = useState<{
+    token: string;
+    methods: string[];
+    questions: { id: number; text: string }[];
+  } | null>(null);
+  const [chMethod, setChMethod] = useState("");
+  const [chCode, setChCode] = useState("");
+  const [chQuestionId, setChQuestionId] = useState(0);
+  const [chAnswer, setChAnswer] = useState("");
+  const [chNotice, setChNotice] = useState("");
+  const [chBusy, setChBusy] = useState(false);
   const [error, setError] = useState("");
   const [resendEmail, setResendEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -62,6 +81,66 @@ export default function LoginModal({
 
   if (!open) return null;
 
+  /** 登录成功后的统一收尾（含强制改密与假登录自检）。 */
+  const finishLogin = async (result: any) => {
+    if (result?.must_change_password) {
+      onLoggedIn();
+      onClose();
+      navigate("/change-password-required");
+      return;
+    }
+    try {
+      await api.me();
+    } catch (selfErr: any) {
+      if (selfErr?.status === 401) {
+        onClose();
+        return;
+      }
+    }
+    onLoggedIn();
+    onClose();
+    navigate(redirectTo ?? "/");
+  };
+
+  const submitChallenge = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!challenge) return;
+    setChBusy(true);
+    setError("");
+    setChNotice("");
+    try {
+      const payload: Record<string, unknown> = { token: challenge.token, method: chMethod };
+      if (chMethod === "question") {
+        payload.question_id = chQuestionId;
+        payload.answer = chAnswer;
+      } else {
+        payload.code = chCode.trim();
+      }
+      const result = await api.challengeVerify(payload);
+      setChallenge(null);
+      await finishLogin(result);
+    } catch (err: any) {
+      setError(err?.message || "验证未通过，请重试。");
+    } finally {
+      setChBusy(false);
+    }
+  };
+
+  const sendCode = async () => {
+    if (!challenge) return;
+    setChBusy(true);
+    setError("");
+    setChNotice("");
+    try {
+      await api.challengeSend(challenge.token);
+      setChNotice("验证码已发送，请查收邮件。");
+    } catch (err: any) {
+      setError(err?.message || "发送失败，请稍后再试。");
+    } finally {
+      setChBusy(false);
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
@@ -77,29 +156,22 @@ export default function LoginModal({
           ? await api.login(account.trim(), password, remember)
           : await api.loginWithEmail(account.trim(), password, remember);
 
-      // 管理员重置过密码：本次登录直接进强制改密页（后端中间件也会拦住其他接口）。
-      if (result?.must_change_password) {
-        onLoggedIn();
-        onClose();
-        navigate("/change-password-required");
+      // 陌生设备：拿到 202 挑战，切到二次验证界面
+      if (result?.reason === "new_device" && result?.challenge) {
+        setChallenge({
+          token: result.challenge,
+          methods: result.methods || [],
+          questions: result.questions || [],
+        });
+        setChMethod((result.methods || [])[0] || "");
+        setChCode("");
+        setChAnswer("");
+        setChQuestionId(result.questions?.[0]?.id ?? 0);
+        setChNotice("");
         return;
       }
 
-      // 防假登录：登录成功后立即自检一次；若刚建的会话已被挤/未真正建立，不进入"已登录"假态
-      try {
-        await api.me();
-      } catch (selfErr: any) {
-        if (selfErr?.status === 401) {
-          // 刚登录即被挤：supersede 弹窗已由 shared.ts 拦截器 + SessionGuard 触发，这里只关登录框
-          onClose();
-          return;
-        }
-        // 其它错误（网络等）：登录确已成功，乐观放行
-      }
-
-      onLoggedIn();
-      onClose();
-      navigate(redirectTo ?? "/");
+      await finishLogin(result);
     } catch (err: any) {
       const apiError = err?.apiError as ApiError | undefined;
       // 登录保护期：类型化结果驱动 ETA 文案（删除手写分钟换算，#16）
@@ -139,6 +211,102 @@ export default function LoginModal({
   const accountType = method === "email" ? "email" : "text";
   const accountPlaceholder =
     method === "email" ? "请输入邮箱" : "请输入信息组分发的用户名";
+
+  // 陌生设备：密码已通过，先完成一次二次验证（通过后这台设备才算已知）
+  if (challenge) {
+    return (
+      <div
+        className="modal-scrim is-open"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-title"
+        onClick={handleDismiss}
+      >
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-head">
+            <div>
+              <h3 id="auth-title">新设备验证</h3>
+              <p>南汇一中传媒社</p>
+            </div>
+            <button className="modal-close" aria-label="关闭" type="button" onClick={handleDismiss}>×</button>
+          </div>
+          <form className="modal-body" onSubmit={submitChallenge}>
+            {error && (
+              <div className="alert alert-danger" role="alert"><span>{error}</span></div>
+            )}
+            <p className="muted">
+              这台设备还没有通过过二次验证。完成一次验证后，以后在这台设备登录就不用再验。
+            </p>
+            <div className="seg seg-sm" role="tablist" aria-label="验证方式">
+              {challenge.methods.map((m) => (
+                <button
+                  key={m}
+                  className="seg-btn"
+                  type="button"
+                  aria-selected={chMethod === m}
+                  onClick={() => { setChMethod(m); setError(""); setChNotice(""); }}
+                >
+                  {FACTOR_LABELS[m] || m}
+                </button>
+              ))}
+            </div>
+            {chMethod === "email_code" && (
+              <div className="sec-actions">
+                <button className="btn btn-secondary" type="button" onClick={sendCode} disabled={chBusy}>
+                  发送验证码
+                </button>
+                {chNotice && <span className="muted">{chNotice}</span>}
+              </div>
+            )}
+            {chMethod === "question" ? (
+              <>
+                <div className="field">
+                  <label className="label" htmlFor="ch-question">安全问题</label>
+                  <select
+                    id="ch-question"
+                    className="input"
+                    value={chQuestionId}
+                    onChange={(e) => setChQuestionId(Number(e.target.value))}
+                  >
+                    {challenge.questions.map((q) => (
+                      <option key={q.id} value={q.id}>{q.text}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="ch-answer">答案</label>
+                  <input
+                    id="ch-answer"
+                    className="input"
+                    value={chAnswer}
+                    onChange={(e) => setChAnswer(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="field">
+                <label className="label" htmlFor="ch-code">
+                  {chMethod === "recovery" ? "恢复代码" : "验证码"}
+                </label>
+                <input
+                  id="ch-code"
+                  className="input"
+                  value={chCode}
+                  onChange={(e) => setChCode(e.target.value)}
+                  inputMode={chMethod === "recovery" ? "text" : "numeric"}
+                  autoComplete="one-time-code"
+                />
+              </div>
+            )}
+            <button className="btn btn-primary btn-block" type="submit" disabled={chBusy}>
+              {chBusy ? "验证中…" : "验证并登录"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

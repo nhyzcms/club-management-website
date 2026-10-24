@@ -670,6 +670,28 @@ class RecoveryCode(models.Model):
         ordering = ["-created_at"]
 
 
+class LoginChallenge(models.Model):
+    """陌生设备登录的中断态：密码已对，但设备未通过过二次验证。
+
+    TTL 10 分钟、最多 5 次失败；通过后建 session 并把设备标记为 trusted。
+    """
+
+    user = models.ForeignKey(User, verbose_name="用户", on_delete=models.CASCADE, related_name="login_challenges")
+    token = models.CharField("令牌", max_length=64, unique=True)
+    device_id = models.CharField("设备 ID", max_length=64)
+    methods = models.JSONField("可用验证方式", default=list)
+    remember = models.BooleanField("记住登录", default=False)
+    attempts = models.IntegerField("失败次数", default=0)
+    expires_at = models.DateTimeField("过期时间")
+    consumed_at = models.DateTimeField("完成时间", null=True, blank=True)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "登录挑战"
+        verbose_name_plural = "登录挑战"
+        ordering = ["-created_at"]
+
+
 class UserSession(models.Model):
     """登录设备（多端登录，ADR-0028）。
 
