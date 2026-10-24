@@ -84,7 +84,7 @@ frontend/
 
 `components/` 分组职责（不逐个穷举）：
 
-- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`、`AnnouncementHost`（全站弹窗公告宿主：进入站点后拉 `/announcements/active/` 逐条弹，关闭即记已读）。
+- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`UserMenu`（顶栏头像菜单：`个人中心 / 私信 / 通知 / 待办 / 任务 / 活动 / 反馈 / 审核队列` 按能力裁剪，**「后台管理」只在 `utils/roles.ts::canAccessAdmin(role.variant)` 为真时出现**，即 `admin` / `superadmin` 两种 `is_staff` 徽章）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`、`AnnouncementHost`（全站弹窗公告宿主：进入站点后拉 `/announcements/active/` 逐条弹，关闭即记已读）。
 - **内容与互动**：`CommentSection`（评论树，含协管 UI）、`MessageThread`（私信/任务讨论线程）、`Avatar`、`ReportButton`、`AuthorReviewBanner`（作者视角审核状态横幅）、`Pagination`、`ArticleToc`（正文目录）、`ClubFeed` + `feed/FeedCards`（首页动态流）。
 - **表单与编辑器**：`RichTextEditor`（Tiptap 封装）、`DocxPreview`、`UserSearchSelect`（用户搜索选择器）、`MentionField`（@ 提及）、`CommentThreadStatusField`（评论线程开关）、`PasswordInput`、`SurveyFill`。
 - **视图部件**：`TaskGantt`（frappe-gantt 甘特）、`TaskTimeline`（任务时间线）。
@@ -316,7 +316,7 @@ try {
 - 未读红点：底部 tab、首页铃铛与「我的」入口的未读数字（私信 + 通知）来自 `api/unreadBadges.ts` 的模块级 store（30 s 轮询 + 窗口可见 / 聚焦刷新 + App 壳 `club:unread` 事件）。
 - 自动改道：`HomeRoute` 在根路径用 `utils/device.ts::isMobileDevice()`（UA 正则命中 iPhone/Android/Windows Phone 等）判断手机浏览器，渲染 `<Navigate to="/m" replace />`；深链接、桌面端与「请求桌面站点」模式不受影响。
 - UA 变化改道：`index.tsx` 在 React 渲染前调用 `utils/uaSwitch.ts::applyUaSwitch()`，把当前 UA 归为三档（`app` / `mobile` / `desktop`，见 `device.ts::classifyUserAgent`）并与 `localStorage` 里的上一次类别比较。**只在跨「移动侧 / 桌面侧」变化时**跳一次：变成移动侧 → 手机版等价页（`/news/:id` → `/m/news/:id`，无对应页面则 `/m`），变成桌面侧 → 桌面版等价页（`/m/me` → `/profile`，其余回落 `/`）。只比类别不比字符串，浏览器版本号升级、壳版本升级都不会误跳；类别不变时深链接保持原样。跳转用 `history.replaceState` 改 hash，不新增历史记录、不产生闪屏。
-- `/m/me` 按真实契约 `{user, role, profile}` 渲染：显示名与头像取 `profile`、身份徽章取 `role.label`；`role.variant ∈ {admin, superadmin}` 时显示「进入后台管理」行（`window.location.href = "/admin/"`）；匿名显示登录 CTA；退出登录 = `api.logout()` + 刷新。
+- `/m/me` 按真实契约 `{user, role, profile}` 渲染：显示名与头像取 `profile`、身份徽章取 `role.label`；`role.variant ∈ {admin, superadmin}` 时显示「进入后台管理」行（`window.location.href = "/admin/"`，判定走 `utils/roles.ts::canAccessAdmin`，与桌面顶栏同一函数）；匿名显示登录 CTA；退出登录 = `api.logout()` + 刷新。
 - 加固点：网格用 `repeat(4, minmax(0, 1fr))` 防溢出、`.m-app` 上 `overflow-x: hidden`、固定条带 `env(safe-area-inset-*)` 安全区 padding。
 
 ## 嵌入模式（`?embed=1`）

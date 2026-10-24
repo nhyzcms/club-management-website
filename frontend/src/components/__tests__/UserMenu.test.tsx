@@ -9,6 +9,7 @@ function setup(overrides: Partial<UserMenuProps> = {}) {
     verified: true,
     dmsEnabled: true,
     canReview: true,
+    showAdmin: true,
     themePref: "light",
     onThemeSelect: vi.fn(),
     onNavigate: vi.fn(),
@@ -129,5 +130,23 @@ describe("UserMenu（GitHub 式头像菜单）", () => {
     expect(screen.queryByRole("menuitem", { name: "审核队列" })).not.toBeInTheDocument();
     // 未认证时内容组仍有「个人中心 / 通知」
     expect(screen.getByRole("menuitem", { name: "通知" })).toBeInTheDocument();
+  });
+
+  it("无后台权限时隐藏「后台管理」（普通用户 / 访客）", async () => {
+    const { trigger } = setup({ showAdmin: false });
+    await openMenu(trigger);
+
+    expect(screen.queryByRole("menuitem", { name: "后台管理" })).not.toBeInTheDocument();
+    // 其它条目不受影响
+    expect(screen.getByRole("menuitem", { name: "个人中心" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "通知" })).toBeInTheDocument();
+  });
+
+  it("有后台权限时显示「后台管理」并跳转 /admin/", async () => {
+    const { trigger, props } = setup({ showAdmin: true });
+    await openMenu(trigger);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "后台管理" }));
+    expect(props.onNavigate).toHaveBeenCalledWith("/admin/");
   });
 });

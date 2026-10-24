@@ -8,6 +8,7 @@ import { useEmbedMode } from "../embed";
 import { useLoginModal } from "./LoginModalProvider";
 import type { Banner } from "../types/messaging";
 import { useTheme } from "../theme";
+import { canAccessAdmin } from "../utils/roles";
 import ThemeToggle from "./ThemeToggle";
 import { ICONS } from "./icons";
 import UserMenu from "./UserMenu";
@@ -212,6 +213,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
     || user?.permissions?.can_view_feedback
     || user?.permissions?.can_handle_reports
   );
+  // 后台入口只给 is_staff（后端映射为 admin / superadmin 两种徽章），
+  // 其余身份不显示——Django admin 本来也会把他们挡在登录页。
+  const showAdmin = canAccessAdmin(roleVariant);
 
   if (embed) {
     return <div className="cs appshell">{children}</div>;
@@ -269,6 +273,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                   verified={showInbox}
                   dmsEnabled={policy.dms_enabled}
                   canReview={showReviewQueue}
+                  showAdmin={showAdmin}
                   themePref={themePref}
                   onThemeSelect={setThemePref}
                   onNavigate={go}

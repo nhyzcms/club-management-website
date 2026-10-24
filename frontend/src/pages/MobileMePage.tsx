@@ -6,6 +6,7 @@ import MobileTabBar from "../components/MobileTabBar";
 import { formatUnreadCount, useUnreadCounts } from "../api/unreadBadges";
 import { THEME_OPTIONS, useTheme } from "../theme";
 import type { RoleVariant } from "../types/profile";
+import { canAccessAdmin } from "../utils/roles";
 import "../styles/mobile.css";
 import "../styles/mobile-work.css";
 
@@ -69,8 +70,8 @@ export default function MobileMePage() {
     permissions.can_view_feedback ||
     permissions.can_handle_reports
   );
-  // 「进入后台管理」指向 Django admin（其门禁只认 is_staff），按身份徽章显示
-  const isAdmin = me?.role?.variant === "admin" || me?.role?.variant === "superadmin";
+  // 「进入后台管理」指向 Django admin（其门禁只认 is_staff），与桌面顶栏菜单同一判定
+  const isAdmin = canAccessAdmin(me?.role?.variant);
 
   const common: Entry[] = [
     { to: "/m/tasks", label: "任务" },
