@@ -21,6 +21,7 @@ from .authcode import generate_authcode_value, normalize_authcode
 from .identity_review import approve_manual, disable_user, reject_manual
 from .member_barcode import export_zip as export_barcode_zip
 from .member_qr import export_zip
+from .utils import get_client_ip
 from .member_roster import (
     HEADERS,
     ParsedRow,
@@ -31,10 +32,13 @@ from .member_roster import (
     plan_import,
 )
 from .models import (
+    AccountDevice,
+    AdminAccessLog,
     AuthCode,
     AuthCodeRedemption,
     IdentityImportBatch,
     IdentityProof,
+    LoginEvent,
     MemberIdentity,
     Profile,
     SecurityQuestion,
@@ -853,4 +857,87 @@ class StepUpEventAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+# ---- 账号安全中心（P4）：登录事件 / 设备 / 管理端访问审计 ----
+
+@admin.register(LoginEvent)
+class LoginEventAdmin(admin.ModelAdmin):
+    """登录事件（只读）：账号属社团资产，管理端据此处置滥用 / 冻结 / 回收。"""
+
+    list_display = ("created_at", "user", "status", "second_factor", "is_new_device", "city", "ip", "device")
+    list_filter = ("status", "method", "second_factor", "is_new_device", "city")
+    search_fields = ("user__username", "user__email", "ip", "city", "device__label")
+    date_hierarchy = "created_at"
+    raw_id_fields = ("user", "device")
+    ordering = ("-created_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        # 查看即留痕：谁看了谁的登录记录（scope=login_events）
+        target_id = request.GET.get("user__id__exact") or None
+        try:
+            target_id = int(target_id) if target_id else None
+        except (TypeError, ValueError):
+            target_id = None
+        AdminAccessLog.objects.create(
+            actor=request.user,
+            target_id=target_id,
+            scope="login_events",
+            ip=get_client_ip(request),
+        )
+        return super().changelist_view(request, extra_context)
+
+
+@admin.register(AccountDevice)
+class AccountDeviceAdmin(admin.ModelAdmin):
+    """设备记录（只读）：信任状态只由二次验证写入，后台不提供手改。"""
+
+    list_display = ("user", "label", "platform", "last_city", "last_seen", "trusted_at", "revoked_at")
+    list_filter = ("platform", "last_city")
+    search_fields = ("user__username", "device_id", "label", "model")
+    raw_id_fields = ("user",)
+    ordering = ("-last_seen",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        AdminAccessLog.objects.create(
+            actor=request.user, target=None, scope="devices", ip=get_client_ip(request),
+        )
+        return super().changelist_view(request, extra_context)
+
+
+@admin.register(AdminAccessLog)
+class AdminAccessLogAdmin(admin.ModelAdmin):
+    """管理端访问留痕（只读）：监控权本身也要可审计。"""
+
+    list_display = ("created_at", "actor", "target", "scope", "ip")
+    list_filter = ("scope",)
+    search_fields = ("actor__username", "target__username")
+    ordering = ("-created_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False

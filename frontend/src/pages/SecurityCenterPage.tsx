@@ -35,6 +35,8 @@ export default function SecurityCenterPage() {
       : null,
   );
   const [error, setError] = useState("");
+  const [search] = useSearchParams();
+  const bindHint = search.get("bind") === "1";
 
   const load = () => {
     securityApi
@@ -116,6 +118,13 @@ export default function SecurityCenterPage() {
         </header>
 
         {error && <div className="alert alert-danger" role="alert"><span>{error}</span></div>}
+
+        {bindHint && (
+          <div className="sec-bind-hint" role="status">
+            <strong>这台设备还没有通过二次验证</strong>
+            <span>本次登录已放行。请尽快绑定至少一种二次验证方式（滚动密钥 / 安全问题 / 邮箱验证码），下次在这台设备登录就不再放行。</span>
+          </div>
+        )}
 
         <section>
           <h2>证明你的身份的方法</h2>
