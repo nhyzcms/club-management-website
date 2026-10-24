@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from . import totp
-from .devices import DEVICE_COOKIE_NAME, new_device_id
+from .utils import DEVICE_COOKIE_NAME, new_device_id
 from .models import AccountDevice, LoginChallenge, LoginEvent, RecoveryCode, TotpDevice
 
 

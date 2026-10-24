@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0028_recoverycode_totpdevice'),
+        ('accounts', '0029_recoverycode_totpdevice'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
