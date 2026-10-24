@@ -4,9 +4,13 @@ from rest_framework.routers import DefaultRouter
 from . import views
 from .identity_review import IdentityReviewViewSet
 from .inbox import InboxView
+from .password_reset_review import PasswordResetRequestViewSet
 
 router = DefaultRouter()
 router.register(r"identity-reviews", IdentityReviewViewSet, basename="identity-review")
+router.register(
+    r"password-reset-requests", PasswordResetRequestViewSet, basename="password-reset-request",
+)
 
 urlpatterns = [
     path("inbox/", InboxView.as_view(), name="inbox"),
@@ -35,6 +39,15 @@ urlpatterns = [
     path("csrf/", views.csrf_token_view, name="csrf_token"),
     path("password-reset/", views.password_reset_view, name="password_reset"),
     path("password-reset/confirm/", views.password_reset_confirm_view, name="password_reset_confirm"),
+    # 忘记密码 → 管理员手动重置（2026-10）：匿名提交申请 + 审批人取证明。
+    path("password-reset/request/", views.password_reset_request_view, name="password_reset_request"),
+    path(
+        "password-reset-requests/<int:pk>/proof/",
+        views.password_reset_proof_file_view,
+        name="password_reset_proof_file",
+    ),
+    # 管理员重置后的首次登录强制改密。
+    path("password/force-change/", views.force_change_password_view, name="force_change_password"),
     path("profile/", views.profile_view, name="profile"),
     path("profile/update/", views.profile_update_view, name="profile_update"),
     path("profile/change-password/", views.change_password_view, name="change_password"),

@@ -3,10 +3,11 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db.utils import DatabaseError
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.urls import reverse
 from django.utils.html import escape
 
-from .models import UserSession
+from .models import Profile, UserSession
 from .throttles import login_blocked_response
 from .utils import record_user_session
 from .validity import enforce_account_validity
@@ -164,6 +165,83 @@ class SingleSessionMiddleware:
                     status=401,
                 )
         return self.get_response(request)
+
+
+# 强制改密期间仍放行的路径：读取自身状态、改密、退出、开关后台改密页与静态资源。
+# 其余请求一律 403（API）/ 重定向到后台改密页（/admin/）。
+PASSWORD_CHANGE_EXEMPT_PREFIXES = (
+    "/auth/me/",
+    "/auth/password/force-change/",
+    "/auth/logout/",
+    "/auth/csrf/",
+    "/auth/login/",
+    "/admin/login/",
+    "/admin/logout/",
+    "/admin/password_change/",
+    "/admin/jsi18n/",
+    "/static/",
+    "/media/",
+    "/private-media/",
+    "/favicon",
+)
+
+
+class PasswordChangeRequiredMiddleware:
+    """管理员重置密码后的「首次登录必须改密」闸门。
+
+    判定源是 ``Profile.must_change_password``；为省掉每个请求一次查询，结果缓存在
+    session（登录视图会直接写入，改密成功后清零）。数据库异常（迁移测试把 schema
+    迁到旧状态）时静默放行——与 ValidityEnforcementMiddleware 同口径。
+
+    - SPA / API：403 JSON ``{"reason": "password_change_required"}``，前端拦截后跳改密页；
+    - Django 后台：重定向到 ``/admin/password_change/``（否则管理员被自己的重置卡死）。
+    """
+
+    SESSION_KEY = "pwd_change_required"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = getattr(request, "user", None)
+        if (
+            user is not None
+            and user.is_authenticated
+            and self._required(request)
+            and not self._exempt(request.path)
+        ):
+            if request.path.startswith("/admin/"):
+                return HttpResponseRedirect(reverse("admin:password_change"))
+            return JsonResponse(
+                {
+                    "error": "管理员已重置你的密码，请先修改密码后再继续使用。",
+                    "reason": "password_change_required",
+                    "url": "/change-password-required",
+                },
+                status=403,
+            )
+        return self.get_response(request)
+
+    def _required(self, request) -> bool:
+        session = getattr(request, "session", None)
+        if session is None:
+            return False
+        cached = session.get(self.SESSION_KEY)
+        if isinstance(cached, bool):
+            return cached
+        try:
+            required = Profile.objects.filter(
+                user_id=request.user.pk, must_change_password=True,
+            ).exists()
+        except DatabaseError:
+            return False
+        session[self.SESSION_KEY] = required
+        return required
+
+    @staticmethod
+    def _exempt(path: str) -> bool:
+        normalized = path if path.endswith("/") else path + "/"
+        return any(normalized.startswith(prefix) for prefix in PASSWORD_CHANGE_EXEMPT_PREFIXES)
 
 
 class ValidityEnforcementMiddleware:

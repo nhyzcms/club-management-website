@@ -58,7 +58,12 @@ const TO_DESKTOP: Record<string, string> = {
 const DETAIL_MODULES = ["news", "activity", "tutorials"];
 
 /** 两边共用同一个路由、页面内部自行适配的模块（UA 变化时不跳，保住深链接）。 */
-const SHARED_PREFIXES = ["/announcements"];
+const SHARED_PREFIXES = [
+  "/announcements",
+  // 认证 / 账号流程：两套 UI 共用同一路由，UA 变化时不要把人从表单上带走。
+  "/forgot-password",
+  "/change-password-required",
+];
 
 /** 把 location.hash（如 "#/m/news/3?x=1"）归一成路由路径（"/m/news/3"）。 */
 export function normalizeHashPath(raw: string): string {

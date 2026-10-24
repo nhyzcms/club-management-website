@@ -21,6 +21,7 @@ const CAP_LABELS: Record<string, string> = {
   can_mute_user: "全站禁言",
   can_manage_announcement: "管理横幅公告",
   can_manage_announcements: "发布全站弹窗公告",
+  can_review_password_reset: "审批密码重置",
 };
 
 /** 统一的 24x24 线性图标外壳，沿用项目内联 SVG 约定（stroke=currentColor）。 */
@@ -150,6 +151,14 @@ const CAP_ICONS: Record<string, ReactNode> = {
       <rect x={3} y={5} width={18} height={14} rx={2.5} />
       <path d="M3 8h18" />
       <path d="M7 15h6" />
+    </Svg>
+  ),
+  can_review_password_reset: (
+    <Svg>
+      <circle cx={8} cy={12} r={3.5} />
+      <path d="M11.5 12H21" />
+      <path d="M18 12v3" />
+      <path d="M15 12v2" />
     </Svg>
   ),
 };

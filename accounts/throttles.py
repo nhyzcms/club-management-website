@@ -42,6 +42,18 @@ class RegisterThrottle(_IPLimitThrottle):
         return f"{get_policy().register_per_ip_per_day}/day"
 
 
+class PasswordResetRequestThrottle(_IPLimitThrottle):
+    """手动重置密码申请节流：每 IP 每天 5 次（防匿名刷上传 / 猜账号）。
+
+    未做成站点策略项：这是低频兜底能力，固定上限即可，避免再引一次设置迁移。
+    """
+
+    scope = "password_reset_request"
+
+    def get_rate(self):
+        return "5/day"
+
+
 class ResendVerificationThrottle(_IPLimitThrottle):
     """重发邮箱认证邮件节流：每个 IP 每小时 N 次（N 来自 get_policy()）。"""
 

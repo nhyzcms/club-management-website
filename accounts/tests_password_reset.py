@@ -1,0 +1,352 @@
+"""注册三条件查重 + 忘记密码手动重置 + 首次登录强制改密（2026-10）。
+
+覆盖：
+- 注册查重：用户名 / 邮箱（含 pending 通道）/ 真实姓名任一命中即拒，提示登录原账户；
+  已注销账号单独提示。
+- 申请：匿名 multipart 提交（账号 + 身份证明），审批人收到站内通知；未知账号 / 重名
+  真实姓名 / 缺证明 / 重复待处理各自拒绝。
+- 审批：批准 = 密码 123456 + 强制改密标记 + 吊销会话；驳回不动密码；不能审批自己。
+- 强制改密：登录响应带标记、中间件拦其他请求、改密成功后放行。
+"""
+from django.contrib.auth.models import Permission, User
+from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase
+from django.utils import timezone
+
+from .models import PasswordResetRequest, Profile, UserSession, Verification
+
+PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000d49444154789c63f8cf00000003000100184bbb6e0000000049454e44ae426082"
+)
+
+
+def proof(name="proof.png", content_type="image/png"):
+    return SimpleUploadedFile(name, PNG_BYTES, content_type=content_type)
+
+
+def register_payload(**overrides):
+    data = {
+        "username": "newbie",
+        "password": "StrongPass123!",
+        "password2": "StrongPass123!",
+        "real_name": "张三",
+        "identity": "student",
+        "turnstile_token": "dummy",
+    }
+    data.update(overrides)
+    return data
+
+
+class RegistrationDuplicateTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.existing = User.objects.create_user(
+            username="olduser", email="old@163.com", password="StrongPass123!",
+        )
+        Profile.objects.create(user=self.existing, real_name="李四", identity="student")
+
+    def post(self, **overrides):
+        return self.client.post("/auth/register/", data=register_payload(**overrides))
+
+    def test_duplicate_username_rejected_with_login_hint(self):
+        resp = self.post(username="OldUser")
+        self.assertEqual(resp.status_code, 409, resp.content)
+        body = resp.json()
+        self.assertEqual(body["reason"], "account_exists")
+        self.assertEqual(body["field"], "username")
+        self.assertIn("请登录原账户", body["error"])
+
+    def test_duplicate_real_name_rejected_even_with_new_username(self):
+        resp = self.post(username="another", real_name="李四")
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["field"], "real_name")
+
+    def test_duplicate_real_name_normalized(self):
+        # 全角空格 / 连续空白 / 首尾空白归一后仍判重
+        resp = self.post(username="another2", real_name="  李　四 ")
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["field"], "real_name")
+
+    def test_duplicate_bound_email_rejected(self):
+        resp = self.post(username="another3", real_name="王五", email="OLD@163.com")
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["field"], "email")
+
+    def test_duplicate_pending_email_rejected(self):
+        pending = User.objects.create_user(username="pendinguser", password="StrongPass123!")
+        Profile.objects.create(user=pending, real_name="赵六", identity="student")
+        Verification.objects.create(
+            user=pending, channel=Verification.CHANNEL_EMAIL,
+            status=Verification.STATUS_PENDING, identifier="pending@qq.com",
+        )
+        resp = self.post(username="another4", real_name="钱七", email="pending@qq.com")
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["field"], "email")
+
+    def test_deleted_account_gets_distinct_message(self):
+        self.existing.profile.deleted_at = timezone.now()
+        self.existing.profile.save(update_fields=["deleted_at"])
+        resp = self.post(username="olduser")
+        self.assertEqual(resp.status_code, 409, resp.content)
+        body = resp.json()
+        self.assertEqual(body["reason"], "account_deleted")
+        self.assertIn("已注销", body["error"])
+
+    def test_distinct_identity_can_register(self):
+        resp = self.post(username="fresh", real_name="孙八", email="fresh@163.com")
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+
+class PasswordResetRequestTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            username="member", email="member@163.com", password="OldPass123!",
+        )
+        Profile.objects.create(user=self.user, real_name="周九", identity="student")
+        self.reviewer = User.objects.create_user(username="boss", password="BossPass123!")
+        perm = Permission.objects.get(
+            content_type__app_label="accounts", codename="review_password_reset",
+        )
+        self.reviewer.user_permissions.add(perm)
+
+    def submit(self, **overrides):
+        data = {
+            "account": "member",
+            "contact": "13800000000",
+            "note": "换了手机，邮箱也忘了",
+            "proof": proof(),
+            "turnstile_token": "dummy",
+        }
+        data.update(overrides)
+        return self.client.post("/auth/password-reset/request/", data=data)
+
+    def test_submit_creates_request_and_notifies_reviewer(self):
+        resp = self.submit()
+        self.assertEqual(resp.status_code, 201, resp.content)
+        request_obj = PasswordResetRequest.objects.get(user=self.user)
+        self.assertEqual(request_obj.status, PasswordResetRequest.STATUS_PENDING)
+        self.assertTrue(request_obj.proof.name.startswith("password_reset_proofs/"))
+        self.assertTrue(
+            self.reviewer.notifications.filter(event="password_reset_requested").exists()
+        )
+
+    def test_submit_accepts_email_identifier(self):
+        resp = self.submit(account="member@163.com")
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_submit_accepts_unique_real_name(self):
+        resp = self.submit(account="周九")
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_submit_unknown_account(self):
+        resp = self.submit(account="nobody")
+        self.assertEqual(resp.status_code, 404, resp.content)
+        self.assertEqual(resp.json()["reason"], "account_not_found")
+
+    def test_submit_ambiguous_real_name(self):
+        other = User.objects.create_user(username="other", password="StrongPass123!")
+        Profile.objects.create(user=other, real_name="周九", identity="student")
+        resp = self.submit(account="周九")
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["reason"], "account_ambiguous")
+
+    def test_submit_requires_proof(self):
+        resp = self.submit(proof="")
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("身份证明", resp.json()["error"])
+
+    def test_submit_rejects_wrong_file_type(self):
+        resp = self.submit(proof=proof("proof.txt", "text/plain"))
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_submit_rejects_duplicate_pending(self):
+        self.assertEqual(self.submit().status_code, 201)
+        resp = self.submit()
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["reason"], "request_pending")
+
+    def test_submit_rejects_deleted_account(self):
+        self.user.profile.deleted_at = timezone.now()
+        self.user.profile.save(update_fields=["deleted_at"])
+        resp = self.submit()
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["reason"], "account_deleted")
+
+    def test_submit_rejects_disabled_account(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        resp = self.submit()
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["reason"], "account_disabled")
+
+    def test_list_requires_permission(self):
+        self.client.force_login(self.user)
+        resp = self.client.get("/auth/password-reset-requests/")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_list_and_proof_for_reviewer(self):
+        self.submit()
+        request_obj = PasswordResetRequest.objects.get(user=self.user)
+        self.client.force_login(self.reviewer)
+        listing = self.client.get("/auth/password-reset-requests/?status=pending")
+        self.assertEqual(listing.status_code, 200, listing.content)
+        self.assertEqual(listing.json()["count"], 1)
+        row = listing.json()["results"][0]
+        self.assertEqual(row["username"], "member")
+        self.assertIn("/proof/", row["proof_url"])
+
+        file_resp = self.client.get(row["proof_url"])
+        self.assertEqual(file_resp.status_code, 200)
+        self.assertEqual(file_resp["Content-Type"], "image/png")
+
+    def test_proof_forbidden_for_other_user(self):
+        self.submit()
+        request_obj = PasswordResetRequest.objects.get(user=self.user)
+        intruder = User.objects.create_user(username="intruder", password="StrongPass123!")
+        self.client.force_login(intruder)
+        resp = self.client.get(f"/auth/password-reset-requests/{request_obj.pk}/proof/")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_approve_resets_password_and_requires_change(self):
+        self.submit()
+        request_obj = PasswordResetRequest.objects.get(user=self.user)
+        # 造一个既有会话，验证批准后会被吊销
+        UserSession.objects.create(user=self.user, session_key="old-session")
+        self.client.force_login(self.reviewer)
+        resp = self.client.post(
+            f"/auth/password-reset-requests/{request_obj.pk}/approve/",
+            data={"note": "学生证核对无误"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        request_obj.refresh_from_db()
+        self.user.refresh_from_db()
+        self.user.profile.refresh_from_db()
+        self.assertEqual(request_obj.status, PasswordResetRequest.STATUS_APPROVED)
+        self.assertEqual(request_obj.reviewed_by, self.reviewer)
+        self.assertEqual(request_obj.review_note, "学生证核对无误")
+        self.assertIsNotNone(request_obj.reset_at)
+        self.assertTrue(self.user.check_password("123456"))
+        self.assertTrue(self.user.profile.must_change_password)
+        self.assertFalse(UserSession.objects.filter(user=self.user, is_current=True).exists())
+
+    def test_cannot_approve_own_request(self):
+        request_obj = PasswordResetRequest.objects.create(
+            user=self.reviewer, identifier="boss", proof=proof(),
+        )
+        self.client.force_login(self.reviewer)
+        resp = self.client.post(
+            f"/auth/password-reset-requests/{request_obj.pk}/approve/",
+            data={}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertEqual(resp.json()["reason"], "cannot_review_self")
+
+    def test_reject_does_not_touch_password(self):
+        self.submit()
+        request_obj = PasswordResetRequest.objects.get(user=self.user)
+        self.client.force_login(self.reviewer)
+        resp = self.client.post(
+            f"/auth/password-reset-requests/{request_obj.pk}/reject/",
+            data={"note": "证明看不清"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        request_obj.refresh_from_db()
+        self.user.refresh_from_db()
+        self.user.profile.refresh_from_db()
+        self.assertEqual(request_obj.status, PasswordResetRequest.STATUS_REJECTED)
+        self.assertTrue(self.user.check_password("OldPass123!"))
+        self.assertFalse(self.user.profile.must_change_password)
+
+    def test_double_review_conflicts(self):
+        self.submit()
+        request_obj = PasswordResetRequest.objects.get(user=self.user)
+        self.client.force_login(self.reviewer)
+        self.client.post(
+            f"/auth/password-reset-requests/{request_obj.pk}/approve/",
+            data={}, content_type="application/json",
+        )
+        resp = self.client.post(
+            f"/auth/password-reset-requests/{request_obj.pk}/approve/",
+            data={}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["reason"], "already_reviewed")
+
+
+class ForcedPasswordChangeTest(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.user = User.objects.create_user(
+            username="resetme", email="resetme@163.com", password="123456",
+        )
+        self.profile = Profile.objects.create(
+            user=self.user, real_name="吴十", identity="student", must_change_password=True,
+        )
+
+    def test_login_response_flags_must_change(self):
+        resp = self.client.post(
+            "/auth/login/",
+            data={"username": "resetme", "password": "123456"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.json()["must_change_password"])
+
+    def test_me_exposes_flag_and_other_endpoints_blocked(self):
+        self.client.force_login(self.user)
+        me = self.client.get("/auth/me/")
+        self.assertEqual(me.status_code, 200)
+        self.assertTrue(me.json()["must_change_password"])
+
+        blocked = self.client.get("/auth/verification/")
+        self.assertEqual(blocked.status_code, 403)
+        self.assertEqual(blocked.json()["reason"], "password_change_required")
+
+    def test_force_change_success_clears_flag(self):
+        self.client.force_login(self.user)
+        resp = self.client.post(
+            "/auth/password/force-change/",
+            data={"new_password": "BrandNewPass123!", "new_password2": "BrandNewPass123!"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.user.refresh_from_db()
+        self.profile.refresh_from_db()
+        self.assertTrue(self.user.check_password("BrandNewPass123!"))
+        self.assertFalse(self.profile.must_change_password)
+
+        # 放行普通接口（verification 需要登录，200/内部状态即可）
+        allowed = self.client.get("/auth/verification/")
+        self.assertEqual(allowed.status_code, 200, allowed.content)
+
+    def test_force_change_rejects_default_and_mismatch(self):
+        self.client.force_login(self.user)
+        same = self.client.post(
+            "/auth/password/force-change/",
+            data={"new_password": "123456", "new_password2": "123456"},
+            content_type="application/json",
+        )
+        self.assertEqual(same.status_code, 400, same.content)
+
+        mismatch = self.client.post(
+            "/auth/password/force-change/",
+            data={"new_password": "BrandNewPass123!", "new_password2": "OtherPass123!"},
+            content_type="application/json",
+        )
+        self.assertEqual(mismatch.status_code, 400, mismatch.content)
+
+    def test_force_change_not_required_for_normal_account(self):
+        self.profile.must_change_password = False
+        self.profile.save(update_fields=["must_change_password"])
+        self.client.force_login(self.user)
+        resp = self.client.post(
+            "/auth/password/force-change/",
+            data={"new_password": "BrandNewPass123!", "new_password2": "BrandNewPass123!"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["reason"], "not_required")

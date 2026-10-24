@@ -805,6 +805,7 @@ class CapabilityKeysContractTest(TestCase):
             "can_mute_user",
             "can_manage_announcement",
             "can_manage_announcements",
+            "can_review_password_reset",
         }
         user = User.objects.create_user(username="cap", password="p")
         keys = set(_capabilities(user).keys())

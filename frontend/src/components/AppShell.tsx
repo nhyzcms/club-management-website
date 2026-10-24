@@ -23,6 +23,7 @@ interface AppShellUser {
     can_review_identity?: boolean;
     can_view_feedback?: boolean;
     can_handle_reports?: boolean;
+    can_review_password_reset?: boolean;
   };
 }
 interface AppShellProfile {
@@ -212,6 +213,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     || user?.permissions?.can_review_identity
     || user?.permissions?.can_view_feedback
     || user?.permissions?.can_handle_reports
+    || user?.permissions?.can_review_password_reset
   );
   // 后台入口只给 is_staff（后端映射为 admin / superadmin 两种徽章），
   // 其余身份不显示——Django admin 本来也会把他们挡在登录页。

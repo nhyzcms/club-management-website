@@ -22,6 +22,7 @@ from django.utils import timezone
 from .identity_review import revoke_user_sessions
 from .models import (
     IdentityProof,
+    PasswordResetRequest,
     Profile,
     SecurityQuestion,
     StepUpEmailCode,
@@ -70,6 +71,12 @@ def delete_account(user: User) -> Profile:
             proof.file.delete(save=False)
         proof.delete()
 
+    # 1.1) 密码重置申请的证明材料：同样删文件 + 行（含历史申请）。
+    for reset_request in PasswordResetRequest.objects.filter(user=user):
+        if reset_request.proof:
+            reset_request.proof.delete(save=False)
+        reset_request.delete()
+
     # 2) 头像文件（Profile 行保留，只清字段）。
     if profile.avatar:
         profile.avatar.delete(save=False)
@@ -113,11 +120,13 @@ def delete_account(user: User) -> Profile:
     profile.bio = ""
     profile.registration_deadline = None
     profile.expiry_disabled_at = None
+    profile.must_change_password = False
     profile.deleted_at = now
     profile.save(
         update_fields=[
             "avatar", "birthday", "gender", "bio",
-            "registration_deadline", "expiry_disabled_at", "deleted_at",
+            "registration_deadline", "expiry_disabled_at",
+            "must_change_password", "deleted_at",
         ]
     )
     return profile

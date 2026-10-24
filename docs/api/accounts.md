@@ -9,7 +9,7 @@
 - **路径前缀**：`config/urls.py` 把本 app 挂在 `/auth/`，故端点形如 `/auth/login/`。
 - **认证口径**（本文件「认证」列）：公开 = 匿名可用；登录 = 仅要求已登录；已认证 = 登录且 `is_verified`（任一认证通道 `approved` 且未过期，[ADR-0006](../adr/0006-verification-model.md)）。
 - **未登录行为分两类**：`@login_required` 的函数视图未登录时 302 重定向到 `/login/`；DRF 端点（`identity-reviews`、`inbox`）会话认证无跳转，未登录 / 无权限均返回 403 JSON（`{"detail": …}`）。
-- **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed` / `account_expired_unverified` / `step_up_required`。
+- **错误体形状**：函数视图为 `{"error": "…"}`（多条校验错误时 `error` 为字符串数组）；DRF 端点为 `{"detail": "…"}`。部分错误带 `reason` 供前端分支：`account_disabled` / `login_protection` / `login_throttled` / `registration_closed` / `verification_closed` / `email_domain_not_allowed` / `account_expired_unverified` / `step_up_required` / `account_exists` / `account_deleted` / `password_change_required` / `request_pending` / `account_not_found` / `account_ambiguous`。
 - **Session + CSRF**：登录态走 Django Session cookie；非 GET 请求须带 `X-CSRFToken`（可先 `GET /auth/csrf/` 取 cookie）。
 - **单会话与挤号**（`accounts.middleware.SingleSessionMiddleware`）：同一账号仅一个当前会话；他设备登录成功后旧会话的下一次请求返回 401 `{"detail": "您的账号在其他设备登录，您已被迫下线。", "reason": "session_superseded", "takeover": {"device_name": …, "device_type": …, "ip": …, "time": …}}`（浏览器导航 Accept 含 `text/html` 时改返 401 HTML 下线页）。
 - **登录保护与限流**：账号已有未满 10 分钟的当前会话、且本次非同一会话再认证 → 409 `login_protection`；登录失败按 IP（`login_per_ip_per_hour`）与按用户名 / 邮箱（`login_per_username_per_hour`）双维度计数（只计失败），命中返回 429 `login_throttled` + `Retry-After` 头。
@@ -32,8 +32,14 @@
 | POST | `/auth/profile/change-password/` | 登录 | — | 修改密码（需 Step-up） |
 | POST | `/auth/account/delete/` | 登录 | — | 注销账号（软删除 + 敏感信息清除，[ADR-0027](../adr/0027-account-deletion.md)） |
 | GET | `/auth/sessions/` | 登录 | — | 本人最近登录记录 |
-| POST | `/auth/password-reset/` | 公开 | — | 发起密码重置 |
-| POST | `/auth/password-reset/confirm/` | 公开 | — | 确认新密码 |
+| POST | `/auth/password-reset/` | 公开 | — | 邮箱链接自助重置（发起） |
+| POST | `/auth/password-reset/confirm/` | 公开 | — | 邮箱链接自助重置（确认新密码） |
+| POST | `/auth/password-reset/request/` | 公开 | — | 向管理员申请手动重置（multipart：账号 + 身份证明） |
+| GET | `/auth/password-reset-requests/` | 登录 | `accounts.review_password_reset` | 密码重置申请队列（`?status=`） |
+| POST | `/auth/password-reset-requests/{pk}/approve/` | 登录 | `accounts.review_password_reset` | 批准：重置为 `123456` + 强制改密 + 吊销会话 |
+| POST | `/auth/password-reset-requests/{pk}/reject/` | 登录 | `accounts.review_password_reset` | 驳回申请（不动密码） |
+| GET | `/auth/password-reset-requests/{pk}/proof/` | 登录 | 本人或 `accounts.review_password_reset` | 身份证明文件（私有存储鉴权下载） |
+| POST | `/auth/password/force-change/` | 登录 | — | 管理员重置后的首次登录强制改密（不要求原密码） |
 | GET | `/auth/verification/` | 登录 | — | 账号认证状态总览 |
 | GET | `/auth/validity/` | 登录 | — | 账号有效期快照（状态 / 到期时间 / 剩余天数 / 提示键） |
 | POST | `/auth/validity/ack/` | 登录 | — | 标记「账号有效期」弹窗已读（写回快照键） |
@@ -71,10 +77,16 @@
 **响应 `200 OK`**
 
 ```json
-{"user": {"id": 7, "username": "zhangsan", "email": "zs@example.com"}}
+{
+  "user": {"id": 7, "username": "zhangsan", "email": "zs@example.com"},
+  "must_change_password": false
+}
 ```
 
-`email` 未绑定时为空字符串。未认证账号照常登录（登录与认证解耦）；停用账号被拒，普通停用与「超期未认证被系统停用」返回不同的错误提示（见下表）。
+`email` 未绑定时为空字符串。`must_change_password=true` 表示管理员刚手动重置过密码：前端应跳
+`/#/change-password-required`；后端 `PasswordChangeRequiredMiddleware` 也会拦下除「读取自身状态 /
+改密 / 退出」外的请求（403 `{"reason": "password_change_required", "url": "/change-password-required"}`）。
+未认证账号照常登录（登录与认证解耦）；停用账号被拒，普通停用与「超期未认证被系统停用」返回不同的错误提示（见下表）。
 
 **错误**
 
@@ -121,7 +133,15 @@
 
 **校牌号与自动绑定**（2026-10-23）：带 `card_no` 注册时，若名册中存在**姓名（归一）+ 校牌号（归一：去空白、大小写不敏感）都一致**且未绑定的**唯一**一行 → 直接绑定（`bind_method=register`），前端无需再走手机号后四位。没命中（名册未导入 / 校牌号不同 / 同名多行）**不报错**：`Profile.card_no` 先保存，名册导入或「重新运行自动匹配」时按姓名写回名册行（`sync_card_numbers`）；名册有值时以名册为准，两边始终对齐。
 
-**错误**：400 字段校验（用户名 / 邮箱占用、两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、邮箱格式，单条或数组）、邮箱后缀不在白名单 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`，或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
+**注册查重（2026-10）**：用户名（大小写不敏感）/ 邮箱（`User.email` 或他人 email 通道 identifier，含 pending）/ **真实姓名**（NFKC + 忽略空白后比较）**命中任一即视为同一账号**，返回 `409`：
+
+```json
+{"error": "该用户名已注册，请登录原账户。", "reason": "account_exists", "field": "username"}
+```
+
+`field` ∈ `username` / `email` / `real_name`；命中的是已注销账号时 `reason=account_deleted`（文案改为联系信息组）。产品意图是引导忘了原账号的人去登录，而不是开第二个号。
+
+**错误**：400 字段校验（两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、邮箱格式，单条或数组）、邮箱后缀不在白名单 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`，或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；409 注册查重（见上）；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
 
 ### 邮箱认证与重发
 
@@ -155,8 +175,9 @@
       "can_change_activity": false, "can_view_feedback": false, "can_handle_reports": false, "can_review_collections": false,
       "can_edit_about": false, "can_manage_panoramas": false, "can_manage_exam": false, "can_review_content": false,
       "can_review_identity": false, "can_force_publish": false, "can_manage_comment_thread": false, "can_mute_user": false,
-      "can_manage_announcement": false, "can_manage_announcements": false
+      "can_manage_announcement": false, "can_manage_announcements": false, "can_review_password_reset": false
     }},
+  "must_change_password": false,
   "role": {"label": "用户", "variant": "user"},
   "profile": {"avatar": "/media/avatars/user_7.png", "nickname": "张三", "birthday": "2007-05-01",
     "gender": "M", "bio": "摄影部部长", "is_verified": true}
@@ -180,6 +201,7 @@
 | can_review_identity | `accounts.can_review_identity` | can_force_publish | `reviews.force_publish` |
 | can_manage_comment_thread | `messaging.manage_comment_thread` | can_mute_user | `messaging.mute_user` |
 | can_manage_announcement | `messaging.manage_announcement` | can_manage_announcements | `announcements.manage_announcements` |
+| can_review_password_reset | `accounts.review_password_reset` | — | — |
 
 ### 更新资料 / 修改密码
 
@@ -245,6 +267,52 @@
 `POST /auth/password-reset/confirm/`
 
 **认证**：公开；**权限**：—。请求体 JSON：`uid`（string，是）、`token`（string，是）、`new_password`（string，是）。校验 `default_token_generator.check_token`；`new_password` 仅必填校验（不走密码强度校验器）。响应 `200`：`{"message": "Password has been reset successfully."}`；错误：400 `{"error": "Invalid reset link"}`（`uid` 无法解出用户）或 `{"error": "Invalid or expired token"}`。
+
+### 手动重置密码（申请 / 审核 / 强制改密，2026-10）
+
+适用于邮箱已失效 / 未绑定邮箱的社员。与上面的邮箱链接是**并列的两条通道**。
+
+**申请** `POST /auth/password-reset/request/`（公开，`multipart/form-data`，每 IP 每日 5 次）
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| account | 是 | 用户名 / 邮箱 / **恰好唯一的**真实姓名（用于定位账号） |
+| contact | 否 | 联系方式（手机 / QQ / 微信），供管理员核对 |
+| note | 否 | 申请说明 |
+| proof | 是 | 身份证明 **1 张**，≤5MB，JPG / PNG / WebP；落私有存储 `PRIVATE_MEDIA_ROOT/password_reset_proofs/` |
+| turnstile_token | 条件 | Turnstile 启用时必填 |
+
+成功 `201 {"message": "申请已提交。管理员核对身份证明后会重置密码，请留意站内通知。"}`，并给持
+`accounts.review_password_reset` 的管理员发站内通知（源 `review` / 事件 `password_reset_requested`）。
+错误：`400` 缺字段 / 文件超限 / 格式不支持 / `account_ambiguous`（真实姓名对应多个账号）/ `account_deleted` / `account_disabled`；
+`404 account_not_found`；`409 request_pending`（同账号已有待处理申请）；`429 request_throttled`。
+
+**队列** `GET /auth/password-reset-requests/?status=pending|approved|rejected`（登录 + `accounts.review_password_reset`）。
+一行含 `username` / `real_name` / `identifier` / `contact` / `note` / `status` / `proof_url` / 处理人与处理说明。
+`proof_url` 指向鉴权下载端点（本人或审批人可读，绝不走 `/media/` 直链）。
+
+**批准** `POST /auth/password-reset-requests/{pk}/approve/`（body 可带 `note`）
+
+- 密码重置为 **`123456`**；`Profile.must_change_password=true`；
+- **吊销该账号全部会话**（Django Session + `UserSession.is_current`），旧设备立即下线；
+- 申请转 `approved`、记录处理人 / 时间 / 说明；站内通知当事人（可选补邮件）；
+- 幂等：仅 `pending` 可处理，重复批准 `409 already_reviewed`；**不能审批自己的申请**（`403 cannot_review_self`）。
+
+**驳回** `POST /auth/password-reset-requests/{pk}/reject/`（body 可带 `note`）：只改申请状态，不动密码与会话。
+
+**强制改密** `POST /auth/password/force-change/`（登录；body `new_password` / `new_password2`）
+
+仅当 `Profile.must_change_password=true` 时可调用（否则 `400 not_required`）；不要求原密码（默认密码是公开的），
+但拒绝与默认密码相同 / 与原密码相同，并走 Django 密码校验器。成功后清零标记、保持当前会话。
+
+**请求闸门**：`Profile.must_change_password=true` 期间，`accounts.middleware.PasswordChangeRequiredMiddleware`
+只放行 `/auth/me/`、`/auth/password/force-change/`、`/auth/logout/`、`/auth/csrf/`、`/auth/login/`、静态资源与
+后台改密页；其余 API 返回 `403 {"error": "管理员已重置你的密码，请先修改密码后再继续使用。", "reason": "password_change_required", "url": "/change-password-required"}`，
+浏览器访问 `/admin/` 则重定向到 `/admin/password_change/`。
+
+**前端入口**：`/#/forgot-password` 的「联系管理员」页签（申请人）；`/#/reviews` 与 `/#/m/review` 的
+「密码重置」桌（审批人，证明图可点开大图）；`/#/change-password-required`（被重置者）。
+权限代号 `accounts.review_password_reset`，默认授予「社长」「信息组」（迁移 `accounts/0026`）。
 
 ### 认证状态
 
@@ -433,7 +501,8 @@
                   "can_change_activity": false, "can_view_feedback": false, "can_handle_reports": false, "can_review_collections": false,
                   "can_edit_about": false, "can_manage_panoramas": false, "can_manage_exam": false, "can_review_content": false,
                   "can_review_identity": false, "can_force_publish": false, "can_manage_comment_thread": false, "can_mute_user": false,
-                  "can_manage_announcement": false, "can_manage_announcements": false},
+                  "can_manage_announcement": false, "can_manage_announcements": false,
+                  "can_review_password_reset": false},
   "groups": ["信息组"]
 }
 ```

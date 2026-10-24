@@ -30,15 +30,23 @@ describe("reviewDesk.deskTabs", () => {
     ]);
   });
 
-  it("全部权限时顺序固定：身份 → 内容三桌 → 意见反馈 → 举报案", () => {
+  it("密码重置权限只放出密码重置桌", () => {
+    expect(deskTabs({ canPasswordReset: true })).toEqual([
+      { kind: "passwordReset", label: "密码重置" },
+    ]);
+  });
+
+  it("全部权限时顺序固定：身份 → 密码重置 → 内容三桌 → 意见反馈 → 举报案", () => {
     const tabs = deskTabs({
       canContent: true,
       canIdentity: true,
       canFeedback: true,
       canReports: true,
+      canPasswordReset: true,
     });
     expect(tabs).toEqual([
       { kind: "identity", label: "身份" },
+      { kind: "passwordReset", label: "密码重置" },
       { kind: "news", label: "新闻" },
       { kind: "activity", label: "活动" },
       { kind: "tutorial", label: "教程" },

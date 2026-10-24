@@ -73,6 +73,17 @@ export const api = {
   passwordResetConfirm: (uid: string, token: string, new_password: string) =>
     request("/password-reset/confirm/", { method: "POST", body: JSON.stringify({ uid, token, new_password }) }),
 
+  // 忘记密码 → 向管理员申请手动重置（账号 + 身份证明，multipart）。
+  passwordResetRequest: (data: FormData) =>
+    request("/password-reset/request/", { method: "POST", body: data }),
+
+  // 管理员重置后的首次登录强制改密（不要求原密码）。
+  forceChangePassword: (new_password: string, new_password2: string) =>
+    request("/password/force-change/", {
+      method: "POST",
+      body: JSON.stringify({ new_password, new_password2 }),
+    }),
+
   getProfile: () =>
     request("/profile/"),
 

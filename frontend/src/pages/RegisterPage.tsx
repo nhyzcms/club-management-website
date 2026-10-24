@@ -29,6 +29,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [error, setError] = useState("");
+  /** 注册查重命中（用户名 / 真实姓名 / 邮箱已存在）：提示去登录原账户。 */
+  const [duplicate, setDuplicate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   // 注册后的认领阶段（Part A / ADR-0025）
@@ -48,6 +50,7 @@ export default function RegisterPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    setDuplicate(false);
 
     if (!policyReady) return;
 
@@ -98,6 +101,8 @@ export default function RegisterPage() {
         .finally(() => setMemberLoading(false));
     } catch (err: any) {
       setError(err?.message || "注册失败，请稍后重试。");
+      const kind = err?.apiError?.kind;
+      setDuplicate(kind === "account_exists" || kind === "account_deleted");
       resetTurnstile();
     } finally {
       setLoading(false);
@@ -208,6 +213,20 @@ export default function RegisterPage() {
                       <div className="alert alert-danger" role="alert">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
                         <span>{error}</span>
+                      </div>
+                    )}
+                    {duplicate && (
+                      <div className="hint center">
+                        <a
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            goLogin();
+                          }}
+                        >
+                          去登录原账户 →
+                        </a>
+                        <span className="muted">　忘记密码可在登录页选择「联系管理员」重置。</span>
                       </div>
                     )}
                     <div className="field">

@@ -68,8 +68,18 @@ export default function LoginModal({
     setLoading(true);
     setResendEmail("");
     try {
-      if (method === "username") await api.login(account.trim(), password);
-      else await api.loginWithEmail(account.trim(), password);
+      const result: any =
+        method === "username"
+          ? await api.login(account.trim(), password)
+          : await api.loginWithEmail(account.trim(), password);
+
+      // 管理员重置过密码：本次登录直接进强制改密页（后端中间件也会拦住其他接口）。
+      if (result?.must_change_password) {
+        onLoggedIn();
+        onClose();
+        navigate("/change-password-required");
+        return;
+      }
 
       // 防假登录：登录成功后立即自检一次；若刚建的会话已被挤/未真正建立，不进入"已登录"假态
       try {

@@ -290,7 +290,7 @@ try {
 | `can_manage_panoramas` | 全景游览页的「管理全景图」入口与全景图管理页（导入/编辑/删除/重切） |
 | `can_manage_exam` | 考试看板管理态（编辑考试/批次） |
 | `can_mute_user` | 用户主页「全站禁言」入口（`MuteUserPanel`） |
-| `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_force_publish` / `can_manage_comment_thread` / `can_manage_announcement` / `can_manage_announcements` | 主要在个人中心「权限」面板（`PermissionsPanel`）中展示说明；相关操作由后端校验 |
+| `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_force_publish` / `can_manage_comment_thread` / `can_manage_announcement` / `can_manage_announcements` / `can_review_password_reset` | 主要在个人中心「权限」面板（`PermissionsPanel`）中展示说明；相关操作由后端校验。`can_review_password_reset` 另决定审核台「密码重置」桌与「审核台」入口显隐 |
 
 - `components/profile/PermissionsPanel.tsx` 集中维护全部 `can_*` 的中文标签与说明（新增能力字段时在此补一行）。
 - 另一类投影是**资源随附的服务器计算标志**：任务详情的 `available_actions` 决定操作按钮（`TaskDetailPage`——按钮显隐完全由后端给出，前端不自行推导生命周期）；活动详情的 `schema_editable` 决定问卷是否可编辑（叠加 `canManage`）；评论线程的 `can_manage` 决定协管按钮（`CommentSection`）。

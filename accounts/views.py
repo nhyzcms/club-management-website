@@ -42,6 +42,7 @@ from .member_codes import verify_signature
 from .member_roster import ClaimError, auto_bind_on_register, claim_candidates, claim_identity
 from .models import (
     MemberIdentity,
+    PasswordResetRequest,
     Profile,
     IdentityProof,
     UserSession,
@@ -49,6 +50,12 @@ from .models import (
     is_verified,
     verification_valid_days,
 )
+from .password_reset import (
+    DEFAULT_RESET_PASSWORD,
+    pending_request_for,
+    resolve_account,
+)
+from .registration_guard import duplicate_message, find_duplicate
 from .tokens import email_verification_token
 from .validity_summary import account_validity, ack_notice
 from .throttles import (
@@ -56,6 +63,7 @@ from .throttles import (
     MemberCheckThrottle,
     MemberClaimIpThrottle,
     MemberClaimThrottle,
+    PasswordResetRequestThrottle,
     RegisterThrottle,
     ResendVerificationThrottle,
     StepUpEmailIpThrottle,
@@ -204,7 +212,16 @@ def login_view(request):
             )
 
     login(request, candidate)
-    return JsonResponse({"user": {"id": candidate.id, "username": candidate.username, "email": candidate.email}}) # type: ignore
+    # 管理员手动重置过密码 → 本次登录必须先去改密（前端据 must_change_password 跳转；
+    # 会话值供 PasswordChangeRequiredMiddleware 免查库判定）。
+    must_change = Profile.objects.filter(
+        user=candidate, must_change_password=True,
+    ).exists()
+    request.session["pwd_change_required"] = must_change
+    return JsonResponse({
+        "user": {"id": candidate.id, "username": candidate.username, "email": candidate.email},
+        "must_change_password": must_change,
+    })
 
 
 
@@ -850,6 +867,118 @@ def password_reset_confirm_view(request):
 
 
 @require_POST
+def password_reset_request_view(request):
+    """忘记密码 → 向管理员申请手动重置（匿名，multipart）。
+
+    字段：``account``（用户名 / 邮箱 / 唯一真实姓名）、``contact``（可选）、
+    ``note``（可选）、``proof``（身份证明 1 张，≤5MB，JPG/PNG/WebP）、
+    ``turnstile_token``（启用时必填）。
+
+    证明落私有存储；管理员在审核台核对后批准（见 accounts.password_reset）。
+    """
+    if not PasswordResetRequestThrottle().allow_request(request, None):
+        return JsonResponse(
+            {"error": "提交过于频繁，请稍后再试。", "reason": "request_throttled"},
+            status=429,
+        )
+
+    if not passes_turnstile(request, request.POST.get("turnstile_token") or ""):
+        return turnstile_error_response()
+
+    identifier = (request.POST.get("account") or "").strip()
+    contact = (request.POST.get("contact") or "").strip()[:254]
+    note = (request.POST.get("note") or "").strip()[:2000]
+    proof = request.FILES.get("proof")
+
+    errors = []
+    if not identifier:
+        errors.append("请填写用户名或邮箱")
+    if proof is None:
+        errors.append("请上传身份证明")
+    else:
+        if proof.size > PROOF_MAX_BYTES:
+            errors.append("身份证明不能超过 5MB")
+        if proof.content_type not in PROOF_ALLOWED_TYPES:
+            errors.append("身份证明仅支持 JPG / PNG / WebP 格式")
+    if errors:
+        return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
+
+    user, why = resolve_account(identifier)
+    if user is None:
+        if why == "ambiguous":
+            return JsonResponse(
+                {
+                    "error": "该真实姓名对应多个账号，请改填用户名或邮箱。",
+                    "reason": "account_ambiguous",
+                },
+                status=400,
+            )
+        return JsonResponse(
+            {"error": "未找到该账号，请检查用户名 / 邮箱是否填写正确。", "reason": "account_not_found"},
+            status=404,
+        )
+
+    profile = Profile.objects.filter(user=user).only("deleted_at").first()
+    if profile is not None and profile.deleted_at:
+        return JsonResponse(
+            {"error": "该账号已注销，无法重置密码。如有疑问请联系信息组。", "reason": "account_deleted"},
+            status=400,
+        )
+    if not user.is_active:
+        return JsonResponse(
+            {"error": "该账号已停用，请联系信息组。", "reason": "account_disabled"},
+            status=400,
+        )
+    if pending_request_for(user) is not None:
+        return JsonResponse(
+            {"error": "该账号已有待处理的申请，请耐心等待管理员审核。", "reason": "request_pending"},
+            status=409,
+        )
+
+    reset_request = PasswordResetRequest.objects.create(
+        user=user, identifier=identifier, contact=contact, note=note, proof=proof,
+    )
+
+    from messaging.services import notify_perm  # 局部导入：避免潜在循环依赖
+
+    notify_perm(
+        "review",
+        "password_reset_requested",
+        "accounts.review_password_reset",
+        payload={
+            "type": "password_reset",
+            "id": reset_request.pk,
+            "username": user.username,
+            "url": "/reviews",
+        },
+    )
+    return JsonResponse(
+        {"message": "申请已提交。管理员核对身份证明后会重置密码，请留意站内通知。"},
+        status=201,
+    )
+
+
+@require_GET
+def password_reset_proof_file_view(request, pk):
+    """密码重置申请的身份证明鉴权下载：仅申请人本人或持审批权者可读。"""
+    reset_request = get_object_or_404(PasswordResetRequest, pk=pk)
+    user = request.user
+    if not user.is_authenticated:
+        return HttpResponseForbidden("请先登录。")
+    if reset_request.user_id != user.pk and not user.has_perm("accounts.review_password_reset"):
+        return HttpResponseForbidden("无权访问该身份证明。")
+
+    if not reset_request.proof or not reset_request.proof.storage.exists(reset_request.proof.name):
+        raise Http404("证明文件不存在")
+
+    content_type, _ = mimetypes.guess_type(reset_request.proof.name)
+    return FileResponse(
+        reset_request.proof.open("rb"),
+        content_type=content_type or "image/jpeg",
+    )
+
+
+@require_POST
 def register_view(request):
     """注册（ADR-0006，2026-09 修订）：建登录身份（用户名 + 密码 + Turnstile）+ 真实姓名 / 身份（必填）。
 
@@ -913,21 +1042,28 @@ def register_view(request):
     elif len(card_no) > 20:
         errors.append("校牌号过长（最多 20 个字符）")
 
-    # 邮箱可选；填了须格式合法 + 唯一（User.email 或他人 pending identifier 均判重）。
+    # 邮箱可选；填了须格式合法。唯一性统一走下面的「三条件查重」。
     if email:
         try:
             EmailValidator()(email)
         except ValidationError:
             errors.append("邮箱格式不正确")
-        if _email_taken(email):
-            errors.append("该邮箱已被占用")
-
-    # 用户名唯一（大小写不敏感）。
-    if username and User.objects.filter(username__iexact=username).exists():
-        errors.append("该用户名已被占用")
 
     if errors:
         return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
+
+    # 注册查重（2026-10）：用户名 / 真实姓名 / 邮箱命中任一 → 视为同一账户，
+    # 不再允许重复注册，直接引导回登录（见 accounts.registration_guard）。
+    duplicate = find_duplicate(username=username, real_name=real_name, email=email)
+    if duplicate is not None:
+        return JsonResponse(
+            {
+                "error": duplicate_message(duplicate),
+                "reason": "account_deleted" if duplicate.deleted else "account_exists",
+                "field": duplicate.field,
+            },
+            status=409,
+        )
 
     # Turnstile：两项密钥都空则关闭并放行；启用时校验失败拒注册。
     if not passes_turnstile(request, turnstile_token):
@@ -1134,6 +1270,8 @@ def _capabilities(user):
         "can_mute_user": user.has_perm("reviews.mute_user"),
         "can_manage_announcement": user.has_perm("messaging.manage_announcement"),
         "can_manage_announcements": user.has_perm("announcements.manage_announcements"),
+        # 密码重置审批（忘记密码 → 管理员手动重置）：审核台「密码重置」桌。
+        "can_review_password_reset": user.has_perm("accounts.review_password_reset"),
     }
 
 
@@ -1177,6 +1315,8 @@ def _profile_response(user, profile):
             "email": user.email,
             "permissions": _capabilities(user),
         },
+        # 管理员重置后的强制改密标记（前端启动 / 登录后据此跳转改密页）。
+        "must_change_password": bool(profile.must_change_password),
         # 身份徽章（ADR-0005 决策 7）：前端据此（而非单看 is_verified）决定是否提示去认证——
         # 超管 / 管理员 / 已认证用户均不提示，仅访客（未认证普通成员）提示。
         "role": _role_for(user),
@@ -1224,6 +1364,53 @@ def profile_update_view(request):
 
 @require_POST
 @login_required
+def force_change_password_view(request):
+    """管理员重置后的首次登录强制改密（不要求原密码，因为默认密码是公开的）。
+
+    只允许在 ``Profile.must_change_password=True`` 时调用；成功后清标记并保持当前会话。
+    """
+    profile = _get_or_create_profile(request.user)
+    if not profile.must_change_password:
+        return JsonResponse(
+            {"error": "当前账号无需强制改密。", "reason": "not_required"},
+            status=400,
+        )
+
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    new_password = body.get("new_password") or ""
+    new_password2 = body.get("new_password2") or ""
+    errors = []
+    if not new_password:
+        errors.append("新密码不能为空")
+    if new_password != new_password2:
+        errors.append("两次输入的密码不一致")
+    if new_password and new_password == DEFAULT_RESET_PASSWORD:
+        errors.append("新密码不能与默认密码相同")
+    if new_password:
+        try:
+            validate_password(new_password)
+        except ValidationError as e:
+            errors.extend(e.messages)
+    if new_password and request.user.check_password(new_password):
+        errors.append("新密码不能与原密码相同")
+    if errors:
+        return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
+
+    request.user.set_password(new_password)
+    request.user.save(update_fields=["password"])
+    profile.must_change_password = False
+    profile.save(update_fields=["must_change_password"])
+    update_session_auth_hash(request, request.user)
+    record_user_session(request, request.user, request.session.session_key)
+    request.session["pwd_change_required"] = False
+    return JsonResponse({"message": "密码已修改，请使用新密码继续使用。"})
+
+
+@require_POST
+@login_required
 def change_password_view(request):
     # 敏感操作：需安全验证（ADR-0026）。缺 grant → 403 step_up_required，
     # 前端跳 /#/verify?action=change_password&next=…，验证完成后回跳重试。
@@ -1248,6 +1435,12 @@ def change_password_view(request):
     # UserSession 行到新 key，否则下一次请求被判「他设备登录」而挤下线。
     update_session_auth_hash(request, request.user)
     record_user_session(request, request.user, request.session.session_key)
+    # 自行改密同样解除强制改密（管理员重置后用户若从个人中心改密，也视为已完成）。
+    profile = _get_or_create_profile(request.user)
+    if profile.must_change_password:
+        profile.must_change_password = False
+        profile.save(update_fields=["must_change_password"])
+    request.session["pwd_change_required"] = False
     return JsonResponse({"message": "密码修改成功"})
 
 

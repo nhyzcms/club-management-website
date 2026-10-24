@@ -34,6 +34,7 @@ class ReviewSource(NotificationSource):
         Event("feedback_submitted", "新意见反馈"),
         Event("report_submitted", "新举报"),
         Event("identity_submitted", "新认证申请"),
+        Event("password_reset_requested", "新密码重置申请"),
         # —— 结果：发给当事人 ——
         Event("approved", "内容审核通过"),
         Event("rejected", "内容审核驳回"),
@@ -41,6 +42,7 @@ class ReviewSource(NotificationSource):
         Event("closed", "意见反馈了结"),
         Event("report_resolved", "举报处理结果"),
         Event("identity_resolved", "认证审核结果"),
+        Event("password_reset_resolved", "密码重置申请结果"),
     )
     default_channels = ("site",)
 
