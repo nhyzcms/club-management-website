@@ -189,6 +189,10 @@ class MultiDeviceSessionMiddleware:
                 samesite="Lax",
                 secure=request.is_secure(),
             )
+        # 让 Chromium 后续请求带上机型 / 平台版本（账号安全中心的设备展示用，
+        # 解析在 accounts/devices.py:parse_device；拿不到就留空，不猜）。
+        if "Accept-CH" not in response:
+            response["Accept-CH"] = "Sec-CH-UA-Model, Sec-CH-UA-Platform-Version"
         return response
 
     def _guard(self, request):

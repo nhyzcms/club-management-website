@@ -27,7 +27,20 @@ _OS_RE = re.compile(r"(Windows NT|Windows \w+|Mac OS X|iPhone OS|Android|Linux)"
 
 
 def get_client_ip(request):
-    return request.META.get("REMOTE_ADDR")
+    """取真实客户端 IP。
+
+    生产走 Caddy 同机反代 → ``REMOTE_ADDR`` 恒为 127.0.0.1，真实 IP 在
+    ``X-Forwarded-For`` 第一跳。**只在来源是回环代理时信任 XFF**，避免外部直接
+    伪造请求头把登录记录写歪。
+    """
+    remote = request.META.get("REMOTE_ADDR")
+    if remote in {"127.0.0.1", "::1"}:
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        if forwarded:
+            first = forwarded.split(",")[0].strip()
+            if first:
+                return first
+    return remote
 
 
 def parse_user_agent(ua):

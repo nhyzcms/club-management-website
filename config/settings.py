@@ -129,6 +129,7 @@ MIDDLEWARE = [
     'common.middleware.MaintenanceModeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    # 设备 ID（cookie ncdid）：只发牌，不判信任；须早于 AuthenticationMiddleware。
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -298,6 +299,9 @@ CSRF_COOKIE_SECURE = _https["CSRF_COOKIE_SECURE"]
 # 「记住登录」勾选时的会话有效期（30 天）。不勾 → login_view 调 set_expiry(0)，
 # Django 按浏览器会话 cookie 处理（max-age 不下发，关闭浏览器即失效）。
 REMEMBER_LOGIN_SECONDS = 30 * 24 * 60 * 60
+
+# IP → 城市定位（离线 ip2region xdb，魏 11MB，不入库；缺失时自动降级为只记 IP）。
+IP2REGION_DB = os.environ.get("IP2REGION_DB", str(BASE_DIR / "data" / "ip2region_v4.xdb"))
 
 # ---- 邮件 / SMTP ----
 # 163 邮箱 SMTP：配了 EMAIL_HOST_USER（+ EMAIL_HOST_PASSWORD 授权码）即切到 SMTP，
