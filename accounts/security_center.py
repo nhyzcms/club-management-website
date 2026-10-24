@@ -17,6 +17,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.request import Request
 
 from . import stepup, totp
+from .utils import MAX_ACTIVE_SESSIONS
 from .models import (
     AccountDevice,
     LoginEvent,
@@ -131,7 +132,17 @@ def devices_view(request):
         if device_id
     }
     devices = AccountDevice.objects.filter(user=request.user, revoked_at__isnull=True).order_by("-last_seen")
-    return JsonResponse({"results": [_device_payload(d, current_ids) for d in devices]})
+    active_sessions = UserSession.objects.filter(
+        user=request.user, revoked_at__isnull=True
+    ).count()
+    return JsonResponse(
+        {
+            "results": [_device_payload(d, current_ids) for d in devices],
+            # 多端登录名额（ADR-0028）；会话数可能多于设备数（同设备多浏览器）
+            "active_sessions": active_sessions,
+            "limit": MAX_ACTIVE_SESSIONS,
+        }
+    )
 
 
 @require_http_methods(["DELETE"])

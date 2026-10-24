@@ -55,7 +55,8 @@ export interface TotpRow {
 export const securityApi = {
   overview: () => request("/security/overview/") as Promise<SecurityOverview>,
 
-  devices: () => request("/devices/") as Promise<{ results: DeviceRow[] }>,
+  devices: () =>
+    request("/devices/") as Promise<{ results: DeviceRow[]; active_sessions: number; limit: number }>,
 
   revokeDevice: (id: number, headers?: Record<string, string>) =>
     request(`/devices/${id}/`, { method: "DELETE", headers }) as Promise<{ message: string }>,

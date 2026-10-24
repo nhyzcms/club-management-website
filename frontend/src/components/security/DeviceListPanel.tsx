@@ -18,13 +18,17 @@ const place = (row: DeviceRow): string => {
 /** 已登录设备：展示 + 撤销（撤销 = 吊销该设备所有会话，需要 stepup）。 */
 export default function DeviceListPanel() {
   const [rows, setRows] = useState<DeviceRow[] | null>(null);
+  const [quota, setQuota] = useState<{ active: number; limit: number } | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   const load = () => {
     securityApi
       .devices()
-      .then((d) => setRows(d.results))
+      .then((d) => {
+        setRows(d.results);
+        setQuota({ active: d.active_sessions, limit: d.limit });
+      })
       .catch(() => setRows([]));
   };
 
@@ -50,6 +54,11 @@ export default function DeviceListPanel() {
     <div className="sec-panel">
       {notice && <div className="alert alert-success" role="status"><span>{notice}</span></div>}
       {error && <div className="alert alert-danger" role="alert"><span>{error}</span></div>}
+      {quota && (
+        <p className="muted sec-small" data-testid="device-quota">
+          在线 {quota.active} / {quota.limit} —— 最多 {quota.limit} 台设备同时保持登录
+        </p>
+      )}
       {rows === null ? (
         <p className="muted">加载中…</p>
       ) : rows.length === 0 ? (
