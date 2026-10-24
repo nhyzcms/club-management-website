@@ -23,6 +23,8 @@ export interface UserMenuProps {
   dmsEnabled: boolean;
   /** 审核台权限（决定「审核队列」可见性） */
   canReview: boolean;
+  /** 后台管理权限（决定「后台管理」可见性；Django admin 只对 is_staff 开放） */
+  showAdmin: boolean;
   themePref: ThemePreference;
   onThemeSelect: (pref: ThemePreference) => void;
   onNavigate: (path: string) => void;
@@ -48,6 +50,7 @@ export default function UserMenu({
   verified,
   dmsEnabled,
   canReview,
+  showAdmin,
   themePref,
   onThemeSelect,
   onNavigate,
@@ -166,7 +169,7 @@ export default function UserMenu({
             </div>
           </div>
 
-          {entriesOf({ verified, dmsEnabled, canReview, onNavigate }).map((en, i) => (
+          {entriesOf({ verified, dmsEnabled, canReview, showAdmin, onNavigate }).map((en, i) => (
             <Fragment key={en.key}>
               {en.dividerBefore && <div className="um-sep" role="separator" />}
               <button
@@ -232,11 +235,13 @@ function entriesOf({
   verified,
   dmsEnabled,
   canReview,
+  showAdmin,
   onNavigate,
 }: {
   verified: boolean;
   dmsEnabled: boolean;
   canReview: boolean;
+  showAdmin: boolean;
   onNavigate: (path: string) => void;
 }): MenuEntry[] {
   const entries: MenuEntry[] = [
@@ -257,6 +262,9 @@ function entriesOf({
   if (canReview) {
     entries.push({ key: "reviews", label: "审核队列", icon: ICONS.review, onSelect: () => onNavigate("/reviews") });
   }
-  entries.push({ key: "admin", label: "后台管理", icon: ICONS.admin, onSelect: () => onNavigate("/admin/") });
+  if (showAdmin) {
+    // Django admin 只认 is_staff；无权用户不给入口（直接访问也会被后端挡回登录页）。
+    entries.push({ key: "admin", label: "后台管理", icon: ICONS.admin, onSelect: () => onNavigate("/admin/") });
+  }
   return entries;
 }

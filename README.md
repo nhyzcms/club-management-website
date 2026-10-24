@@ -35,7 +35,10 @@
   待办 `/#/m/inbox`、通知 `/#/m/notifications`、任务列表与详情 `/#/m/tasks`；
   「我的」按权限分「工作 / 常用」两组，首页九宫格对登录用户追加「任务」「待办」；
   手机 UA 打开桌面路径（如 `/#/reviews`）会自动改道到对应手机版页面
-- 后台管理：Django Admin + 自定义视图 + 前端 SPA
+- 后台管理：Django Admin + 自定义视图 + 前端 SPA。前端入口（桌面顶栏头像菜单「后台管理」、
+  手机版「我的 → 进入后台管理」）**只对 `is_staff` 账号显示**（对应身份徽章 `admin` / `superadmin`，
+  判定在 `frontend/src/utils/roles.ts` 的 `canAccessAdmin`）；普通用户与访客不再看到该入口，
+  直接手输 `/admin/` 也会被 Django admin 挡回登录页
 - 运维能力：一键部署脚本（`scripts/install.sh`）、GitHub Release 自动更新（维护页 / 回滚）、systemd + Nginx + Gunicorn（ASGI / 单 worker），适合内部低门槛生产环境
 
 ## 2. 技术栈
@@ -127,7 +130,7 @@ club-management-website/
 
 ## 6. 主要入口和 URL
 
-- 后台管理：`/admin/`
+- 后台管理：`/admin/`（仅 `is_staff` 可进；前端不给无权限用户显示入口，见 `utils/roles.ts`）
 - 认证：`/auth/`
 - 任务：`/tasks/`
 - 新闻：`/news/`
