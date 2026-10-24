@@ -558,10 +558,10 @@
 `GET /auth/member/check/`：**认证**公开。`?c=<识别码>&s=<签名>`。签名不符或码不存在一律 `404 {"found": false}`（语义不可区分，防枚举）；命中返回：
 
 ```json
-{"found": true, "name": "张三", "cohort": 2, "code": "26020542", "status": "active", "avatar": null}
+{"found": true, "name": "张三", "cohort": 2, "code": "26020251", "status": "active", "avatar": null}
 ```
 
-**绝不含**电话 / 学号 / 邮箱；按 IP 限流（60 次/时，计全部请求）→ `429`。签名 = HMAC-SHA256（密钥默认由 `SECRET_KEY` 派生，`MEMBER_QR_SECRET` 可覆盖）截断 16 位 hex——二维码内容如 `https://<站点>/#/v/26020542?s=b7951a1f144d7be0`。
+**绝不含**电话 / 学号 / 邮箱；按 IP 限流（60 次/时，计全部请求）→ `429`。签名 = HMAC-SHA256（密钥默认由 `SECRET_KEY` 派生，`MEMBER_QR_SECRET` 可覆盖）截断 16 位 hex——二维码内容如 `https://<站点>/#/v/26020251?s=7f638226b44e9af9`。
 
 ### 安全验证（Step-up，[ADR-0026](../adr/0026-stepup-verification.md)）
 

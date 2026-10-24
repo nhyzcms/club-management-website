@@ -91,11 +91,11 @@ class MemberCodesTest(TestCase):
         self.assertEqual(leaks, 0)
 
     def test_next_serial_continues_per_cohort(self):
-        """序号接续：同届取既有最大 +1；不同届互不影响。"""
+        """序号接续：同届取既有最大 +1（末位 0/2/4 的号跳过）；不同届互不影响。"""
         taken = {"26020154"}
-        self.assertEqual(next_serial(2025, 1, taken), 1)
-        self.assertEqual(next_serial(2026, 2, taken), 2)
-        self.assertEqual(next_serial(2026, 2, {"26020154", "26020251"}), 3)
+        self.assertEqual(next_serial(2025, 1, taken), 2)  # 本组序号 01 → 25010190 末位 0
+        self.assertEqual(next_serial(2026, 2, taken), 2)  # 02 → 26020251
+        self.assertEqual(next_serial(2026, 2, {"26020154", "26020251"}), 6)  # 03-05 跳过
 
     def test_serial_bounds(self):
         with self.assertRaises(Exception):
@@ -242,8 +242,8 @@ class ImportPlanTest(TestCase):
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 2)
         codes = [i["code"] for i in plan["items"]]  # 输出顺序 = 行顺序
-        # 姓名首字母序：李四(L) < 张三(Z) → 李四序号 01、张三序号 02
-        self.assertEqual(codes, ["26020251", "26020154"])
+        # 姓名首字母序：李四(L) < 张三(Z) → 序号 02 / 06（01、03-05 的校验码都不合规）
+        self.assertEqual(codes, ["26020639", "26020251"])
 
     def test_plan_reimport_updates(self):
         commit_import(parse_roster("a.csv", csv_bytes([sample_row()])), file_name="a.csv")
@@ -251,7 +251,7 @@ class ImportPlanTest(TestCase):
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["update"], 1)
         self.assertEqual(plan["counts"]["create"], 0)
-        self.assertEqual(plan["items"][0]["target"].code, "26020154")
+        self.assertEqual(plan["items"][0]["target"].code, "26020251")
 
     def test_plan_reimport_keeps_existing_code_ignoring_given(self):
         # 表内带码（哪怕同码）不参与认行：仍按 姓名+电话 命中 → 保留既有编码。
@@ -259,12 +259,12 @@ class ImportPlanTest(TestCase):
         rows = parse_roster("a.csv", csv_bytes([sample_row_with_code("26020154", class_no="2")], headers=WITH_CODE_HEADERS))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["update"], 1)
-        self.assertEqual(plan["items"][0]["code"], "26020154")
+        self.assertEqual(plan["items"][0]["code"], "26020251")
 
     def test_plan_ignores_given_code_uses_generated(self):
         rows = parse_roster("a.csv", csv_bytes([sample_row_with_code("26027777")], headers=WITH_CODE_HEADERS))
         plan = plan_import(rows)
-        self.assertEqual(plan["items"][0]["code"], "26020154")
+        self.assertEqual(plan["items"][0]["code"], "26020251")
 
     def test_given_code_not_used_for_matching(self):
         # 表带码与库内既有行相同、但姓名不同 → 不按码更新：作为新行处理并自动生成新码。
@@ -273,7 +273,7 @@ class ImportPlanTest(TestCase):
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 1)
         self.assertEqual(plan["counts"]["update"], 0)
-        self.assertEqual(plan["items"][0]["code"], "26020251")  # 李四接续序号 02
+        self.assertEqual(plan["items"][0]["code"], "26020639")  # 李四接续序号 06
 
     def test_plan_conflict_on_multiple_existing_matches(self):
         user = User.objects.create_user(username="u1", password="x")
@@ -289,7 +289,7 @@ class ImportPlanTest(TestCase):
         self.assertEqual(IdentityImportBatch.objects.count(), 1)
         self.assertEqual(batch.summary["created"], 1)
         row = MemberIdentity.objects.get()
-        self.assertEqual(row.code, "26020154")
+        self.assertEqual(row.code, "26020251")  # 序号 02（01 末位 4 被跳过）
         self.assertEqual(row.import_batch_id, batch.id)
 
     def test_commit_idempotent_second_run_updates_and_preserves_binding(self):
@@ -304,7 +304,7 @@ class ImportPlanTest(TestCase):
         self.assertEqual(batch2.summary["created"], 0)
         self.assertEqual(batch2.summary["updated"], 1)
         self.assertEqual(row.user_id, user.id)  # 绑定保留
-        self.assertEqual(row.code, "26020154")  # 识别码保留
+        self.assertEqual(row.code, "26020251")  # 识别码保留
         self.assertEqual(row.class_no, "2")  # 动态字段更新
 
     def test_plan_second_batch_appends_serials(self):
@@ -313,7 +313,7 @@ class ImportPlanTest(TestCase):
         rows = parse_roster("a.csv", csv_bytes([sample_row(name="李四", phone="13900001111")]))
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 1)
-        self.assertEqual(plan["items"][0]["code"], "26020251")  # 接续序号 02
+        self.assertEqual(plan["items"][0]["code"], "26020639")  # 接续序号 06
 
     def test_plan_mixed_cohorts_in_one_batch(self):
         """单次导入可混多届：各组独立从 01 起编号，组内按姓名首字母。"""
@@ -326,10 +326,10 @@ class ImportPlanTest(TestCase):
         plan = plan_import(rows)
         self.assertEqual(plan["counts"]["create"], 4)
         codes = {item["row"].values["姓名"]: item["code"] for item in plan["items"]}
-        self.assertEqual(codes["李四"], "26020154")   # 第 2 届 序号 01（L）
-        self.assertEqual(codes["张三"], "26020251")   # 第 2 届 序号 02（Z）
-        self.assertEqual(codes["陈一"], "25010190")   # 第 1 届 序号 01（C）
-        self.assertEqual(codes["赵六"], "25010287")   # 第 1 届 序号 02（Z）
+        self.assertEqual(codes["李四"], "26020251")   # 第 2 届 序号 02（L；01 校验码含 4）
+        self.assertEqual(codes["张三"], "26020639")   # 第 2 届 序号 06（Z；03-05 不合规）
+        self.assertEqual(codes["陈一"], "25010287")   # 第 1 届 序号 02（C；01 末位 0）
+        self.assertEqual(codes["赵六"], "25010481")   # 第 1 届 序号 04（Z；03 校验码含 4）
 
     def test_plan_same_cohort_sorted_by_name_initial(self):
         """同届按姓名拼音首字母排——多音字姓氏按姓氏读音（单 shàn → S，排在 李 之后）。"""
@@ -340,9 +340,9 @@ class ImportPlanTest(TestCase):
         ]))
         plan = plan_import(rows)
         codes = {item["row"].values["姓名"]: item["code"] for item in plan["items"]}
-        self.assertEqual(codes["李四"], "26020154")    # L → 01
-        self.assertEqual(codes["单田芳"], "26020251")  # S → 02（不是按 GBK 的 «dan» 排到最前）
-        self.assertEqual(codes["张三"], "26020348")    # Z → 03
+        self.assertEqual(codes["李四"], "26020251")    # L → 02（01 校验码含 4）
+        self.assertEqual(codes["单田芳"], "26020639")  # S → 06（不是按 GBK 的 «dan» 排到最前）
+        self.assertEqual(codes["张三"], "26020736")    # Z → 07
 
     def test_plan_supplement_sorts_new_rows_by_initial_after_existing(self):
         """补录：接在既有最大序号之后，新行之间仍按首字母（即使首字母排在已发码的人之前）。"""
@@ -355,17 +355,17 @@ class ImportPlanTest(TestCase):
         ]))
         plan = plan_import(rows)
         codes = {item["row"].values["姓名"]: item["code"] for item in plan["items"]}
-        self.assertEqual(codes["艾七"], "26020251")  # 接续 02（不重排，张三仍是 01）
-        self.assertEqual(codes["周八"], "26020348")  # 接续 03
+        self.assertEqual(codes["艾七"], "26020639")  # 接续 06（不重排，张三仍是 02）
+        self.assertEqual(codes["周八"], "26020736")  # 接续 07
 
     def test_plan_serial_exhaustion_marks_error(self):
-        """单届序号上限 99：第 100 行标记错误，其余 99 行正常创建。"""
+        """单届可用序号约 55（校验码避开 2/4、末位避开 0）：第 56 行起标记错误。"""
         rows = parse_roster("a.csv", csv_bytes([
             sample_row(name=f"学生{i:03d}", phone=f"1380000{i:04d}") for i in range(1, 101)
         ]))
         plan = plan_import(rows)
-        self.assertEqual(plan["counts"]["create"], 99)
-        self.assertEqual(plan["counts"]["error"], 1)
+        self.assertEqual(plan["counts"]["create"], 55)
+        self.assertEqual(plan["counts"]["error"], 45)
 
 
 class AutoMatchTest(TestCase):
