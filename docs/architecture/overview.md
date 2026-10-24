@@ -69,6 +69,7 @@
 | `about` | 关于页 | 区块内容 | [API](../api/about.md) |
 | `attachments` | 统一附件与上传 | TUS、私有媒体 | [API](../api/attachments.md) |
 | `panorama` | 校园全景图库 | DJI 导入、分层切片、多级浏览 | [API](../api/panorama.md) · [ADR-0022](../adr/0022-campus-panorama-library.md) |
+| `announcements` | 全站弹窗公告 | 原件保真渲染（PDF / .docx）、受众、已读台账 | [API](../api/announcements.md) · [ADR-0042](../adr/0042-site-wide-popup-announcement.md) |
 
 ## 横切机制
 
@@ -113,5 +114,5 @@ Nginx（一层代理）→ Gunicorn ASGI（worker 数由 `GUNICORN_WORKERS` 控�
 
 ## 设计记录
 
-- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0027 与 0041）。
+- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0027、0041–0042）。
 - 领域术语与项目概览：仓库根目录 [CONTEXT.md](../../CONTEXT.md)。

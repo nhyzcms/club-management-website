@@ -276,6 +276,7 @@
 | `comment` | `comment_replied` | 有人回复你的评论 | `comment_id`、`thread_id`、`parent_id`、`news_id` / `activity_id` / `task_id` |
 | `comment` | `comment_mentioned` | 评论中 @ 你（你能看见该宿主才通知）| 同上 |
 | `dm` | `new_message` | 收到新私信（**按会话聚合**：同会话连发多条只提示一次，直到读掉）| `type` = `dm`、`id`（会话 id）、`title`、`url`；聚合后附 `count`（累计条数）、`last_at` |
+| `announcement` | `published` | 全站弹窗公告发布（收件人 = 该受众内启用账号；可在通知里回看原文）| `announcement_id`、`title`、`url`（`/announcements/{id}`，前端 `/#/announcements/{id}`）、`audience`、`file_kind`（pdf / docx / null）、`summary` |
 | `validity` | `expiring_2m` / `expiring_1m` | 认证 / 管理员身份**到期前**两个月 / 一个月（到期会降权，见[身份认证指南](../guides/certification.md#到期前提醒降权预警））| `channel`、`channel_label`、`level`、`expires_on`、`days_left`、`url`（认证面板）|
 | `review` | `approved` / `rejected` / `removed` | 发布审核通过 / 驳回 / 下架（通知宿主主人）| `type`（news / activity / tutorial）、`id`、`url` |
 | `review` | `closed` | 署名意见反馈了结 | `type` = `feedback`、`id`、`url`（有 note 时附 `reason`）|

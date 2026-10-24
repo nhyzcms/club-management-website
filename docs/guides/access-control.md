@@ -42,6 +42,7 @@
 | `accounts.manage_validity` | 可管理账号 / 认证有效期（对下位用户延 / 缩） |
 | `messaging.manage_comment_thread` | 评论区协管 |
 | `messaging.manage_announcement` | 管理横幅公告 |
+| `announcements.manage_announcements` | 发布 / 管理全站弹窗公告（含已读统计） |
 | `messaging.mute_user` | 全站禁言 |
 
 > 完整清单（含 Django 默认 CRUD）可在 Django Admin 的「组」页面查看。拆新权限的三条触发：**持有者现实中可能不同** / **前端要门禁独立 affordance** / **需独立审计**——任一满足才拆，否则并入最粗的已有权限（默认偏粗）。
@@ -82,6 +83,7 @@
 | `can_review_identity` | `accounts.can_review_identity` |
 | `can_manage_comment_thread` | `messaging.manage_comment_thread` |
 | `can_manage_announcement` | `messaging.manage_announcement` |
+| `can_manage_announcements` | `announcements.manage_announcements` |
 | `can_mute_user` | `messaging.mute_user` |
 
 - 能力是**纯角色投影**（“凭你的角色能不能做 X”）；对象级判断（“能不能动**这条**”）由前端拿 `is_owner` / 对象字段另行组合（如编辑按钮显隐 = `can_manage_tasks || is_creator`）。

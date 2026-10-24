@@ -84,13 +84,13 @@ frontend/
 
 `components/` 分组职责（不逐个穷举）：
 
-- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`。
+- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`、`AnnouncementHost`（全站弹窗公告宿主：进入站点后拉 `/announcements/active/` 逐条弹，关闭即记已读）。
 - **内容与互动**：`CommentSection`（评论树，含协管 UI）、`MessageThread`（私信/任务讨论线程）、`Avatar`、`ReportButton`、`AuthorReviewBanner`（作者视角审核状态横幅）、`Pagination`、`ArticleToc`（正文目录）、`ClubFeed` + `feed/FeedCards`（首页动态流）。
 - **表单与编辑器**：`RichTextEditor`（Tiptap 封装）、`DocxPreview`、`UserSearchSelect`（用户搜索选择器）、`MentionField`（@ 提及）、`CommentThreadStatusField`（评论线程开关）、`PasswordInput`、`SurveyFill`。
 - **视图部件**：`TaskGantt`（frappe-gantt 甘特）、`TaskTimeline`（任务时间线）。
 - **看板娘**：`mascot/MascotHost`、`mascot/loadWidget`（懒加载 chunk）、`mascot/speak`（气泡喊话）。
 
-页面级样式有两种归属：组件专属的与组件同目录（如 `components/AppShell.css`、`pages/TaskFormPage.css`），跨页复用的域样式集中放 `styles/`（`home/list/detail/news/comments/messages/profile/form/about/survey/panorama/mobile/exam-board.css`）。
+页面级样式有两种归属：组件专属的与组件同目录（如 `components/AppShell.css`、`pages/TaskFormPage.css`），跨页复用的域样式集中放 `styles/`（`home/list/detail/news/comments/messages/profile/form/about/survey/panorama/announcement/mobile/exam-board.css`）。
 
 ## 样式与主题
 
@@ -127,6 +127,7 @@ frontend/
 | `/m/tasks` | `MobileTaskListPage` | ✅ | 手机版任务列表（状态 / 优先级 / 搜索） |
 | `/m/tasks/:id` | `MobileTaskDetailPage` | ✅ | 手机版任务详情（认领 / 验收 / 打回 / 附件 / 评论） |
 | `/about` | `AboutPage` |  | 关于我们 |
+| `/announcements/:id` | `AnnouncementPage` |  | 全站弹窗公告回看页（站内通知点入；按受众鉴权，无权限 404） |
 | `/panorama` | `PanoramaPage` |  | 校园全景浏览（`?id=N` 选场景；Marzipano 多级层级图 + 首层常驻） |
 | `/panorama/manage` | `PanoramaManagePage` | ✅ | 全景图管理（导入 / 编辑 / 重切 / 删除），需 `can_manage_panoramas` |
 | `/news` | `NewsListPage` |  | 新闻列表 |
@@ -217,6 +218,7 @@ URL 查询参数约定（hash 部分之后）：tab 状态用查询参数（如 
 | `api/identityReviews.ts` | `/auth` | 身份审核（预约认证、证明投递） |
 | `api/about.ts` | `/about` | 关于页读写 |
 | `api/panorama.ts` | `/panorama` | 全景图列表/详情、导入（multipart）、改/删/重切片；`listAll()` 逐页拉全 |
+| `api/announcements.ts` | `/announcements` | 未读在线公告、详情、标已读、原件 URL |
 | `api/tutorials.ts` | `/tutorials` | 教程 CRUD |
 | `api/recruitment.ts` | `/recruitment` | 自我介绍问卷 schema |
 | `api/exam.ts` | `/exam_board` | 考试/课表/题目误刊 |
@@ -247,7 +249,7 @@ try {
 
 站点策略 `sitePolicy.ts` 是模块级单例：`fetchSitePolicy()` 在 App 启动时拉取并合并 `DEFAULTS`，`useSitePolicy()` / `useSitePolicyReady()` 订阅快照。`turnstile_enabled`、`dms_enabled`、`comments_enabled`、`verification_enabled`、`registration_enabled` 等开关据此驱动前端显隐（如关闭私信时导航与收件箱相应收敛）；拉取失败静默回退默认值（默认与后端一致，均为开启）。
 
-`src/types/` 按域放纯类型（`news / tasks / activities / messaging / profile / inbox / feed / feedback / reports / reviews / identityReviews / panorama / pagination`），并含少量展示常量（状态中文标签、配色映射等），不 import React。
+`src/types/` 按域放纯类型（`news / tasks / activities / messaging / profile / inbox / feed / feedback / reports / reviews / identityReviews / panorama / announcements / pagination`），并含少量展示常量（状态中文标签、配色映射等），不 import React。
 
 ## 身份与会话
 
@@ -288,7 +290,7 @@ try {
 | `can_manage_panoramas` | 全景游览页的「管理全景图」入口与全景图管理页（导入/编辑/删除/重切） |
 | `can_manage_exam` | 考试看板管理态（编辑考试/批次） |
 | `can_mute_user` | 用户主页「全站禁言」入口（`MuteUserPanel`） |
-| `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_force_publish` / `can_manage_comment_thread` / `can_manage_announcement` | 主要在个人中心「权限」面板（`PermissionsPanel`）中展示说明；相关操作由后端校验 |
+| `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_force_publish` / `can_manage_comment_thread` / `can_manage_announcement` / `can_manage_announcements` | 主要在个人中心「权限」面板（`PermissionsPanel`）中展示说明；相关操作由后端校验 |
 
 - `components/profile/PermissionsPanel.tsx` 集中维护全部 `can_*` 的中文标签与说明（新增能力字段时在此补一行）。
 - 另一类投影是**资源随附的服务器计算标志**：任务详情的 `available_actions` 决定操作按钮（`TaskDetailPage`——按钮显隐完全由后端给出，前端不自行推导生命周期）；活动详情的 `schema_editable` 决定问卷是否可编辑（叠加 `canManage`）；评论线程的 `can_manage` 决定协管按钮（`CommentSection`）。
@@ -333,7 +335,7 @@ Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?emb
 - **Marzipano（校园全景）**：**不是 npm 依赖**——它是服务端多级分层方案（[ADR-0022](../adr/0022-campus-panorama-library.md)）的渲染端，运行时由 `utils/marzipano.ts::loadMarzipano()` 从自托管静态资源 `/static/panorama/marzipano.js` 注入脚本（幂等、失败可重试、不发任何第三方请求）。该文件与旧静态全景页共用，并已被 `scripts/pack-release.sh` 与 `scripts/check_panorama_static.py` 纳入发布完整性校验；**退役 `static/panorama/` 前必须先把 `marzipano.js` 迁到新位置并同步 `constants.ts::PANORAMA_RENDERER_URL`**。
 - **Cloudflare Turnstile**：`turnstile.ts` 在注册/找回密码/重发认证邮件/匿名反馈处按需注入脚本（未启用时零请求）；`turnstile_enabled` 与 sitekey 由 `/site-policy/` 下发，`useTurnstile` 负责渲染、重置与卸载组件。
 - **富文本**：Tiptap 3 编辑器（`RichTextEditor.tsx`），自定义原子节点 `rte/VideoNode.ts`（本地上传视频）与 `rte/IframeNode.ts`（仅 https iframe 嵌入，sandbox 属性与后端 `common/rich_text.py` 保持一致）；`utils/iframeEmbed.ts` 解析用户粘贴的 embed HTML（仅取首个 iframe 的 src/title，安全边界仍在服务端 sanitize）。工具栏扩展高亮 / 文字颜色 / 对齐 / 上下标 / 字数统计与选区气泡菜单、空行浮动菜单；新闻编辑页（`NewsFormPage`）为文档式布局，编辑内容自动保存至服务端草稿区（已发布稿存 `draft_*`，未发布稿直写正文；读写弃均须 `news.manage_news`），详情页提供「编辑 / 继续编辑」入口。
-- **文档处理**：`DocxPreview`（docx-preview 保真渲染 Word 原件）与 mammoth（Word 导入转富文本）。
+- **文档处理**：`DocxPreview`（docx-preview 保真渲染 Word 原件）与 mammoth（Word 导入转富文本）；全站弹窗公告的 PDF 原件用内置 **pdf.js**（`vendor/pdfjs/`：解析器 + worker + CJK CMap，构建时直拷到 `/static/pdfjs/`，不进 bundle——`PdfPreview` 按页懒渲染，页数封顶）。
 - **其他**：`frappe-gantt`（任务甘特，`TaskGantt`，配色映射 cobalt token）；`tus-js-client`（超过同步上限的大文件走 tus 可续传上传，端点 `/uploads/files/`，完成后后端自动挂为统一附件）；字体 Sora / Noto Sans SC 由 `cobalt.css` 以 Google Fonts `@import` 引入。
 
 ## 开发惯例
