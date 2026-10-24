@@ -5,6 +5,8 @@
 - ``IsVerified`` 门禁：只读 ``is_verified``；超管无委任行亦不放行（认证轴无逃生舱）。
 - 迁移：存量账号默认信任（旧布尔为真或无 profile ⇒ 造 manual approved 行）。
 """
+from datetime import timedelta
+
 from django.contrib.auth.models import AnonymousUser, User
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
@@ -259,6 +261,78 @@ class VerificationStatusEndpointTest(TestCase):
         channels = self._get(u).json()["channels"]
         for card in channels:
             self.assertEqual(set(card.keys()), VERIFICATION_CARD_FIELDS)
+
+
+class SingleVerificationPathTest(TestCase):
+    """单一认证路径：任一通道认证通过后，其余通道派生为 ``not_required``（无需再次认证）。
+
+    该状态只在读取时计算、不落库：认证过期后账号回落访客，其余通道必须恢复真实状态
+    （仍可重新申请），否则用户会被永久锁在「无需再次认证」里。
+    """
+
+    URL = "/auth/verification/"
+
+    def _status(self, user):
+        c = Client()
+        c.force_login(user)
+        data = c.get(self.URL).json()
+        return data, {ch["channel"]: ch for ch in data["channels"]}
+
+    def test_manual_approved_closes_other_channels(self):
+        u = User.objects.create_user(username="u", password="p")
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_MANUAL,
+            status=Verification.STATUS_APPROVED, verified_at=timezone.now(),
+        )
+        data, channels = self._status(u)
+        self.assertTrue(data["is_verified"])
+        self.assertEqual(channels["manual"]["status"], "approved")
+        self.assertEqual(channels["email"]["status"], "not_required")
+        self.assertEqual(channels["authcode"]["status"], "not_required")
+        # 委任卡后端仍每通道一卡（键集契约不变），派生态交给前端决定不铺卡。
+        self.assertEqual(channels["appointment"]["status"], "not_required")
+
+    def test_email_approved_closes_other_channels(self):
+        u = User.objects.create_user(username="u", password="p")
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_EMAIL, status=Verification.STATUS_APPROVED,
+            identifier="u@163.com", verified_at=timezone.now(),
+            expires_at=timezone.now() + timedelta(days=30),
+        )
+        data, channels = self._status(u)
+        self.assertTrue(data["is_verified"])
+        self.assertEqual(channels["email"]["status"], "approved")
+        self.assertEqual(channels["email"]["identifier"], "u@163.com")  # 标识仍下发（登录 / 找回密码展示）
+        self.assertEqual(channels["manual"]["status"], "not_required")
+        self.assertEqual(channels["authcode"]["status"], "not_required")
+
+    def test_rejected_channel_masked_when_verified(self):
+        """已认证时，其余通道的历史状态（驳回 / 审核中）也收口为「无需再次认证」。"""
+        u = User.objects.create_user(username="u", password="p")
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_EMAIL, status=Verification.STATUS_APPROVED,
+            identifier="u@163.com", verified_at=timezone.now(),
+            expires_at=timezone.now() + timedelta(days=30),
+        )
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_MANUAL, status=Verification.STATUS_REJECTED,
+        )
+        channels = self._status(u)[1]
+        self.assertEqual(channels["manual"]["status"], "not_required")
+
+    def test_expired_verification_does_not_lock_other_channels(self):
+        """认证过期 → 账号回落访客，其余通道恢复真实状态，仍可重新申请。"""
+        u = User.objects.create_user(username="u", password="p")
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_MANUAL, status=Verification.STATUS_APPROVED,
+            verified_at=timezone.now() - timedelta(days=400),
+            expires_at=timezone.now() - timedelta(days=1),
+        )
+        data, channels = self._status(u)
+        self.assertFalse(data["is_verified"])
+        self.assertEqual(channels["manual"]["status"], "approved")  # 历史记录保留
+        self.assertEqual(channels["email"]["status"], "none")
+        self.assertEqual(channels["authcode"]["status"], "none")
 
 
 class VerificationPanelContractTest(TestCase):
