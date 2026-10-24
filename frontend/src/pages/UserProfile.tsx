@@ -27,10 +27,8 @@ const SELF_TABS = [
   { key: "profile", label: "资料编辑" },
   { key: "verification", label: "账号认证" },
   { key: "member", label: "社员身份" },
-  { key: "security", label: "安全验证" },
+  { key: "account", label: "账号与安全" },
   { key: "notify", label: "通知" },
-  { key: "password", label: "改密码" },
-  { key: "sessions", label: "登录设备" },
   { key: "news", label: "我的新闻", divider: true },
   { key: "activities", label: "我的活动" },
   { key: "tutorials", label: "我的教程" },
@@ -126,7 +124,19 @@ export default function UserProfile() {
   const rawTab = search.get("tab");
   const active = rawTab && tabKeys.includes(rawTab) ? rawTab : defaultTab;
 
+  // 旧链接（?tab=security / password / sessions）统一跳到账号安全中心
+  useEffect(() => {
+    if (rawTab && ["security", "password", "sessions"].includes(rawTab)) {
+      navigate("/security", { replace: true });
+    }
+  }, [rawTab, navigate]);
+
   const setTab = (k: string) => {
+    // 「账号与安全」已迁到独立页面（设计稿 2026-10-24）
+    if (k === "account") {
+      navigate("/security");
+      return;
+    }
     const next = new URLSearchParams(search);
     next.set("tab", k);
     setSearch(next, { replace: true });

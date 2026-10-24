@@ -1,0 +1,86 @@
+/* 账号与安全中心（/#/security）——参考微软安全性页的列表式布局。 */
+
+.sec-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--s-5, 24px) var(--s-4, 16px) var(--s-8, 64px);
+}
+
+.sec-hero {
+  background: linear-gradient(135deg, var(--brand-700, #1e3a8a), var(--brand-600, #2563eb));
+  color: #fff;
+  border-radius: var(--r-lg, 16px);
+  padding: var(--s-5, 24px);
+  margin-bottom: var(--s-5, 24px);
+}
+
+.sec-hero h1 { margin: 0 0 var(--s-4, 16px); font-size: 24px; }
+
+.sec-quick { display: flex; gap: var(--s-3, 12px); flex-wrap: wrap; }
+
+.sec-quick-card {
+  display: flex; align-items: center; gap: var(--s-3, 12px);
+  flex: 1 1 200px;
+  padding: var(--s-3, 12px) var(--s-4, 16px);
+  border: 1px solid rgba(255, 255, 255, .25);
+  border-radius: var(--r-md, 10px);
+  background: rgba(255, 255, 255, .08);
+  color: inherit; text-align: left; cursor: pointer;
+}
+.sec-quick-card:hover { background: rgba(255, 255, 255, .16); }
+.sec-quick-card span:first-child { font-size: 20px; }
+.sec-quick-card strong { display: block; font-size: 15px; }
+.sec-quick-card small { opacity: .8; font-size: 12px; }
+
+.sec-page h2 { font-size: 18px; margin: var(--s-5, 24px) 0 var(--s-2, 8px); }
+.sec-subhead { font-size: 15px; margin: var(--s-4, 16px) 0 var(--s-2, 8px); }
+
+.sec-methods { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line, #e5e7eb); border-radius: var(--r-md, 10px); overflow: hidden; }
+.sec-method-wrap + .sec-method-wrap { border-top: 1px solid var(--line, #e5e7eb); }
+
+.sec-method {
+  display: flex; align-items: center; gap: var(--s-3, 12px); width: 100%;
+  padding: var(--s-3, 12px) var(--s-4, 16px);
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--ink-800, #1f2937); text-align: left;
+}
+.sec-method:hover { background: var(--brand-50, #eff6ff); }
+.sec-method.is-open { background: var(--brand-50, #eff6ff); }
+.sec-method-icon { font-size: 18px; width: 24px; text-align: center; }
+.sec-method-label { flex: 1; font-weight: 600; }
+.sec-method-status { color: var(--ink-500, #6b7280); font-size: 13px; }
+.sec-check { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--surface-2, #f3f4f6); color: var(--ink-500, #6b7280); font-size: 13px; }
+.sec-check.is-ok { background: var(--success, #16a34a); color: #fff; }
+
+.sec-method-body { padding: 0 var(--s-4, 16px) var(--s-4, 16px); }
+.sec-panel { padding-top: var(--s-2, 8px); }
+
+.sec-devices { list-style: none; margin: var(--s-2, 8px) 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-2, 8px); }
+.sec-device { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3, 12px); padding: var(--s-3, 12px); border: 1px solid var(--line, #e5e7eb); border-radius: var(--r-md, 10px); }
+.sec-small { font-size: 12px; }
+
+.sec-badge { margin-left: var(--s-2, 8px); padding: 1px 6px; border-radius: 999px; background: var(--brand-50, #eff6ff); color: var(--brand-700, #1d4ed8); font-size: 11px; font-weight: 600; }
+.sec-badge-warn { background: #fef3c7; color: #92400e; }
+
+.sec-actions { display: flex; gap: var(--s-2, 8px); flex-wrap: wrap; align-items: center; margin-top: var(--s-3, 12px); }
+.sec-actions .input { flex: 1 1 220px; }
+
+.sec-setup { margin-top: var(--s-3, 12px); display: flex; flex-direction: column; gap: var(--s-2, 8px); }
+.sec-qr { width: 180px; height: 180px; image-rendering: pixelated; align-self: center; background: #fff; padding: 8px; border-radius: var(--r-md, 10px); }
+
+.sec-recovery { margin-top: var(--s-3, 12px); padding: var(--s-3, 12px); border: 1px dashed var(--line, #e5e7eb); border-radius: var(--r-md, 10px); }
+.sec-code-grid { list-style: none; margin: var(--s-2, 8px) 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--s-1, 4px); font-size: 13px; }
+
+.sec-events { list-style: none; margin: var(--s-2, 8px) 0; padding: 0; display: flex; flex-direction: column; }
+.sec-event { display: grid; grid-template-columns: 88px 1.2fr 1fr 1fr 68px; gap: var(--s-2, 8px); align-items: center; padding: var(--s-2, 8px) 0; border-bottom: 1px solid var(--line, #e5e7eb); font-size: 13px; }
+.sec-event.is-bad { color: #b91c1c; }
+.sec-event-time { color: var(--ink-500, #6b7280); }
+.sec-event-status { text-align: right; font-weight: 600; }
+.sec-event-status.is-ok { color: var(--success, #16a34a); }
+.sec-event-status.is-bad { color: #b91c1c; }
+
+@media (max-width: 720px) {
+  .sec-event { grid-template-columns: 1fr 1fr; row-gap: 2px; }
+  .sec-event-time { grid-column: 1 / -1; }
+  .sec-event-status { text-align: left; }
+}
