@@ -300,6 +300,9 @@ CSRF_COOKIE_SECURE = _https["CSRF_COOKIE_SECURE"]
 # Django 按浏览器会话 cookie 处理（max-age 不下发，关闭浏览器即失效）。
 REMEMBER_LOGIN_SECONDS = 30 * 24 * 60 * 60
 
+# IP → 城市定位（离线 ip2region xdb，魏 11MB，不入库；缺失时自动降级为只记 IP）。
+IP2REGION_DB = os.environ.get("IP2REGION_DB", str(BASE_DIR / "data" / "ip2region_v4.xdb"))
+
 # ---- 邮件 / SMTP ----
 # 163 邮箱 SMTP：配了 EMAIL_HOST_USER（+ EMAIL_HOST_PASSWORD 授权码）即切到 SMTP，
 # 否则 dev 用 console 后端（邮件打终端，便于本地调试注册 / 重置流程）。

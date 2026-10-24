@@ -10,8 +10,17 @@
 from __future__ import annotations
 
 import ipaddress
+import os
+
+from django.conf import settings
 
 _EMPTY = {"city": "", "region": "", "country": "", "latitude": None, "longitude": None}
+
+# ip2region 返回的行政区名带后缀（江苏省 / 南京市 / 内蒙古自治区），坐标表用简称。
+_REGION_SUFFIXES = ("维吾尔自治区", "壮族自治区", "回族自治区", "特别行政区", "自治区", "省")
+_CITY_SUFFIXES = ("自治州", "地区", "盟", "市")
+
+_searcher = None
 
 # 常用城市 → 城市中心点（纬度, 经度）。IP 定位只到城市，打点用中心点即可。
 # 只收录常用城市；未收录的城市仍显示文字，只是没有坐标（地图不画点）。
@@ -76,14 +85,60 @@ def _is_private(ip: str) -> bool:
     return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
 
 
-def _search_ip2region(ip: str) -> tuple[str, str, str] | None:
-    """ip2region xdb 查询（待接入）。
+def _get_searcher():
+    """懒加载 ip2region Searcher（整库读进内存，约 11MB）；缺库/缺依赖返回 None。"""
+    global _searcher
+    if _searcher is not None:
+        return _searcher
+    path = getattr(settings, "IP2REGION_DB", "")
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        from ip2region import util
+        from ip2region.searcher import Searcher
 
-    返回 (国家/地区, 省, 市)；库文件不存在或未安装依赖时返回 None。
-    接入步骤：把 ``ip2region.xdb`` 放到 ``settings.IP2REGION_DB`` 指向的路径
-    （默认 ``BASE_DIR / "data" / "ip2region.xdb"``），再在此处调用官方查询实现。
+        with open(path, "rb") as fh:
+            buffer = fh.read()
+        _searcher = Searcher(util.IPv4, None, None, buffer)
+    except Exception:
+        # 库文件损坏 / 依赖缺失 → 静默降级，不影响登录流程
+        return None
+    return _searcher
+
+
+def _strip(name: str, suffixes: tuple[str, ...]) -> str:
+    for suffix in suffixes:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _search_ip2region(ip: str) -> tuple[str, str, str] | None:
+    """ip2region xdb 查询，返回归一化后的 (国家, 省, 市)。
+
+    数据格式：``国家|省|市|ISP|ISO``，如 ``中国|江苏省|南京市|0|CN``。
+    库文件缺失 / 查询失败 / 保留地址 → None（上层只记录 IP）。
     """
-    return None
+    searcher = _get_searcher()
+    if searcher is None:
+        return None
+    try:
+        region = searcher.search(ip)
+    except Exception:
+        return None
+    if not region:
+        return None
+
+    parts = region.split("|")
+    if len(parts) < 3:
+        return None
+    country, province, city = (p.strip() for p in parts[:3])
+    if country in {"", "0", "Reserved"}:
+        return None
+
+    province = "" if province in {"", "0"} else _strip(province, _REGION_SUFFIXES)
+    city = "" if city in {"", "0"} else _strip(city, _CITY_SUFFIXES)
+    return country, province, city
 
 
 def geolocate(ip: str | None) -> dict:

@@ -4,7 +4,10 @@
 本模块的 UA / IP / 指纹都不参与信任判定。
 """
 import json
+import os
+from unittest import skipUnless
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.test import TestCase
 
@@ -160,3 +163,33 @@ class LoginEventTests(TestCase):
         LoginEvent.objects.all().delete()
         self._login(new_device_id(), REMOTE_ADDR="198.51.100.7", HTTP_X_FORWARDED_FOR="203.0.113.9")
         self.assertEqual(LoginEvent.objects.get().ip, "198.51.100.7")
+
+
+@skipUnless(os.path.exists(settings.IP2REGION_DB), "ip2region xdb 未安装（CI 不下载库文件）")
+class GeolocateTests(TestCase):
+    def test_china_ip_resolves_city_and_coords(self):
+        from .geolocate import geolocate
+
+        geo = geolocate("114.114.114.114")
+        self.assertEqual(geo["country"], "中国")
+        self.assertEqual(geo["region"], "江苏")
+        self.assertEqual(geo["city"], "南京")
+        self.assertAlmostEqual(geo["latitude"], 32.0603, places=3)
+        self.assertAlmostEqual(geo["longitude"], 118.7969, places=3)
+
+    def test_private_ip_is_not_located(self):
+        from .geolocate import geolocate
+
+        self.assertEqual(geolocate("192.168.1.10")["city"], "")
+        self.assertEqual(geolocate("127.0.0.1")["city"], "")
+
+    def test_reserved_ip_returns_empty(self):
+        from .geolocate import geolocate
+
+        # 203.0.113.0/24 是文档保留段，ip2region 返回 Reserved
+        self.assertEqual(geolocate("203.0.113.9")["country"], "")
+
+    def test_invalid_ip_returns_empty(self):
+        from .geolocate import geolocate
+
+        self.assertEqual(geolocate("not-an-ip")["city"], "")

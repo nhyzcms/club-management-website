@@ -86,6 +86,7 @@ dependencies = [
     { name = "openpyxl" },
     { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "py-ip2region" },
     { name = "python-dotenv" },
     { name = "redis" },
     { name = "reportlab" },
@@ -107,6 +108,7 @@ requires-dist = [
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
+    { name = "py-ip2region", specifier = ">=3.0.6" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "redis", specifier = ">=8.1.0" },
     { name = "reportlab", specifier = ">=5.0.1" },
@@ -734,6 +736,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/5d/0f/62113dc6b1df65983a1f2fc816c04b1edfa22f2ae9d4abee74ed267f4a96/psycopg_binary-3.3.6-cp315-cp315-musllinux_1_2_riscv64.whl", hash = "sha256:c7753871eb57e6a5f4646f6168590c6653073dea5e9e720b201c8875332df4c8", size = 4027121, upload-time = "2026-09-18T13:22:38.334Z" },
     { url = "https://files.pythonhosted.org/packages/5d/d5/cf0cbd1ea5a7d8167fe2c6953efde19101f7b193bd61a23e6d622ad6854c/psycopg_binary-3.3.6-cp315-cp315-musllinux_1_2_x86_64.whl", hash = "sha256:303732e798fe6729f8e12021b9c96107df8e95ecec4dd487c67b98ec2a59435e", size = 4336388, upload-time = "2026-09-18T13:22:45.576Z" },
     { url = "https://files.pythonhosted.org/packages/98/33/e2a5b36edf8aa422f6fa4b894756eb33dc93b36df5f65121280bb8b929c4/psycopg_binary-3.3.6-cp315-cp315-win_amd64.whl", hash = "sha256:2f122603f36050937982abf9668d8bc4769a79f7c93a65013b1c49f1cab7b56b", size = 3756154, upload-time = "2026-09-18T13:22:51.283Z" },
+]
+
+[[package]]
+name = "py-ip2region"
+version = "3.0.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ff/f0/eb0391aa7412f74bccd39a8c206b46f0e21c0b556e5d073a75381ed70455/py_ip2region-3.0.6.tar.gz", hash = "sha256:d02e5731adb64aa640701ba8ca62273055b4f8ee4e19d8fe57d56865e2878d8c", size = 17946, upload-time = "2026-10-18T02:37:10.904Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/35/bd/458c269892659b7ebdfe3b27b32bc7980d8aeb0ff759fc93873f805dc45b/py_ip2region-3.0.6-py3-none-any.whl", hash = "sha256:c39ecbe7a5a34a5fac902551c8e718dfe8256b79980ef91ec61d509178a0f03e", size = 13664, upload-time = "2026-10-18T02:37:09.351Z" },
 ]
 
 [[package]]
