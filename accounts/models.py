@@ -539,6 +539,104 @@ class PasswordResetRequest(models.Model):
         return f"{self.user.username} · 密码重置 · {self.get_status_display()}"
 
 
+class AccountDevice(models.Model):
+    """账号下的一台「设备」——由服务端签发的随机 device_id 标识（见 accounts/devices.py）。
+
+    浏览器拿不到 MAC（无 API）；brand/model 是尽力推断，允许为空。设备是否「已知」
+    （trusted_at 非空）只由「该设备上完成过一次二次验证」决定，不靠指纹推断。
+    """
+
+    user = models.ForeignKey(User, verbose_name="用户", on_delete=models.CASCADE, related_name="devices")
+    device_id = models.CharField("设备 ID", max_length=64, db_index=True)
+    label = models.CharField("设备名", max_length=128, blank=True, default="")
+    browser = models.CharField("浏览器", max_length=64, blank=True, default="")
+    platform = models.CharField("平台", max_length=32, blank=True, default="")
+    brand = models.CharField("品牌", max_length=64, blank=True, default="")
+    model = models.CharField("型号", max_length=96, blank=True, default="")
+    mac_address = models.CharField(
+        "MAC（浏览器不可得，预留给原生端）", max_length=32, blank=True, default=""
+    )
+    first_seen = models.DateTimeField("首次出现", auto_now_add=True)
+    last_seen = models.DateTimeField("最近活跃", default=timezone.now)
+    last_ip = models.GenericIPAddressField("最近 IP", null=True, blank=True)
+    last_city = models.CharField("最近城市", max_length=64, blank=True, default="")
+    last_country = models.CharField("最近国家/地区", max_length=64, blank=True, default="")
+    trusted_at = models.DateTimeField("通过二次验证的时间", null=True, blank=True)
+    revoked_at = models.DateTimeField("撤销时间", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "账号设备"
+        verbose_name_plural = "账号设备"
+        ordering = ["-last_seen"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "device_id"], name="uniq_user_device"),
+        ]
+        indexes = [models.Index(fields=["user", "revoked_at"])]
+
+    def __str__(self):
+        return f"{self.user.username} · {self.label or self.device_id[-4:]}"
+
+    @property
+    def is_trusted(self) -> bool:
+        return self.trusted_at is not None and self.revoked_at is None
+
+
+class LoginEvent(models.Model):
+    """登录事件流水：成功 / 失败 / 被限流 / 待二次验证都记。
+
+    user 允许为空——撞库时账号可能不存在；此时只留 IP/UA 供风控分析。
+    """
+
+    STATUS_CHOICES = [
+        ("success", "成功"),
+        ("failed", "失败"),
+        ("blocked", "被限流"),
+        ("challenge", "待二次验证"),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        verbose_name="用户",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="login_events",
+    )
+    device = models.ForeignKey(
+        AccountDevice,
+        verbose_name="设备",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="login_events",
+    )
+    session_key = models.CharField("会话键", max_length=40, blank=True, default="")
+    method = models.CharField("登录方式", max_length=16, default="password")
+    status = models.CharField("结果", max_length=16, choices=STATUS_CHOICES, default="success")
+    second_factor = models.CharField("二次验证方式", max_length=16, blank=True, default="")
+    is_new_device = models.BooleanField("新设备", default=False)
+    ip = models.GenericIPAddressField("IP", null=True, blank=True)
+    user_agent = models.TextField("User-Agent", blank=True, default="")
+    city = models.CharField("城市", max_length=64, blank=True, default="")
+    region = models.CharField("省份", max_length=64, blank=True, default="")
+    country = models.CharField("国家/地区", max_length=64, blank=True, default="")
+    latitude = models.FloatField("纬度（城市中心）", null=True, blank=True)
+    longitude = models.FloatField("经度（城市中心）", null=True, blank=True)
+    created_at = models.DateTimeField("时间", auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "登录事件"
+        verbose_name_plural = "登录事件"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id or '匿名'} {self.method}/{self.status} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
 class UserSession(models.Model):
     """登录设备（多端登录，ADR-0028）。
 

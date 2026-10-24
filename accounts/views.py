@@ -57,6 +57,7 @@ from .password_reset import (
 )
 from .registration_guard import duplicate_message, find_duplicate
 from .tokens import email_verification_token
+from .devices import get_or_create_device, record_login_event
 from .validity_summary import account_validity, ack_notice
 from .throttles import (
     AuthCodeRedeemThrottle,
@@ -179,6 +180,7 @@ def login_view(request):
             request=request,
             credentials={"username": throttle_ident},
         )
+        record_login_event(request, user=candidate, status="failed")
         return JsonResponse({"error": "Invalid credentials"}, status=401)
 
     # 密码正确 → 确为本人，可安全揭示账号状态（停用 / 放行）。
@@ -227,6 +229,8 @@ def login_view(request):
         )
 
     previous_key = request.session.session_key
+
+    device, is_new_device = get_or_create_device(candidate, request)
     login(request, candidate)
     if previous_key and previous_key != request.session.session_key:
         # 同一浏览器重复登录 / 换账号：旧会话行让位，别让一台设备占掉两个名额。
@@ -245,6 +249,16 @@ def login_view(request):
     # 不勾 → set_expiry(0)，Django 视为浏览器会话 cookie（max-age 不下发，关浏览器失效）。
     request.session.set_expiry(
         settings.REMEMBER_LOGIN_SECONDS if form.cleaned_data.get("remember") else 0
+    )
+    record_login_event(
+        request,
+        user=candidate,
+        device=device,
+        status="success",
+        method="password",
+        second_factor="none",
+        is_new_device=is_new_device,
+        session_key=request.session.session_key or "",
     )
     return JsonResponse({
         "user": {"id": candidate.id, "username": candidate.username, "email": candidate.email},

@@ -129,6 +129,7 @@ MIDDLEWARE = [
     'common.middleware.MaintenanceModeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    # 设备 ID（cookie ncdid）：只发牌，不判信任；须早于 AuthenticationMiddleware。
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
