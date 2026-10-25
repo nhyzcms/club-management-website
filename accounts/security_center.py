@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.sessions.models import Session
@@ -232,9 +233,27 @@ def totp_setup_view(request):
     pending = TotpDevice.objects.filter(user=request.user, confirmed_at__isnull=True).count()
     if confirmed >= MAX_TOTP:
         return JsonResponse({"error": f"最多绑定 {MAX_TOTP} 个滚动密钥。"}, status=400)
-    if pending >= 3:
-        # 防止反复 setup 堆垃圾记录
-        TotpDevice.objects.filter(user=request.user, confirmed_at__isnull=True).delete()
+    if pending >= totp.MAX_PENDING_TOTP:
+        # 防止反复 setup 堆垃圾记录，但**不能把用户正在扫的那条删掉**：
+        # 先清创建超过 TTL 的陈旧记录；都还很新（多标签页同时点）就只删最旧的几条，
+        # 腾出位置后最新的那条（刚返回给前端的二维码）一定仍然有效。
+        cutoff = timezone.now() - timedelta(minutes=totp.PENDING_TTL_MINUTES)
+        TotpDevice.objects.filter(
+            user=request.user, confirmed_at__isnull=True, created_at__lt=cutoff
+        ).delete()
+        pending = TotpDevice.objects.filter(
+            user=request.user, confirmed_at__isnull=True
+        ).count()
+        if pending >= totp.MAX_PENDING_TOTP:
+            overflow = pending - totp.MAX_PENDING_TOTP + 1
+            stale_ids = list(
+                TotpDevice.objects.filter(
+                    user=request.user, confirmed_at__isnull=True
+                )
+                .order_by("created_at")
+                .values_list("id", flat=True)[:overflow]
+            )
+            TotpDevice.objects.filter(pk__in=stale_ids).delete()
 
     body = _body(request)
     label = (body.get("label") or "").strip()[:64]

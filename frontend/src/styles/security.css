@@ -67,6 +67,15 @@
 
 .sec-setup { margin-top: var(--s-3, 12px); display: flex; flex-direction: column; gap: var(--s-2, 8px); }
 .sec-qr { width: 180px; height: 180px; image-rendering: pixelated; align-self: center; background: #fff; padding: 8px; border-radius: var(--r-md, 10px); }
+/* 手动输入用的密钥：按 4 位分组显示，复制按钮取原值（无空格） */
+.sec-secret {
+  display: inline-block;
+  margin: 0 8px;
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.sec-copy { vertical-align: middle; }
 
 .sec-recovery { margin-top: var(--s-3, 12px); padding: var(--s-3, 12px); border: 1px dashed var(--line, #e5e7eb); border-radius: var(--r-md, 10px); }
 .sec-code-grid { list-style: none; margin: var(--s-2, 8px) 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--s-1, 4px); font-size: 13px; }
