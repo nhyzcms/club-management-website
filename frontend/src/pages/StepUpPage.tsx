@@ -12,10 +12,11 @@ import {
 import "../styles/stepup.css";
 
 /**
- * 安全验证页（/#/verify，ADR-0026）：
- * - 带 `?action=<scope>&next=…`：为受保护操作完成「是本人」确认；通过后回跳 next（调用方重试）；
- * - 不带参数：入口总览（可查看方式状态，受保护操作会带入目标）。
- * 方式：邮箱验证码 / 安全问题；通过后 grant 存 sessionStorage（10 分钟内同 scope 复用）。
+ * 安全验证页（/#/verify，ADR-0026；2026-10-25 起走因子注册表）：
+ * - 带 `?action=<scope>&next=…`：为受保护操作完成「是本人」确认，通过后回跳 next；
+ * - 可用方式由后端 `/auth/stepup/?scope=` 下发，本页按 key 渲染输入区：
+ *   email（发码 + 6 位）/ question（选题 + 答案）/ totp（6 位）/ recovery（10 位），
+ *   未识别的新方式回退成通用验证码输入框——后端新增因子时本页不需要改。
  */
 export default function StepUpPage() {
   const [search] = useSearchParams();
@@ -27,15 +28,15 @@ export default function StepUpPage() {
 
   const [status, setStatus] = useState<StepupStatus | null>(null);
   const [err, setErr] = useState("");
-  const [method, setMethod] = useState<"email" | "question">("email");
+  const [method, setMethod] = useState("");
 
-  // 邮箱流
+  // 发码流（邮箱验证码）
   const [code, setCode] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
 
-  // 问题流
+  // 安全问题流
   const [questions, setQuestions] = useState<StepupQuestion[]>([]);
   const [picked, setPicked] = useState<StepupQuestion | null>(null);
   const [answer, setAnswer] = useState("");
@@ -44,18 +45,21 @@ export default function StepUpPage() {
 
   const loadStatus = () => {
     stepupApi
-      .status()
+      .status(scope || undefined)
       .then((d) => {
         setStatus(d);
         setCooldown(d.email.cooldown_remaining);
-        if (!d.email.available) setMethod("question");
+        setMethod((current) => {
+          const keys = d.factors.map((f) => f.key);
+          return current && keys.includes(current) ? current : keys[0] || "";
+        });
       })
       .catch((e: any) => {
         if (e?.status === 401) openLogin();
         else setErr(e.message || "加载失败");
       });
   };
-  useEffect(loadStatus, [openLogin]);
+  useEffect(loadStatus, [openLogin, scope]);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -90,13 +94,23 @@ export default function StepUpPage() {
       .finally(() => setSending(false));
   };
 
+  const current = status?.factors.find((f) => f.key === method) || null;
+  // 除「安全问题」外，其余因子都是直接填一段码（动态口令 / 邮箱码 / 恢复代码 / 未来新方式）
+  const needsCode = method !== "" && method !== "question";
+  const codeMaxLength = method === "totp" ? 6 : method === "recovery" ? 10 : 32;
+
   const submit = () => {
-    if (!scope) return;
+    if (!scope || !method) return;
     setBusy(true);
     setErr("");
-    const payload: { method: "email" | "question"; scope: string; code?: string; question_id?: number; answer?: string } =
-      { method, scope };
-    if (method === "email") payload.code = code.trim();
+    const payload: {
+      method: string;
+      scope: string;
+      code?: string;
+      question_id?: number;
+      answer?: string;
+    } = { method, scope };
+    if (needsCode) payload.code = code.trim();
     else {
       payload.question_id = picked?.id;
       payload.answer = answer;
@@ -113,8 +127,9 @@ export default function StepUpPage() {
 
   const canSubmit =
     !!scope &&
+    !!method &&
     !busy &&
-    (method === "email" ? code.trim().length > 0 : !!picked && answer.trim().length > 0);
+    (needsCode ? code.trim().length > 0 : !!picked && answer.trim().length > 0);
 
   return (
     <AppShell>
@@ -143,32 +158,43 @@ export default function StepUpPage() {
                 <p className="muted">加载中…</p>
               ) : (
                 <>
-                  {status.email.available ? (
+                  {status.factors.length === 0 ? (
+                    <p className="muted">
+                      当前账号还没有可用的验证方式。请先到
+                      <a
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          navigate("/security");
+                        }}
+                      >
+                        账号安全中心
+                      </a>
+                      设置安全问题、绑定动态口令，或在「账号认证」完成邮箱认证。
+                    </p>
+                  ) : (
                     <div className="stepup-methods" role="tablist" aria-label="验证方式">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={method === "email"}
-                        className={"stepup-method" + (method === "email" ? " is-active" : "")}
-                        onClick={() => setMethod("email")}
-                      >
-                        邮箱验证码
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={method === "question"}
-                        className={"stepup-method" + (method === "question" ? " is-active" : "")}
-                        onClick={() => setMethod("question")}
-                        disabled={!status.questions.configured}
-                        title={!status.questions.configured ? "尚未设置安全问题" : undefined}
-                      >
-                        安全问题
-                      </button>
+                      {status.factors.map((factor) => (
+                        <button
+                          key={factor.key}
+                          type="button"
+                          role="tab"
+                          aria-selected={method === factor.key}
+                          className={"stepup-method" + (method === factor.key ? " is-active" : "")}
+                          onClick={() => {
+                            setMethod(factor.key);
+                            setCode("");
+                            setSent(false);
+                            setErr("");
+                          }}
+                        >
+                          {factor.label}
+                        </button>
+                      ))}
                     </div>
-                  ) : null}
+                  )}
 
-                  {method === "email" && status.email.available && (
+                  {method === "email" && (
                     <>
                       <p className="muted">
                         验证码将发送到已认证邮箱 <strong>{status.email.address}</strong>（10 分钟内有效）。
@@ -238,6 +264,40 @@ export default function StepUpPage() {
                     </>
                   )}
 
+                  {needsCode && (
+                    <div className="field">
+                      <label className="label" htmlFor="stepup-code">
+                        {current?.hint || "验证码"}
+                      </label>
+                      <input
+                        className="input"
+                        id="stepup-code"
+                        value={code}
+                        autoComplete="one-time-code"
+                        inputMode={method === "totp" ? "numeric" : "text"}
+                        maxLength={codeMaxLength}
+                        placeholder={current?.hint || ""}
+                        onChange={(e) =>
+                          setCode(
+                            method === "totp"
+                              ? e.target.value.replace(/\D/g, "").slice(0, 6)
+                              : e.target.value.slice(0, codeMaxLength)
+                          )
+                        }
+                      />
+                      {method === "totp" && (
+                        <p className="muted sec-small" style={{ marginTop: 4 }}>
+                          打开 Authenticator 应用查看当前的 6 位动态码。
+                        </p>
+                      )}
+                      {method === "recovery" && (
+                        <p className="muted sec-small" style={{ marginTop: 4 }}>
+                          输入绑定动态口令时保存的一次性恢复代码（用后作废）。
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {scope && (
                     <button
                       className="btn btn-primary btn-block"
@@ -251,8 +311,11 @@ export default function StepUpPage() {
                   )}
 
                   <p className="muted" style={{ marginTop: "var(--s-4)" }}>
-                    方式状态：邮箱{status.email.available ? `（${status.email.address}）` : "（未认证）"} ·
-                    安全问题{status.questions.configured ? `（已设 ${status.questions.count} 题）` : "（未设置）"}
+                    可用方式：
+                    {status.factors.length
+                      ? status.factors.map((f) => f.label).join(" · ")
+                      : "暂无"}
+                    {status.email.available ? `（邮箱 ${status.email.address}）` : ""}
                   </p>
                 </>
               )}

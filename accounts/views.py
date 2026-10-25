@@ -28,7 +28,7 @@ from rest_framework.request import Request
 
 from common.policy import get_policy
 
-from . import stepup
+from . import factors, stepup
 from .authcode import AuthCodeError, redeem_authcode
 from .deletion import AccountDeletionError, delete_account
 from .email_domains import (
@@ -708,11 +708,25 @@ def _mask_email(address: str) -> str:
 @require_GET
 @login_required
 def stepup_status_view(request):
-    """验证方式总览：邮箱可用性 / 冷却剩余 / 安全问题设置情况。"""
+    """验证方式总览：可用因子（按 scope 过滤）+ 邮箱地址/冷却。
+
+    ``scope`` 由前端带上（例 ?scope=manage_totp），用于过滤「该操作不允许使用」的因子；
+    新增验证方式只需在 accounts/factors.py 注册，这里自动随之变化。
+    """
     user = request.user
+    scope = (request.GET.get("scope") or "").strip()
     questions = user.security_questions.all()
     return JsonResponse({
         "scopes": stepup.SCOPES,
+        "factors": [
+            {
+                "key": factor.key,
+                "label": factor.label,
+                "hint": factor.hint,
+                "sends_code": factor.sends_code,
+            }
+            for factor in factors.for_user(user, scope)
+        ],
         "email": {
             "available": stepup.email_available(user),
             "address": _mask_email(user.email) if stepup.email_available(user) else "",
@@ -765,25 +779,25 @@ def stepup_verify_view(request):
     method = (body.get("method") or "").strip()
     if scope not in stepup.SCOPES:
         return JsonResponse({"error": "未知的验证作用域。"}, status=400)
-    if method not in ("email", "question"):
-        return JsonResponse({"error": "请选择验证方式。"}, status=400)
+
+    factor = factors.get(method)
+    if factor is None:
+        return JsonResponse({"error": "未知的验证方式。"}, status=400)
+    if scope in factor.excluded_scopes:
+        return JsonResponse(
+            {"error": f"「{factor.label}」不能用于当前操作，请换一种方式。"}, status=400
+        )
 
     user = request.user
+    if not factor.available(user):
+        return JsonResponse({"error": f"「{factor.label}」当前不可用。"}, status=400)
     try:
-        if method == "email":
-            stepup.verify_email_code(user, body.get("code") or "")
-        else:
-            question_id = body.get("question_id")
-            try:
-                question_id = int(question_id)
-            except (TypeError, ValueError):
-                return JsonResponse({"error": "题目不存在。"}, status=400)
-            stepup.check_security_answer(user, question_id, body.get("answer") or "")
-    except stepup.StepUpError as exc:
-        stepup.record_event(user, scope, method, "fail", request)
+        factor.verify(user, body)
+    except (stepup.StepUpError, factors.FactorError) as exc:
+        stepup.record_event(user, scope, factor.key, "fail", request)
         return JsonResponse({"error": str(exc)}, status=400)
 
-    stepup.record_event(user, scope, method, "ok", request)
+    stepup.record_event(user, scope, factor.key, "ok", request)
     return JsonResponse({
         "message": "验证通过。",
         "grant": stepup.issue_grant(user, scope),

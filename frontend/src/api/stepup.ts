@@ -3,8 +3,8 @@ import { createRequest } from "./shared";
 const request = createRequest("/auth");
 
 /**
- * 安全验证（Step-up，ADR-0026）：
- * - 验证方式：邮箱验证码 / 安全问题；作用域 change_password / manage_questions / change_email；
+ * 安全验证（Step-up，ADR-0026；2026-10-25 起改为「因子注册表」）：
+ * - 可用验证方式由后端 `GET /auth/stepup/?scope=` 下发，前端不再写死；
  * - 通过后签发 grant（10 分钟、同 scope 复用），存 sessionStorage，随受保护调用带
  *   `X-StepUp-Grant` 头；受保护端点缺令牌会回 403 `step_up_required`。
  */
@@ -18,8 +18,17 @@ export const STEPUP_SCOPE_LABELS: Record<string, string> = {
   manage_totp: "管理动态口令",
 };
 
+/** 一个验证因子（后端注册表下发）。新增方式时这里不需要改。 */
+export interface StepupFactor {
+  key: string;
+  label: string;
+  hint: string;
+  sends_code: boolean;
+}
+
 export interface StepupStatus {
   scopes: Record<string, string>;
+  factors: StepupFactor[];
   email: { available: boolean; address: string; cooldown_remaining: number };
   questions: { configured: boolean; count: number };
   grant_ttl: number;
@@ -78,13 +87,14 @@ export function stepupHeaders(scope: string): Record<string, string> {
 }
 
 export const stepupApi = {
-  status: () => request("/stepup/") as Promise<StepupStatus>,
+  status: (scope?: string) =>
+    request(scope ? `/stepup/?scope=${encodeURIComponent(scope)}` : "/stepup/") as Promise<StepupStatus>,
 
   emailSend: () =>
     request("/stepup/email/send/", { method: "POST" }) as Promise<{ message: string }>,
 
   verify: (data: {
-    method: "email" | "question";
+    method: string;
     scope: string;
     code?: string;
     question_id?: number;

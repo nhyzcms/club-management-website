@@ -18,6 +18,7 @@ describe("SecurityPanel（安全验证面板）", () => {
   it("未设置问题：展示设置入口与首设说明", async () => {
     statusMock.mockResolvedValueOnce({
       scopes: {},
+      factors: [{ key: "email", label: "邮箱验证码", hint: "", sends_code: true }],
       email: { available: true, address: "u***@x.com", cooldown_remaining: 0 },
       questions: { configured: false, count: 0 },
       grant_ttl: 600,
@@ -31,6 +32,7 @@ describe("SecurityPanel（安全验证面板）", () => {
   it("已设置：列出题干与更换入口", async () => {
     statusMock.mockResolvedValueOnce({
       scopes: {},
+      factors: [{ key: "question", label: "安全问题", hint: "", sends_code: false }],
       email: { available: false, address: "", cooldown_remaining: 0 },
       questions: { configured: true, count: 1 },
       grant_ttl: 600,
