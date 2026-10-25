@@ -14,6 +14,7 @@ export default function TotpPanel() {
   const [setup, setSetup] = useState<{ id: number; secret: string; qr: string } | null>(null);
   const [code, setCode] = useState("");
   const [codes, setCodes] = useState<string[] | null>(null);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -39,6 +40,18 @@ export default function TotpPanel() {
       setSetup({ id: d.id, secret: d.secret, qr: d.qr });
     } catch (e: any) {
       setError(e?.message || "生成失败，请稍后再试。");
+    }
+  };
+
+  const copySecret = async () => {
+    if (!setup) return;
+    try {
+      // 复制不带分组空格的原值：多数 Authenticator 的手动输入框不接受空格
+      await navigator.clipboard.writeText(setup.secret);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("复制失败，请手动选中密钥复制。");
     }
   };
 
@@ -131,7 +144,17 @@ export default function TotpPanel() {
         <form className="sec-setup" onSubmit={confirm}>
           <img src={setup.qr} alt="TOTP 二维码" className="sec-qr" />
           <p className="muted sec-small">
-            扫不上？手动输入密钥：<code>{setup.secret}</code>
+            扫不上？手动输入密钥：
+            <code className="sec-secret" data-testid="totp-secret">
+              {setup.secret.replace(/(.{4})/g, "$1 ").trim()}
+            </code>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm sec-copy"
+              onClick={copySecret}
+            >
+              {copied ? "已复制" : "复制"}
+            </button>
           </p>
           <div className="field">
             <label className="label" htmlFor="totp-code">输入应用显示的 6 位验证码</label>

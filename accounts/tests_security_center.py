@@ -121,6 +121,39 @@ class TotpApiTests(TestCase):
         resp = _post(self.client, "/auth/totp/confirm/", {"id": created["id"], "code": "000000"})
         self.assertEqual(resp.status_code, 400)
 
+    def test_pending_overflow_keeps_newest_setup(self):
+        """pending 满额时只清旧的：刚返回给前端的那条二维码必须仍然有效。"""
+        from .models import TotpDevice
+
+        old_ids = [self._setup(f"p{i}")["id"] for i in range(totp.MAX_PENDING_TOTP)]
+        newest = self._setup("just-scanned")
+
+        self.assertTrue(
+            TotpDevice.objects.filter(pk=newest["id"], confirmed_at__isnull=True).exists()
+        )
+        pending = TotpDevice.objects.filter(user=self.user, confirmed_at__isnull=True)
+        self.assertLessEqual(pending.count(), totp.MAX_PENDING_TOTP)
+        self.assertFalse(TotpDevice.objects.filter(pk=old_ids[0]).exists())
+
+    def test_stale_pending_cleaned_before_fresh(self):
+        """超过 TTL 未确认的记录优先被清，新记录不受影响。"""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .models import TotpDevice
+
+        stale = self._setup("old")
+        TotpDevice.objects.filter(pk=stale["id"]).update(
+            created_at=timezone.now() - timedelta(minutes=totp.PENDING_TTL_MINUTES + 1)
+        )
+        for i in range(totp.MAX_PENDING_TOTP - 1):
+            self._setup(f"new{i}")
+
+        fresh = self._setup("fresh")
+        self.assertFalse(TotpDevice.objects.filter(pk=stale["id"]).exists())
+        self.assertTrue(TotpDevice.objects.filter(pk=fresh["id"]).exists())
+
     def test_totp_limit(self):
         from .models import TotpDevice
         from django.utils import timezone
