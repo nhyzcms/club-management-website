@@ -398,7 +398,7 @@
 | account | 是 | 用户名 / 邮箱 / **恰好唯一的**真实姓名（用于定位账号） |
 | contact | 否 | 联系方式（手机 / QQ / 微信），供管理员核对 |
 | note | 否 | 申请说明 |
-| proof | 是 | 身份证明 **1 张**，≤5MB，JPG / PNG / WebP；落私有存储 `PRIVATE_MEDIA_ROOT/password_reset_proofs/` |
+| proof | 是 | 身份证明 **1 张**（请上传**学生证/校牌**，**不要提交身份证照片**），≤5MB，JPG / PNG / WebP；落私有存储 `PRIVATE_MEDIA_ROOT/password_reset_proofs/` |
 | turnstile_token | 条件 | Turnstile 启用时必填 |
 
 成功 `201 {"message": "申请已提交。管理员核对身份证明后会重置密码，请留意站内通知。"}`，并给持
