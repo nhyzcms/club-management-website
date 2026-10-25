@@ -39,6 +39,7 @@ describe("StepUpPage（安全验证页）", () => {
   it("邮箱可用：输入验证码 → 验证并保存 grant", async () => {
     statusMock.mockResolvedValueOnce({
       scopes: { change_password: "修改密码" },
+      factors: [{ key: "email", label: "邮箱验证码", hint: "6 位邮箱验证码", sends_code: true }],
       email: { available: true, address: "u***@x.com", cooldown_remaining: 0 },
       questions: { configured: false, count: 0 },
       grant_ttl: 600,
@@ -56,17 +57,22 @@ describe("StepUpPage（安全验证页）", () => {
   it("无邮箱且未设问题：给出设置引导", async () => {
     statusMock.mockResolvedValueOnce({
       scopes: {},
+      factors: [],
       email: { available: false, address: "", cooldown_remaining: 0 },
       questions: { configured: false, count: 0 },
       grant_ttl: 600,
     });
     renderAt("/verify?action=change_email");
-    expect(await screen.findByText(/尚未设置安全问题/)).toBeInTheDocument();
+    expect(await screen.findByText(/还没有可用的验证方式/)).toBeInTheDocument();
   });
 
   it("无 action：管理入口文案", async () => {
     statusMock.mockResolvedValueOnce({
       scopes: {},
+      factors: [
+        { key: "email", label: "邮箱验证码", hint: "6 位邮箱验证码", sends_code: true },
+        { key: "question", label: "安全问题", hint: "答案", sends_code: false },
+      ],
       email: { available: true, address: "u***@x.com", cooldown_remaining: 0 },
       questions: { configured: true, count: 2 },
       grant_ttl: 600,

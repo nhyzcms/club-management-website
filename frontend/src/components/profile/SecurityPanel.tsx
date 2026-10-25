@@ -114,10 +114,20 @@ export default function SecurityPanel() {
       ) : (
         <>
           <ul className="muted" style={{ margin: "0 0 var(--s-4)", paddingLeft: "1.2em" }}>
-            <li>
-              邮箱验证码：{status.email.available ? <>可用（{status.email.address}）</> : "不可用——先在「账号认证」完成邮箱认证"}
-            </li>
-            <li>安全问题：{status.questions.configured ? `已设置 ${status.questions.count} 题` : "未设置"}</li>
+            {status.factors.length > 0 ? (
+              status.factors.map((f) => (
+                <li key={f.key}>
+                  {f.label}：可用
+                  {f.key === "email" ? `（${status.email.address}）` : ""}
+                </li>
+              ))
+            ) : (
+              <li>暂无可用验证方式</li>
+            )}
+            {!status.email.available && (
+              <li>邮箱验证码：不可用——先在「账号认证」完成邮箱认证</li>
+            )}
+            {!status.questions.configured && <li>安全问题：未设置</li>}
           </ul>
 
           <h3 style={{ fontSize: 15, marginBottom: "var(--s-2)" }}>安全问题</h3>

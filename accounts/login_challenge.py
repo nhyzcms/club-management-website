@@ -19,9 +19,9 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from . import stepup, totp
+from . import factors, stepup
 from .devices import get_client_ip, record_login_event
-from .models import AccountDevice, LoginChallenge, Profile, RecoveryCode, SecurityQuestion, TotpDevice
+from .models import AccountDevice, LoginChallenge, Profile, SecurityQuestion
 
 CHALLENGE_TTL_SECONDS = 10 * 60
 MAX_ATTEMPTS = 5
@@ -35,17 +35,8 @@ def _body(request):
 
 
 def available_factors(user) -> list[str]:
-    """该账号当前真正可用的二次验证方式（按强度排序）。"""
-    methods: list[str] = []
-    if TotpDevice.objects.filter(user=user, confirmed_at__isnull=False).exists():
-        methods.append("totp")
-    if stepup.email_available(user):
-        methods.append("email_code")
-    if SecurityQuestion.objects.filter(user=user).exists():
-        methods.append("question")
-    if RecoveryCode.objects.filter(user=user, used_at__isnull=True).exists():
-        methods.append("recovery")
-    return methods
+    """该账号当前可用的二次验证方式（注册表顺序 = 强度排序）。"""
+    return [factor.key for factor in factors.for_user(user, "login")]
 
 
 def create_challenge(user, device_id: str, remember: bool) -> LoginChallenge:
@@ -88,7 +79,7 @@ def challenge_send_view(request):
     challenge = _get_challenge(str(body.get("token") or ""))
     if challenge is None:
         return JsonResponse({"error": "验证已过期，请重新登录。"}, status=410)
-    if "email_code" not in challenge.methods:
+    if not ({"email", "email_code"} & set(challenge.methods)):
         return JsonResponse({"error": "该账号未绑定可用邮箱。"}, status=400)
 
     remaining = stepup.email_cooldown_remaining(challenge.user)
@@ -120,24 +111,10 @@ def challenge_verify_view(request):
     user = challenge.user
     verified = False
     try:
-        if method == "totp":
-            code = str(body.get("code") or "")
-            for device in TotpDevice.objects.filter(user=user, confirmed_at__isnull=False):
-                step = totp.verify(totp.decrypt_secret(device.secret_enc), code, device.last_used_step)
-                if step is not None:
-                    device.last_used_step = step
-                    device.save(update_fields=["last_used_step"])
-                    verified = True
-                    break
-        elif method == "email_code":
-            stepup.verify_email_code(user, str(body.get("code") or ""))
-            verified = True
-        elif method == "question":
-            stepup.check_security_answer(user, int(body.get("question_id") or 0), str(body.get("answer") or ""))
-            verified = True
-        elif method == "recovery":
-            verified = _consume_recovery_code(user, str(body.get("code") or ""))
-    except (stepup.StepUpError, ValueError, TypeError):
+        # 与敏感操作的安全验证共用一张因子注册表（accounts/factors.py）
+        factors.verify(user, method, body)
+        verified = True
+    except (stepup.StepUpError, factors.FactorError, ValueError, TypeError):
         verified = False
 
     if not verified:
@@ -182,16 +159,6 @@ def challenge_verify_view(request):
             "device_trusted": True,
         }
     )
-
-
-def _consume_recovery_code(user, raw: str) -> bool:
-    hashed = totp.hash_recovery_code(raw)
-    row = RecoveryCode.objects.filter(user=user, code_hash=hashed, used_at__isnull=True).first()
-    if row is None:
-        return False
-    row.used_at = timezone.now()
-    row.save(update_fields=["used_at"])
-    return True
 
 
 @require_GET

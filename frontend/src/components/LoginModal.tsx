@@ -9,7 +9,8 @@ type Method = "username" | "email" | "phone";
 
 const FACTOR_LABELS: Record<string, string> = {
   totp: "滚动密钥",
-  email_code: "邮箱验证码",
+  email: "邮箱验证码",
+  email_code: "邮箱验证码", // 旧挑战记录兼容
   question: "安全问题",
   recovery: "恢复代码",
 };
@@ -257,7 +258,7 @@ export default function LoginModal({
                 </button>
               ))}
             </div>
-            {chMethod === "email_code" && (
+            {(chMethod === "email" || chMethod === "email_code") && (
               <div className="sec-actions">
                 <button className="btn btn-secondary" type="button" onClick={sendCode} disabled={chBusy}>
                   发送验证码

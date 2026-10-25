@@ -341,3 +341,94 @@ class ScopeRegistrationTest(TestCase):
         self.assertTrue(used, "应能从 security_center.py 解析出作用域")
         missing = used - set(stepup.SCOPES)
         self.assertEqual(missing, set(), f"未登记的作用域：{missing}")
+
+
+class FactorRegistryTest(TestCase):
+    """验证因子注册表：stepup 补齐 TOTP / 恢复码，且 scope 可排除因子。"""
+
+    def setUp(self):
+        cache.clear()
+        self.user = make_user()
+        self.client.force_login(self.user)
+
+    def _bind_totp(self):
+        from accounts import totp as totp_module
+        from accounts.models import TotpDevice
+
+        secret = totp_module.generate_secret()
+        TotpDevice.objects.create(
+            user=self.user,
+            label="phone",
+            secret_enc=totp_module.encrypt_secret(secret),
+            confirmed_at=timezone.now(),
+        )
+        return secret
+
+    def _grant(self, method, scope, **payload):
+        import json
+
+        return self.client.post(
+            "/auth/stepup/verify/",
+            json.dumps({"method": method, "scope": scope, **payload}),
+            content_type="application/json",
+        )
+
+    def _factor_keys(self, scope):
+        data = self.client.get(f"/auth/stepup/?scope={scope}").json()
+        return [f["key"] for f in data["factors"]]
+
+    def test_status_lists_factors_and_respects_scope(self):
+        self._bind_totp()
+        general = self._factor_keys("change_password")
+        self.assertIn("totp", general)
+        self.assertIn("email", general)
+
+        restricted = self._factor_keys("manage_totp")
+        self.assertNotIn("totp", restricted)  # 不许用 TOTP 解绑 TOTP
+        self.assertIn("email", restricted)
+
+    def test_totp_verifies_and_issues_grant(self):
+        from accounts import totp as totp_module
+
+        secret = self._bind_totp()
+        resp = self._grant("totp", "change_password", code=totp_module.code_at(secret))
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(stepup.check_grant(self.user, "change_password", resp.json()["grant"]))
+
+    def test_totp_blocked_for_manage_totp_but_recovery_works(self):
+        from accounts import totp as totp_module
+        from accounts.models import RecoveryCode
+
+        secret = self._bind_totp()
+        blocked = self._grant("totp", "manage_totp", code=totp_module.code_at(secret))
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn("不能用于当前操作", blocked.json()["error"])
+
+        # 丢手机时的出路：用恢复代码解绑
+        RecoveryCode.objects.create(
+            user=self.user, code_hash=totp_module.hash_recovery_code("ABCDE23456")
+        )
+        ok = self._grant("recovery", "manage_totp", code="ABCDE23456")
+        self.assertEqual(ok.status_code, 200, ok.content)
+
+    def test_recovery_code_is_one_time(self):
+        from accounts import totp as totp_module
+        from accounts.models import RecoveryCode
+
+        RecoveryCode.objects.create(
+            user=self.user, code_hash=totp_module.hash_recovery_code("ABCDE23456")
+        )
+        first = self._grant("recovery", "change_password", code="ABCDE23456")
+        self.assertEqual(first.status_code, 200, first.content)
+        second = self._grant("recovery", "change_email", code="ABCDE23456")
+        self.assertEqual(second.status_code, 400)
+
+    def test_unknown_factor_rejected(self):
+        resp = self._grant("sms", "change_password", code="123456")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("未知的验证方式", resp.json()["error"])
+
+    def test_unavailable_factor_rejected(self):
+        resp = self._grant("totp", "change_password", code="123456")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("不可用", resp.json()["error"])
