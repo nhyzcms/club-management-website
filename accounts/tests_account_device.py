@@ -9,11 +9,16 @@ from unittest import skipUnless
 
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 
 from .devices import is_valid_device_id, parse_device
 # 设备 Cookie 由多端登录（#188）统一下发，常量住在 utils
-from .utils import DEVICE_COOKIE_MAX_AGE, DEVICE_COOKIE_NAME, new_device_id
+from .utils import (
+    DEVICE_COOKIE_MAX_AGE,
+    DEVICE_COOKIE_NAME,
+    get_client_ip,
+    new_device_id,
+)
 from .models import AccountDevice, LoginEvent
 
 
@@ -189,3 +194,37 @@ class GeolocateTests(TestCase):
         from .geolocate import geolocate
 
         self.assertEqual(geolocate("not-an-ip")["city"], "")
+
+
+class ClientIpTests(TestCase):
+    """get_client_ip：生产两条链路的 XFF 信任（2026-10-25 生产故障回归）。
+
+    生产是 nginx → **unix socket** → gunicorn，REMOTE_ADDR 整个缺失；
+    原实现只认回环 IP，判断不成立就返回 None，导致所有登录事件的 ip / 城市为空。
+    """
+
+    def test_unix_socket_trusts_xff(self):
+        req = RequestFactory().get(
+            "/", REMOTE_ADDR="", HTTP_X_FORWARDED_FOR="203.0.113.9, 10.0.0.1"
+        )
+        self.assertEqual(req.META.get("REMOTE_ADDR"), "")  # unix socket 的确没有对端地址
+        self.assertEqual(get_client_ip(req), "203.0.113.9")
+
+    def test_loopback_tcp_trusts_xff(self):
+        req = RequestFactory().get(
+            "/", REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR="203.0.113.7"
+        )
+        self.assertEqual(get_client_ip(req), "203.0.113.7")
+
+    def test_external_remote_ignores_spoofed_xff(self):
+        req = RequestFactory().get(
+            "/", REMOTE_ADDR="198.51.100.4", HTTP_X_FORWARDED_FOR="1.2.3.4"
+        )
+        self.assertEqual(get_client_ip(req), "198.51.100.4")
+
+    def test_x_real_ip_fallback(self):
+        req = RequestFactory().get("/", REMOTE_ADDR="127.0.0.1", HTTP_X_REAL_IP="203.0.113.5")
+        self.assertEqual(get_client_ip(req), "203.0.113.5")
+
+    def test_missing_everything_returns_none(self):
+        self.assertIsNone(get_client_ip(RequestFactory().get("/", REMOTE_ADDR="")))

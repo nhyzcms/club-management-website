@@ -322,3 +322,22 @@ class ProtectedEndpointTest(TestCase):
         results = resp.json()["results"]
         self.assertEqual(results[0]["scope_label"], "修改密码")
         self.assertEqual(results[0]["result"], "ok")
+
+
+class ScopeRegistrationTest(TestCase):
+    """安全中心用到的 stepup 作用域必须登记在 ``stepup.SCOPES``。
+
+    2026-10-25 生产故障回归：security_center 引用了 manage_devices / manage_totp，
+    但 SCOPES / 前端 labels 都没登记，POST /auth/stepup/verify/ 直接 400
+    「未知的验证作用域」，撤销设备与解绑 TOTP 全部不可用。
+    """
+
+    def test_all_scopes_used_by_security_center_are_registered(self):
+        import re
+        from pathlib import Path
+
+        src = (Path(__file__).parent / "security_center.py").read_text(encoding="utf-8")
+        used = set(re.findall(r'grant_from_request\(request, "([a-z_]+)"\)', src))
+        self.assertTrue(used, "应能从 security_center.py 解析出作用域")
+        missing = used - set(stepup.SCOPES)
+        self.assertEqual(missing, set(), f"未登记的作用域：{missing}")

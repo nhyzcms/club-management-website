@@ -51,6 +51,9 @@ SCOPES = {
     "manage_questions": "管理安全问题",
     "change_email": "换绑邮箱",
     "delete_account": "注销账号",
+    # 账号安全中心（2026-10-24）：设备与动态口令的敏感操作也要本人确认
+    "manage_devices": "管理登录设备",
+    "manage_totp": "管理动态口令",
 }
 
 # 预设题库（不出自定义题——防「答案就写在题干里」）
