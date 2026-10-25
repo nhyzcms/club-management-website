@@ -214,7 +214,12 @@ def _database_from_env():
             # 长连接复用（每 worker 至多一条空闲连接）+ 防陈旧连接健康检查。
             "CONN_MAX_AGE": 60,
             "CONN_HEALTH_CHECKS": True,
-            "OPTIONS": {"connect_timeout": 5},
+            # pgbouncer（transaction pooling，2026-10-25 接入）：
+            # ① 命名游标跨事务不成立，Django 要求显式关掉 server-side cursors；
+            # ② psycopg3 默认会在同一连接上自动 prepare 语句，而池化后同一客户端连接
+            #    可能落到不同服务端连接，prepared statement 会「不存在」——关掉自动 prepare。
+            "DISABLE_SERVER_SIDE_CURSORS": True,
+            "OPTIONS": {"connect_timeout": 5, "prepare_threshold": None},
         }
     return {
         "ENGINE": "django.db.backends.sqlite3",

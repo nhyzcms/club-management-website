@@ -14,6 +14,8 @@ export const STEPUP_SCOPE_LABELS: Record<string, string> = {
   manage_questions: "管理安全问题",
   change_email: "换绑邮箱",
   delete_account: "注销账号",
+  manage_devices: "管理登录设备",
+  manage_totp: "管理动态口令",
 };
 
 export interface StepupStatus {

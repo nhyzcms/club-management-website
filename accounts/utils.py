@@ -29,18 +29,26 @@ _OS_RE = re.compile(r"(Windows NT|Windows \w+|Mac OS X|iPhone OS|Android|Linux)"
 def get_client_ip(request):
     """取真实客户端 IP。
 
-    生产走 Caddy 同机反代 → ``REMOTE_ADDR`` 恒为 127.0.0.1，真实 IP 在
-    ``X-Forwarded-For`` 第一跳。**只在来源是回环代理时信任 XFF**，避免外部直接
-    伪造请求头把登录记录写歪。
+    生产链路：nginx（TLS 终止）→ unix socket → gunicorn。两种形态都要处理：
+
+    * **unix socket 反代**：``REMOTE_ADDR`` 整个缺失（unix socket 没有对端地址）；
+    * TCP 反代：``REMOTE_ADDR`` 是 127.0.0.1 / ::1。
+
+    这两种情况都只信任 ``X-Forwarded-For`` **第一跳**（nginx 用
+    ``$proxy_add_x_forwarded_for`` 写入），避免外部直连伪造请求头把登录记录写歪。
     """
-    remote = request.META.get("REMOTE_ADDR")
-    if remote in {"127.0.0.1", "::1"}:
+    remote = (request.META.get("REMOTE_ADDR") or "").strip()
+    if remote in ("", "127.0.0.1", "::1"):
         forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
         if forwarded:
             first = forwarded.split(",")[0].strip()
             if first:
                 return first
-    return remote
+        # 只设了 X-Real-IP 的反代（部分配置）也接受
+        real_ip = (request.META.get("HTTP_X_REAL_IP") or "").strip()
+        if real_ip:
+            return real_ip
+    return remote or None
 
 
 def parse_user_agent(ua):
