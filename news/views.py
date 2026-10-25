@@ -2,7 +2,6 @@ import hashlib
 import os
 import uuid
 
-from django.contrib.auth.models import User
 from django.core.files.storage import default_storage
 from django.db.models import F, Q
 from django.utils import timezone
@@ -11,6 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.models import MemberIdentity
 from accounts.utils import get_client_ip
 from messaging.services import thread_for
 from reviews.lifecycle import open_review
@@ -228,9 +228,13 @@ class NewsViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def overview(self, request):
-        """社团概览：成员=活跃用户数，作品=已发布新闻数。匿名可读。"""
+        """社团概览：成员=已分配社员编号数，作品=已发布新闻数。匿名可读。
+
+        成员数取社员名册行数（``MemberIdentity`` = 一人一个编号，ADR-0025），
+        不再取活跃账号数：名册导入即计入，与本人是否注册账号、账号是否仍活跃无关。
+        """
         return Response({
-            "members": User.objects.filter(is_active=True).count(),
+            "members": MemberIdentity.objects.count(),
             "works": News.objects.filter(public_q("news"), is_published=True).count(),
         })
 

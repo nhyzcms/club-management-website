@@ -86,7 +86,7 @@ export const api = {
   passwordResetConfirm: (uid: string, token: string, new_password: string) =>
     request("/password-reset/confirm/", { method: "POST", body: JSON.stringify({ uid, token, new_password }) }),
 
-  // 忘记密码 → 向管理员申请手动重置（账号 + 身份证明，multipart）。
+  // 忘记密码 → 向管理员申请手动重置（账号 + 身份证明（学生证/校牌），multipart）。
   passwordResetRequest: (data: FormData) =>
     request("/password-reset/request/", { method: "POST", body: data }),
 

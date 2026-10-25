@@ -66,7 +66,7 @@ export default function ForgotPasswordPage() {
       return;
     }
     if (!proof) {
-      setError("请上传身份证明。");
+      setError("请上传身份证明（学生证/校牌）。");
       return;
     }
     if (enabled && !token) {
@@ -148,8 +148,9 @@ export default function ForgotPasswordPage() {
               ) : (
                 <form onSubmit={handleManualSubmit} style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
                   <p className="hint" style={{ margin: 0 }}>
-                    邮箱无法使用或未绑定邮箱时，可向管理员申请手动重置。请上传能证明本人身份的材料
-                    （学生证、校园卡、身份证等）；管理员核对后会重置密码，首次登录需立即修改。
+                    邮箱无法使用或未绑定邮箱时，可向管理员申请手动重置。请上传<b>学生证/校牌</b>照片作为
+                    身份证明（能看清姓名、班级即可，其他信息可打码）；管理员核对后会重置密码，首次登录需立即修改。
+                    <b>请勿提交身份证照片</b>——本站不需要身份证等敏感证件，管理员也不会索要。
                   </p>
                   <div className="field">
                     <label className="label" htmlFor="fp-account">用户名 / 邮箱</label>
@@ -164,9 +165,10 @@ export default function ForgotPasswordPage() {
                     <textarea className="textarea" id="fp-note" value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="例如：换了手机号，原邮箱已无法登录" />
                   </div>
                   <div className="field">
-                    <label className="label" htmlFor="fp-proof">身份证明（必填，≤5MB，JPG / PNG / WebP）</label>
+                    <label className="label" htmlFor="fp-proof">身份证明（学生证/校牌，必填，≤5MB，JPG / PNG / WebP）</label>
                     <input className="input" id="fp-proof" type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setProof(e.target.files?.[0] ?? null)} required />
                     {proof && <p className="hint" style={{ margin: 0 }}>已选择：{proof.name}</p>}
+                    <p className="hint" style={{ margin: 0 }}>请勿上传身份证照片。</p>
                   </div>
                   <div ref={containerRef} />
                   <button className="btn btn-primary btn-block" type="submit" disabled={loading || !policyReady}>

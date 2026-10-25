@@ -315,7 +315,8 @@
 {"members": 86, "works": 24}
 ```
 
-`members` = 活跃用户数；`works` = 已发布且已过审的新闻数。成立 / 指导 / 简介等静态行走 [关于 API](about.md) 的 `/about/overview/`。
+`members` = **已分配社员编号的数量**（社员名册 `MemberIdentity` 行数：一人一个编号，名册导入即计入，
+与该社员是否注册账号、账号是否仍活跃无关）；`works` = 已发布且已过审的新闻数。成立 / 指导 / 简介等静态行走 [关于 API](about.md) 的 `/about/overview/`。
 
 ### 社团动态聚合
 `GET /news/news/feed/`

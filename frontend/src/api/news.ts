@@ -59,7 +59,7 @@ export const newsApi = {
   featured: () => request("/news/featured/") as Promise<NewsListItem | null>,
   hot: () => request("/news/hot/") as Promise<NewsListItem[]>,
   tags: () => request("/news/tags/") as Promise<NewsTag[]>,
-  // 社团概览：成员=活跃用户数，作品=已发布新闻数（匿名可读）
+  // 社团概览：成员=已分配社员编号数（名册行数，与是否注册账号无关），作品=已发布新闻数（匿名可读）
   overview: () => request("/news/overview/") as Promise<{ members: number; works: number }>,
   // 首页「社团动态」聚合：{featured, items}（匿名可读；任务仅登录下发）
   feed: (limit = 6) => request(`/news/feed/?limit=${limit}`) as Promise<FeedResponse>,

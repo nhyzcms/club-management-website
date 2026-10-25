@@ -10,6 +10,7 @@ from django.utils import timezone
 from PIL import Image
 from rest_framework.test import APIClient
 
+from accounts.models import MemberIdentity
 from activities.models import Activity
 from tasks.models import Task
 
@@ -110,7 +111,7 @@ class NewsReaderCountTest(TestCase):
 
 
 class NewsOverviewTest(TestCase):
-    """社团概览：成员=活跃用户数，作品=已发布新闻数；匿名可读。"""
+    """社团概览：成员=已分配社员编号数（名册行数），作品=已发布新闻数；匿名可读。"""
 
     def setUp(self):
         self.author = _info(User.objects.create_user(username="info", password="x"))
@@ -120,18 +121,32 @@ class NewsOverviewTest(TestCase):
         approve_news(News.objects.get(title="published"))
         self.client = APIClient()
 
+    def _identity(self, name, code, **kwargs):
+        return MemberIdentity.objects.create(
+            name=name, admit_year=2025, cohort=1, code=code, **kwargs
+        )
+
     def test_anon_overview_counts(self):
-        """匿名可读；成员=活跃用户数，作品=已发布新闻数（草稿不计）。"""
+        """匿名可读；成员=名册行数，作品=已发布新闻数（草稿不计）。"""
+        self._identity("张一", "25010151")
+        self._identity("张二", "25010152")
         resp = self.client.get("/news/news/overview/")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.data["members"], 2)  # author + normal，均活跃
+        self.assertEqual(resp.data["members"], 2)  # 两条编号
         self.assertEqual(resp.data["works"], 1)    # 仅 1 条已发布
 
-    def test_inactive_users_not_counted(self):
-        """停用账号不计入成员数。"""
-        User.objects.create_user(username="ghost", password="x", is_active=False)
+    def test_identity_without_account_counted(self):
+        """分配了编号但没注册账号（user=None）也计入；有账号但无名册行不计。"""
+        self._identity("李四", "25010161")  # 未绑定任何账号
         resp = self.client.get("/news/news/overview/")
-        self.assertEqual(resp.data["members"], 2)
+        self.assertEqual(resp.status_code, 200)
+        # 站内有 info / normal 两个活跃账号，但没有名册行 → 成员数按编号算 = 1
+        self.assertEqual(resp.data["members"], 1)
+
+    def test_no_roster_means_zero(self):
+        """名册为空时成员为 0（不再退回活跃账号数）。"""
+        resp = self.client.get("/news/news/overview/")
+        self.assertEqual(resp.data["members"], 0)
 
 
 class FeedTest(TestCase):

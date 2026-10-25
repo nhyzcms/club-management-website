@@ -1027,7 +1027,7 @@ def password_reset_request_view(request):
     if not identifier:
         errors.append("请填写用户名或邮箱")
     if proof is None:
-        errors.append("请上传身份证明")
+        errors.append("请上传身份证明（学生证/校牌）")
     else:
         if proof.size > PROOF_MAX_BYTES:
             errors.append("身份证明不能超过 5MB")
