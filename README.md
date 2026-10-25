@@ -11,6 +11,13 @@
   **多端登录**（ADR-0028）：同一账号最多 **3 台设备同时保持登录态**（网页 / 手机浏览器 / App
   各一台），第 4 台登录自动顶掉「最久未活动」的那台；个人中心「登录设备」可查看在线设备、
   下线单台或「下线其他所有设备」（手机版「我的」也有入口）；退出登录只下线本机。
+  **账号与安全中心**（ADR-0029，`/#/security`）：把改密 / 安全问题 / 登录方式 / 设备 / 登录记录
+  收进一处；登录记录带城市级 IP 定位与地图打点（无 key 降级文字），IP 在本人界面脱敏。
+  **陌生设备二次验证**：设备信任只由「在这台设备上完成过一次二次验证」写入——可用滚动密钥
+  （TOTP，RFC 6238，最多 5 个）、邮箱验证码、安全问题或恢复代码（10 个一次性码）；没有任何
+  二次验证方式时本次豁免放行并引导绑定，设备保持陌生。生产可置 `LOGIN_CHALLENGE=0` 应急关闭。
+  管理端新增登录事件 / 账号设备 / 管理端访问记录三张只读表，查看即留痕。
+  **记住登录**：勾选 → 30 天持久会话；不勾 → 关闭浏览器即失效（桌面默认不勾、移动端默认勾选）。
   **注册查重**（用户名、邮箱各自唯一；真实姓名不单独判重，**姓名 + 校牌号**同时一致才视为
   同一账号，提示「请登录原账户」）；
   **忘记密码双通道**：邮箱链接自助重置，或向管理员申请手动重置（上传身份证明 → 审核台
@@ -131,7 +138,7 @@ club-management-website/
 - 快速开始：[`docs/getting-started.md`](docs/getting-started.md) · 配置参考：[`docs/configuration.md`](docs/configuration.md)
 - API 参考：[`docs/api/README.md`](docs/api/README.md)（各模块分册见 `docs/api/`）
 - 架构：[`docs/architecture/overview.md`](docs/architecture/overview.md) · [`docs/architecture/frontend.md`](docs/architecture/frontend.md)
-- 指南：`docs/guides/`（访问控制 / 身份认证 / 安全验证 / 审核系统 / 问卷）
+- 指南：`docs/guides/`（访问控制 / 身份认证 / 安全验证 / 账号与安全 / 审核系统 / 问卷）
 - 运维：[`docs/operations/deployment.md`](docs/operations/deployment.md) · [`docs/operations/data-root.md`](docs/operations/data-root.md) · [`docs/operations/admin-guide.md`](docs/operations/admin-guide.md)
 - ADR 设计记录：[`docs/adr/`](docs/adr/)
 - GitHub Wiki（对外入口）：<https://github.com/nhyzcms/club-management-website/wiki>

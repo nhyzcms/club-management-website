@@ -1,12 +1,12 @@
 # 审核系统指南
 
-本指南讲**审核系统**（`reviews` app，职员入口 `/reviews`）的定位、四张桌子各自处理什么、权限怎么分、状态机与处置结果是什么。逐字段的接口说明见 [审核系统 API](../api/reviews.md)；身份审核的端点在 accounts（`/auth/identity-reviews/`），见 [账号 API](../api/accounts.md)。
+本指南讲**审核系统**（`reviews` app，职员入口 `/reviews`）的定位、五张桌子各自处理什么、权限怎么分、状态机与处置结果是什么。逐字段的接口说明见 [审核系统 API](../api/reviews.md)；身份审核的端点在 accounts（`/auth/identity-reviews/`）、密码重置在 `/auth/password-reset-requests/`，见 [账号 API](../api/accounts.md)。
 
 相关设计记录：[ADR-0017：统一审核系统](../adr/0017-unified-moderation-system.md)、[ADR-0003：不抽共享生命周期基类](../adr/0003-no-shared-task-proposal-lifecycle-base.md)、[ADR-0005：访问控制原则](../adr/0005-access-control-principle.md)、[ADR-0009：统一审核轴](../adr/0009-portal-review-about-tutorials.md)、[ADR-0004：署名反馈媒体上传](../adr/0004-feedback-media-tus-resumable-upload.md)。
 
 ## 一、它是什么，不是什么
 
-**审核系统是职员的应用/入口，不是第四种案件。** 台面上有四张桌子，各处理一类事、各有各的状态机，**互不混行**：
+**审核系统是职员的应用/入口，不是第四种案件。** 台面上有五张桌子，各处理一类事、各有各的状态机，**互不混行**：
 
 | 桌 | 实体 | 一句话定位 | 状态机 |
 |---|---|---|---|
@@ -14,12 +14,13 @@
 | **意见反馈** | `Feedback` | 无对象投递箱：建议 / 投诉 / 其他 | `pending` → `closed` |
 | **举报案** | `ReportCase` + `ReportFiling` | 有对象的调查票：新闻 / 活动 / 教程 / 评论 / 用户 | `open` → `dismissed` / `upheld` |
 | **身份审核** | `Verification`（manual 通道） | 人工审批通道的证明材料审核（既有桌，仍独立） | `pending` → `approved` / `rejected`；另有账号停用 |
+| **密码重置** | `PasswordResetRequest` | 忘记密码的线下复核：核对身份证明 → 批准重置 / 驳回 | `pending` → `approved` / `rejected` |
 
 > **术语红线**：「审核」专指发布审核这条轴；**「复审」是征集作品的录用 / 退稿**（`Submission.review_status`），与本系统是两回事。写文档、起变量名时不要互借。
 >
 > **历史包袱**：「申报 (Proposal)」已卸掉——活动分离为「活动」，意见反馈吸收进本系统。现存文档若写「申报」，只作迁移动线指针，不是活概念。
 
-## 二、四张桌的定位与处理流程
+## 二、五张桌的定位与处理流程
 
 > **浏览与跳过**：每张桌一次呈现一条。处理动作完成后自动进入下一条；不处理当前条目时，可点「下一条」跳过它继续浏览队列（已跳过 / 已处理的条目本轮不再出现；切桌、切状态或刷新页面后重新从头开始）。
 
@@ -83,9 +84,18 @@
 - 桌面展示真实姓名、身份、证明材料图（可点开大图；图下标注每张的上传时间），三个动作：
   - **通过**：manual 通道置 `approved` + `verified_at` / `verified_by`，并发邮件；
   - **驳回**：manual 通道置 `rejected`，邮件提示可在面板重交（驳回 ≠ 停用，账号仍可登录、可重交证明）；
-  - **停用账号**：`is_active=False` 并**立即吊销既有会话**（删 Session 行 + 清 `UserSession.is_current`），发邮件通知。
+  - **停用账号**：`is_active=False` 并**立即吊销既有会话**（删 Session 行 + 写 `UserSession.revoked_at` / `revoked_reason=security`），发邮件通知。
 - 站点策略 `verification_enabled` 关闭时，通过 / 驳回返回 403「认证通道已关闭」（停用不受影响）；已通过者仍算已认证。
 - 身份证明永久留底，仅本人或持 `accounts.can_review_identity` 者可鉴权下载。
+
+### 5. 密码重置（密码重置桌）
+
+忘记密码的**人工通道**（`accounts.password_reset_review`）：邮箱失效 / 未绑定的成员在 `/#/forgot-password` 的「联系管理员」页签提交申请（账号 + 身份证明，附件落私有存储），持 `accounts.review_password_reset` 的人在 `/reviews` 的「密码重置」桌处理。
+
+- **批准**：密码重置为 `123456`、`Profile.must_change_password=true`、**吊销该账号全部会话**（`revoked_reason=security`），写处理人 / 时间 / 说明并通知当事人；对方首次登录必须改密。
+- **驳回**：只改申请状态，不动密码与会话。
+- 只能处理 `pending`；重复处理 409 `already_reviewed`；**不能审批自己的申请**（403 `cannot_review_self`）。
+- 申请与队列的接口细节见[账号 API](../api/accounts.md)「手动重置密码」。
 
 ## 三、正交审核轴：门控公开，不改生命周期
 
@@ -111,12 +121,13 @@
 | `reviews.read_feedback` | 查看并了结意见反馈 | `can_view_feedback` |
 | `reviews.handle_report` | 查看并处理举报案（驳回 / 成立并处置） | `can_handle_reports` |
 | `accounts.can_review_identity` | 身份审核：通过 / 驳回 / 停用账号 | `can_review_identity` |
+| `accounts.review_password_reset` | 密码重置申请：批准（重置为 `123456` + 强制改密 + 吊销会话）/ 驳回 | `can_review_password_reset` |
 
 **分配思路**（默认偏粗，ADR-0005 决策 5）：
 
 - **审核与免审正交、可分别分配**：A 只会审、B 会审+免审、C 只免审——三种组合都成立。`moderate` 默认随「社长」组播种；`force_publish` **不**默认授予任何人。
 - **反馈与举报的持有者现实中可以不同**，所以是独立权限；关闭反馈不另拆 approve 权限（持有者不会不同）。
-- **四桌按对应 `can_*` 显隐**：`/reviews` 顶部只出现你有权限的桌；四桌全无权限时页面直接给「你没有审核权限。」前端入口（用户菜单「审核队列」）也按同一组布尔显隐。
+- **五桌按对应 `can_*` 显隐**：`/reviews` 顶部只出现你有权限的桌；五桌全无权限时页面直接给「你没有审核权限。」前端入口（用户菜单「审核队列」）也按同一组布尔显隐。
 - **`handle_report` 足够处理举报**：成立处置**不要求**操作者同时持 `reviews.moderate` / `messaging.manage_comment_thread` / `messaging.mute_user`（ADR-0017 决策 4）——处理举报的人与发稿审核 / 禁言的人可以不是同一批，再查会卡住默认处置。
 
 ## 五、状态机与处置结果
@@ -131,6 +142,7 @@
 | `Feedback` | `pending` | `close` | 了结说明选填 |
 | `ReportCase` | `open` | `dismiss` / `uphold` | 驳回理由必填 |
 | `Verification`(manual) | `pending` | `approve` / `reject` / 停用账号 | 策略关闭时前两者 403 |
+| `PasswordResetRequest` | `pending` | `approve` / `reject` | 仅待处理可动；不能审批自己的申请 |
 
 **「成立并处置」的默认处置**（`reviews/report_lifecycle.py`，按对象类型分派）：
 
@@ -146,15 +158,16 @@
 
 ## 六、前端入口：`/reviews` 队列
 
-前端页面 `ReviewQueuePage.tsx`，路由 `/reviews`（需登录），用户菜单「审核队列」；手机 UA 下改道到手机版 `/m/review`（独立实现，四张桌与规则一致；取数与「跳过已浏览条目」逻辑与桌面共用 `frontend/src/utils/reviewDesk.ts`，勿在两端各写一份）。
+前端页面 `ReviewQueuePage.tsx`，路由 `/reviews`（需登录），用户菜单「审核队列」；手机 UA 下改道到手机版 `/m/review`（独立实现，五张桌与规则一致；取数与「跳过已浏览条目」逻辑与桌面共用 `frontend/src/utils/reviewDesk.ts`，勿在两端各写一份）。
 
-- **分桌**：顶部 chip 按权限铺开——身份 / 新闻 / 活动 / 教程 / 意见反馈 / 举报案；每桌下再按状态过滤（待审 / 已通过 / 已驳回 / 已下架、待处理 / 已了结、进行中 / 已驳回 / 成立并处置、待认证 / 已通过 / 已驳回）。
+- **分桌**：顶部 chip 按权限铺开——身份 / 密码重置 / 新闻 / 活动 / 教程 / 意见反馈 / 举报案；每桌下再按状态过滤（待审 / 已通过 / 已驳回 / 已下架、待处理 / 已了结、进行中 / 已驳回 / 成立并处置、待认证 / 已通过 / 已驳回、待处理 / 已批准 / 已驳回）。
 - **一屏一条**：每桌一次只取一条（自动跳过刚处理的那条），处理完**自动进入下一条**（约 900ms 闪一下结果徽章），适合连续清队列。
 - **桌内动作**：
   - 发布审核桌（`ReviewPreview`）：渲染对象正文与媒体，给「通过 / 驳回（评语必填）/ 下架」；可「新标签打开」跳公开页。
   - 反馈桌：展示正文、联系方式与附件，给「了结」并填了结说明。
   - 举报桌：列出全部举报（举报人 + 理由 + 时间），给「驳回」（理由必填）/「成立并处置」（处理说明选填；用户对象时可选「永久禁言」或填结束时间）。
   - 身份桌：证明材料大图 +「通过 / 驳回 / 停用账号」（停用需确认）。
+  - 密码重置桌：申请人、账号、联系方式、身份证明大图 +「批准重置 / 驳回」（批准前请先核对证明与账号）。
 - **后台补充**：Django admin 里 `Review` / `Feedback` / `ReportCase` 三张表都有登记（`reviews/admin.py`），发布审核桌还支持批量动作；身份桌在 `accounts` admin 有对应的批量审核动作。日常操作建议优先用 `/reviews`（一屏一条、自动前进），后台留给批量与排查。
 
 ## 七、操作建议

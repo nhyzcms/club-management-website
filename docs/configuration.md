@@ -51,6 +51,9 @@
 | `CLUB_SPAWN_UPDATER` | `start.sh` | 置 `0` 时不拉起更新守护进程（排障只起 web） |
 | `CLUB_UPDATER_SPAWNED` | `start.sh` / `common/updater.py` | 由 `start.sh` 置 `1`，标记更新进程由 web 拉起；apply 时据此对 Gunicorn 父进程发 SIGHUP 而不是 `systemctl restart` |
 | `SERVICE_NAME` | `common/updater.py` | systemd unit 名，默认 `club` |
+| `LOGIN_CHALLENGE` | `config/settings.py` | 陌生设备二次验证开关；`=0` 关闭挑战（设备与登录事件照常记录，应急回滚用）。默认开启；`manage.py test` 下自动关闭 |
+| `IP2REGION_DB` | `config/settings.py` | 离线 IP 库路径；默认 `<项目>/data/ip2region_v4.xdb`。文件缺失 / 损坏 / 依赖缺失时静默降级为只记 IP |
+| `AMAP_KEY` | `frontend/webpack.config.js`（**构建期**） | 高德地图 JS API key；`AMAP_KEY=… npm run build` 经 `DefinePlugin` 注入。未设置时登录记录页降级为城市文字 |
 
 ## 二、Django settings（`config/settings.py`）
 
@@ -68,6 +71,9 @@
 | `X_FRAME_OPTIONS` | `"SAMEORIGIN"` | Django 默认 `DENY` 会让 Chrome 把同源 admin 预览 iframe 渲染成「拒绝连接」；`SAMEORIGIN` 仍挡第三方点击劫持，只允许本站嵌入自己的页面（审核对象界面） |
 | `LOGIN_URL` | `"/login/"` | |
 | `FRONTEND_URL` | 环境变量，默认 `http://localhost:3000` | 拼邮件链接用 |
+| `REMEMBER_LOGIN_SECONDS` | `30 * 24 * 3600` | 勾选「记住登录」时的会话有效期；不勾由登录视图 `set_expiry(0)` 转为浏览器会话 cookie |
+| `LOGIN_CHALLENGE_ENABLED` | `LOGIN_CHALLENGE != "0"` 且非 `manage.py test` | 陌生设备二次验证挑战总开关 |
+| `IP2REGION_DB` | 环境变量，默认 `BASE_DIR / "data" / "ip2region_v4.xdb"` | 离线 IP 库（约 11 MB，不入 git）；缺失时只记 IP |
 | `LANGUAGE_CODE` / `TIME_ZONE` | `zh-hans` / `UTC` | `USE_I18N = True`，`USE_TZ = True` |
 
 ### 2.2 应用与中间件
@@ -93,6 +99,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `django.middleware.common.CommonMiddleware` | |
 | `django.middleware.csrf.CsrfViewMiddleware` | |
 | `django.contrib.auth.middleware.AuthenticationMiddleware` | |
+| `accounts.middleware.PasswordChangeRequiredMiddleware` | 管理员手动重置密码后（`Profile.must_change_password`）只放行改密 / 读自身状态 / 登出 / 静态资源，其余 API 返回 403 `password_change_required`；须在 AuthenticationMiddleware 之后 |
 | `accounts.middleware.ValidityEnforcementMiddleware` | 身份有效期惰性执行（响应后、按会话节流 300 秒；须在 AuthenticationMiddleware 之后） |
 | `django.contrib.messages.middleware.MessageMiddleware` | |
 | `django.middleware.clickjacking.XFrameOptionsMiddleware` | |

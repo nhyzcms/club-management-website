@@ -65,6 +65,7 @@ frontend/
 │   │   └── review/        # 审核预览组件（ReviewPreview）
 │   ├── components/        # 跨页共享组件（布局、守卫、评论、消息、编辑器…）
 │   │   ├── profile/       # 个人中心面板（资料/密码/会话/认证/权限/禁言…）
+│   │   ├── security/      # 安全中心面板（设备 / 登录记录 / 地图 / 滚动密钥）
 │   │   ├── mascot/        # 看板娘 host、惰性加载、气泡喊话
 │   │   ├── rte/           # Tiptap 自定义原子节点（Video、Iframe）
 │   │   └── feed/          # 首页社团动态卡片
@@ -165,6 +166,7 @@ frontend/
 | `/verify-email-pending` | `VerifyEmailPendingPage` |  | 重发认证邮件（`?email=` 可预填） |
 | `/v/:code` | `MemberVerifyPage` |  | 社员识别码公开校验页（`?s=` 签名；只出最小公开字段） |
 | `/verify` | `StepUpPage` | ✅ | 安全验证（Step-up）：`?action=&next=`，完成回跳原操作 |
+| `/security` | `SecurityCenterPage` | ✅ | 账号与安全中心：登录方式、设备、登录记录、滚动密钥、恢复代码；旧 `?tab=security/password/sessions` 会 `replace` 到这里 |
 | `/forgot-password` | `ForgotPasswordPage` |  | 忘记密码 |
 | `/reset-password` | `ResetPasswordPage` |  | 重置密码落地页 |
 | `/profile` | `ProfileRedirect` |  | 取 `me.id` 后 `replace` 到 `/u/<id>` |
@@ -200,6 +202,7 @@ frontend/
 | 活动详情（`ActivityDetailShell` 按活动类型挂面板） | `activity/CollectionPanel`（征集）、`activity/ExhibitionPanel`（展览）、`activity/DeliberationPanel`（审议）、`activity/SurveyPanel`（调研问卷） |
 | 审核队列预览 | `pages/review/ReviewPreview` |
 | 个人中心（`UserProfile` 的 tab 面板） | `profile/ProfileHero`、`ProfileSideNav`、`ProfileTabs`、`ProfileEditPanel`、`VerificationPanel`、`PasswordPanel`、`SessionsPanel`、`ContentListPanel`、`PermissionsPanel`、`MuteUserPanel` |
+| 账号与安全中心（`/#/security`） | `pages/SecurityCenterPage` + `security/DeviceListPanel`、`security/LoginEventsPanel`、`security/LoginMap`、`security/TotpPanel`（改密 / 安全问题复用 `profile/PasswordPanel`、`profile/SecurityPanel`） |
 
 URL 查询参数约定（hash 部分之后）：tab 状态用查询参数（如 `/u/3?tab=verification`、`/profile?tab=verification`）并由页面用 `URLSearchParams` 读写（`PanoramaPage` 的 `?id=` 选场景同理）；邮件链接参数（`uid`/`token`/`email`）；嵌入参数 `embed=1`（见「嵌入模式」）。
 
@@ -209,7 +212,7 @@ URL 查询参数约定（hash 部分之后）：tab 状态用查询参数（如 
 
 | 模块 | 前缀 | 覆盖 |
 |------|------|------|
-| `api/client.ts` | `/auth` | 登录/登出/`me`/资料/改密/密码重置/注册/邮箱认证/会话列表/用户检索/收件箱 |
+| `api/client.ts` | `/auth` | 登录/登出/`me`/资料/改密/密码重置/注册/邮箱认证/会话列表/用户检索/收件箱；`api/security.ts` 另封装安全中心（设备 / 登录记录 / TOTP / 恢复代码） |
 | `api/news.ts` | `/news` | 列表/详情/我的/增删改/图片上传/featured/hot/tags/overview/feed |
 | `api/tasks.ts` | `/tasks` | 任务 CRUD、认领/审批/完成/指派等动作、标签 |
 | `api/activities.ts` | `/activities` | 活动 CRUD、生命周期动作、问卷 schema、征集/展品 |
@@ -273,6 +276,7 @@ try {
 - **受保护路由**：`ProtectedRoute` 在挂载与每次 `authNonce` 变化后调 `api.me()` 校验；未登录时 `openLogin(location.pathname + location.search)` 记录回跳地址并渲染空（弹窗遮罩在前）。弹窗带 `redirectTo` 时关闭会先回首页，避免用户停在空白受保护页。
 - **下线提示（多端登录 / 挤号）**：`SessionGuard` 注册回调并在已登录时每 15s 轮询 `api.me()`；被下线的响应（类型化 `session_superseded`，含 `revokedReason` + 接管设备名/IP/时间）触发 `SessionSupersedeModal`（幂等展示，已显示则不覆盖），文案按 `sessionEndedMessage()` 区分「名额已满被替换 / 在个人中心被下线 / 设备重登 / 安全吊销」，确认后重新打开登录弹窗。未登录则不轮询。
 - **登录态变化广播**：登录（`LoginModal` 的 `onLoggedIn`）与登出（`AppShell` 用户菜单的 `api.logout()`）都自增 `authNonce`；`AppShell`、受保护路由、`SessionGuard` 据此重新拉取身份，避免同页登出后本地 `user` 状态过期。
+- **陌生设备挑战**：`api.login()` 收到 202 + `reason: "new_device"` 时，`LoginModal` 原地切到二次验证界面（TOTP / 邮箱码 / 安全问题 / 恢复代码），验证通过后再走 `onLoggedIn`；无 2FA 豁免（`must_bind_2fa`）则跳 `/#/security?bind=1`。不要在别处复制这套状态机。
 - **注册与认证链路**：`/register` 建登录身份（用户名 + 双密码 + 真实姓名 / 身份 + Turnstile），**注册成功即登录**；若名册存在匹配的未绑定行，进入**社员身份认领**阶段（可跳过、之后在个人中心「社员身份」补办——[ADR-0025](../adr/0025-member-identity.md)）。邮箱绑定与身份证明在登录后的「账号认证」面板（`components/profile/VerificationPanel`）；邮箱认证走邮件链接到 `/verify-email`，未认证登录被拒时跳 `/verify-email-pending` 重发。身份状态徽章由 `me.role` 驱动（见「能力投影」）。
 
 ## 能力投影（permissions → UI）

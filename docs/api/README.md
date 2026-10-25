@@ -58,7 +58,8 @@
 | reason | 场景 | 载荷 |
 |---|---|---|
 | `session_superseded` | 账号在其它设备登录，本会话被接管下线 | `takeover: { device_name, device_type, ip, time }` |
-| `login_protection` | 目标账号 10 分钟内在其它设备登录过，新登录处于保护期 | `retry_after` |
+| `login_protection` | 同一账号 10 分钟内成功登录已达 5 次，新登录被暂时挡住 | `retry_after` |
+| `new_device` | 陌生设备登录，需先完成二次验证（HTTP **202**，不建会话） | `challenge` / `methods` / `questions` / `expires_in` |
 | `login_throttled` | 登录尝试过于频繁 | `retry_after` |
 | `account_disabled` | 账号已停用 | — |
 | `account_expired_unverified` | 超期未认证被系统停用（登录被拒，携专属文案） | — |

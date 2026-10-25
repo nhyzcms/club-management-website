@@ -30,9 +30,10 @@
 
 1. `MaintenanceModeMiddleware` —— 维护旗标；开启时全站 503，不触达数据库与会话
 2. Django 标准件：安全 → 会话 → CORS → Locale → Common → CSRF → 认证 → Messages → X-Frame-Options
-3. `MultiDeviceSessionMiddleware` —— 多端登录：最多 3 台设备同时在线，第 4 台顶掉最久未活动的那台（[ADR-0028](../adr/0028-multi-device-login.md)）
-4. `LoginThrottleMiddleware` —— 登录保护与节流
-5. `TusMiddleware` —— TUS 可续传上传的请求头解析
+3. `PasswordChangeRequiredMiddleware` —— 管理员重置密码后的强制改密闸门（只放行改密 / 自身状态 / 登出 / 静态资源）
+4. `MultiDeviceSessionMiddleware` —— 多端登录：最多 3 台设备同时在线，第 4 台顶掉最久未活动的那台（[ADR-0028](../adr/0028-multi-device-login.md)）
+5. `LoginThrottleMiddleware` —— 登录保护与节流
+6. `TusMiddleware` —— TUS 可续传上传的请求头解析
 
 （实现见 `accounts/middleware.py`、`common/middleware.py`。）
 
@@ -56,7 +57,7 @@
 
 | App | 职责 | 关键概念 | 参考 |
 |---|---|---|---|
-| `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、资料与头像 | 多端登录（3 台）、登录保护、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) |
+| `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、账号安全中心、资料与头像 | 多端登录（3 台）、登录保护、陌生设备挑战、滚动密钥、登录事件、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) · [账号与安全](../guides/account-security.md) |
 | `common` | 站点策略、维护模式 | `SiteSettings` 运行时策略 | [API](../api/common.md) |
 | `news` | 社团新闻 | 发布审核门控 | [API](../api/news.md) |
 | `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
@@ -94,6 +95,13 @@
   安全事件（停用 / 重置密码 / 撤销认证 / 注销）一次性吊销全部设备。
 - 登录保护改为**同账号 10 分钟内最多 5 次成功登录**（`login_protection`），三端依次登录不再互相阻塞。
 
+### 账号安全中心（[ADR-0029](../adr/0029-account-security-center.md)）
+
+- 页面 `/#/security`：登录方式（密码 / 邮箱 / 安全问题 / 通行密钥 / 滚动密钥 / 恢复代码）、设备列表、登录记录与城市地图。
+- **设备信任只由二次验证写入**（`AccountDevice.trusted_at`）：陌生设备登录先返回 202 + 挑战（TOTP / 邮箱码 / 安全问题 / 恢复代码），通过后才建立会话；没有任何 2FA 的账号本次豁免（`must_bind_2fa`），设备保持陌生。`LOGIN_CHALLENGE=0` 可应急关闭挑战。
+- 登录事件（`LoginEvent`）记录成功 / 失败 / 被限流 / 待验证；位置由离线 ip2region 解析到**城市级**，地图 key 走构建期 `AMAP_KEY`，无 key 时降级文字。
+- 管理端三张只读表：登录事件、账号设备、管理端访问记录；查看行为写 `AdminAccessLog` 留痕。
+
 ### 审核轴（正交）
 
 - 发布审核、意见反馈、举报案构成统一的审核系统：**只门控「公开展示」，不改变对象自身的业务状态**（正交轴设计，见 [ADR-0017](../adr/0017-unified-moderation-system.md) 与 [审核指南](../guides/moderation.md)）。
@@ -118,5 +126,5 @@ Nginx（一层代理）→ Gunicorn ASGI（worker 数由 `GUNICORN_WORKERS` 控�
 
 ## 设计记录
 
-- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0027、0041–0042）。
+- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0029、0041–0042）。
 - 领域术语与项目概览：仓库根目录 [CONTEXT.md](../../CONTEXT.md)。

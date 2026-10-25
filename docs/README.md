@@ -31,7 +31,8 @@
 - [访问控制](guides/access-control.md) —— 身份、权限与可见性模型
 - [身份认证](guides/certification.md) —— 认证通道与流程
 - [安全验证](guides/security-verification.md) —— 敏感操作的本人确认（Step-up）
-- [审核系统](guides/moderation.md) —— 四张桌与处理流程
+- [账号与安全](guides/account-security.md) —— 登录方式、设备与陌生设备验证、滚动密钥、登录记录
+- [审核系统](guides/moderation.md) —— 五张桌与处理流程
 - [问卷系统](guides/surveys.md) —— SurveyJS 问卷与作答规则
 
 ## 运维
@@ -42,7 +43,7 @@
 
 ## 设计记录
 
-- [ADR（架构决策记录）](adr/) —— 0001–0028、0041–0042（补档），重要决策的来龙去脉
+- [ADR（架构决策记录）](adr/) —— 0001–0029、0041–0042（补档），重要决策的来龙去脉
 - 领域术语与项目概览：[CONTEXT.md](../CONTEXT.md)
 - AI 协作流程约定：[docs/agents/](agents/)
 - GitHub Wiki（对外入口）：<https://github.com/nhyzcms/club-management-website/wiki>

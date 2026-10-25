@@ -1,7 +1,7 @@
 # ADR-0028：多端登录（最多 3 台设备同时保持登录态）
 
 - 状态：已采纳（2026-10-24）
-- 相关：[ADR-0027](0027-account-deletion.md)（注销时清除登录设备）、[ADR-0026](0026-stepup-verification.md)（改密轮换 session key）
+- 相关：[ADR-0027](0027-account-deletion.md)（注销时清除登录设备）、[ADR-0026](0026-stepup-verification.md)（改密轮换 session key）、[ADR-0029](0029-account-security-center.md)（设备信任与登录挑战复用同一 `device_id`）
 
 ## 背景
 

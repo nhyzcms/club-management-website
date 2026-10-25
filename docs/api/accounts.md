@@ -1,8 +1,8 @@
 # 账号与认证 API
 
-账号体系：注册 / 登录 / 登出 / 会话记录、认证通道（邮箱、人工审批、后台委任）、密码重置、资料与头像、能力投影（`can_*`）、用户检索，以及人工身份审核队列与待办收件箱。端点全部由 `accounts/urls.py` 暴露（前缀 `/auth/`，其中 `identity-reviews` 由 `DefaultRouter` 注册）。
+账号体系：注册 / 登录 / 登出 / 会话记录、认证通道（邮箱、人工审批、后台委任）、密码重置、资料与头像、能力投影（`can_*`）、用户检索，以及人工身份审核队列与待办收件箱；2026-10 起新增**账号安全中心**（登录方式 / 设备 / 登录记录 / 滚动密钥 / 恢复代码）与**陌生设备登录挑战**。端点全部由 `accounts/urls.py` 暴露（前缀 `/auth/`，其中 `identity-reviews`、`password-reset-requests` 由 `DefaultRouter` 注册）。
 
-> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005](../adr/0005-access-control-principle.md)、[ADR-0006](../adr/0006-verification-model.md)、[ADR-0008](../adr/0008-list-pagination.md)、[ADR-0010](../adr/0010-runtime-site-policy.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0023](../adr/0023-email-domain-allowlist.md)、[ADR-0025](../adr/0025-member-identity.md)
+> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005](../adr/0005-access-control-principle.md)、[ADR-0006](../adr/0006-verification-model.md)、[ADR-0008](../adr/0008-list-pagination.md)、[ADR-0010](../adr/0010-runtime-site-policy.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0023](../adr/0023-email-domain-allowlist.md)、[ADR-0025](../adr/0025-member-identity.md)、[ADR-0026](../adr/0026-stepup-verification.md)、[ADR-0028](../adr/0028-multi-device-login.md)、[ADR-0029](../adr/0029-account-security-center.md)
 
 ## 模块约定
 
@@ -20,7 +20,10 @@
 
 | 方法 | 路径 | 认证 | 权限 | 说明 |
 |---|---|---|---|---|
-| POST | `/auth/login/` | 公开 | — | 登录（用户名或绑定邮箱 + 密码） |
+| POST | `/auth/login/` | 公开 | — | 登录（用户名或绑定邮箱 + 密码 + `remember`；陌生设备回 202 挑战） |
+| POST | `/auth/login/challenge/` | 公开（持挑战令牌） | — | 陌生设备：发送邮箱验证码 |
+| POST | `/auth/login/challenge/verify/` | 公开（持挑战令牌） | — | 陌生设备：提交二次验证并建立会话 |
+| GET | `/auth/login/challenge/status/` | 登录 | — | 当前账号可用的二次验证方式 |
 | POST | `/auth/logout/` | 登录 | — | 退出当前设备（其余设备保持登录态） |
 | GET | `/auth/csrf/` | 公开 | — | 下发 `csrftoken` cookie |
 | POST | `/auth/register/` | 公开 | — | 自助注册（multipart） |
@@ -34,6 +37,15 @@
 | GET | `/auth/sessions/` | 登录 | — | 登录设备与名额（在线 + 历史） |
 | POST | `/auth/sessions/<id>/revoke/` | 登录 | — | 下线指定设备（仅本人记录） |
 | POST | `/auth/sessions/revoke-others/` | 登录 | — | 下线其他所有设备 |
+| GET | `/auth/security/overview/` | 登录 | — | 安全中心总览（各登录方式状态） |
+| GET | `/auth/devices/` | 登录 | — | 设备列表 + 在线会话名额 |
+| DELETE | `/auth/devices/<id>/` | 登录 | Step-up `manage_devices` | 撤销设备并吊销其全部会话 |
+| GET | `/auth/login-events/` | 登录 | — | 本人登录记录（20 条/页） |
+| GET | `/auth/totp/` | 登录 | — | 已确认的滚动密钥列表 |
+| POST | `/auth/totp/setup/` | 登录 | — | 新建一条未确认的 TOTP（secret / otpauth / 二维码） |
+| POST | `/auth/totp/confirm/` | 登录 | — | 用 6 位码确认；首次生成恢复代码 |
+| DELETE | `/auth/totp/<id>/` | 登录 | Step-up `manage_totp` | 解绑一条滚动密钥 |
+| POST | `/auth/recovery-codes/` | 登录 | Step-up `manage_totp` | 重新生成恢复代码（作废旧码） |
 | POST | `/auth/password-reset/` | 公开 | — | 邮箱链接自助重置（发起） |
 | POST | `/auth/password-reset/confirm/` | 公开 | — | 邮箱链接自助重置（确认新密码） |
 | POST | `/auth/password-reset/request/` | 公开 | — | 向管理员申请手动重置（multipart：账号 + 身份证明） |
@@ -74,7 +86,7 @@
 
 `POST /auth/login/`
 
-**认证**：公开；**权限**：—。请求体 JSON：`username` / `email`（二选一；`email` 仅匹配**已绑定**邮箱 `User.email`，待认证邮箱登不进）、`password`（必填）。
+**认证**：公开；**权限**：—。请求体 JSON：`username` / `email`（二选一；`email` 仅匹配**已绑定**邮箱 `User.email`，待认证邮箱登不进）、`password`（必填）、`remember`（可选布尔：勾选 → 30 天持久会话；不勾 → 浏览器会话 cookie，关浏览器失效）。
 
 **响应 `200 OK`**
 
@@ -90,6 +102,20 @@
 改密 / 退出」外的请求（403 `{"reason": "password_change_required", "url": "/change-password-required"}`）。
 未认证账号照常登录（登录与认证解耦）；停用账号被拒，普通停用与「超期未认证被系统停用」返回不同的错误提示（见下表）。
 
+**陌生设备挑战 `202 Accepted`**（`settings.LOGIN_CHALLENGE_ENABLED` 开启时；设备未验证且账号有可用二次验证方式）
+
+```json
+{
+  "challenge": "<一次性令牌>",
+  "methods": ["totp", "email_code", "question", "recovery"],
+  "questions": [{"id": 1, "text": "你小学的名称是？"}],
+  "reason": "new_device",
+  "expires_in": 600
+}
+```
+
+202 不建立 session；客户端需用 `challenge` 令牌完成二次验证（见「账号安全中心」）。账号**没有任何二次验证方式**时本次豁免放行，仍返回 200，并带 `"must_bind_2fa": true`——设备保持陌生，前端跳 `/#/security?bind=1` 引导绑定。
+
 **错误**
 
 | 状态码 | 场景 |
@@ -103,7 +129,7 @@
 
 ### 登出 / CSRF / 路由根
 
-`POST /auth/logout/`：**认证**登录；**权限**—。注销 Session，并把本人 `UserSession.is_current` 置 `false`。响应 `200`：`{"message": "Logged out"}`。
+`POST /auth/logout/`：**认证**登录；**权限**—。注销当前 Session，并把本人 `UserSession` 的当前会话标记为已下线（`revoked_at` + `revoked_reason=logout`）；其余设备保持登录态。响应 `200`：`{"message": "Logged out"}`。
 
 `GET /auth/csrf/`：**认证**公开；**权限**—。`@ensure_csrf_cookie` 下发 `csrftoken` cookie（与 HTML 渲染解耦，SPA 启动时请求一次）；视图不限方法（实际按 GET 调用）。响应 `200`：`{"detail": "CSRF cookie set"}`。
 
@@ -286,6 +312,71 @@
 **认证**：登录；**权限**：—。下线其他所有设备、保留本机。
 响应 `200`：`{"revoked": 2, "active_count": 1, "max_active": 3}`。
 
+### 陌生设备登录挑战（[ADR-0029](../adr/0029-account-security-center.md)）
+
+设备是否「已知」只由「该设备上完成过一次二次验证」决定；指纹、IP、位置都不参与。清 Cookie = 设备回到陌生。
+
+**登录时**：`POST /auth/login/` 返回 202 + `challenge` 令牌（见「登录」）。可选方式由账号实际绑定情况决定：
+
+| `method` | 载荷 | 说明 |
+|---|---|---|
+| `totp` | `code`（6 位） | 任一已确认的滚动密钥通过即可；带重放保护 |
+| `email_code` | `code`（6 位） | 先调 `POST /auth/login/challenge/` 发信（60 秒冷却，只发已认证邮箱） |
+| `question` | `question_id` + `answer` | 从账号已设安全问题中选一题 |
+| `recovery` | `code` | 一次性恢复代码，用后作废 |
+
+`POST /auth/login/challenge/`：**认证**公开（持 `token`）。请求体 `{"token": "…"}`；成功 `200 {"message": "验证码已发送，请查收邮件。"}`；`410` 挑战过期、`400` 该账号无可用邮箱、`429` 冷却中（带 `retry_after`）。
+
+`POST /auth/login/challenge/verify/`：**认证**公开（持 `token`）。请求体 `{"token", "method", …}`；成功建立会话并返回：
+
+```json
+{"user": {"id": 7, "username": "zhangsan", "email": "zs@example.com"},
+ "must_change_password": false, "device_trusted": true}
+```
+
+失败 `400`（带 `remaining` 剩余次数，5 次用尽需重新登录）、`410` 挑战过期。成功后设备 `trusted_at` 写入，下次该设备登录直接放行。
+
+`GET /auth/login/challenge/status/`：**认证**登录。返回 `{"methods": ["totp", "email_code", "question", "recovery"]}`，供前端提示「你还可以用哪些方式」。
+
+### 账号安全中心（`/#/security`）
+
+页面与设计说明见 [账号与安全指南](../guides/account-security.md)。接口分为总览、设备、登录记录、滚动密钥、恢复代码五组；除标注外均要求登录。
+
+**`GET /auth/security/overview/`** — 各登录方式状态汇总：
+
+```json
+{
+  "password": {"enabled": true},
+  "email": {"bound": true, "verified": true, "address": "z****@qq.com"},
+  "questions": {"count": 2},
+  "passkeys": {"count": 0, "max": 5},
+  "totp": {"count": 1, "pending": 0, "max": 5},
+  "recovery": {"remaining": 10, "total": 10},
+  "devices": {"count": 3, "trusted": 2, "current": 1},
+  "stepup": {"available": true, "email": true, "questions": true, "totp": true},
+  "profile": {"must_change_password": false}
+}
+```
+
+邮箱地址打码；`passkeys` 当前恒为 0（P5 待域名 + HTTPS）；`stepup.totp` 是预留字段，Step-up 当前仍只有邮箱码 / 安全问题两种方式。
+
+**设备**
+
+- `GET /auth/devices/`：`{"results": [...], "active_sessions": 1, "limit": 3}`。每行含 `id` / `label` / `browser` / `platform` / `brand` / `model` / `city` / `country` / `last_seen` / `first_seen` / `trusted` / `is_current`。会话数可能多于设备数（同一设备多浏览器）。
+- `DELETE /auth/devices/<id>/`：撤销设备，置 `revoked_at` 并删除该设备上的全部 Django Session（`UserSession.revoked_reason=manual`）。**需要 Step-up grant `manage_devices`**（缺 → `403 {"error": "需要先完成安全验证。", "reason": "step_up_required", "scope": "manage_devices"}`）。响应 `200 {"message": "已退出该设备"}`。
+
+**登录记录** `GET /auth/login-events/`：分页 20 条，字段 `created_at` / `device_label` / `city` / `region` / `country` / `latitude` / `longitude` / `method` / `status` / `second_factor` / `is_new_device` / `ip`（脱敏）。`status` ∈ `success` / `failed` / `blocked` / `challenge`；位置只到城市，坐标是城市中心点。
+
+**滚动密钥（TOTP）**
+
+- `GET /auth/totp/`：`{"max": 5, "results": [{"id", "label", "created_at"}]}`，只列已确认的。
+- `POST /auth/totp/setup/`：`{"label"?}` → `{"id", "secret", "otpauth", "qr", "label"}`；`qr` 是 `data:` URI。未确认记录最多堆 3 条，超过会先清掉旧的未确认记录；已确认满 5 条 → `400`。
+- `POST /auth/totp/confirm/`：`{"id", "code"}` → `{"message": "滚动密钥已启用。", "recovery_codes": ["…"]}`。恢复代码只在「账号当前没有未使用的恢复代码」时返回；否则为 `null`。
+- `DELETE /auth/totp/<id>/`：解绑，**需 Step-up grant `manage_totp`**；响应 `{"message": "已解绑。", "remaining": N}`。
+- `POST /auth/recovery-codes/`：重新生成一组 10 个，**需 Step-up grant `manage_totp`**；旧码全部作废；明文只返回这一次。
+
+> **已知缺陷（2026-10-25 巡检）**：`stepup.SCOPES` 尚未登记 `manage_devices` / `manage_totp`，`POST /auth/stepup/verify/` 会以「未知的验证作用域」400 拒绝，导致上述三个需要 Step-up 的动作在页面上无法完成（接口自身的 grant 校验与单测是好的，缺的是「如何拿到 grant」）。修复方式是在 `SCOPES` 与前端 `STEPUP_SCOPE_LABELS` 各补两项；本次巡检只记录、不改代码。
+
 ### 密码重置（发起 / 确认）
 
 `POST /auth/password-reset/`
@@ -322,7 +413,7 @@
 **批准** `POST /auth/password-reset-requests/{pk}/approve/`（body 可带 `note`）
 
 - 密码重置为 **`123456`**；`Profile.must_change_password=true`；
-- **吊销该账号全部会话**（Django Session + `UserSession.is_current`），旧设备立即下线；
+- **吊销该账号全部会话**（Django Session + `UserSession.revoked_at` / `revoked_reason=security`），旧设备立即下线；
 - 申请转 `approved`、记录处理人 / 时间 / 说明；站内通知当事人（可选补邮件）；
 - 幂等：仅 `pending` 可处理，重复批准 `409 already_reviewed`；**不能审批自己的申请**（`403 cannot_review_self`）。
 
@@ -462,7 +553,7 @@
 |---|---|
 | approve | `manual` 通道置 `approved`（记 `verified_at` / `verified_by`），向用户邮箱发通过邮件 |
 | reject | `manual` 通道置 `rejected`，清 `verified_at`，向用户邮箱发驳回邮件（可在面板重交） |
-| disable | 停用账号：`is_active = False` + 立即吊销既有会话（删 Django `Session` 行 + 清 `UserSession.is_current`），发通知邮件 |
+| disable | 停用账号：`is_active = False` + 立即吊销既有会话（删 Django `Session` 行 + 写 `UserSession.revoked_at` / `revoked_reason=security`），发通知邮件 |
 
 `approve` / `reject` 在 `verification_enabled=false` 时返回 403 `verification_closed`；`disable` 是账号级动作，通道关闭时仍可执行。
 
@@ -597,4 +688,6 @@
 
 `GET /auth/stepup/events/`：**认证**登录。本人最近 20 条验证记录（`scope` / `scope_label` / `method` / `result` / `ip` / `created_at`）。
 
-**受保护端点契约**：`POST /auth/profile/change-password/`（原密码 ＋ grant `change_password`）与 `POST /auth/verification/email/bind/`（换绑 grant `change_email`；**首次绑定不拦**）缺令牌时返回 `403 {"error": "需要先完成安全验证。", "reason": "step_up_required", "scope": …}`——前端按 reason 跳 `/#/verify?action=<scope>&next=…`，完成后回跳重试。
+**受保护端点契约**：`POST /auth/profile/change-password/`（原密码 ＋ grant `change_password`）、`POST /auth/verification/email/bind/`（换绑 grant `change_email`；**首次绑定不拦**）、`DELETE /auth/devices/<id>/`（grant `manage_devices`）、`DELETE /auth/totp/<id>/` 与 `POST /auth/recovery-codes/`（grant `manage_totp`）缺令牌时返回 `403 {"error": "需要先完成安全验证。", "reason": "step_up_required", "scope": …}`——前端按 reason 跳 `/#/verify?action=<scope>&next=…`，完成后回跳重试。
+
+> `manage_devices` / `manage_totp` 目前尚未登记进 `stepup.SCOPES`，Step-up 页无法为这两个作用域签发 grant；详见上方「账号安全中心」的已知缺陷说明。

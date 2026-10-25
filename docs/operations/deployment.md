@@ -255,8 +255,10 @@ sudo systemctl restart club
 | `REDIS_URL` | 缓存 + 频道层 | 留空 = v1；配置后可用 `GUNICORN_WORKERS` >1 |
 | `GUNICORN_WORKERS` | ASGI worker 数 | 默认 `1`；**须配 `REDIS_URL`** |
 | `CLUB_UPDATER_PROXY` | 更新器出站代理（仅注入守护进程，加速下载） | 留空 = 不注入；如 `http://127.0.0.1:7891` |
+| `LOGIN_CHALLENGE` | 陌生设备二次验证开关 | 默认开启；线上异常可置 `0` 应急回滚（设备与登录事件照常记录） |
+| `IP2REGION_DB` | 离线 IP 库路径 | 默认 `<安装目录>/data/ip2region_v4.xdb`；文件缺失时静默降级为只记 IP |
 
-逐项默认值、派生逻辑与相关测试见[配置参考](../configuration.md)。另有几个不在模板中、由代码读取的变量：`CLUB_SPAWN_UPDATER=0`（只起 web、不拉起更新守护进程，排障用）、`CLUB_UPDATER_SPAWNED`（由 `start.sh` 置 1）、`SERVICE_NAME`（更新器重载服务用，默认 `club`）。
+逐项默认值、派生逻辑与相关测试见[配置参考](../configuration.md)。另有几个不在模板中、由代码读取的变量：`CLUB_SPAWN_UPDATER=0`（只起 web、不拉起更新守护进程，排障用）、`CLUB_UPDATER_SPAWNED`（由 `start.sh` 置 1）、`SERVICE_NAME`（更新器重载服务用，默认 `club`）、`LOGIN_CHALLENGE`（陌生设备验证开关，见上）、`IP2REGION_DB`（离线 IP 库路径，见上）。前端构建期还可传 `AMAP_KEY` 注入高德地图 key（`AMAP_KEY=… npm run build`）；未设置时登录记录页降级为城市文字。
 
 ## 5. 日常服务管理
 
@@ -399,6 +401,7 @@ cat /opt/club/run/applied-release
 | 数据库（PostgreSQL） | 本机 `club` 库（与站点同机） | `DB_ENGINE=postgresql` 时的全部业务数据 |
 | 公开媒体 | `<数据根>/media/` | 头像、新闻封面、活动图片、教程、附件、考试误刊等 |
 | 私有媒体 | `<数据根>/private_media/` | 身份证明（`IdentityProof`），**不在** `MEDIA_ROOT` 内，由鉴权视图服务 |
+| 离线 IP 库 | `<安装目录>/data/ip2region_v4.xdb`（或 `IP2REGION_DB` 指向） | 约 11 MB，**不入 git**；不参与更新器同步，换机时需单独放回。缺失时登录事件只记 IP、不解析城市 |
 | App 分发 | `<数据根>/app-update/` | App 更新产物（manifest.json / latest.apk），nginx `/app-update/` 只读服务 |
 | 发行包 | `<安装目录>/backups/releases/` | 更新器缓存，也是回滚依据 |
 | DB 快照 | `<安装目录>/backups/db-*.sqlite3`（或 `db-*.pg.sql`） | 更新器每次应用前自动生成（按引擎分派） |
