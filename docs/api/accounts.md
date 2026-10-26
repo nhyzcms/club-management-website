@@ -107,7 +107,7 @@
 ```json
 {
   "challenge": "<一次性令牌>",
-  "methods": ["totp", "email_code", "question", "recovery"],
+  "methods": ["totp", "email", "question", "recovery"],
   "questions": [{"id": 1, "text": "你小学的名称是？"}],
   "reason": "new_device",
   "expires_in": 600
@@ -321,7 +321,7 @@
 | `method` | 载荷 | 说明 |
 |---|---|---|
 | `totp` | `code`（6 位） | 任一已确认的滚动密钥通过即可；带重放保护 |
-| `email_code` | `code`（6 位） | 先调 `POST /auth/login/challenge/` 发信（60 秒冷却，只发已认证邮箱） |
+| `email` | `code`（6 位） | 先调 `POST /auth/login/challenge/` 发信（60 秒冷却，只发已认证邮箱）；旧挑战记录可能仍为 `email_code`，两值等价 |
 | `question` | `question_id` + `answer` | 从账号已设安全问题中选一题 |
 | `recovery` | `code` | 一次性恢复代码，用后作废 |
 
@@ -336,7 +336,7 @@
 
 失败 `400`（带 `remaining` 剩余次数，5 次用尽需重新登录）、`410` 挑战过期。成功后设备 `trusted_at` 写入，下次该设备登录直接放行。
 
-`GET /auth/login/challenge/status/`：**认证**登录。返回 `{"methods": ["totp", "email_code", "question", "recovery"]}`，供前端提示「你还可以用哪些方式」。
+`GET /auth/login/challenge/status/`：**认证**登录。返回 `{"methods": ["totp", "email", "question", "recovery"]}`，供前端提示「你还可以用哪些方式」。
 
 ### 账号安全中心（`/#/security`）
 
@@ -358,7 +358,7 @@
 }
 ```
 
-邮箱地址打码；`passkeys` 当前恒为 0（P5 待域名 + HTTPS）；`stepup.totp` 是预留字段，Step-up 当前仍只有邮箱码 / 安全问题两种方式。
+邮箱地址打码；`passkeys` 当前恒为 0（P5 待域名 + HTTPS）；`stepup` 汇总安全验证可用性：`available` 供「无验证方式时退回密码确认」的端点判断（只计已认证邮箱 / 安全问题），`totp` 表示是否已绑定可用的滚动密钥。
 
 **设备**
 
@@ -370,12 +370,10 @@
 **滚动密钥（TOTP）**
 
 - `GET /auth/totp/`：`{"max": 5, "results": [{"id", "label", "created_at"}]}`，只列已确认的。
-- `POST /auth/totp/setup/`：`{"label"?}` → `{"id", "secret", "otpauth", "qr", "label"}`；`qr` 是 `data:` URI。未确认记录最多堆 3 条，超过会先清掉旧的未确认记录；已确认满 5 条 → `400`。
+- `POST /auth/totp/setup/`：`{"label"?}` → `{"id", "secret", "otpauth", "qr", "label"}`；`qr` 是 `data:` URI。未确认记录最多 3 条：超过时先清创建超过 10 分钟的陈旧记录，仍超则删最旧的，**刚返回给前端的二维码始终有效**；已确认满 5 条 → `400`。
 - `POST /auth/totp/confirm/`：`{"id", "code"}` → `{"message": "滚动密钥已启用。", "recovery_codes": ["…"]}`。恢复代码只在「账号当前没有未使用的恢复代码」时返回；否则为 `null`。
-- `DELETE /auth/totp/<id>/`：解绑，**需 Step-up grant `manage_totp`**；响应 `{"message": "已解绑。", "remaining": N}`。
-- `POST /auth/recovery-codes/`：重新生成一组 10 个，**需 Step-up grant `manage_totp`**；旧码全部作废；明文只返回这一次。
-
-> **已知缺陷（2026-10-25 巡检）**：`stepup.SCOPES` 尚未登记 `manage_devices` / `manage_totp`，`POST /auth/stepup/verify/` 会以「未知的验证作用域」400 拒绝，导致上述三个需要 Step-up 的动作在页面上无法完成（接口自身的 grant 校验与单测是好的，缺的是「如何拿到 grant」）。修复方式是在 `SCOPES` 与前端 `STEPUP_SCOPE_LABELS` 各补两项；本次巡检只记录、不改代码。
+- `DELETE /auth/totp/<id>/`：解绑，**需 Step-up grant `manage_totp`**（验证方式不能用动态口令本身）；响应 `{"message": "已解绑。", "remaining": N}`。
+- `POST /auth/recovery-codes/`：重新生成一组 10 个，**需 Step-up grant `manage_totp`**（同上，不能只用动态口令验证）；旧码全部作废；明文只返回这一次。
 
 ### 密码重置（发起 / 确认）
 
@@ -676,18 +674,33 @@
 
 **绝不含**电话 / 学号 / 邮箱；按 IP 限流（60 次/时，计全部请求）→ `429`。签名 = HMAC-SHA256（密钥默认由 `SECRET_KEY` 派生，`MEMBER_QR_SECRET` 可覆盖）截断 16 位 hex——二维码内容如 `https://<站点>/#/v/26020542?s=b7951a1f144d7be0`。
 
-### 安全验证（Step-up，[ADR-0026](../adr/0026-stepup-verification.md)）
+### 安全验证（Step-up，[ADR-0026](../adr/0026-stepup-verification.md) · [ADR-0043](../adr/0043-stepup-factor-registry.md)）
 
-`GET /auth/stepup/`：**认证**登录。方式总览：`email`（可用性 / 打码地址 / 冷却剩余秒）、`questions`（已设否 / 题数）、`scopes`（作用域 → 名称）、`grant_ttl`。
+`GET /auth/stepup/`：**认证**登录。可选 `?scope=<scope>` 按操作过滤（如 `?scope=manage_totp`）。返回：
+
+```json
+{
+  "scopes": {"change_password": "修改密码", "manage_questions": "管理安全问题", "change_email": "换绑邮箱", "delete_account": "注销账号", "manage_devices": "管理登录设备", "manage_totp": "管理动态口令"},
+  "factors": [
+    {"key": "totp", "label": "动态口令", "hint": "6 位动态码", "sends_code": false},
+    {"key": "email", "label": "邮箱验证码", "hint": "6 位邮箱验证码", "sends_code": true},
+    {"key": "question", "label": "安全问题", "hint": "答案", "sends_code": false},
+    {"key": "recovery", "label": "恢复代码", "hint": "10 位恢复代码", "sends_code": false}
+  ],
+  "email": {"available": true, "address": "z****@qq.com", "cooldown_remaining": 0},
+  "questions": {"configured": true, "count": 2},
+  "grant_ttl": 600
+}
+```
+
+`factors` 只含该账号当前**可用且未被该 scope 排除**的方式，顺序即展示顺序：动态口令 → 邮箱验证码 → 安全问题 → 恢复代码（「管理动态口令」时不含动态口令）。新增方式由后端注册表下发，前端不写死选项。
 
 `POST /auth/stepup/email/send/`：**认证**登录。发 6 位验证码到**已认证邮箱**。`400 email_unavailable`（无已认证邮箱）；`429`：60 秒冷却（`reason: cooldown` + `retry_after`）或账号 / IP 小时上限；成功 `{"message": "验证码已发送，请查收邮件。"}`。
 
-`POST /auth/stepup/verify/`：**认证**登录。`{"method": "email"|"question", "scope", "code"? | "question_id" + "answer"?}` → `{"grant", "expires_in": 600, "message"}`；错误统一 `400`（「验证码错误或已过期。」；答案错为「答案不正确。」）。grant 是签名令牌（账号 + scope + 时间戳、10 分钟）；**受保护端点**凭请求头 `X-StepUp-Grant` 复用。
+`POST /auth/stepup/verify/`：**认证**登录。`{"method": "totp"|"email"|"question"|"recovery", "scope", …}`——`totp` / `email` / `recovery` 传 `code`，`question` 传 `question_id` + `answer` → `{"grant", "expires_in": 600, "message"}`。错误统一 `400`，文案分四类：未知方式「未知的验证方式。」、该操作不允许「「X」不能用于当前操作，请换一种方式。」、账号不具备「「X」当前不可用。」、校验失败（「验证码错误或已过期。」/「答案不正确。」等）。grant 是签名令牌（账号 + scope + 时间戳、10 分钟）；**受保护端点**凭请求头 `X-StepUp-Grant` 复用。
 
 `GET/POST /auth/stepup/questions/`：**认证**登录。GET 返回 `{bank, mine}`（题库 + 本人已设，只出题干）；POST `{"items": [{"key","answer"}], "password"?}`：**首次设置需 `password`（登录密码）**，之后更换 / 清除（`items: []`）需 grant（缺 → `403 step_up_required`）。
 
-`GET /auth/stepup/events/`：**认证**登录。本人最近 20 条验证记录（`scope` / `scope_label` / `method` / `result` / `ip` / `created_at`）。
+`GET /auth/stepup/events/`：**认证**登录。本人最近 20 条验证记录（`scope` / `scope_label` / `method` / `result` / `ip` / `created_at`）；`method` ∈ `totp` / `email` / `question` / `recovery`（`email` 的旧记录可能为 `email_code`）。
 
-**受保护端点契约**：`POST /auth/profile/change-password/`（原密码 ＋ grant `change_password`）、`POST /auth/verification/email/bind/`（换绑 grant `change_email`；**首次绑定不拦**）、`DELETE /auth/devices/<id>/`（grant `manage_devices`）、`DELETE /auth/totp/<id>/` 与 `POST /auth/recovery-codes/`（grant `manage_totp`）缺令牌时返回 `403 {"error": "需要先完成安全验证。", "reason": "step_up_required", "scope": …}`——前端按 reason 跳 `/#/verify?action=<scope>&next=…`，完成后回跳重试。
-
-> `manage_devices` / `manage_totp` 目前尚未登记进 `stepup.SCOPES`，Step-up 页无法为这两个作用域签发 grant；详见上方「账号安全中心」的已知缺陷说明。
+**受保护端点契约**：`POST /auth/profile/change-password/`（原密码 ＋ grant `change_password`）、`POST /auth/verification/email/bind/`（换绑 grant `change_email`；**首次绑定不拦**）、`DELETE /auth/devices/<id>/`（grant `manage_devices`）、`DELETE /auth/totp/<id>/` 与 `POST /auth/recovery-codes/`（grant `manage_totp`，**验证方式不能用动态口令本身**）缺令牌时返回 `403 {"error": "需要先完成安全验证。", "reason": "step_up_required", "scope": …}`——前端按 reason 跳 `/#/verify?action=<scope>&next=…`，完成后回跳重试。

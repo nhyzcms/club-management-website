@@ -26,7 +26,7 @@
 | `TURNSTILE_SECRET_KEY` | Turnstile 服务端密钥（保密，永不下发） | 否 | 空 |
 | `UPDATE_GITHUB_TOKEN` | GitHub PAT，需能读该仓库 Releases（自动更新守护进程用） | 生产必填 | 空 |
 | `UPDATE_GITHUB_REPO` | 更新来源仓库，`owner/repo` | 否 | `nhyzcms/club-management-website`（留空也回退到该值） |
-| `DB_ENGINE` 等 `DB_*` | 数据库切换与连接项：`DB_ENGINE=postgresql` 时用 PostgreSQL（`DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT`） | 否 | 全部留空 = SQLite（缺省）；示例 `DB_ENGINE=postgresql`、`DB_NAME=club` |
+| `DB_ENGINE` 等 `DB_*` | 数据库切换与连接项：`DB_ENGINE=postgresql` 时用 PostgreSQL（`DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT`）；`DB_PORT` 可指向 pgbouncer 等连接池 | 否 | 全部留空 = SQLite（缺省）；示例 `DB_ENGINE=postgresql`、`DB_NAME=club` |
 | `REDIS_URL` | 缓存 + Channels 频道层一并切到 Redis；多 worker 的前置条件 | 否 | 留空 = v1 行为（内存通道层、本地缓存、单 worker） |
 | `GUNICORN_WORKERS` | ASGI worker 进程数 | 否 | `1`；**只有配了 `REDIS_URL` 才允许 >1** |
 | `NOTIFICATIONS_DELIVERY_ASYNC` | 通知外发投递模式：默认异步（进程内队列 + 守护线程；失败退避自动重试）；`=0` 回退旧同步投递 | 否 | 留空 = 异步（默认）。示例 `NOTIFICATIONS_DELIVERY_ASYNC=0` |
@@ -40,6 +40,7 @@
 - 模板里 `SECRET_KEY=` 是**空字符串**，而 `os.environ.get` 会把「键存在但为空」当成已设置——`config/settings.py::_secret_key()` 专门处理这种情况：空 / 纯空白视为未设置，DEBUG 下回退占位、生产直接报错。`config/tests.py::SettingsHygieneTest` 有对应断言。
 - `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` 也支持 `GITHUB_TOKEN` / `GITHUB_REPO` 作为 `install.sh` 的入参别名。
 - 新增的 `DB_*` / `REDIS_URL` / `GUNICORN_WORKERS` 遵守「缺省中性」：全部留空时行为与 v1 完全一致，开与关只动 `.env`（见 [ADR-0021](adr/0021-postgresql-redis-and-multiworker.md)）。
+- **PostgreSQL 连接池**：支持 pgbouncer 的 transaction pooling 模式——`DB_HOST` / `DB_PORT` 指向池端口即可（如 6432）。`settings.py` 已固定 `DISABLE_SERVER_SIDE_CURSORS=True` 且关闭 psycopg3 自动 prepared statements（`prepare_threshold=None`），无需额外配置。
 - `CLUB_DATA_DIR` 同样「缺省中性」：缺省 = 安装目录 → 历史布局；媒体路径全部由它派生，启用统一数据根（或换盘 / 换位置）只需改这一个键。
 
 ### 其他环境变量（不在 `.env.example`，代码中真实读取）

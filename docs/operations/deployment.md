@@ -251,7 +251,7 @@ sudo systemctl restart club
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile | 按需；两项都空 = 关闭，只填一半也视为关闭 |
 | `UPDATE_GITHUB_TOKEN` | 读 Release 用的 GitHub PAT | **必填**（自动更新依赖） |
 | `UPDATE_GITHUB_REPO` | `owner/repo` | 默认 `nhyzcms/club-management-website` |
-| `DB_ENGINE` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | 数据库切换与连接 | 留空 = SQLite；`DB_ENGINE=postgresql` 启用 PostgreSQL |
+| `DB_ENGINE` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | 数据库切换与连接 | 留空 = SQLite；`DB_ENGINE=postgresql` 启用 PostgreSQL；`DB_PORT` 可指向 pgbouncer（transaction pooling；服务端游标与自动 prepared statements 已在 settings 关闭） |
 | `REDIS_URL` | 缓存 + 频道层 | 留空 = v1；配置后可用 `GUNICORN_WORKERS` >1 |
 | `GUNICORN_WORKERS` | ASGI worker 数 | 默认 `1`；**须配 `REDIS_URL`** |
 | `CLUB_UPDATER_PROXY` | 更新器出站代理（仅注入守护进程，加速下载） | 留空 = 不注入；如 `http://127.0.0.1:7891` |
