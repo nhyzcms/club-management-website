@@ -186,3 +186,154 @@ class SurveyChoiceLabelsTest(TestCase):
     def test_palette_distinct(self):
         self.assertEqual(len(survey_export.PALETTE), len(set(survey_export.PALETTE)))
         self.assertGreaterEqual(len(survey_export.PALETTE), 8)
+
+
+def _class_choices():
+    return [{"value": f"item{i}", "text": str(i)} for i in range(1, 9)]
+
+
+def _nested_schema():
+    """「选项内子题」：选中某选项时就地展开子题（SurveyJS ``choices[i].elements``）。"""
+    return {
+        "title": "嵌套问卷",
+        "pages": [{
+            "name": "p1",
+            "elements": [
+                {"type": "radiogroup", "name": "join", "title": "是否参加", "choices": [
+                    {"value": "item1", "text": "否"},
+                    {"value": "item2", "text": "是", "elements": [
+                        {"type": "text", "name": "stuname", "title": "你的姓名"},
+                        {"type": "radiogroup", "name": "grade", "title": "你的年级", "choices": [
+                            {"value": "item1", "text": "高一", "elements": [
+                                {"type": "dropdown", "name": "class1", "title": "班级",
+                                 "choices": _class_choices()},
+                            ]},
+                            {"value": "item2", "text": "高二", "elements": [
+                                {"type": "dropdown", "name": "class2", "title": "班级",
+                                 "choices": _class_choices()},
+                            ]},
+                        ]},
+                        {"type": "boolean", "name": "member", "title": "你是否为社员"},
+                    ]},
+                ]},
+                {"type": "text", "name": "tail", "title": "意见"},
+            ],
+        }],
+    }
+
+
+class SurveyNestedChoiceExportTest(TestCase):
+    """回归：「选项内子题」缺失导致导出只剩父题一列（PR：fix/survey-export-nested-questions）。"""
+
+    def setUp(self):
+        self.schema = _nested_schema()
+        self.q = Questionnaire.objects.create(kind=Questionnaire.KIND_SURVEY, schema=self.schema)
+        QuestionnaireResponse.objects.create(
+            questionnaire=self.q,
+            answers={
+                "join": "item2", "stuname": "夏轩逸", "grade": "item2",
+                "class2": "item7", "member": True, "tail": "无",
+            },
+        )
+        QuestionnaireResponse.objects.create(
+            questionnaire=self.q,
+            answers={"join": "item1", "tail": "不参加"},
+        )
+
+    def test_extract_walks_choice_nested_questions(self):
+        names = [q["name"] for q in survey_export.extract_questions(self.schema)]
+        # 子题紧跟父题之后，且嵌套层级按展开顺序摊平
+        self.assertEqual(
+            names,
+            ["join", "stuname", "grade", "class1", "class2", "member", "tail"],
+        )
+
+    def test_duplicate_titles_get_parent_prefix(self):
+        qs = {q["name"]: q for q in survey_export.extract_questions(self.schema)}
+        self.assertEqual(qs["class1"]["title"], "高一 / 班级")
+        self.assertEqual(qs["class2"]["title"], "高二 / 班级")
+        self.assertEqual(qs["grade"]["title"], "你的年级")  # 不重名的不动
+        self.assertEqual(qs["stuname"]["path"], ["是"])
+
+    def test_responses_csv_includes_nested_columns(self):
+        data, _, _ = survey_export.export_responses([self.q], "csv")
+        text = data.decode("utf-8-sig")
+        header = text.splitlines()[0]
+        for title in ("你的姓名", "你的年级", "高二 / 班级", "你是否为社员", "意见"):
+            self.assertIn(title, header, header)
+        row = next(r for r in text.splitlines() if "夏轩逸" in r)
+        self.assertIn("7", row)      # 子题下拉的 option 文本被还原（item7 → 7）
+        self.assertEqual(row.count("是"), 2)   # 「是」参加 + 布尔子题「是」
+        self.assertNotIn("item7", text)
+        self.assertNotIn("True", text)
+
+    def test_stats_include_nested_questions(self):
+        stats = survey_export.compute_stats(
+            self.schema, [r.answers for r in self.q.responses.all()],
+        )
+        by_name = {s["name"]: s for s in stats}
+        self.assertEqual(by_name["class2"]["counts"]["item7"], 1)   # 未出现的选项补零
+        self.assertEqual(by_name["class2"]["counts"]["item1"], 0)
+        self.assertEqual(by_name["class2"]["answered"], 1)
+        self.assertEqual(by_name["class2"]["title"], "高二 / 班级")
+        self.assertEqual(by_name["member"]["answers"], ["是"])
+
+        data, _, _ = survey_export.export_stats([self.q], "csv")
+        text = data.decode("utf-8-sig")
+        self.assertIn("高二 / 班级", text)
+        self.assertIn("你是否为社员", text)
+
+    def test_responses_pdf_includes_nested_questions(self):
+        data, content_type, _ = survey_export.export_responses([self.q], "pdf")
+        self.assertEqual(content_type, "application/pdf")
+        self.assertTrue(data.startswith(b"%PDF"))
+
+    def test_same_name_twice_is_not_duplicated(self):
+        schema = {
+            "pages": [{
+                "name": "p1",
+                "elements": [{
+                    "type": "radiogroup", "name": "join", "title": "参加吗",
+                    "choices": [
+                        {"value": "item1", "text": "是", "elements": [
+                            {"type": "text", "name": "dup", "title": "说明"},
+                        ]},
+                        {"value": "item2", "text": "否", "elements": [
+                            {"type": "text", "name": "dup", "title": "说明"},
+                        ]},
+                    ],
+                }],
+            }],
+        }
+        names = [q["name"] for q in survey_export.extract_questions(schema)]
+        self.assertEqual(names, ["join", "dup"])
+
+    def test_max_nest_depth_guard(self):
+        leaf = {"type": "text", "name": "leaf", "title": "底"}
+        node = {"type": "text", "name": "deep", "title": "深",
+                "choices": [{"value": "item1", "text": "更", "elements": [leaf]}]}
+        schema = {"pages": [{"name": "p1", "elements": [node]}]}
+        # 正常深度能拿到子题
+        self.assertIn("leaf", [q["name"] for q in survey_export.extract_questions(schema)])
+        # 把一个题目的选项指回自己（畸形 schema）不能死循环
+        cyclic = {"type": "text", "name": "loop", "title": "环",
+                  "choices": [{"value": "item1", "text": "x", "elements": []}]}
+        cyclic["choices"][0]["elements"].append(cyclic)
+        names = [q["name"] for q in survey_export.extract_questions(
+            {"pages": [{"name": "p1", "elements": [cyclic]}]},
+        )]
+        self.assertEqual(names, ["loop"])
+
+    def test_paneldynamic_template_not_flattened(self):
+        schema = {
+            "pages": [{
+                "name": "p1",
+                "elements": [{
+                    "type": "paneldynamic", "name": "rows", "title": "多条记录",
+                    "templateElements": [{"type": "text", "name": "inner", "title": "行内"}],
+                }],
+            }],
+        }
+        # paneldynamic 的作答是「每行一个 dict」的列表，摊成普通列会永远为空
+        # → 维持既有行为：不摊平（等真正用到时再按行展开）
+        self.assertEqual(survey_export.extract_questions(schema), [])

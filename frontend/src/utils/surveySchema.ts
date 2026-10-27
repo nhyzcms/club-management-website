@@ -18,6 +18,7 @@ export const EMPTY_SURVEY_SCHEMA: SurveySchema = {
  * 递归统计题目数。
  *
  * - `panel` 只是容器，本身不算题，继续下钻它的 `elements`；
+ * - **选项内子题**（`choices[i].elements`，选中该选项时就地展开）也是题，一起数；
  * - 兼容 SurveyJS 把页面写成 `elements` 的常见形状，非数组一律忽略。
  */
 export function countSurveyQuestions(schema: unknown): number {
@@ -26,16 +27,29 @@ export function countSurveyQuestions(schema: unknown): number {
   if (!Array.isArray(pages)) return 0;
 
   let count = 0;
-  const walk = (elements: unknown) => {
-    if (!Array.isArray(elements)) return;
+  const seen = new Set<string>();
+  const walk = (elements: unknown, depth = 0) => {
+    if (!Array.isArray(elements) || depth > 8) return;
     for (const raw of elements) {
       if (!raw || typeof raw !== "object") continue;
       const el = raw as SurveySchema;
       if (el.type === "panel") {
-        walk(el.elements);
+        walk(el.elements, depth + 1);
         continue;
       }
+      const name = typeof el.name === "string" ? el.name : "";
+      if (name) {
+        if (seen.has(name)) continue;
+        seen.add(name);
+      }
       count += 1;
+      if (Array.isArray(el.choices)) {
+        for (const choice of el.choices) {
+          if (choice && typeof choice === "object") {
+            walk((choice as SurveySchema).elements, depth + 1);
+          }
+        }
+      }
     }
   };
 

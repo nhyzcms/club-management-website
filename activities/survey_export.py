@@ -15,6 +15,7 @@ JSON 导出已移除（仅保留 CSV / PDF）。
 import csv
 import io
 import json
+from collections import Counter
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -64,6 +65,9 @@ PALETTE = [
 
 PIE_MAX_SLICES = 8  # 选项超过该数时饼图/柱状图退回条形列表（标签会挤）
 
+# 选项内子题的最大下钻深度（防畸形 schema 自引用导致死循环）
+MAX_NEST_DEPTH = 6
+
 FONT = "NotoSansSC"
 FONT_PATH = Path(__file__).resolve().parent / "fonts" / "NotoSansSC.ttf"
 CONTENT_W = 483        # A4 宽 595pt − 左右边距 56pt × 2
@@ -80,19 +84,34 @@ def _local(dt):
 
 
 def extract_questions(schema):
-    """从 SurveyJS schema 提取可作答题目（含嵌套 panel）。
+    """从 SurveyJS schema 提取可作答题目（含嵌套 panel 与「选项内子题」）。
 
-    返回 [{name, title, type, choices, rate_max}]。
+    三种嵌套都必须摊平，否则导出会缺列：
+
+    - 页面 ``elements`` 与 ``panel`` 容器（容器本身不算题，继续下钻）；
+    - **选项内子题**：SurveyJS 允许在 ``choices[i].elements`` 挂子题，选中该选项
+      时就地展开（如「年级＝高二」→「班级」）。作答按子题自己的 ``name`` 平铺存在
+      answers 里，不一起抽出来就只剩父题一列；
+    - 子题里还能再挂选项子题（「相机配件」→「镜头」→「型号」），递归下钻。
+
+    ``paneldynamic``（可增行矩阵）的模板题不摊平：它的作答是「每行一个 dict」的
+    列表，摊成普通列永远为空。
+
+    返回 ``[{name, title, type, choices, choice_labels, rate_max, path}]``；
+    ``path`` 是祖先选项的展示文本（仅用于重名题目标题去歧义）。
     """
     out = []
+    seen = set()
 
-    def walk(elements):
-        for el in elements or []:
+    def walk(items, path=(), depth=0):
+        if depth > MAX_NEST_DEPTH:
+            return
+        for el in items or []:
             if not isinstance(el, dict):
                 continue
             t = el.get("type") or ""
             if t in ("panel", "paneldynamic"):
-                walk(el.get("elements"))
+                walk(el.get("elements"), path, depth + 1)
                 continue
             if t in SKIP_TYPES:
                 continue
@@ -113,6 +132,10 @@ def extract_questions(schema):
                 rate_max = int(el.get("rateMax") or 5)
             except (TypeError, ValueError):
                 rate_max = 5
+            if str(name) in seen:
+                # 同一个 name 只对应一份作答，重复出现时保留先出现的（按页面顺序）
+                continue
+            seen.add(str(name))
             out.append({
                 "name": str(name),
                 "title": el.get("title") or str(name),
@@ -120,19 +143,57 @@ def extract_questions(schema):
                 "choices": choices,
                 "choice_labels": choice_labels,
                 "rate_max": rate_max,
+                "path": list(path),
             })
+            # 选项内子题：紧跟父题之后（即作答时的展开顺序）
+            for c in el.get("choices") or []:
+                if not isinstance(c, dict) or not c.get("elements"):
+                    continue
+                label = str(c.get("text") or c.get("value") or "")
+                walk(c.get("elements"), (*path, label) if label else path, depth + 1)
 
     for page in schema.get("pages") or []:
         if isinstance(page, dict):
             walk(page.get("elements"))
     walk(schema.get("elements"))
-    return out
+    return _disambiguate_titles(out)
+
+
+def _disambiguate_titles(questions):
+    """重名题目加祖先选项前缀（三个「班级」→「高一 / 班级」），保证导出列可区分。
+
+    前缀从**最近的**祖先选项开始，取能区分开的最短一段：`镜头 / 型号`
+    而不是 `相机配件 / 镜头 / 型号`。实在撞车（同名兄弟选项 / 无祖先）时
+    用题目 name 兜底。
+    """
+    base = Counter(q["title"] for q in questions)
+    if all(n == 1 for n in base.values()):
+        return questions
+    for q in questions:
+        if base[q["title"]] == 1:
+            continue
+        for n in range(1, len(q["path"]) + 1):
+            candidate = " / ".join([*q["path"][-n:], q["title"]])
+            if all(
+                other is q or other["title"] != candidate
+                for other in questions
+            ):
+                q["title"] = candidate
+                break
+    counts = Counter(q["title"] for q in questions)  # 前缀仍撞车时用题目 name 兜底
+    for q in questions:
+        if counts[q["title"]] > 1:
+            q["title"] = f'{q["title"]}（{q["name"]}）'
+    return questions
 
 
 def _fmt_value(v):
-    """答案值 → 文本（列表分号连接；dict 转 JSON）。"""
+    """答案值 → 文本（布尔题转「是/否」；列表分号连接；dict 转 JSON）。"""
     if v is None:
         return ""
+    if isinstance(v, bool):
+        # bool 是 int 的子类，必须先判；SurveyJS 布尔题存 true/false，界面显示「是/否」
+        return "是" if v else "否"
     if isinstance(v, list):
         return "; ".join(_fmt_value(x) for x in v)
     if isinstance(v, dict):
