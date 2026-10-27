@@ -39,6 +39,40 @@ describe("countSurveyQuestions", () => {
     };
     expect(countSurveyQuestions(schema)).toBe(3);
   });
+
+  it("选项内子题也计入（含多级嵌套），同名题目只数一次", () => {
+    const schema = {
+      pages: [
+        {
+          name: "p1",
+          elements: [
+            {
+              type: "checkbox",
+              name: "devices",
+              choices: [
+                { value: "item1", text: "数码相机", elements: [{ type: "text", name: "model" }] },
+                {
+                  value: "item2",
+                  text: "相机配件",
+                  elements: [
+                    {
+                      type: "checkbox",
+                      name: "parts",
+                      choices: [{ value: "item1", text: "镜头", elements: [{ type: "text", name: "lens" }] }],
+                    },
+                  ],
+                },
+              ],
+            },
+            { type: "text", name: "note" },
+            { type: "text", name: "note" },
+          ],
+        },
+      ],
+    };
+    // devices + model + parts + lens + note（重复的 note 只算一次）
+    expect(countSurveyQuestions(schema)).toBe(5);
+  });
 });
 
 describe("summarizeSurveySchema", () => {

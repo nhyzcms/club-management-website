@@ -180,7 +180,7 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 - **先定稿再开放**：Schema 一旦有第一份作答就锁死。开放前把题目、选项、跳题逻辑在 Creator 里过一遍，用「查看问卷」只读预览确认渲染效果。
 - **别用后台直接改 Schema JSON**：`Questionnaire` change form 的 `schema` 字段可编辑，但容易写坏结构；统一走 Creator 编辑器（门户或后台）更安全。
 - **改完立刻验证**：以访客身份（无痕窗口）打开一次调研，确认跳题与必填符合预期；`audience=public` 时这一步尤其重要。
-- **结果看板不是导出工具**：统计页只做图表与逐份阅读；需要汇总数据时从后台 `QuestionnaireResponse` 列表或数据库取。
+- **结果看板不是导出工具**：统计页只做图表与逐份阅读；要 CSV / PDF 走后台「活动 → 问卷」列表的导出动作（见[后台管理指南](../operations/admin-guide.md) §5.2）。
 - **加入问卷与调研问卷分开维护**：两者共用模型但用途不同，改一个不会影响另一个。
 
 ## 七、相关文档
