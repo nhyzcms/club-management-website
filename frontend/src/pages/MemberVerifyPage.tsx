@@ -2,16 +2,11 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import AppShell from "../components/AppShell";
-import { MEMBER_STATUS_LABELS } from "../types/member";
+import MemberResultCard, { type MemberPublicResult } from "../components/member/MemberResultCard";
 import "../styles/member.css";
 
-interface CheckResult {
+interface CheckResult extends MemberPublicResult {
   found: boolean;
-  name?: string;
-  cohort?: number;
-  code?: string;
-  status?: string;
-  avatar?: string | null;
 }
 
 /**
@@ -43,8 +38,6 @@ export default function MemberVerifyPage() {
     };
   }, [code, sig]);
 
-  const statusLabel = result?.status ? MEMBER_STATUS_LABELS[result.status] ?? result.status : "";
-
   return (
     <AppShell>
       <div className="page">
@@ -57,24 +50,7 @@ export default function MemberVerifyPage() {
               ) : !result ? (
                 <p className="muted">校验中…</p>
               ) : result.found ? (
-                <>
-                  {result.avatar && <img className="member-verify-avatar" src={result.avatar} alt="" />}
-                  <div className="member-verify-name">{result.name}</div>
-                  <p className="muted">
-                    第 {result.cohort} 届
-                  </p>
-                  <p>
-                    <span
-                      className={
-                        "badge " + (result.status === "active" ? "badge-success" : "badge-ghost")
-                      }
-                    >
-                      {statusLabel}
-                    </span>
-                  </p>
-                  <p className="muted member-verify-code">识别码 {result.code}</p>
-                  <p className="muted">本页来自工牌二维码，仅展示公开信息。</p>
-                </>
+                <MemberResultCard result={result} />
               ) : (
                 <p className="muted">未找到匹配的社员身份——二维码无效、已失效或不属于本站。</p>
               )}

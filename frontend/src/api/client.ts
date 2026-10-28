@@ -62,6 +62,11 @@ export const api = {
   memberCheck: (code: string, sig: string) =>
     request(`/member/check/?c=${encodeURIComponent(code)}&s=${encodeURIComponent(sig)}`),
 
+  // 社员查询（公开）：GET 只读额度；POST 查一次并扣额度（额度按身份分档，服务端判定）
+  memberLookupQuota: () => request("/member/lookup/"),
+  memberLookup: (q: string) =>
+    request("/member/lookup/", { method: "POST", body: JSON.stringify({ q }) }),
+
   verifyEmail: (uid: string, token: string) =>
     request(`/verify-email/?uid=${encodeURIComponent(uid)}&token=${encodeURIComponent(token)}`),
 
