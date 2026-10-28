@@ -63,7 +63,6 @@
 | GET | `/auth/member/` | 登录 | — | 本人社员身份 + 可认领候选（[ADR-0025](../adr/0025-member-identity.md)） |
 | POST | `/auth/member/claim/` | 登录 | — | 自助认领（身份 + 手机号后四位） |
 | GET | `/auth/member/check/` | 公开 | — | 扫码校验（签名；最小公开字段） |
-| GET/POST | `/auth/member/lookup/` | 公开 | — | 社员查询（真实姓名 / 社员编号；GET 只读额度，POST 计次） |
 | GET | `/auth/stepup/` | 登录 | — | 安全验证方式总览（[ADR-0026](../adr/0026-stepup-verification.md)） |
 | POST | `/auth/stepup/email/send/` | 登录 | — | 发送邮箱验证码（60s 冷却 / 小时限） |
 | POST | `/auth/stepup/verify/` | 登录 | — | 验证并签发 grant（10 分钟） |
@@ -674,32 +673,6 @@
 ```
 
 **绝不含**电话 / 学号 / 邮箱；按 IP 限流（60 次/时，计全部请求）→ `429`。签名 = HMAC-SHA256（密钥默认由 `SECRET_KEY` 派生，`MEMBER_QR_SECRET` 可覆盖）截断 16 位 hex——二维码内容如 `https://<站点>/#/v/26020542?s=b7951a1f144d7be0`。
-
-#### 社员查询（首页社团概览）
-
-扫码页靠签名挡枚举，手输查询没有签名串，于是改用**身份分档 + 滚动 24 小时额度**：
-
-| 查询者 | 每 24 小时上限 |
-|---|---|
-| 未登录（按 IP） | 3 |
-| 已登录未认证 | 10 |
-| 已认证的非社员 | 20 |
-| 社员（已绑定名册行）/ 认证教师 / 管理员 / 超级管理员 | 不限 |
-
-- `GET /auth/member/lookup/`：只读额度，不计次。`{"quota": {"limit": 3, "used": 1, "remaining": 2, "reset_at": "2026-10-29T02:00:00+00:00", "window_hours": 24}}`；`limit=null` 表示不限。
-- `POST /auth/member/lookup/`：JSON `{"q": "张三"}`（完整真实姓名）或 `{"q": "26010201"}`（8 位社员编号）。**先扣额度再查**，未命中同样计数（防遍历）；结果与扫码页同源同形：
-
-```json
-{"found": true, "results": [{"name": "张三", "cohort": 1, "code": "26010201", "status": "active", "avatar": null}], "quota": {"limit": 3, "used": 1, "remaining": 2, "reset_at": "2026-10-29T02:00:00+00:00", "window_hours": 24}}
-```
-
-姓名必须**完全一致**（不做前缀 / 模糊匹配，否则等于交出整本名册）；同名多行全部返回（上限 20 条）。`found=false` 时 `results` 为空数组。
-
-| 状态码 | 场景 |
-|---|---|
-| 400 | 空查询：`{"error": "请输入真实姓名或社员编号。"}` |
-| 429 | 额度用尽：`{"error": "查询次数已达上限（每 24 小时最多 N 次），请稍后再试。", "quota": {…}, "retry_after": 3600}` |
-
 
 ### 安全验证（Step-up，[ADR-0026](../adr/0026-stepup-verification.md) · [ADR-0043](../adr/0043-stepup-factor-registry.md)）
 

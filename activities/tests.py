@@ -156,27 +156,6 @@ class ActivityCreateReadTest(TestCase):
         # 列表序列化不带 body（轻量）
         self.assertNotIn("body", items[0])
 
-    def test_list_puts_ongoing_before_ended_then_newest(self):
-        """进行中的活动排前面、已结束的沉底；同档按发布时间倒序（后发布的在上）。"""
-        now = timezone.now()
-        old_active = Activity.objects.create(
-            type="deliberation", status="open", title="ongoing-old", creator=self.author,
-        )
-        ended_new = Activity.objects.create(
-            type="deliberation", status="closed", title="ended-new", creator=self.other,
-        )
-        new_active = Activity.objects.create(
-            type="collection", status="collecting", title="ongoing-new", creator=self.other,
-        )
-        Activity.objects.filter(pk=old_active.pk).update(created_at=now - timedelta(days=5))
-        Activity.objects.filter(pk=ended_new.pk).update(created_at=now)
-        Activity.objects.filter(pk=new_active.pk).update(created_at=now - timedelta(days=1))
-
-        resp = _json(self.client, "get", "/activities/activities/", self.author)
-        self.assertEqual(resp.status_code, 200)
-        items = resp.data["results"] if isinstance(resp.data, dict) and "results" in resp.data else resp.data
-        self.assertEqual([i["title"] for i in items], ["ongoing-new", "ongoing-old", "ended-new"])
-
     def test_retrieve_returns_body(self):
         a = Activity.objects.create(type="collection", status="collecting", title="b",
                                     body="<p>hi</p>", creator=self.author)

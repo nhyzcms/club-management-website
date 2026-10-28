@@ -19,7 +19,7 @@
 | GET / POST / DELETE | /news/news/{id}/draft/ | 登录 | `news.manage_news` | 服务端草稿区（编辑页自动保存）：读 / 存 / 弃 |
 | POST | /news/news/upload_image/ | 登录 | `news.manage_news` | 正文内嵌图片上传，返回 `{url}` |
 | POST | /news/news/upload_cover/ | 登录 | `news.manage_news` | 封面预上传（选完即传），返回 `{url}` |
-| GET | /news/news/featured/ | 公开 | — | 头条：**仅**手工置顶（`featured=true`），无置顶返回 `null` |
+| GET | /news/news/featured/ | 公开 | — | 头条：手工置顶优先，否则阅读人数最高 |
 | GET | /news/news/hot/ | 公开 | — | 热门阅读前 5 |
 | GET | /news/news/tags/ | 公开 | — | 标签云（仅被公开新闻引用），带新闻数 |
 | GET | /news/news/overview/ | 公开 | — | 社团概览：成员数 / 作品数 |
@@ -278,7 +278,7 @@
 
 **认证**：公开；**权限**：—
 
-**只有手工置顶（`featured=true`）的新闻才算头条**；没有置顶时返回 `null`——不再退化为「阅读人数最高」，否则普通新闻会被前端打上「头条」徽标。
+手工置顶（`featured=true`）优先；无置顶则取阅读人数最高的一条。无任何公开新闻时返回 `null`。
 
 **响应 `200 OK`**：单个列表项（同列表 `results` 元素）或 `null`。
 
@@ -325,7 +325,7 @@
 
 **查询参数**：`limit`（整数，默认 6，钳制在 1–20）。
 
-返回 `{featured, items}`：`featured` 为头条（同 `featured/`：仅 `featured=true` 的新闻，没有则为 `null`），且不计入 `items`；`items` 是新闻 + 活动（登录时另含未完结任务）的混排：**已结束（closed / archived）的活动整体沉底**，其余按时间倒序，同一档内按发布时间（活动取 `created_at`）倒序——后发布的在上面；再按类型打散（打散只在同一档内进行，不会把已结束活动换回前排）。活动只投影公开字段。
+返回 `{featured, items}`：`featured` 为头条（同 `featured/`，且不计入 `items`）；`items` 是新闻 + 活动（登录时另含未完结任务）按时间倒序、按类型打散后的混排，活动只投影公开字段。
 
 **响应 `200 OK`**
 

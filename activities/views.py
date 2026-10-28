@@ -41,7 +41,6 @@ from .lifecycle import (
     can_submit,
     collection_close_target,
     maybe_close_collection_on_cap,
-    order_activities,
     transition_due_starts,
     transition_overdue,
 )
@@ -90,14 +89,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
     filterset_fields = ["type", "status", "creator"]
     search_fields = ["title", "body"]
     ordering_fields = ["created_at", "updated_at", "end_at"]
-    # 默认顺序见 lifecycle.order_activities：进行中 / 待开始在前，已结束沉底，同档按发布时间倒序。
-    # 客户端显式传 ?ordering= 时仍可覆盖（DRF OrderingFilter 后置）。
-    ordering = ["_phase_rank", "-created_at"]
+    ordering = ["-created_at"]
 
     def get_queryset(self):
-        return order_activities(self._scoped_queryset())
-
-    def _scoped_queryset(self):
         # 惰性流转：到 start_at 的待开始活动自动开放；到 end_at 的众议/展示/调研自动结算。
         # 审核轴只门控可见性，不阻断上述状态机。
         transition_due_starts()

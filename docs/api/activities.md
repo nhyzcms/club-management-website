@@ -60,7 +60,7 @@
 | status | string | 否 | `scheduled` / `open` / `closed` / `collecting` / `reviewing` / `archived` |
 | creator | int | 否 | 发起人用户 id |
 | search | string | 否 | 对 `title`、`body` 模糊搜索 |
-| ordering | string | 否 | `created_at` / `updated_at` / `end_at`（前缀 `-` 倒序）。默认顺序：**未结束（进行中 / 待开始）在前、已结束（closed / archived）沉底**，同一档内按发布时间 `-created_at`（后发布的在上）；传 `ordering` 时以传入为准 |
+| ordering | string | 否 | `created_at` / `updated_at` / `end_at`（前缀 `-` 倒序），默认 `-created_at` |
 | page | int | 否 | 页码，页大小 20（`PageNumberPagination`） |
 
 **响应 `200 OK`**（列表序列化器，不含 `body`）

@@ -33,7 +33,6 @@ urlpatterns = [
     path("member/", views.member_identity_view, name="member_identity"),
     path("member/claim/", views.member_claim_view, name="member_claim"),
     path("member/check/", views.member_check_view, name="member_check"),
-    path("member/lookup/", views.member_lookup_view, name="member_lookup"),
     path("stepup/", views.stepup_status_view, name="stepup_status"),
     path("stepup/email/send/", views.stepup_email_send_view, name="stepup_email_send"),
     path("stepup/verify/", views.stepup_verify_view, name="stepup_verify"),

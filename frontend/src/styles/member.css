@@ -28,18 +28,3 @@
 }
 .member-verify-name { font-size: 22px; font-weight: 700; margin-bottom: var(--s-2); }
 .member-verify-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 2px; }
-
-/* 社员查询（首页社团概览）：输入行 + 额度提示；结果用全局 .modal-scrim 弹窗 */
-.member-lookup { margin-top: var(--s-4); padding-top: var(--s-3); border-top: 1px dashed var(--line); }
-.member-lookup-title {
-  display: flex; align-items: center; gap: var(--s-2);
-  font-size: 13px; font-weight: 600; margin-bottom: var(--s-2);
-}
-.member-lookup-title .bar { width: 3px; height: 12px; border-radius: var(--r-pill); background: var(--brand-700); }
-.member-lookup-form { display: flex; gap: var(--s-2); }
-.member-lookup-form .input { min-width: 0; flex: 1; }
-.member-lookup-form .btn { flex-shrink: 0; white-space: nowrap; }
-.member-lookup-hint { font-size: 12px; color: var(--muted); margin: var(--s-2) 0 0; line-height: 1.5; }
-.member-lookup-result + .member-lookup-result {
-  border-top: 1px dashed var(--line); padding-top: var(--s-5); margin-top: var(--s-2);
-}

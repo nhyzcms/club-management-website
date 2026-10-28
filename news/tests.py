@@ -101,13 +101,13 @@ class NewsReaderCountTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["id"], feat.id)
 
-    def test_featured_without_manual_flag_is_null(self):
-        """没有手工置顶时不再退化为「最热」——不能把普通新闻误标成头条。"""
+    def test_featured_fallback_hottest(self):
+        """无手工置顶时头条取阅读人数最高的一条。"""
         approve_news(News.objects.create(title="low", author=self.author, is_published=True, views=1))
-        approve_news(News.objects.create(title="high", author=self.author, is_published=True, views=100))
+        high = approve_news(News.objects.create(title="high", author=self.author, is_published=True, views=100))
         resp = self.client.get("/news/news/featured/")
         self.assertEqual(resp.status_code, 200)
-        self.assertIsNone(resp.data)
+        self.assertEqual(resp.data["id"], high.id)
 
 
 class NewsOverviewTest(TestCase):
@@ -201,30 +201,6 @@ class FeedTest(TestCase):
         ids = [i["id"] for i in data["items"]]
         self.assertIn(other.pk, ids)
         self.assertNotIn(feat.pk, ids)
-
-    def test_no_manual_featured_means_no_headline(self):
-        """没有手工置顶时头条为 None（普通新闻仍留在 items 里，但不带头条身份）。"""
-        self._news("plain", days_ago=0)
-        data = build_feed(request=self.anon)
-        self.assertIsNone(data["featured"])
-        self.assertIn("plain", [i["title"] for i in data["items"]])
-
-    def test_ended_activities_sink_to_bottom(self):
-        """已结束活动沉底；进行中的排前面，同档按发布时间倒序。"""
-        self._activity("ongoing-old", days_ago=5, status="open")
-        self._activity("ended-new", days_ago=0, status="closed")
-        self._activity("ongoing-new", days_ago=1, status="collecting")
-        titles = [i["title"] for i in build_feed(request=self.anon)["items"]]
-        self.assertEqual(titles, ["ongoing-new", "ongoing-old", "ended-new"])
-
-    def test_diversify_keeps_ended_activity_last(self):
-        """三条新闻连续触发打散时，不得把沉底的已结束活动换回前排。"""
-        self._news("n1", days_ago=3)
-        self._news("n2", days_ago=2)
-        self._news("n3", days_ago=1)
-        self._activity("ended", days_ago=0, status="closed")
-        titles = [i["title"] for i in build_feed(request=self.anon)["items"]]
-        self.assertEqual(titles[-1], "ended")
 
     def test_anon_has_news_but_no_tasks(self):
         self._news("n1", days_ago=1)

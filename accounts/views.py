@@ -11,7 +11,7 @@ from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_GET, require_POST, require_http_methods
+from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth import login, logout as auth_logout, update_session_auth_hash
 from django.contrib.auth.signals import user_login_failed
 from django.contrib.auth.decorators import login_required
@@ -28,7 +28,7 @@ from rest_framework.request import Request
 
 from common.policy import get_policy
 
-from . import factors, member_lookup, stepup
+from . import factors, stepup
 from .authcode import AuthCodeError, redeem_authcode
 from .deletion import AccountDeletionError, delete_account
 from .email_domains import (
@@ -679,48 +679,18 @@ def member_check_view(request):
     if row is None:
         return not_found
 
-    return JsonResponse({"found": True, **member_lookup.public_member_payload(row)})
-
-
-@require_http_methods(["GET", "POST"])
-def member_lookup_view(request):
-    """社员查询（公开）：按真实姓名 / 社员编号查，结果与扫码校验页同源同形。
-
-    - ``GET``：只读当前额度（不计数），前端用它显示「今日还可查 N 次」。
-    - ``POST`` ``{"q": "..."}``：查一次并**先扣额度**（未命中同样计数，防枚举遍历）。
-
-    额度按查询者身份分档（未登录 3 / 未认证 10 / 已认证非社员 20 / 社员·教师·管理员不限），
-    见 :mod:`accounts.member_lookup`。超限返回 429 + 额度快照，前端据此提示。
-    """
-    if request.method == "GET":
-        return JsonResponse({"quota": member_lookup.quota_snapshot(request)})
-
-    body = _json_body(request)
-    if body is None:
-        return JsonResponse({"error": "Invalid JSON"}, status=400)
-    query = str(body.get("q") or "").strip()
-    if not query:
-        return JsonResponse({"error": "请输入真实姓名或社员编号。"}, status=400)
-
-    allowed, quota = member_lookup.consume(request)
-    if not allowed:
-        return JsonResponse(
-            {
-                "error": (
-                    f"查询次数已达上限（每 {member_lookup.WINDOW_HOURS} 小时最多 "
-                    f"{quota['limit']} 次），请稍后再试。"
-                ),
-                "quota": quota,
-                "retry_after": member_lookup.retry_after(quota),
-            },
-            status=429,
-        )
-
-    rows = member_lookup.search_members(query)
+    avatar_url = None
+    if row.user_id:
+        profile = Profile.objects.filter(user_id=row.user_id).first()
+        if profile is not None and profile.avatar:
+            avatar_url = profile.avatar.url
     return JsonResponse({
-        "found": bool(rows),
-        "results": [member_lookup.public_member_payload(row) for row in rows],
-        "quota": quota,
+        "found": True,
+        "name": row.name,
+        "cohort": row.cohort,
+        "code": row.code,
+        "status": row.status,
+        "avatar": avatar_url,
     })
 
 
