@@ -203,11 +203,17 @@ class NewsViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def featured(self, request):
-        """头条：手工置顶（featured）优先；无置顶则取阅读人数最高的一条。"""
-        qs = self.get_queryset()
-        item = qs.filter(featured=True).first()
-        if item is None:
-            item = qs.order_by("-views", "-published_at", "-created_at").first()
+        """头条：**只认手工置顶（featured=True）**；没有置顶就返回 null。
+
+        早期实现会在无置顶时退化为「阅读人数最高」，导致从未设为头条的普通新闻
+        被前端打上「头条」徽标——这正是要修的展示错误，不要再加回退化分支。
+        """
+        item = (
+            self.get_queryset()
+            .filter(featured=True)
+            .order_by("-published_at", "-created_at")
+            .first()
+        )
         if item is None:
             return Response(None)
         return Response(NewsListSerializer(item, context={"request": request}).data)

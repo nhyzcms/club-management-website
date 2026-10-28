@@ -6,6 +6,7 @@ import { aboutApi, type ClubOverview } from "../api/about";
 import AppShell from "../components/AppShell";
 import ClubFeed from "../components/ClubFeed";
 import NeonParticles from "../components/NeonParticles";
+import MemberLookup from "../components/member/MemberLookup";
 import { useLoginModal } from "../components/LoginModalProvider";
 import "../styles/form.css";
 import "../styles/home.css";
@@ -112,7 +113,6 @@ export default function HomePage() {
               {editing ? (
                 <div className="form-stack">
                   <input className="input" value={draft.founded} onChange={(e) => setDraft({ ...draft, founded: e.target.value })} placeholder="成立" />
-                  <input className="input" value={draft.advisor} onChange={(e) => setDraft({ ...draft, advisor: e.target.value })} placeholder="指导" />
                   <input className="input" value={draft.intro} onChange={(e) => setDraft({ ...draft, intro: e.target.value })} placeholder="简介" />
                   <div style={{ display: "flex", gap: 8 }}>
                     <button className="btn btn-primary btn-sm" type="button" onClick={saveOverview}>保存</button>
@@ -123,8 +123,7 @@ export default function HomePage() {
                 <>
                   <div className="stat-row"><span className="k">成立</span><span className="v tnum">{club?.founded || "—"}</span></div>
                   <div className="stat-row"><span className="k">成员</span><span className="v tnum">{overview ? overview.members : "—"}</span></div>
-                  <div className="stat-row"><span className="k">指导</span><span className="v">{club?.advisor || "—"}</span></div>
-                  <div className="stat-row"><span className="k">作品</span><span className="v tnum">{overview ? overview.works : "—"}</span></div>
+                  <MemberLookup />
                   {club?.intro && <p className="detail-sub" style={{ marginTop: 8 }}>{club.intro}</p>}
                 </>
               )}

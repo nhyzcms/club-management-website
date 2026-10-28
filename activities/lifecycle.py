@@ -277,3 +277,25 @@ def maybe_close_collection_on_cap(activity):
 
 # 延迟导入打破 activities 内部循环（lifecycle ↔ models 同 app，无环；保留供未来跨引用）。
 from .models import Activity, QuestionnaireResponse, Submission  # noqa: E402
+
+# 「已结束」的档位：closed（众议/调研截止、手动终结）/ archived（征集归档）。
+# 列表与首页 feed 共用同一条规则：未结束的活动排前面，已结束的沉底；
+# 同一档内按发布时间（created_at）倒序——后发布的在上面。
+ENDED_STATUSES = frozenset({CLOSED, ARCHIVED})
+
+
+def order_activities(qs):
+    """活动列表默认顺序：未结束在前、已结束在后，同档按发布时间倒序。
+
+    用 CASE 标注 ``_phase_rank`` 而不是改 ``Meta.ordering``：排序依赖 status 枚举的
+    语义分组，塞进数据库默认排序会牵动迁移，且 `mine` / 详情等其它入口不需要它。
+    """
+    from django.db.models import Case, IntegerField, Value, When
+
+    return qs.annotate(
+        _phase_rank=Case(
+            When(status__in=ENDED_STATUSES, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+    ).order_by("_phase_rank", "-created_at")
