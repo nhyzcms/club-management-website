@@ -201,6 +201,7 @@ frontend/
 |------|------|
 | 活动详情（`ActivityDetailShell` 按活动类型挂面板） | `activity/CollectionPanel`（征集）、`activity/ExhibitionPanel`（展览）、`activity/DeliberationPanel`（审议）、`activity/SurveyPanel`（调研问卷） |
 | 审核队列预览 | `pages/review/ReviewPreview` |
+| 首页「社团概览」社员查询 | `member/MemberLookup`（结果弹窗复用 `member/MemberResultCard`，与 `/#/v/:code` 公开校验页共用同一结果卡） |
 | 个人中心（`UserProfile` 的 tab 面板） | `profile/ProfileHero`、`ProfileSideNav`、`ProfileTabs`、`ProfileEditPanel`、`VerificationPanel`、`PasswordPanel`、`SessionsPanel`、`ContentListPanel`、`PermissionsPanel`、`MuteUserPanel` |
 | 账号与安全中心（`/#/security`） | `pages/SecurityCenterPage` + `security/DeviceListPanel`、`security/LoginEventsPanel`、`security/LoginMap`、`security/TotpPanel`（改密 / 安全问题复用 `profile/PasswordPanel`、`profile/SecurityPanel`） |
 
@@ -212,7 +213,7 @@ URL 查询参数约定（hash 部分之后）：tab 状态用查询参数（如 
 
 | 模块 | 前缀 | 覆盖 |
 |------|------|------|
-| `api/client.ts` | `/auth` | 登录/登出/`me`/资料/改密/密码重置/注册/邮箱认证/会话列表/用户检索/收件箱；`api/security.ts` 另封装安全中心（设备 / 登录记录 / TOTP / 恢复代码） |
+| `api/client.ts` | `/auth` | 登录/登出/`me`/资料/改密/密码重置/注册/邮箱认证/会话列表/用户检索/社员查询（含额度）/收件箱；`api/security.ts` 另封装安全中心（设备 / 登录记录 / TOTP / 恢复代码） |
 | `api/news.ts` | `/news` | 列表/详情/我的/增删改/图片上传/featured/hot/tags/overview/feed |
 | `api/tasks.ts` | `/tasks` | 任务 CRUD、认领/审批/完成/指派等动作、标签 |
 | `api/activities.ts` | `/activities` | 活动 CRUD、生命周期动作、问卷 schema、征集/展品 |
