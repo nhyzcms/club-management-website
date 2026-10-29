@@ -43,3 +43,37 @@
 .member-lookup-result + .member-lookup-result {
   border-top: 1px dashed var(--line); padding-top: var(--s-5); margin-top: var(--s-2);
 }
+
+/* 「扫描条码」（首页社员查询下方）：长条按钮 + 取景弹窗。
+   取景区固定 4:3、深底 —— 摄像头画面在浅色 / 深色主题下都该是黑的，故不跟随 token。 */
+.member-scan { margin-top: var(--s-3); }
+.member-scan-btn { min-height: 46px; font-size: 15px; }
+.member-scan-modal { max-width: 460px; }
+.member-scan-stage {
+  position: relative; border-radius: var(--r-md); overflow: hidden;
+  aspect-ratio: 4 / 3; background: #0b0f14;
+}
+.member-scan-stage.is-hidden { display: none; }
+.member-scan-video { display: block; width: 100%; height: 100%; object-fit: cover; background: #0b0f14; }
+.member-scan-frame {
+  position: absolute; inset: 14%; border-radius: var(--r-md);
+  /* 品牌色描边：白工牌 / 深色桌面两种底上都看得见 */
+  border: 3px solid var(--brand-500);
+  box-shadow: 0 0 0 9999px oklch(0 0 0 / .38), inset 0 0 0 1px oklch(1 0 0 / .55);
+  /* 视频是合成层，不显式提层的话遮罩会被压在画面下面 */
+  z-index: 2; transform: translateZ(0);
+  animation: member-scan-pulse 1.8s var(--ease) infinite;
+}
+.member-scan-stage-note {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: #fff; background: oklch(0 0 0 / .45);
+}
+@keyframes member-scan-pulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .member-scan-frame { animation: none; opacity: 1; }
+}
+.member-scan-result { text-align: center; }
+.member-scan-actions { display: flex; gap: var(--s-2); padding: var(--s-2) var(--s-6) var(--s-5); }
+.member-scan-actions .btn { flex: 1; }
+.member-scan-file { position: relative; overflow: hidden; cursor: pointer; }
+.member-scan-file input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }

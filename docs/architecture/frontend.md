@@ -202,6 +202,7 @@ frontend/
 | 活动详情（`ActivityDetailShell` 按活动类型挂面板） | `activity/CollectionPanel`（征集）、`activity/ExhibitionPanel`（展览）、`activity/DeliberationPanel`（审议）、`activity/SurveyPanel`（调研问卷） |
 | 审核队列预览 | `pages/review/ReviewPreview` |
 | 首页「社团概览」社员查询 | `member/MemberLookup`（结果弹窗复用 `member/MemberResultCard`，与 `/#/v/:code` 公开校验页共用同一结果卡） |
+| 首页「扫描条码」 | `member/MemberScanButton`（摄像头 / 选图扫码；ZXing 由 `member/barcodeScanner` 动态 import，不进首屏包）+ `member/scanPayload`（把扫到的文本分成「带签名校验链接」与「裸识别码」两路） |
 | 个人中心（`UserProfile` 的 tab 面板） | `profile/ProfileHero`、`ProfileSideNav`、`ProfileTabs`、`ProfileEditPanel`、`VerificationPanel`、`PasswordPanel`、`SessionsPanel`、`ContentListPanel`、`PermissionsPanel`、`MuteUserPanel` |
 | 账号与安全中心（`/#/security`） | `pages/SecurityCenterPage` + `security/DeviceListPanel`、`security/LoginEventsPanel`、`security/LoginMap`、`security/TotpPanel`（改密 / 安全问题复用 `profile/PasswordPanel`、`profile/SecurityPanel`） |
 

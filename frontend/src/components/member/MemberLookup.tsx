@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../../api/client";
 import MemberResultCard, { type MemberPublicResult } from "./MemberResultCard";
+import MemberScanButton from "./MemberScanButton";
 import "../../styles/member.css";
 
 /** 后端 accounts/member_lookup.py 的额度快照：limit=null 表示不限。 */
@@ -98,6 +99,8 @@ export default function MemberLookup() {
         </button>
       </form>
       <p className="member-lookup-hint">{quotaHint(quota)}</p>
+      {/* 二维码 / 条形码入口：与手输查询共用额度，扫完把最新额度回填到上面的提示行 */}
+      <MemberScanButton onQuotaChange={setQuota} />
       {err && <p className="member-claim-err" role="alert">{err}</p>}
 
       {open && createPortal(

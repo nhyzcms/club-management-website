@@ -38,6 +38,8 @@
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "chart.js": "^4.5.1",
     "docx-preview": "^0.4.0",
     "frappe-gantt": "^1.2.2",
