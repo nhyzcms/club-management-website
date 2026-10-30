@@ -17,7 +17,10 @@ from reviews.lifecycle import open_review
 from reviews.visibility import public_q, visible_queryset
 from tasks.models import Tag
 
-from .models import COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News, NewsView, cover_upload_path
+from .models import (
+    COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News, NewsDraft, NewsView,
+    cover_upload_path,
+)
 from .permissions import CanManageNews, CanManageNewsDraft
 from .serializers import NewsDetailSerializer, NewsDraftSerializer, NewsListSerializer, NewsTagSerializer
 from .feed import build_feed
@@ -154,11 +157,8 @@ class NewsViewSet(viewsets.ModelViewSet):
             }})
 
         if request.method == "DELETE":
-            news.draft_title = ""
-            news.draft_summary = ""
-            news.draft_content = ""
-            news.draft_saved_at = None
-            news.save(update_fields=["draft_title", "draft_summary", "draft_content", "draft_saved_at"])
+            # 放弃修改 = 删掉草稿行（B7 起草稿在独立表）
+            NewsDraft.objects.filter(news=news).delete()
             return Response({"draft": None})
 
         serializer = NewsDraftSerializer(data=request.data)
@@ -166,15 +166,24 @@ class NewsViewSet(viewsets.ModelViewSet):
         data = serializer.validated_data
 
         if news.is_published:
+            defaults = {}
             if "title" in data:
-                news.draft_title = data["title"]
+                defaults["title"] = data["title"]
             if "summary" in data:
-                news.draft_summary = data["summary"]
+                defaults["summary"] = data["summary"]
             if "content" in data:
-                news.draft_content = data["content"]
-            news.draft_saved_at = timezone.now()
-            news.save(update_fields=["draft_title", "draft_summary", "draft_content", "draft_saved_at", "updated_at"])
-            return Response({"saved_at": news.draft_saved_at, "is_draft": True})
+                defaults["content"] = data["content"]
+            saved_at = timezone.now()
+            draft = NewsDraft.objects.filter(news=news).first()
+            if draft is None:
+                # 首存：缺省字段留空（与原「只写传了的字段」语义一致）
+                NewsDraft.objects.create(news=news, saved_at=saved_at, **defaults)
+            else:
+                for field, value in defaults.items():
+                    setattr(draft, field, value)
+                draft.saved_at = saved_at
+                draft.save(update_fields=[*defaults.keys(), "saved_at"])
+            return Response({"saved_at": saved_at, "is_draft": True})
 
         # 未发布：直接写正文；空标题不覆盖（避免「我的稿件」出现空标题行）
         if data.get("title", "").strip():
