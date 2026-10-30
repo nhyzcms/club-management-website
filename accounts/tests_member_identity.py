@@ -495,6 +495,25 @@ class AdminImportTest(TestCase):
             self.assertEqual(names, ["25010001_李四.png", "26020001_张三.png"])
             self.assertTrue(zf.read(names[0]).startswith(b"\x89PNG"))
 
+    def test_export_barcode_svg_zip_action(self):
+        admin = User.objects.create_superuser(username="root", password="x", email="root@example.com")
+        self.client.force_login(admin)
+        row1 = MemberIdentity.objects.create(name="张三", admit_year=2026, cohort=2, phone="13800008888", code="26020001")
+        row2 = MemberIdentity.objects.create(name="李四", admit_year=2025, cohort=1, phone="13900001111", code="25010001")
+        resp = self.client.post(
+            reverse("admin:accounts_memberidentity_changelist"),
+            {"action": "export_member_barcode_svg", "_selected_action": [str(row1.pk), str(row2.pk)]},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/zip")
+        self.assertIn("member-barcode-svg-", resp["Content-Disposition"])
+        with ZipFile(io.BytesIO(resp.content)) as zf:
+            names = sorted(zf.namelist())
+            self.assertEqual(names, ["25010001_李四.svg", "26020001_张三.svg"])
+            body = zf.read("26020001_张三.svg").decode("utf-8")
+            self.assertTrue(body.startswith("<?xml"))
+            self.assertIn("<svg", body)
+
 
 class MemberBarcodeRenderTest(TestCase):
     """Code128 条形码渲染（ADR-0025 工牌产物）：结构 / 编码 / 像素三层断言。"""
@@ -554,4 +573,80 @@ class MemberBarcodeRenderTest(TestCase):
             base = ord("A") if color == (0, 0, 0) else ord("a")
             rebuilt.append(chr(base + units - 1))
         self.assertEqual("".join(rebuilt), pattern)
+
+    def test_render_svg_is_vector_and_transparent(self):
+        """SVG 导出：几何与 PNG 同构，**背景透明**（没有任何铺满画布的底色矩形）。"""
+        import xml.etree.ElementTree as ET
+
+        from accounts.member_barcode import render_svg
+
+        svg = render_svg("26020001")
+        root = ET.fromstring(svg)  # 必须是良构 XML
+        ns = {"s": "http://www.w3.org/2000/svg"}
+        # 101 模块 + 两侧静区各 10 = 121；条高 60px/4 = 15 模块 + 文字行 28px/4 = 7
+        self.assertEqual(root.get("viewBox"), "0 0 121 22")
+        # 400dpi 折算：121×4px = 484px → 30.734mm
+        self.assertEqual(root.get("width"), "30.734mm")
+        self.assertEqual(root.get("height"), "5.588mm")
+
+        def attr(element, name: str) -> float:
+            return float(element.get(name, "0"))
+
+        rects = root.findall(".//s:rect", ns)
+        self.assertTrue(rects)
+        for rect in rects:
+            self.assertEqual(attr(rect, "y"), 0)
+            self.assertEqual(attr(rect, "height"), 15)
+            # 透明底的硬约束：每个前景矩形都只是一根条，谁也不许覆盖整幅画布
+            self.assertLess(attr(rect, "width"), 121)
+        # 没有白底 / 没有背景填充：空隙直接露出承印物
+        self.assertNotIn("#fff", svg.lower())
+        self.assertNotIn("background", svg.lower())
+
+        text = root.find(".//s:text", ns)
+        self.assertIsNotNone(text)
+        assert text is not None  # 让类型收窄，同时把「缺文字层」挡在上一条断言
+        self.assertEqual(text.text, "26020001")
+        self.assertEqual(text.get("text-anchor"), "middle")
+        self.assertEqual(attr(text, "x"), 60.5)
+
+    def test_svg_bar_runs_match_pattern(self):
+        """矢量化忠实性：rect 的 x / width 还原成条空游程 = 编码器输出。"""
+        import xml.etree.ElementTree as ET
+
+        from accounts.member_barcode import _encode, render_svg
+
+        _, pattern = _encode(barcode_payload("26020001"))
+        root = ET.fromstring(render_svg("26020001"))
+        ns = {"s": "http://www.w3.org/2000/svg"}
+        bars = sorted(
+            (float(rect.get("x", "0")), float(rect.get("width", "0")))
+            for rect in root.findall(".//s:rect", ns)
+        )
+        runs: list[tuple[bool, int]] = []
+        cursor = 0
+        for x, width in bars:
+            runs.append((False, int(x - cursor)))
+            runs.append((True, int(width)))
+            cursor = x + width
+        runs.append((False, 121 - int(cursor)))
+        self.assertEqual(runs[0], (False, 10))  # 左静区
+        self.assertEqual(runs[-1], (False, 10))  # 右静区
+        rebuilt = "".join(
+            chr((ord("A") if is_bar else ord("a")) + modules - 1)
+            for is_bar, modules in runs[1:-1]
+        )
+        self.assertEqual(rebuilt, pattern)
+
+    def test_render_svg_without_text_layer(self):
+        """去掉人眼可读行时高度只剩条：15 模块 = 3.81mm，且不出现 <text>。"""
+        import xml.etree.ElementTree as ET
+
+        from accounts.member_barcode import render_svg
+
+        svg = render_svg("26020001", show_text=False)
+        self.assertNotIn("<text", svg)
+        root = ET.fromstring(svg)
+        self.assertEqual(root.get("viewBox"), "0 0 121 15")
+        self.assertEqual(root.get("height"), "3.81mm")
 
