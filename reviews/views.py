@@ -27,13 +27,13 @@ class ReviewViewSet(viewsets.ReadOnlyModelViewSet):
 
     serializer_class = ReviewSerializer
     filterset_fields = ["status"]
-    ordering_fields = ["created_at", "reviewed_at"]
+    ordering_fields = ["created_at", "moderated_at"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
         return Review.objects.select_related(
             "news", "activity", "tutorial",
-            "reviewer", "reviewer__profile",
+            "moderated_by__profile",
         )
 
     def get_permissions(self):
@@ -71,7 +71,7 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
     def get_queryset(self):
         qs = Feedback.objects.select_related(
             "creator", "creator__profile",
-            "closed_by", "closed_by__profile",
+            "moderated_by__profile",
         ).prefetch_related("attachments", "attachments__uploaded_by")
         user = self.request.user
         if not user.is_authenticated:
@@ -116,7 +116,7 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
             creator=creator,
         )
         feedback = Feedback.objects.select_related(
-            "creator", "creator__profile", "closed_by", "closed_by__profile",
+            "creator", "creator__profile", "moderated_by", "moderated_by__profile",
         ).prefetch_related("attachments").get(pk=feedback.pk)
         return Response(
             FeedbackDetailSerializer(feedback, context={"request": request}).data,
@@ -138,14 +138,14 @@ class ReportCaseViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
 
     serializer_class = ReportCaseSerializer
     filterset_fields = ["status"]
-    ordering_fields = ["created_at", "resolved_at"]
+    ordering_fields = ["created_at", "moderated_at"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
         return ReportCase.objects.select_related(
             "news", "activity", "tutorial", "comment", "comment__author",
             "reported_user", "reported_user__profile",
-            "resolved_by", "resolved_by__profile",
+            "moderated_by__profile",
         ).prefetch_related("filings", "filings__reporter", "filings__reporter__profile")
 
     def get_permissions(self):

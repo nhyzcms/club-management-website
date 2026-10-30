@@ -47,8 +47,8 @@ def open_review(*, news=None, activity=None, tutorial=None, actor, force_publish
         review = Review.objects.create(
             **kwargs,
             status=Review.STATUS_APPROVED,
-            reviewer=actor,
-            reviewed_at=timezone.now(),
+            moderated_by=actor,
+            moderated_at=timezone.now(),
         )
         _notify_activity_published_if(review, actor)
         return review
@@ -65,18 +65,18 @@ def apply(action, review, user, *, comment=""):
     if action == REJECT and not (comment or "").strip():
         raise TransitionDenied("请填写驳回评语")
 
-    review.reviewer = user
-    review.reviewed_at = timezone.now()
+    review.moderated_by = user
+    review.moderated_at = timezone.now()
     if action == APPROVE:
         review.status = Review.STATUS_APPROVED
-        review.comment = (comment or "").strip()
+        review.moderation_note = (comment or "").strip()
     elif action == REJECT:
         review.status = Review.STATUS_REJECTED
-        review.comment = comment.strip()
+        review.moderation_note = comment.strip()
     else:
         review.status = Review.STATUS_REMOVED
-        review.comment = (comment or "").strip()
-    review.save(update_fields=["status", "comment", "reviewer", "reviewed_at", "updated_at"])
+        review.moderation_note = (comment or "").strip()
+    review.save(update_fields=["status", "moderation_note", "moderated_by", "moderated_at", "updated_at"])
     _notify_owner(review, action, user)
     if action == APPROVE:
         _notify_activity_published_if(review, user)
