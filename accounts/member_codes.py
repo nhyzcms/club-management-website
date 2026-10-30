@@ -110,3 +110,53 @@ def verify_signature(code: str, sig: str) -> bool:
 def build_verify_url(code: str) -> str:
     """二维码承载的校验页 URL（HashRouter 路由，无需服务器改动）。"""
     return f"{settings.FRONTEND_URL}/#/v/{code}?s={make_signature(code)}"
+
+
+# ---- 条形码载荷（12 位：6 位唯一键 + 6 位十进制短签名）----
+#
+# 条码长度是硬约束：Code128C 每 2 位数字占 11 模块，起始/校验/终止另占 35 模块。
+# 所以载荷要尽量短：
+#
+#   - **只带前 6 位**：``[入学年份后 2 位][届数 2 位][序号 2 位]`` 本身唯一，
+#     末 2 位是 ISO 7064 校验位、专供手抄自检——条码由机器读（Code128 自带
+#     模 103 校验符），服务端反查后重算即可；
+#   - **签名降为 6 位十进制**：16 位 hex 会把条码撑到 255 模块（≈84mm），且字母
+#     会从 Code128C 掉回 Code128B（宽度翻倍、抗模糊骤降）；纯数字才留在 C 集合。
+#     6 位 = 10^6 空间，配合端点限流足以挡住「猜载荷遍历」。
+#   - **域分离**：HMAC 输入加 ``barcode:`` 前缀，与二维码的 16 位 hex 签名互不通用。
+BARCODE_SIG_DIGITS = 6
+BARCODE_SIG_DOMAIN = "barcode:"
+
+
+def make_barcode_signature(code: str) -> str:
+    """条形码短签名：HMAC-SHA256(密钥, ``barcode:<识别码>``) 取前 8 字节 mod 10^6。"""
+    mac = hmac.new(
+        _secret(), f"{BARCODE_SIG_DOMAIN}{code or ''}".encode(), hashlib.sha256
+    ).digest()
+    value = int.from_bytes(mac[:8], "big") % 10 ** BARCODE_SIG_DIGITS
+    return str(value).zfill(BARCODE_SIG_DIGITS)
+
+
+def verify_barcode_signature(code: str, sig: str) -> bool:
+    if not code or not sig:
+        return False
+    return hmac.compare_digest(make_barcode_signature(code), (sig or "").strip())
+
+
+def barcode_payload(code: str) -> str:
+    """条形码载荷：6 位唯一键 + 6 位短签名（共 12 位数字）。
+
+    例：识别码 ``26020542`` → 载荷 ``260205`` + 签名。
+    """
+    code = (code or "").strip()
+    if len(code) != 8 or not code.isdigit():
+        raise MemberCodeError(f"识别码格式不正确：{code!r}")
+    return f"{code[:6]}{make_barcode_signature(code)}"
+
+
+def split_barcode_payload(payload: str) -> tuple[str, str] | None:
+    """12 位载荷 → (6 位唯一键, 6 位签名)；形状不对返回 None。"""
+    text = (payload or "").strip()
+    if len(text) != 6 + BARCODE_SIG_DIGITS or not text.isdigit():
+        return None
+    return text[:6], text[6:]

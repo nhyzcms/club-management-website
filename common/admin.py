@@ -40,6 +40,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
                     "member_claim_per_user_per_hour",
                     "member_claim_per_ip_per_day",
                     "member_check_per_ip_per_hour",
+                    "member_lookup_per_ip_per_hour",
                     "stepup_email_per_user_per_hour",
                     "stepup_email_per_ip_per_hour",
                 )

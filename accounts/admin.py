@@ -575,7 +575,7 @@ def export_member_qr(modeladmin, request, queryset):
     return response
 
 
-@admin.action(description="导出条形码（扫码枪读取识别码 · ZIP / PNG）")
+@admin.action(description="导出条形码（扫码 / 扫码枪查询 · ZIP / PNG）")
 def export_member_barcode(modeladmin, request, queryset):
     """批量导出所选社员身份的 Code128 条形码（文件名：识别码_姓名.png；内容 = 裸识别码）。
 

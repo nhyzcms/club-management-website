@@ -15,6 +15,7 @@ from .policy import (
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
     DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
     DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+    DEFAULT_MEMBER_LOOKUP_PER_IP_PER_HOUR,
     DEFAULT_MEMBER_CLAIM_ENABLED,
     DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
     DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
@@ -133,6 +134,12 @@ class SiteSettings(models.Model):
         default=DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
         validators=[MinValueValidator(1)],
         help_text="工牌二维码校验的公开端点频控（计全部请求）。",
+    )
+    member_lookup_per_ip_per_hour = models.PositiveIntegerField(
+        "每 IP 每小时条码载荷查询次数",
+        default=DEFAULT_MEMBER_LOOKUP_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="12 位条码载荷的匿名查询频控；现场连续核对需要比二维码校验更宽。",
     )
     stepup_email_per_user_per_hour = models.PositiveIntegerField(
         "安全验证：每账号每小时验证码次数",

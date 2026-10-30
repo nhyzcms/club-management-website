@@ -119,6 +119,19 @@ class MemberCheckThrottle(_IPLimitThrottle):
         return f"{get_policy().member_check_per_ip_per_hour}/hour"
 
 
+class MemberLookupThrottle(_IPLimitThrottle):
+    """12 位条码载荷查询频控：每 IP 每小时 N 次（计全部请求）。
+
+    条码签名路径不消耗 24 小时额度，防枚举靠这一档兜住；与二维码校验分开计数，
+    否则现场连续核对会把操作者自己挡在门外。
+    """
+
+    scope = "member_lookup"
+
+    def get_rate(self):
+        return f"{get_policy().member_lookup_per_ip_per_hour}/hour"
+
+
 class StepUpEmailUserThrottle(_IPLimitThrottle):
     """安全验证发码节流：每账号每小时 N 次（N 来自 get_policy()）。"""
 

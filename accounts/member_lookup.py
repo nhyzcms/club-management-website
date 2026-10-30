@@ -27,6 +27,7 @@ from datetime import datetime, timezone as dt_timezone
 
 from django.core.cache import cache
 
+from .member_codes import split_barcode_payload, verify_barcode_signature
 from .models import MemberIdentity, Profile, is_verified
 from .utils import get_client_ip
 
@@ -159,6 +160,40 @@ def search_members(query: str) -> list[MemberIdentity]:
     return rows
 
 
+# ---- 条形码签名载荷（12 位）----------------------------------------------
+#
+# 工牌条码里带短签名（见 member_codes.barcode_payload）。签名本身就是
+# 「不可枚举」的证明，所以这条路**不消耗 24 小时额度**——现场核对时一个人
+# 要连扫几十上百张工牌，按额度走三步就卡住了。防枚举改由端点级 IP 频控兜底
+# （throttles.MemberLookupThrottle），签名空间 10^6 配上它足够。
+_SIGNED_RE = re.compile(r"^\d{12}$")
+
+
+def is_signed_payload(query: str) -> bool:
+    """查询串是否是 12 位条码载荷（纯形状判定，不验签）。"""
+    return bool(_SIGNED_RE.match((query or "").strip()))
+
+
+def resolve_signed_payload(payload: str) -> list[MemberIdentity]:
+    """12 位载荷 → 命中的名册行（签名不符 / 唯一键无对应行一律空列表）。
+
+    唯一键（前 6 位）只用于定位候选行，**签名按完整 8 位识别码校验**——
+    键本身不承载任何信任。
+    """
+    split = split_barcode_payload(payload)
+    if split is None:
+        return []
+    key, sig = split
+    candidates = [
+        row for row in MemberIdentity.objects.filter(code__startswith=key)
+        if len(row.code) == 8
+    ]
+    if len(candidates) != 1:
+        return []
+    row = candidates[0]
+    return [row] if verify_barcode_signature(row.code, sig) else []
+
+
 def public_member_payload(row: MemberIdentity) -> dict:
     """扫码页与查询页共用的最小公开字段（电话 / 校牌号 / 学号 / 邮箱绝不出现）。"""
     avatar_url = None
@@ -184,6 +219,8 @@ __all__ = [
     "lookup_limit",
     "public_member_payload",
     "quota_snapshot",
+    "resolve_signed_payload",
+    "is_signed_payload",
     "retry_after",
     "search_members",
 ]

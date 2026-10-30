@@ -1,14 +1,18 @@
 """条形码渲染与批量导出（社员身份编号系统，见 ADR-0025）。
 
 工牌产物与二维码互补：二维码承载**带签名的校验 URL**（扫码即查），
-条形码承载**裸识别码**（扫码枪 / 手工输入到后台检索用）。
+条形码承载**短签名载荷**（手机摄像头扫码 / 扫码枪 / 手工输入查询）。
+
+**载荷 = 12 位数字**：``6 位唯一键 + 6 位十进制短签名``（见 ``member_codes.barcode_payload``）。
+条码下方人眼可读行仍是 8 位识别码。长度是硬约束——Code128C 每 2 位数字 11 模块，
+12 位 = 101 模块（0.254mm/模块时含静区 30.7mm）；16 位 hex 签名会撑到 255 模块且掉回
+Code128B，宽度翻倍，所以签名必须是纯数字。
 
 **硬边界：条形码不是链接载体。** 2026-10-19 微信实测——扫 Code128 只会显示数字、
 不打开网页；把校验链接编进条码（596 模块 / 300dpi 约 104 mm 宽）后微信无法识别。
 「扫码打开校验页」一律用二维码（``/#/v/<码>?s=<签名>``）。
 
-- 编码：``reportlab`` 的 Code128 实现（站内已有依赖；8 位数字自动走
-  Code128C：START + 4 个数字对 + 校验位 + STOP，共 79 模块）；
+- 编码：``reportlab`` 的 Code128 实现（站内已有依赖）；
 - 渲染：``Pillow`` 按模块宽度画条（零新依赖；reportlab 的 renderPM 需要
   rlPyCairo 后端，不为单一导出引入）；
 - 单码 ``render_png``：module 4px / 条高 60px / 左右静区 10 模块 /
@@ -22,6 +26,7 @@ import zipfile
 
 from PIL import Image, ImageDraw, ImageFont
 
+from .member_codes import barcode_payload
 from .member_qr import _safe_name
 
 MODULE_PX = 4
@@ -53,10 +58,13 @@ def _load_font():
 
 
 def render_png(code: str, *, module_px: int = MODULE_PX) -> bytes:
-    """渲染单张 Code128 条形码 PNG（白底黑条，打印友好）。"""
+    """渲染单张 Code128 条形码 PNG（白底黑条，打印友好）。
+
+    条码内容是 12 位签名载荷；下方印人眼可读的 8 位识别码。
+    """
     if not code:
         raise ValueError("识别码不能为空")
-    _, pattern = _encode(code)
+    _, pattern = _encode(barcode_payload(code))
     total_modules = sum(ord(ch.upper()) - ord("A") + 1 for ch in pattern)
     width = (total_modules + 2 * QUIET_MODULES) * module_px
     height = BAR_PX + TEXT_PX
