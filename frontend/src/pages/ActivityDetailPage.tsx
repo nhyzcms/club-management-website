@@ -50,7 +50,7 @@ export default function ActivityDetailPage() {
             <div className="card card-pad">
               <h2 style={{ margin: "0 0 var(--s-3)" }}>需要登录</h2>
               <p className="muted" style={{ marginBottom: "var(--s-4)" }}>
-                该活动仅登录成员可见。众议、征集、展示及仅成员调研需登录后查看。
+                该互动仅登录成员可见。众议、征集、展示及仅成员调研需登录后查看。
               </p>
               <button className="btn btn-primary" onClick={() => openLogin(location.pathname + location.search)}>登录</button>
             </div>

@@ -30,6 +30,6 @@ export const REVIEW_STATUS_BADGE: Record<ReviewStatus, string> = {
 
 export const TARGET_TYPE_LABELS: Record<string, string> = {
   news: "新闻",
-  activity: "活动",
+  activity: "互动",
   tutorial: "教程",
 };

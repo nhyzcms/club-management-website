@@ -101,7 +101,7 @@ describe("ActivityFormPage · 调研问卷设计", () => {
 
     // 填标题并提交
     fireEvent.change(screen.getByPlaceholderText("一句话说明"), { target: { value: "开学问卷" } });
-    fireEvent.click(screen.getByRole("button", { name: "发起活动" }));
+    fireEvent.click(screen.getByRole("button", { name: "发起互动" }));
 
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
     const payload = createMock.mock.calls[0][0] as Record<string, unknown>;

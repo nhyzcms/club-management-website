@@ -38,7 +38,7 @@ export const REPORT_STATUS_BADGE: Record<ReportStatus, string> = {
 
 export const REPORT_TARGET_LABELS: Record<ReportTargetType, string> = {
   news: "新闻",
-  activity: "活动",
+  activity: "互动",
   tutorial: "教程",
   comment: "评论",
   user: "用户",

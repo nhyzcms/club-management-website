@@ -17,7 +17,7 @@ export default function MobileActivityPage() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    document.title = "活动 · 南汇一中传媒社";
+    document.title = "互动 · 南汇一中传媒社";
     activityApi
       .list()
       .then((d) => setItems(d.results))
@@ -28,7 +28,7 @@ export default function MobileActivityPage() {
   return (
     <div className="m-app">
       <header className="m-topbar">
-        <div className="m-brand">活动</div>
+        <div className="m-brand">互动</div>
       </header>
 
       <div className="m-cards" style={{ marginTop: 14 }}>
@@ -55,7 +55,7 @@ export default function MobileActivityPage() {
             </Link>
           );
         })}
-        {loaded && items.length === 0 && <p className="m-empty">暂无活动</p>}
+        {loaded && items.length === 0 && <p className="m-empty">暂无互动</p>}
       </div>
 
       <MobileTabBar />

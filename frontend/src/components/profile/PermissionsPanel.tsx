@@ -7,7 +7,7 @@ const CAP_LABELS: Record<string, string> = {
   can_manage_tasks: "管理任务",
   can_assign_task: "指派任务",
   can_manage_tags: "管理标签",
-  can_change_activity: "管理活动",
+  can_change_activity: "管理互动",
   can_view_feedback: "查看并了结反馈",
   can_handle_reports: "处理举报案",
   can_review_collections: "复审征集",

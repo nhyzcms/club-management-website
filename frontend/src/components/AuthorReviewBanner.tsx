@@ -3,7 +3,7 @@ import "../styles/form.css";
 
 const NOUN: Record<"news" | "activity" | "tutorial", string> = {
   news: "稿",
-  activity: "活动",
+  activity: "互动",
   tutorial: "教程",
 };
 

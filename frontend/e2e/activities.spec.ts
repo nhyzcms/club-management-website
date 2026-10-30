@@ -2,11 +2,11 @@ import { test, expect } from "@playwright/test";
 
 test("活动列表：类型筛选与种子活动可见", async ({ page }) => {
   await page.goto("/#/activity");
-  await expect(page.getByRole("heading", { name: "活动", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "互动", level: 1 })).toBeVisible();
   await expect(page.getByText("E2E 投票活动").first()).toBeVisible({ timeout: 10_000 });
 
   // 切到「调研」筛选：调研活动可见
-  const tabs = page.getByRole("tablist", { name: "活动类型" });
+  const tabs = page.getByRole("tablist", { name: "互动类型" });
   await tabs.getByRole("button", { name: "调研" }).click();
   await expect(page.getByText("E2E 调研活动").first()).toBeVisible({ timeout: 10_000 });
 });

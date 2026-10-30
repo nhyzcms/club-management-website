@@ -56,22 +56,22 @@ export default function ActivityListPage() {
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
             <span className="sep">/</span>
-            <span>活动</span>
+            <span>互动</span>
           </nav>
           <div className="page-head-row">
             <div>
-              <h1>活动</h1>
+              <h1>互动</h1>
               <p className="section-sub">众议、征集、展示、调研。</p>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {loggedIn && (
                 <button className="btn btn-ghost" onClick={() => setMine((v) => !v)}>
-                  {mine ? "公开列表" : "我的活动"}
+                  {mine ? "公开列表" : "我的互动"}
                 </button>
               )}
               <button className="btn btn-primary" onClick={() => navigate("/activity/new")}>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-                发起活动
+                发起互动
               </button>
             </div>
           </div>
@@ -80,7 +80,7 @@ export default function ActivityListPage() {
 
       <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
         <div className="prop-tabs">
-          <div className="seg" role="tablist" aria-label="活动类型" style={{ flexWrap: "wrap" }}>
+          <div className="seg" role="tablist" aria-label="互动类型" style={{ flexWrap: "wrap" }}>
             <button className="seg-btn" type="button" aria-selected={typeFilter === ""} onClick={() => setTypeFilter("")}>全部</button>
             <button className="seg-btn" type="button" aria-selected={typeFilter === "deliberation"} onClick={() => setTypeFilter("deliberation")}>众议</button>
             <button className="seg-btn" type="button" aria-selected={typeFilter === "collection"} onClick={() => setTypeFilter("collection")}>征集</button>
@@ -98,7 +98,7 @@ export default function ActivityListPage() {
         <div className="prop-filter">
           <div className="input-affix search-affix">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
-            <input className="input" type="search" placeholder="搜索活动…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="input" type="search" placeholder="搜索互动…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
 
@@ -113,8 +113,8 @@ export default function ActivityListPage() {
           <p className="muted" style={{ padding: "var(--s-8) 0" }}>加载中…</p>
         ) : activities.length === 0 ? (
           <div className="prop-empty">
-            <p>暂无活动</p>
-            <button className="btn btn-primary" onClick={() => navigate("/activity/new")}><span className="ico">{ICONS.plus}</span>发起第一个活动</button>
+            <p>暂无互动</p>
+            <button className="btn btn-primary" onClick={() => navigate("/activity/new")}><span className="ico">{ICONS.plus}</span>发起第一个互动</button>
           </div>
         ) : (
           activities.map((a) => {
