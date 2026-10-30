@@ -99,6 +99,75 @@ class Profile(models.Model):
         return f"{self.user.username}'s profile"
 
 
+class AccountIdentity(models.Model):
+    """实名资料（B4：从 ``Profile`` 拆出的第一张）。
+
+    **为什么拆**：``Profile`` 同时承载「展示资料」（头像/昵称/简介）与「实名 +
+    生命周期」。结果是每个读 ``Profile`` 的地方都得自己判断「我会不会碰到敏感
+    字段」——`messaging.serializers.SimpleUserSerializer`、`accounts/visibility.py`
+    各写过一遍过滤清单。拆开后展示资料仍留 ``Profile``，实名只有认证 / 审核路径碰。
+
+    本类字段在 B4 PR 1 阶段只是**副本**，``Profile`` 上的原字段尚未删除；
+    PR 3 才删旧列。
+    """
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="identity_record",
+        verbose_name="用户",
+    )
+    real_name = models.CharField("真实姓名", max_length=100, blank=True)
+    identity = models.CharField(
+        "身份", max_length=10, choices=Profile.IDENTITY_CHOICES, blank=True,
+    )
+    # 名册匹配上之前的暂存；``member_roster.sync_card_numbers`` 绑定成功后清空。
+    # 权威唯一是 ``MemberIdentity.card_no``（本字段由 ``Profile.card_no`` 改名而来，
+    # 名字变了是因为语义变了：它是「待绑定」而不是「校牌号」）。
+    pending_card_no = models.CharField(
+        "待绑校牌号", max_length=20, blank=True, default="",
+    )
+
+    class Meta:
+        verbose_name = "实名资料"
+        verbose_name_plural = "实名资料"
+
+    def __str__(self):
+        return f"{self.user.username}'s identity"
+
+
+class AccountLifecycle(models.Model):
+    """账号生命周期（B4：从 ``Profile`` 拆出的第二张）。
+
+    「账号能不能用」此前由四处各自判断：``models.is_deleted_user``、
+    ``views.py`` 的登录提示、``deletion.py``、``validity_summary.py``。
+    B4 把它收敛成 ``accounts/status.py: account_state()``，本表是它的数据源。
+
+    **注意**：``accounts.Verification.verified_by/verified_at`` 不在这里——
+    那是「认证通过」，与账号生命周期是两件事。
+    """
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="lifecycle",
+        verbose_name="用户",
+    )
+    # 为 null = 按 date_joined + 站点「注册后认证宽限」起算。
+    registration_deadline = models.DateTimeField("注册认证截止", null=True, blank=True)
+    # 非空 = 「因注册超期未认证被系统停用」，系统维护，不可手改。
+    expiry_disabled_at = models.DateTimeField("因超期停用时间", null=True, blank=True)
+    # 非空 = 用户已主动注销。软删除标记：User 行本身永不删除（审计与内容归属需要）。
+    deleted_at = models.DateTimeField("注销时间", null=True, blank=True)
+    validity_notice_ack = models.CharField(
+        "有效期提示已读标记", max_length=80, blank=True, default="",
+    )
+    must_change_password = models.BooleanField("需强制修改密码", default=False)
+
+    class Meta:
+        verbose_name = "账号生命周期"
+        verbose_name_plural = "账号生命周期"
+
+    def __str__(self):
+        return f"{self.user.username}'s lifecycle"
+
+
 class Verification(models.Model):
     """认证通道当前状态（ADR-0006）：每 (user, channel) 一行，in-place 更新。
 

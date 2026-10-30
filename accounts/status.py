@@ -1,0 +1,85 @@
+"""账号状态的单一真源（B4）。
+
+**收敛前的状况**：「账号能不能用」由四处各自判断——
+
+- ``models.is_deleted_user(user)``（只判注销）
+- ``views.py`` 的登录提示（``Profile.objects.filter(expiry_disabled_at__isnull=False)``）
+- ``accounts/deletion.py``（又判一次注销）
+- ``validity_summary.py``（算有效期，隐含「超期 = 不能用」）
+
+四处各自读 ``Profile``，谁也没覆盖全部情形。比如「管理员手动停用」在登录提示
+里根本没被单独识别——用户只会看到 Django 默认的「账号已停用」。
+
+**状态定义**：只有四个能到达的状态。计划里原本还列了 ``inactive``，但当前系统
+``is_active=False`` 只有两个来源：超期自动停用（带 ``expiry_disabled_at`` 标记）
+和管理员手动停用。没有第三种。留一个不可达的状态，只会让调用方以为要处理它。
+
+**优先级**：注销 > 超期停用 > 管理员停用 > 可用。
+
+优先级不是拍脑袋：生产实测有一个用户 ``is_active=False`` **且** ``deleted_at``
+非空。若先判 ``is_active``，他会被告知「账号已被管理员停用」——而真相是他自己
+注销了。先判注销才对。
+"""
+from __future__ import annotations
+
+from django.core.exceptions import ObjectDoesNotExist
+
+ACTIVE = "active"
+DELETED = "deleted"
+UNVERIFIED_EXPIRED = "unverified_expired"
+ADMIN_EXPIRED = "admin_expired"
+
+STATE_LABELS = {
+    ACTIVE: "正常",
+    DELETED: "已注销",
+    UNVERIFIED_EXPIRED: "注册超期未认证",
+    ADMIN_EXPIRED: "已被管理员停用",
+}
+
+
+def _lifecycle_or_profile(user):
+    """取生命周期数据源：新表优先，缺失时回落 ``Profile``。
+
+    B4 PR 1 阶段两张表并存（``Profile`` 的旧列还没删，迁移已回填新表）。
+    回落的意义：回填之后才注册的用户若因任何原因没建 lifecycle 行，判定不能
+    凭空变成「正常」——那是最危险的方向（把停用账号当可用）。
+    """
+    try:
+        return user.lifecycle
+    except ObjectDoesNotExist:
+        # getattr 带默认值能兜住 RelatedObjectDoesNotExist（它同时继承 AttributeError）
+        return getattr(user, "profile", None)
+
+
+def account_state(user):
+    """返回 ``(state, reason)``。
+
+    ``state`` ∈ ``{active, deleted, unverified_expired, admin_expired}``，
+    ``reason`` 是给人看的说明（``active`` 时为空串）。
+
+    只读缓存/关联，不额外查询：``user.lifecycle`` 与 ``user.profile`` 都是
+    OneToOne 反向访问器，Django 会缓存在 ``_state.fields_cache``。
+    """
+    source = _lifecycle_or_profile(user)
+
+    def field(name):
+        return getattr(source, name, None) if source is not None else None
+
+    # 1. 注销优先：注销用户 is_active 通常也已置 False，先判 is_active 会误报
+    if field("deleted_at") is not None:
+        return DELETED, "账号已注销"
+
+    # 2. 超期未认证停用（系统自动，带标记）
+    if field("expiry_disabled_at") is not None:
+        return UNVERIFIED_EXPIRED, "注册后未在宽限期内完成认证，账号已停用"
+
+    # 3. 管理员手动停用（is_active=False 且无超期标记）
+    if not user.is_active:
+        return ADMIN_EXPIRED, "账号已被管理员停用"
+
+    return ACTIVE, ""
+
+
+def is_usable(user):
+    """账号当前是否可用。等价于 ``account_state(user)[0] == ACTIVE``。"""
+    return account_state(user)[0] == ACTIVE
