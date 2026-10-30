@@ -2,6 +2,7 @@
 from django.utils import timezone
 
 from common.policy import get_policy
+from common.targets import content_host, kind_of
 from messaging.services import notify, notify_all, notify_perm
 
 from .models import Review
@@ -146,11 +147,17 @@ def _notify_activity_published_if(review, actor):
     )
 
 
+_OWNER_ATTR = {"news": "author", "activity": "creator", "tutorial": "uploader"}
+
+
 def _host_owner(review):
-    if review.news_id:
-        return review.news, review.news.author, "news"
-    if review.activity_id:
-        return review.activity, review.activity.creator, "activity"
-    if review.tutorial_id:
-        return review.tutorial, review.tutorial.uploader, "tutorial"
-    return None, None, None
+    """审核行 → (宿主, 宿主主人, kind)。
+
+    切读期走 target 并回落旧列；宿主主人字段名三者不同，用 kind 映射。
+    """
+    host = content_host(review)
+    if host is None:
+        return None, None, None
+    kind = kind_of(host)
+    owner = getattr(host, _OWNER_ATTR.get(kind, ""), None)
+    return host, owner, kind

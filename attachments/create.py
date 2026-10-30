@@ -13,6 +13,7 @@ from news.models import News
 from reviews.models import Feedback
 from tasks.models import Task
 
+from common.targets import content_host
 from .models import Attachment
 from .validation import classify_file_type
 
@@ -56,11 +57,16 @@ def spec_for(parent):
 
 
 def parent_of(attachment):
-    """附件的父级对象；无父级（或尚未填 FK）返回 None。"""
-    for spec in PARENTS.values():
-        if getattr(attachment, f"{spec.fk}_id", None) is not None:
-            return getattr(attachment, spec.fk)
-    return None
+    """附件的父级对象；无父级返回 None。
+
+    切读期：走 target，回落旧列。仍用 ``PARENTS`` 过滤一次——target 是「可评论
+    对象」的通用锚点，比附件的父级集合更宽（例如评论也有 target，但附件不能挂在
+    评论上）。
+    """
+    host = content_host(attachment)
+    if host is None or spec_for(host) is None:
+        return None
+    return host
 
 
 def create_attachment(*, user, parent, file, extra_validate=None):

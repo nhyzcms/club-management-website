@@ -21,12 +21,16 @@ from common.models import ContentTarget, Tag  # noqa: F401  （Tag 用于确认 
 from common.targets import (
     KIND_TO_MODEL,
     audit_registry,
+    content_host,
+    host_ref,
     kind_of,
     model_for,
+    related_to,
     target_for,
     target_of,
 )
 from messaging.models import Comment, CommentThread
+from messaging.services import thread_for
 from news.models import News
 from reviews.models import Feedback, ReportCase, Review
 from tasks.models import Task
@@ -187,6 +191,108 @@ class CascadeChainTest(FixtureMixin, TestCase):
         target = target_of(news)
         target.delete()
         self.assertTrue(News.objects.filter(pk=news.pk).exists())
+
+
+class RelatedToTest(FixtureMixin, TestCase):
+    """``related_to`` 的两个分支都要真的工作。
+
+    切读期的核心风险：如果只按 ``target`` 查，任何 target 为空的存量行都会
+    「凭空消失」（评论没了、审核队列少了条目）。所以必须两条路都走，且两条路
+    各自单独可用。
+    """
+
+    def test_matches_by_legacy_column_when_target_is_null(self):
+        news = self.make_news()
+        thread = CommentThread.objects.create(news=news)
+        # 绕过 save() 清掉 target，模拟「回填漏掉的存量行」
+        CommentThread.objects.filter(pk=thread.pk).update(target=None)
+        found = related_to(CommentThread, news)
+        self.assertEqual(list(found), [CommentThread.objects.get(pk=thread.pk)])
+
+    def test_matches_by_target_when_legacy_column_points_elsewhere(self):
+        news_a = self.make_news("A")
+        news_b = self.make_news("B")
+        thread = CommentThread.objects.create(news=news_a)
+        # 绕过 save() 把 target 指向 B：旧列仍指向 A，target 指向 B
+        CommentThread.objects.filter(pk=thread.pk).update(target=target_for("news", news_b.pk))
+        self.assertEqual(list(related_to(CommentThread, news_a)), [thread])
+        self.assertEqual(list(related_to(CommentThread, news_b)), [thread])
+
+    def test_does_not_match_other_hosts(self):
+        news = self.make_news()
+        other = self.make_news("别的")
+        CommentThread.objects.create(news=news)
+        self.assertEqual(list(related_to(CommentThread, other)), [])
+
+    def test_works_for_tables_without_that_column(self):
+        """``CommentThread`` 没有 ``comment`` 列——确认不会拼出非法字段名。"""
+        thread = CommentThread.objects.create(news=self.make_news())
+        comment = Comment.objects.create(thread=thread, author=self.user, content="x")
+        self.assertEqual(list(related_to(CommentThread, comment)), [])
+
+    def test_review_lookup_by_host(self):
+        news = self.make_news()
+        review = Review.objects.create(news=news)
+        self.assertEqual(list(related_to(Review, news)), [review])
+
+    def test_host_ref_prefers_target_then_legacy(self):
+        news = self.make_news()
+        review = Review.objects.create(news=news)
+        self.assertEqual(host_ref(review), ("news", news.pk))
+        Review.objects.filter(pk=review.pk).update(target=None)
+        self.assertEqual(host_ref(Review.objects.get(pk=review.pk)), ("news", news.pk))
+
+    def test_content_host_returns_instance(self):
+        news = self.make_news()
+        review = Review.objects.create(news=news)
+        self.assertEqual(content_host(review).pk, news.pk)
+        Review.objects.filter(pk=review.pk).update(target=None)
+        self.assertEqual(content_host(Review.objects.get(pk=review.pk)).pk, news.pk)
+
+
+class ThreadForTest(FixtureMixin, TestCase):
+    """``thread_for`` 切读后仍然是「恰好一条」，且不会因 target 为空而重复建。"""
+
+    def test_returns_same_thread_on_repeat_calls(self):
+        news = self.make_news()
+        a = thread_for(news)
+        b = thread_for(news)
+        self.assertEqual(a.pk, b.pk)
+        self.assertEqual(CommentThread.objects.count(), 1)
+
+    def test_reuses_legacy_row_and_backfills_target(self):
+        news = self.make_news()
+        legacy = CommentThread.objects.create(news=news)
+        CommentThread.objects.filter(pk=legacy.pk).update(target=None)
+
+        thread = thread_for(news)
+
+        self.assertEqual(thread.pk, legacy.pk)
+        self.assertIsNotNone(thread.target_id, "命中存量行后应把 target 补上")
+        self.assertEqual(CommentThread.objects.count(), 1, "不该重复创建")
+
+    def test_task_host_still_works(self):
+        task = Task.objects.create(title="任务", creator=self.user)
+        thread = thread_for(task)
+        self.assertEqual(thread.target.kind, "task")
+
+    def test_unsupported_host_rejected(self):
+        with self.assertRaises(Exception):
+            thread_for(self.user)
+
+
+class ContentHostTest(FixtureMixin, TestCase):
+    def test_attachment_parent_resolution(self):
+        from attachments.create import parent_of
+
+        news = self.make_news()
+        att = create_attachment(
+            user=self.user, parent=news,
+            file=SimpleUploadedFile("a.txt", b"hi", content_type="text/plain"),
+        )
+        self.assertEqual(parent_of(att).pk, news.pk)
+        Attachment.objects.filter(pk=att.pk).update(target=None)
+        self.assertEqual(parent_of(Attachment.objects.get(pk=att.pk)).pk, news.pk)
 
 
 class AllKindsSmokeTest(FixtureMixin, TestCase):

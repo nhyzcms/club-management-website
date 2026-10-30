@@ -1,8 +1,10 @@
 """举报案状态机（ADR-0003：状态转移不是访问控制，与 permission_classes 分离）。"""
 from django.contrib.auth.models import User
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
+from common.targets import host_ref
 from messaging.models import Comment, CommentThread
 from messaging.services import (
     MessagingError,
@@ -262,14 +264,20 @@ def _dispose(case, actor, *, note, ends_at):
 
 
 def _remove_publication(case, actor, note):
-    lookup = {}
-    if case.news_id:
-        lookup["news_id"] = case.news_id
-    elif case.activity_id:
-        lookup["activity_id"] = case.activity_id
-    else:
-        lookup["tutorial_id"] = case.tutorial_id
-    review = Review.objects.filter(**lookup).first()
+    """把被举报并成立的内容下架：找到它的审核记录并执行 remove。
+
+    切读期同时认 target 与旧列；``comment`` 型举报没有对应的审核记录（评论不经
+    审核发布），原样返回。
+    """
+    ref = host_ref(case)
+    if ref is None:
+        return
+    kind, object_id = ref
+    if kind not in ("news", "activity", "tutorial"):
+        return
+    review = Review.objects.filter(
+        Q(target__kind=kind, target__object_id=object_id) | Q(**{kind: object_id}),
+    ).first()
     if review is None or review.status == Review.STATUS_REMOVED:
         return
     if review.status != Review.STATUS_APPROVED:

@@ -20,6 +20,7 @@
 """
 
 from django.apps import apps
+from django.db import models
 from django.db.models.signals import post_delete
 
 # kind → (app_label, ModelName)
@@ -118,6 +119,58 @@ class TargetBackfillMixin:
             if ref is not None:
                 self.target = target_for(*ref)
         super().save(*args, **kwargs)
+
+
+def host_ref(obj):
+    """内容行（Attachment / Review / ReportCase / CommentThread）→ ``(kind, object_id)``。
+
+    优先 ``target``，回落旧列。两者都没有返回 None。
+
+    回落不是保险丝而是**必需品**：双写期仍可能存在 target 为空的存量行——
+    回填迁移漏掉的、或绕过 ``save()`` 的裸 SQL 写入的。切读后这些行会「凭空消失」，
+    所以读取路径必须两条路都走。
+    """
+    if getattr(obj, "target_id", None) is not None:
+        target = obj.target
+        return target.kind, target.object_id
+    if hasattr(obj, "legacy_target_ref"):
+        return obj.legacy_target_ref()
+    return None
+
+
+def content_host(obj):
+    """内容行 → 宿主模型实例；定位不到返回 None。
+
+    注意：每次调用都会查一次宿主表。批量场景（审核台列表）不要逐行调用，
+    用 ``related_to`` 做反向查询，或按 kind 分组预取。
+    """
+    ref = host_ref(obj)
+    if ref is None:
+        return None
+    kind, object_id = ref
+    return model_for(kind).objects.filter(pk=object_id).first()
+
+
+def _has_field(model, name):
+    return any(f.name == name for f in model._meta.get_fields())
+
+
+def related_to(model, host):
+    """某宿主上挂的内容行 queryset（四张多态表通用）。
+
+    切读期同时匹配 ``target`` 与旧列，覆盖「已回填」和「尚未回填」两种存量；
+    B9 删掉旧列后这个 OR 可以退化成单个 ``target`` 条件。
+
+    旧列名与 kind 名恰好一一对应（``news`` / ``activity`` / ``tutorial`` /
+    ``task`` / ``comment`` / ``submission`` / ``exhibit`` / ``feedback``），
+    所以不需要额外的映射表——但要判断该表**有没有**这一列（例如
+    ``CommentThread`` 没有 ``comment`` 列）。
+    """
+    kind = kind_of(host)
+    q = models.Q(target__kind=kind, target__object_id=host.pk)
+    if _has_field(model, kind):
+        q |= models.Q(**{kind: host})
+    return model.objects.filter(q)
 
 
 def connect_host(kind):
