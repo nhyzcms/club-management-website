@@ -20,6 +20,9 @@ class PasswordResetRequestSerializer(serializers.ModelSerializer):
     real_name = serializers.SerializerMethodField()
     proof_url = serializers.SerializerMethodField()
     reviewed_by = serializers.SerializerMethodField()
+    # B2：模型字段统一为 moderated_at / moderation_note，对外名保持不变
+    reviewed_at = serializers.DateTimeField(source="moderated_at", read_only=True)
+    review_note = serializers.CharField(source="moderation_note", read_only=True)
 
     class Meta:
         model = PasswordResetRequest
@@ -40,7 +43,7 @@ class PasswordResetRequestSerializer(serializers.ModelSerializer):
         return reverse("password_reset_proof_file", args=[obj.pk])
 
     def get_reviewed_by(self, obj):
-        reviewer = obj.reviewed_by
+        reviewer = obj.moderated_by
         if reviewer is None:
             return None
         return {"id": reviewer.id, "username": reviewer.username}
@@ -53,7 +56,7 @@ class PasswordResetRequestViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = (
             PasswordResetRequest.objects
-            .select_related("user", "user__profile", "reviewed_by")
+            .select_related("user", "user__profile", "moderated_by")
             .order_by("-created_at", "-id")
         )
         if getattr(self, "action", None) == "list":

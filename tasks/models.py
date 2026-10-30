@@ -81,11 +81,12 @@ class TaskClaimRequest(models.Model):
     )
     status = models.CharField("状态", max_length=10, choices=STATUS_CHOICES, default="pending")
     reason = models.TextField("申请理由", blank=True)
-    reviewed_by = models.ForeignKey(
+    # B2：审计三件套统一命名（原 reviewed_by / reviewed_at）
+    moderated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name="reviewed_claims", verbose_name="审核人",
     )
-    reviewed_at = models.DateTimeField("审核时间", null=True, blank=True)
+    moderated_at = models.DateTimeField("审核时间", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -30,5 +30,5 @@ class TaskAdmin(admin.ModelAdmin):
 
 @admin.register(TaskClaimRequest)
 class TaskClaimRequestAdmin(admin.ModelAdmin):
-    list_display = ["task", "claimant", "status", "reviewed_by", "created_at"]
+    list_display = ["task", "claimant", "status", "moderated_by", "created_at"]
     list_filter = ["status"]

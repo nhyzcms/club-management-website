@@ -48,6 +48,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
     submitter = SimpleUserSerializer(read_only=True)
     files = serializers.SerializerMethodField()
+    # B2：模型字段已统一为 moderation_note / moderated_at，对外名保持不变
+    review_comment = serializers.CharField(source="moderation_note", read_only=True)
+    reviewed_at = serializers.DateTimeField(source="moderated_at", read_only=True)
 
     class Meta:
         model = Submission
