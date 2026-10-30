@@ -18,6 +18,7 @@ const RegisterPage = lazy(() => import("./pages/RegisterPage"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
 const VerifyEmailPendingPage = lazy(() => import("./pages/VerifyEmailPendingPage"));
 const MemberVerifyPage = lazy(() => import("./pages/MemberVerifyPage"));
+const MemberLookupPage = lazy(() => import("./pages/MemberLookupPage"));
 const SecurityCenterPage = lazy(() => import("./pages/SecurityCenterPage"));
 const StepUpPage = lazy(() => import("./pages/StepUpPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
@@ -127,6 +128,7 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/verify-email-pending" element={<VerifyEmailPendingPage />} />
+          <Route path="/v" element={<MemberLookupPage />} />
           <Route path="/v/:code" element={<MemberVerifyPage />} />
           <Route path="/verify" element={<ProtectedRoute><StepUpPage /></ProtectedRoute>} />
           <Route path="/security" element={<ProtectedRoute><SecurityCenterPage /></ProtectedRoute>} />

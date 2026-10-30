@@ -51,6 +51,12 @@ module.exports = {
         test: /\.css$/,
         use: ["style-loader", "css-loader"],
       },
+      {
+        // 条码解码器 wasm：默认实现会去 jsdelivr CDN 取，国内基本取不到——这里当
+        // 静态资源发射出去，运行期用 locateFile 指回 /static/ 下的自托管副本。
+        test: /\.wasm$/,
+        type: "asset/resource",
+      },
     ],
   },
   plugins: [

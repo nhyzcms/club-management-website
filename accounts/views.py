@@ -65,6 +65,7 @@ from .throttles import (
     MemberCheckThrottle,
     MemberClaimIpThrottle,
     MemberClaimThrottle,
+    MemberLookupThrottle,
     PasswordResetRequestThrottle,
     RegisterThrottle,
     ResendVerificationThrottle,
@@ -701,6 +702,19 @@ def member_lookup_view(request):
     query = str(body.get("q") or "").strip()
     if not query:
         return JsonResponse({"error": "请输入真实姓名或社员编号。"}, status=400)
+
+    # 12 位条码载荷：签名即证明，不消耗 24 小时额度（现场连扫几十张工牌），
+    # 防枚举改由 IP 频控兜底——签名空间 10^6，配上 300 次/时 已无可行遍历路径。
+    if member_lookup.is_signed_payload(query):
+        throttle = MemberLookupThrottle()
+        if not throttle.allow_request(request, None):
+            return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+        rows = member_lookup.resolve_signed_payload(query)
+        return JsonResponse({
+            "found": bool(rows),
+            "results": [member_lookup.public_member_payload(row) for row in rows],
+            "quota": member_lookup.quota_snapshot(request),
+        })
 
     allowed, quota = member_lookup.consume(request)
     if not allowed:

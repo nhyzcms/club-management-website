@@ -8,11 +8,12 @@ import { test, expect } from "@playwright/test";
  * - 公开扫码校验页 /#/v/:code?s=…（有效签名 / 签名不符）。
  *
  * 夹具来自 seed_e2e（每次 e2e-server 重建数据库时写出）：
- * frontend/e2e/.member-qr.json = { code, sig, name }（「谢二」，第 9 届·信息）。
+ * frontend/e2e/.member-qr.json = { code, sig, barcode, name }（「谢二」，第 9 届·信息）。
+ * barcode 是工牌条形码内容（6 位唯一键 + 6 位短签名），供查询入口用例直读。
  */
 const qr = JSON.parse(
   readFileSync(join(process.cwd(), "e2e", ".member-qr.json"), "utf-8"),
-) as { code: string; sig: string; name: string };
+) as { code: string; sig: string; barcode: string; name: string };
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -53,3 +54,13 @@ test("扫码校验页：签名不符时统一提示无效", async ({ page }) => 
   await page.goto(`/#/v/${qr.code}?s=deadbeef`);
   await expect(page.getByText(/未找到匹配的社员身份/)).toBeVisible();
 });
+
+test("查询入口：12 位条码载荷匿名可查（不消耗额度）", async ({ page }) => {
+  await page.goto("/#/v");
+  await page.fill("#member-lookup-input", qr.barcode);
+  await page.getByRole("button", { name: "查询" }).click();
+  await expect(page.getByText(qr.name)).toBeVisible();
+  await expect(page.getByText("第 9 届")).toBeVisible();
+  await expect(page.getByText(`识别码 ${qr.code}`)).toBeVisible();
+});
+

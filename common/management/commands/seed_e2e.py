@@ -34,7 +34,7 @@ from django.utils import timezone
 
 from about.models import AboutBlock, AboutPage
 from accounts import stepup
-from accounts.member_codes import make_signature
+from accounts.member_codes import barcode_payload, make_signature
 from accounts.models import IdentityProof, MemberIdentity, Profile, UserSession, Verification
 from activities.models import Activity, Questionnaire, VoteOption, default_join_schema
 from exam_board.models import Exam, ExamBatch, ExamSubject
@@ -147,6 +147,7 @@ class Command(BaseCommand):
         qr_fixture = {
             "code": member_row.code,
             "sig": make_signature(member_row.code),
+            "barcode": barcode_payload(member_row.code),
             "name": member_row.name,
         }
         fixture_path = Path(settings.BASE_DIR) / "frontend" / "e2e" / ".member-qr.json"

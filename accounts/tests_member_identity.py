@@ -13,6 +13,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from accounts.member_codes import (
+    barcode_payload,
     build_verify_url,
     code_prefix,
     generate_code,
@@ -506,8 +507,10 @@ class MemberBarcodeRenderTest(TestCase):
         png = render_png("26020001")
         self.assertTrue(png.startswith(b"\x89PNG"))
         img = Image.open(io.BytesIO(png))
-        # 8 位数字走 Code128C：79 模块 + 两侧静区各 10 模块，×4px；高 = 条 60 + 文字 28
-        self.assertEqual(img.size, ((79 + 20) * 4, 60 + 28))
+        # 条码内容 = 12 位签名载荷（6 位唯一键 + 6 位短签名），走 Code128C：
+        # 101 模块 + 两侧静区各 10 模块，×4px；高 = 条 60 + 文字 28
+        self.assertEqual(len(barcode_payload("26020001")), 12)
+        self.assertEqual(img.size, ((101 + 20) * 4, 60 + 28))
         self.assertEqual(img.mode, "RGB")
 
     def test_encode_is_code128c_with_valid_checksum(self):
@@ -530,7 +533,7 @@ class MemberBarcodeRenderTest(TestCase):
 
         from accounts.member_barcode import _encode, render_png
 
-        _, pattern = _encode("26020001")
+        _, pattern = _encode(barcode_payload("26020001"))
         img = Image.open(io.BytesIO(render_png("26020001", module_px=4)))
         px = [img.getpixel((x, 30)) for x in range(img.width)]
         runs = []  # (颜色, 像素宽)
