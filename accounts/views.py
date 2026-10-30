@@ -1466,6 +1466,9 @@ def _capabilities(user):
         "can_manage_announcements": user.has_perm("announcements.manage_announcements"),
         # 密码重置审批（忘记密码 → 管理员手动重置）：审核台「密码重置」桌。
         "can_review_password_reset": user.has_perm("accounts.review_password_reset"),
+        # 活动（events app）：可管理任意活动。装载形态的 can_manage_event_types
+        # 等模块注册表落地时再加——能力键集是冻结契约，不预留空键。
+        "can_manage_events": user.has_perm("events.manage_events"),
     }
 
 
