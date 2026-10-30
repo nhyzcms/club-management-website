@@ -12,7 +12,10 @@ from django.db.models import Exists, OuterRef, Q
 from accounts.models import is_verified, prefetch_verifications_for
 from reviews.visibility import public_q
 
-from .lifecycle import COLLECTING, OPEN, transition_due_starts, transition_overdue
+from .lifecycle import (
+    COLLECTING, OPEN, transition_due_starts, transition_overdue,
+    transition_overdue_collections,
+)
 from .models import Activity, Ballot, Submission
 
 REASON_VOTE = "vote"
@@ -76,6 +79,7 @@ def activity_debts_for(user):
     """当前用户仍欠行动的公开活动（已跑惰性状态机）。"""
     transition_due_starts()
     transition_overdue()
+    transition_overdue_collections()
     qs = annotate_activity_debt(
         Activity.objects.filter(public_q("activity")).select_related(
             "creator", "creator__profile", "publication_review",

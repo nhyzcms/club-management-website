@@ -5,7 +5,7 @@
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from .lifecycle import CLOSED, OPEN, SCHEDULED, can_vote
+from .lifecycle import CLOSED, OPEN, calc_state, can_vote, has_started
 from .models import Activity, Ballot, BallotSelection
 
 
@@ -28,8 +28,11 @@ def options_locked(activity):
     """众议选项在投票开放后锁定，不可增删改。待开始期间可改。
 
     展示的选项随展品走 exhibition 模块（展示中仍可加展品/选项）。
+
+    用 ``has_started`` 而非 ``status != scheduled``：排期到点但快照还没翻转时，
+    活动其实已经开放，选项就该锁了——否则会出现「能投票但选项还能改」的窗口。
     """
-    return activity.type == "deliberation" and activity.status != SCHEDULED
+    return activity.type == "deliberation" and has_started(activity)
 
 
 def ballots_visible_to(activity, user):
@@ -51,7 +54,7 @@ def maybe_close_deliberation_on_full_vote(activity):
     （否则会虚增票数提前关闭）。在 ``cast_ballot`` 里调用（只有投票会改变票数）。
     逐行条件更新保证并发安全。
     """
-    if activity.type != "deliberation" or activity.status != OPEN:
+    if activity.type != "deliberation" or calc_state(activity) != OPEN:
         return False
     from accounts.models import verified_member_count
 
@@ -80,7 +83,7 @@ def cast_ballot(*, activity, user, option_ids, ip_address=None, device_id=""):
             raise BallotError("仅众议/展示可以投票")
         if activity.type == "exhibition" and not activity.voting_enabled:
             raise BallotError("该展示未启用投票")
-        if activity.status != OPEN:
+        if calc_state(activity) != OPEN:
             raise BallotError("投票已结束")
         raise BallotError("仅成员可投票，请先登录")
     is_member = bool(user and getattr(user, "is_authenticated", False))

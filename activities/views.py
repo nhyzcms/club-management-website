@@ -39,11 +39,13 @@ from .lifecycle import (
     can_rate,
     can_respond,
     can_submit,
+    accepting_submissions,
     collection_close_target,
     maybe_close_collection_on_cap,
     order_activities,
     transition_due_starts,
     transition_overdue,
+    transition_overdue_collections,
 )
 from .models import (
     Activity, Exhibit, ExhibitRating,
@@ -98,10 +100,13 @@ class ActivityViewSet(viewsets.ModelViewSet):
         return order_activities(self._scoped_queryset())
 
     def _scoped_queryset(self):
-        # 惰性流转：到 start_at 的待开始活动自动开放；到 end_at 的众议/展示/调研自动结算。
+        # 惰性流转（只维护 status 快照，供展示/筛选/排序；判定另有 state.calc_state）：
+        # 到 start_at 的待开始活动自动开放；到 end_at 的众议/展示/调研自动结算；
+        # 到 end_at 的征集自动结束收件（→ 复审 / 归档）。
         # 审核轴只门控可见性，不阻断上述状态机。
         transition_due_starts()
         transition_overdue()
+        transition_overdue_collections()
         qs = Activity.objects.select_related(
             "creator", "creator__profile", "publication_review", "questionnaire",
         ).prefetch_related(
@@ -340,7 +345,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if not can_submit(activity, request.user):
             if activity.type != "collection":
                 return Response({"detail": "仅征集可以投稿"}, status=status.HTTP_400_BAD_REQUEST)
-            if activity.status != COLLECTING:
+            # 用 accepting_submissions 而非落库 status：征集过期时 status 可能仍是
+            # collecting（快照滞后），照 status 判会给出错误文案「当前不可投稿」。
+            if not accepting_submissions(activity):
                 return Response({"detail": "征集已结束收件"}, status=status.HTTP_400_BAD_REQUEST)
             return Response({"detail": "当前不可投稿"}, status=status.HTTP_400_BAD_REQUEST)
         if Submission.objects.filter(activity=activity, submitter=request.user).exists():
