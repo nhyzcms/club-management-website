@@ -113,7 +113,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             "options", "options__selections",
             "ballots", "ballots__selections", "ballots__voter__profile",
             "submissions", "submissions__attachments", "submissions__submitter__profile",
-            "submissions__reviewed_by",
+            "submissions__moderated_by",
             "exhibits", "exhibits__attachments",
             "exhibits__vote_option", "exhibits__vote_option__selections",
             "exhibits__ratings",
@@ -414,11 +414,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
         except (Submission.DoesNotExist, ValueError, TypeError):
             return Response({"detail": "作品不存在"}, status=status.HTTP_404_NOT_FOUND)
         submission.review_status = decision
-        submission.review_comment = comment
-        submission.reviewed_by = request.user
-        submission.reviewed_at = timezone.now()
+        submission.moderation_note = comment
+        submission.moderated_by = request.user
+        submission.moderated_at = timezone.now()
         submission.save(update_fields=[
-            "review_status", "review_comment", "reviewed_by", "reviewed_at",
+            "review_status", "moderation_note", "moderated_by", "moderated_at",
         ])
         activity = self.get_queryset().get(pk=activity.pk)
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)

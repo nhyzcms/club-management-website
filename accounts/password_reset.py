@@ -117,12 +117,12 @@ def approve_request(
         revoke_user_sessions(user)
 
         locked.status = PasswordResetRequest.STATUS_APPROVED
-        locked.reviewed_at = now
-        locked.reviewed_by = reviewer
-        locked.review_note = (note or "")[:200]
+        locked.moderated_at = now
+        locked.moderated_by = reviewer
+        locked.moderation_note = (note or "")[:200]
         locked.reset_at = now
         locked.save(update_fields=[
-            "status", "reviewed_at", "reviewed_by", "review_note", "reset_at",
+            "status", "moderated_at", "moderated_by", "moderation_note", "reset_at",
         ])
 
     _notify_resolved(locked, reviewer)
@@ -146,10 +146,10 @@ def reject_request(
                 reason="already_reviewed", status=409,
             )
         locked.status = PasswordResetRequest.STATUS_REJECTED
-        locked.reviewed_at = timezone.now()
-        locked.reviewed_by = reviewer
-        locked.review_note = (note or "")[:200]
-        locked.save(update_fields=["status", "reviewed_at", "reviewed_by", "review_note"])
+        locked.moderated_at = timezone.now()
+        locked.moderated_by = reviewer
+        locked.moderation_note = (note or "")[:200]
+        locked.save(update_fields=["status", "moderated_at", "moderated_by", "moderation_note"])
 
     _notify_resolved(locked, reviewer)
     _send_result_email(locked)

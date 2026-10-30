@@ -119,7 +119,9 @@ class TagSerializer(serializers.ModelSerializer):
 
 class TaskClaimRequestSerializer(serializers.ModelSerializer):
     claimant = SimpleUserSerializer(read_only=True)
-    reviewed_by = SimpleUserSerializer(read_only=True)
+    # B2：模型字段统一为 moderated_by / moderated_at，对外名保持不变
+    reviewed_by = SimpleUserSerializer(read_only=True, source="moderated_by")
+    reviewed_at = serializers.DateTimeField(source="moderated_at", read_only=True)
 
     class Meta:
         model = TaskClaimRequest

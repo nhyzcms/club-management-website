@@ -417,12 +417,13 @@ class Submission(models.Model):
     review_status = models.CharField(
         "复审状态", max_length=10, choices=REVIEW_CHOICES, default="pending",
     )
-    review_comment = models.TextField("复审评语", blank=True, default="")
-    reviewed_by = models.ForeignKey(
+    # B2：审计三件套统一命名（原 review_comment / reviewed_by / reviewed_at）
+    moderation_note = models.TextField("复审评语", blank=True, default="")
+    moderated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name="reviewed_submissions", verbose_name="复审人",
     )
-    reviewed_at = models.DateTimeField("复审时间", null=True, blank=True)
+    moderated_at = models.DateTimeField("复审时间", null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

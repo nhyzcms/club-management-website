@@ -245,9 +245,9 @@ def apply(action, task, user, *, payload=None):
         except TaskClaimRequest.DoesNotExist:
             return _reject(action, task, "认领请求不存在或已处理", KIND_NOT_FOUND)
         claim.status = "approved"
-        claim.reviewed_by = user
-        claim.reviewed_at = timezone.now()
-        claim.save(update_fields=["status", "reviewed_by", "reviewed_at"])
+        claim.moderated_by = user
+        claim.moderated_at = timezone.now()
+        claim.save(update_fields=["status", "moderated_by", "moderated_at"])
         task.assignee = claim.claimant
         task.status = "in_progress"
         task.save(update_fields=["assignee", "status", "updated_at"])
@@ -259,9 +259,9 @@ def apply(action, task, user, *, payload=None):
         except TaskClaimRequest.DoesNotExist:
             return _reject(action, task, "认领请求不存在或已处理", KIND_NOT_FOUND)
         claim.status = "rejected"
-        claim.reviewed_by = user
-        claim.reviewed_at = timezone.now()
-        claim.save(update_fields=["status", "reviewed_by", "reviewed_at"])
+        claim.moderated_by = user
+        claim.moderated_at = timezone.now()
+        claim.save(update_fields=["status", "moderated_by", "moderated_at"])
         # 已无其它待处理申请时，把任务从认领审核回退到待处理。
         if task.status == "review" and not TaskClaimRequest.objects.filter(task=task, status="pending").exists():
             task.status = "pending"

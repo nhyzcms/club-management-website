@@ -219,7 +219,7 @@ class BallotSelectionAdmin(admin.ModelAdmin):
 
 @admin.register(Submission)
 class SubmissionAdmin(admin.ModelAdmin):
-    list_display = ["activity", "submitter", "review_status", "reviewed_at", "created_at"]
+    list_display = ["activity", "submitter", "review_status", "moderated_at", "created_at"]
     list_filter = ["review_status", "activity__type"]
-    search_fields = ["activity__title", "submitter__username", "review_comment"]
-    autocomplete_fields = ["activity", "submitter", "reviewed_by"]
+    search_fields = ["activity__title", "submitter__username", "moderation_note"]
+    autocomplete_fields = ["activity", "submitter", "moderated_by"]

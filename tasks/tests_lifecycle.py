@@ -336,7 +336,7 @@ class ApplyTransitionTest(TestCase):
         self.assertEqual(task.status, "in_progress")
         claim.refresh_from_db()
         self.assertEqual(claim.status, "approved")
-        self.assertEqual(claim.reviewed_by_id, self.creator.pk)
+        self.assertEqual(claim.moderated_by_id, self.creator.pk)
 
     def test_approve_claim_unknown_claim_rejected(self):
         task = self._task(status="review")

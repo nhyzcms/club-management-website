@@ -515,12 +515,13 @@ class PasswordResetRequest(models.Model):
     )
     status = models.CharField("状态", max_length=10, choices=STATUSES, default=STATUS_PENDING)
     created_at = models.DateTimeField("提交时间", auto_now_add=True)
-    reviewed_at = models.DateTimeField("处理时间", null=True, blank=True)
-    reviewed_by = models.ForeignKey(
+    # B2：审计三件套统一命名（原 reviewed_at / reviewed_by / review_note）
+    moderated_at = models.DateTimeField("处理时间", null=True, blank=True)
+    moderated_by = models.ForeignKey(
         User, verbose_name="处理人", null=True, blank=True,
         on_delete=models.SET_NULL, related_name="password_reset_reviews",
     )
-    review_note = models.CharField("处理说明", max_length=200, blank=True, default="")
+    moderation_note = models.CharField("处理说明", max_length=200, blank=True, default="")
     reset_at = models.DateTimeField("密码重置时间", null=True, blank=True)
 
     class Meta:
