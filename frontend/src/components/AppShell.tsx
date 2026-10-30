@@ -40,6 +40,7 @@ const NAV: { label: string; path: string }[] = [
   { label: "关于我们", path: "/about" },
   { label: "新闻", path: "/news" },
   { label: "互动", path: "/activity" },
+  { label: "活动", path: "/events" },
   { label: "反馈", path: "/feedback" },
   { label: "任务", path: "/tasks" },
 ];
@@ -49,6 +50,7 @@ const NAV_ICONS: Record<string, ReactNode> = {
   "/about": ICONS.info,
   "/news": ICONS.news,
   "/activity": ICONS.activity,
+  "/events": ICONS.event,
   "/feedback": ICONS.feedback,
   "/tasks": ICONS.tasks,
 };

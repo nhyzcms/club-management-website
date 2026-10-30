@@ -31,6 +31,7 @@ urlpatterns = [
     path('tasks/', include('tasks.urls')),
     path('messaging/', include('messaging.urls')),
     path('activities/', include('activities.urls')),
+    path('events/', include('events.urls')),
     path('exam_board/', include('exam_board.urls')),
     path('news/', include('news.urls')),
     path('reviews/', include('reviews.urls')),
@@ -44,7 +45,7 @@ urlpatterns = [
     re_path(r'^file/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'media', 'file')}),
     
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
-    re_path(r'^(?!file/|static/|admin/|auth/|tasks/|media/|messaging/|activities/|news/|reviews/|site-policy/|exam_board/|tutorials/|recruitment/|attachments/|uploads/|about/|panorama/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
+    re_path(r'^(?!file/|static/|admin/|auth/|tasks/|media/|messaging/|activities/|events/|news/|reviews/|site-policy/|exam_board/|tutorials/|recruitment/|attachments/|uploads/|about/|panorama/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
 ]
 
 if settings.DEBUG:
