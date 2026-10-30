@@ -15,6 +15,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from common.policy import get_policy
+from common.targets import content_host, kind_of, target_for
 from reviews.visibility import visible_queryset
 
 from .models import (
@@ -54,24 +55,38 @@ class MessagingNotFound(MessagingError):
 # ---- 宿主 / 评论区 -------------------------------------------------------
 
 def host_of(thread: CommentThread):
-    if thread.news_id:
-        return thread.news
-    if thread.activity_id:
-        return thread.activity
-    if thread.task_id:
-        return thread.task
-    raise MessagingError("评论区没有宿主")
+    """评论区宿主。走 target，回落旧列（切读期两种存量都认）。"""
+    host = content_host(thread)
+    if host is None:
+        raise MessagingError("评论区没有宿主")
+    return host
 
 
 def thread_for(host) -> CommentThread:
-    """取或建该宿主上恰好一条评论区（默认开放）。"""
-    field = host._meta.model_name
-    if field not in ("news", "activity", "task"):
+    """取或建该宿主上恰好一条评论区（默认开放）。
+
+    切读期同时认 target 与旧列：存量行可能只有旧列（回填漏掉的），新行两者都有。
+    创建时两个都写——旧列满足 ``commentthread_exactly_one_parent`` 约束，
+    target 供 B9 删列后继续工作。
+    """
+    kind = kind_of(host)
+    if kind not in CommentThread.TARGET_LEGACY_FIELDS:
         raise MessagingError("评论区只能挂在新闻、活动或任务上")
-    thread, _created = CommentThread.objects.get_or_create(
-        **{field: host},
-        defaults={"status": CommentThread.STATUS_OPEN},
-    )
+
+    target = target_for(kind, host.pk)
+    thread = CommentThread.objects.filter(
+        Q(target=target) | Q(**{kind: host}),
+    ).first()
+    if thread is None:
+        # get_or_create 兜住并发：旧列的 OneToOne 唯一约束会拦下第二次插入，
+        # get_or_create 捕获后重试取。
+        thread, _created = CommentThread.objects.get_or_create(
+            **{kind: host},
+            defaults={"target": target, "status": CommentThread.STATUS_OPEN},
+        )
+    if thread.target_id is None:
+        thread.target = target
+        thread.save(update_fields=["target"])
     return thread
 
 
