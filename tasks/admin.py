@@ -1,13 +1,9 @@
 from django.contrib import admin
 
 from .lifecycle import CANCEL, apply
-from .models import Tag, Task, TaskClaimRequest
+from .models import Task, TaskClaimRequest
 
-
-@admin.register(Tag)
-class TagAdmin(admin.ModelAdmin):
-    list_display = ["name", "color"]
-    search_fields = ["name"]
+# Tag 的 admin 注册已随模型移到 common/admin.py（B7）。
 
 
 @admin.register(Task)

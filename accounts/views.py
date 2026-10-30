@@ -1449,7 +1449,7 @@ def _capabilities(user):
         "can_manage_news": user.has_perm("news.manage_news"),
         "can_manage_tasks": user.has_perm("tasks.manage_tasks"),
         "can_assign_task": user.has_perm("tasks.assign_task"),
-        "can_manage_tags": user.has_perm("tasks.manage_tags"),
+        "can_manage_tags": user.has_perm("common.manage_tags"),
         "can_change_activity": user.has_perm("activities.manage_activity"),
         "can_view_feedback": user.has_perm("reviews.read_feedback"),
         "can_handle_reports": user.has_perm("reviews.handle_report"),

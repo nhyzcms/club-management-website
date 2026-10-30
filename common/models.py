@@ -41,6 +41,34 @@ from .policy import (
 _HOUR_VALIDATORS = [MinValueValidator(0), MaxValueValidator(23)]
 
 
+class Tag(models.Model):
+    """标签（跨模块公共概念：新闻与任务共用）。
+
+    原属 ``tasks``，2026-10 移到 ``common``（B7）：``news.News.tags`` 一直
+    引用 ``tasks.Tag``，等于「新闻依赖任务」——一个纯展示模块为了标签
+    拖进整个任务域。GitHub 上这类东西也不会挂在某个业务模块下。
+
+    ``db_table`` 写死旧表名：迁移是纯状态搬运，**零 DDL**、数据不动。
+    权限 codename 的 app_label 由 ``tasks`` 变 ``common``，既有授权由
+    ``common/0014_copy_tag_permission`` 复制过去（旧权限行保留，不再读取）。
+    """
+
+    name = models.CharField("名称", max_length=50, unique=True)
+    color = models.CharField("颜色", max_length=7, default="#007bff")
+
+    class Meta:
+        db_table = "tasks_tag"
+        verbose_name = "标签"
+        verbose_name_plural = "标签"
+        ordering = ["name"]
+        permissions = [
+            ("manage_tags", "可管理标签"),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class SiteSettings(models.Model):
     """Singleton operational knobs (pk always 1). Edit in Django admin."""
 
