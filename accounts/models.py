@@ -745,8 +745,11 @@ class UserSession(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="login_sessions")
     session_key = models.CharField(max_length=40, db_index=True)
-    # 设备标识（club_device Cookie）：同一台设备重新登录时复用它的名额
-    device_id = models.CharField(max_length=40, blank=True, default="", db_index=True)
+    # 设备标识（俱乐部 `club_device` Cookie）：同一台设备重新登录时复用它的名额。
+    # 长度与 ``AccountDevice.device_id`` 对齐到 64（2026-10）：两处曾分别是 40 / 64，
+    # 现值由 ``secrets.token_hex(16)`` 生成（32 位）所以没触雷，但两处定义不一致
+    # 迟早会在换生成算法或接原生端时炸掉——一处截断、另一处完整，认不出是同一台。
+    device_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     client_kind = models.CharField(max_length=8, blank=True, default="web")
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True, default="")

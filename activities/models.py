@@ -9,8 +9,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models.signals import post_delete
-from django.dispatch import receiver
 
 
 def default_survey_schema():
@@ -129,6 +127,12 @@ class QuestionnaireResponse(models.Model):
     )
     device_id = models.CharField("设备标识", max_length=36, blank=True, default="")
     answers = models.JSONField("作答", default=dict)
+    # 作答时的问卷 Schema 快照（2026-10）。
+    # ``Questionnaire.schema`` 是可编辑的 JSON：改题（改名 / 删题 / 改选项）之后，
+    # 历史作答若按新 schema 解释就会错位——统计对不上、已删题目凭空消失、且无痕。
+    # 快照让每条作答永远能被「它当时看到的题目」解释。历史行留空 dict，
+    # 读取侧回退到当前 schema（与旧行为一致）。
+    schema_snapshot = models.JSONField("作答时的问卷快照", default=dict, blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -145,6 +149,18 @@ class QuestionnaireResponse(models.Model):
                 name="qresp_questionnaire_dev_idx",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        """新建时自动快照当前 schema。
+
+        放在 model 层而不是两处调用点（``activities/views.py`` 的 ``respond``
+        与 ``recruitment/views.py`` 的 ``create``），是为了让**任何**写路径都被覆盖
+        ——admin、shell、未来的新入口都不必记得手动传快照。只在新建时写，
+        不覆盖调用方显式给出的值。
+        """
+        if self._state.adding and not self.schema_snapshot and self.questionnaire_id:
+            self.schema_snapshot = self.questionnaire.schema
+        super().save(*args, **kwargs)
 
     def __str__(self):
         who = self.user_id if self.user_id else (self.device_id or "guest")
@@ -227,7 +243,10 @@ class Activity(models.Model):
     audience = models.CharField(
         "受众", max_length=8, choices=AUDIENCE_CHOICES, default="members",
     )
-    # 调研专属：指向独立问卷。其他类型为空。删除活动时级联删调研问卷（见 post_delete）。
+    # 调研专属：指向独立问卷。其他类型为空。
+    # **删除活动不会删除问卷**（2026-10 起）：问卷与作答是历史资产，
+    # 活动只是它的一个入口。删活动后问卷变「孤儿」（无 activity 引用但保留作答），
+    # 由后台「孤儿问卷」筛选可见、人工处置——绝不连带删除作答。
     questionnaire = models.OneToOneField(
         Questionnaire, on_delete=models.SET_NULL,
         null=True, blank=True,
@@ -244,6 +263,17 @@ class Activity(models.Model):
         permissions = [
             ("review_collection", "可复审征集作品"),
             ("manage_activity", "可管理任意活动"),
+        ]
+        constraints = [
+            # 长期活动与截止时间互斥（2026-10 补 DB 层兜底）：
+            # 此前只有 clean() + 序列化器拦，admin / shell / 未来的写路径都能绕过，
+            # 一旦落进「长期但又有 end_at」的行，lifecycle 的惰性结算与 is_permanent
+            # 语义就会互相打架（到底算不算结束？）。
+            models.CheckConstraint(
+                condition=models.Q(is_permanent=False) | models.Q(end_at__isnull=True),
+                name="activity_permanent_has_no_end_at",
+                violation_error_message="长期活动不能设截止时间；请清空截止时间或取消「长期有效」。",
+            ),
         ]
 
     def __str__(self):
@@ -466,10 +496,3 @@ class ExhibitRating(models.Model):
     def __str__(self):
         return f"{self.user_id} -> {self.exhibit_id} ({self.choice})" # type: ignore
 
-
-@receiver(post_delete, sender=Activity)
-def _delete_survey_questionnaire(sender, instance, **kwargs):
-    """调研活动删除后收回其问卷（加入单例问卷不挂 activity，不受影响）。"""
-    qid = getattr(instance, "questionnaire_id", None)
-    if qid:
-        Questionnaire.objects.filter(pk=qid, kind=Questionnaire.KIND_SURVEY).delete()
