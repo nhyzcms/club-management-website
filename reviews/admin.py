@@ -13,15 +13,15 @@ _TARGET_HASH = (
 
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
-    list_display = ["id", "status", "news", "activity", "tutorial", "reviewer", "reviewed_at", "created_at"]
+    list_display = ["id", "status", "news", "activity", "tutorial", "moderated_by", "moderated_at", "created_at"]
     list_filter = ["status"]
-    search_fields = ["comment", "news__title", "activity__title", "tutorial__title"]
+    search_fields = ["moderation_note", "news__title", "activity__title", "tutorial__title"]
     readonly_fields = [
-        "news", "activity", "tutorial", "reviewer",
-        "reviewed_at", "created_at", "updated_at", "target_preview",
+        "news", "activity", "tutorial", "moderated_by",
+        "moderated_at", "created_at", "updated_at", "target_preview",
     ]
     fieldsets = (
-        (None, {"fields": ("status", "comment", "reviewer", "reviewed_at")}),
+        (None, {"fields": ("status", "moderation_note", "moderated_by", "moderated_at")}),
         ("对象", {"fields": ("news", "activity", "tutorial")}),
         ("预览", {"fields": ("target_preview",)}),
     )
@@ -89,18 +89,18 @@ class ReviewAdmin(admin.ModelAdmin):
 
 @admin.register(Feedback)
 class FeedbackAdmin(admin.ModelAdmin):
-    list_display = ["id", "title", "category", "status", "creator", "closed_by", "created_at"]
+    list_display = ["id", "title", "category", "status", "creator", "moderated_by", "created_at"]
     list_filter = ["status", "category"]
     search_fields = ["title", "description"]
-    readonly_fields = ["created_at", "updated_at", "closed_at"]
+    readonly_fields = ["created_at", "updated_at", "moderated_at"]
 
 
 @admin.register(ReportCase)
 class ReportCaseAdmin(admin.ModelAdmin):
-    list_display = ["id", "status", "news", "activity", "tutorial", "comment", "reported_user", "resolved_by", "created_at"]
+    list_display = ["id", "status", "news", "activity", "tutorial", "comment", "reported_user", "moderated_by", "created_at"]
     list_filter = ["status"]
-    search_fields = ["resolution_comment"]
-    readonly_fields = ["created_at", "updated_at", "resolved_at"]
+    search_fields = ["moderation_note"]
+    readonly_fields = ["created_at", "updated_at", "moderated_at"]
 
 
 @admin.register(UserMute)

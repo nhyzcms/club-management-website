@@ -75,7 +75,7 @@ def comment_for(obj, user):
     if user.pk != owner_id(obj) and not user.has_perm("reviews.moderate"):
         return ""
     review = _review_of(obj)
-    return (review.comment or "") if review else ""
+    return (review.moderation_note or "") if review else ""
 
 
 def visible_queryset(qs, user, kind, *, action):

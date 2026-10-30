@@ -127,13 +127,13 @@ class StatusAndCommentTest(TestCase):
         self.mod = _grant_moderate(User.objects.create_user(username="mod", password="x"))
         self.news = News.objects.create(title="n", author=self.owner, is_published=True)
         Review.objects.create(
-            news=self.news, status=Review.STATUS_REJECTED, comment="改标题",
+            news=self.news, status=Review.STATUS_REJECTED, moderation_note="改标题",
         )
         self.activity = Activity.objects.create(
             type="deliberation", status="open", title="a", creator=self.owner,
         )
         Review.objects.create(
-            activity=self.activity, status=Review.STATUS_PENDING, comment="活动评语",
+            activity=self.activity, status=Review.STATUS_PENDING, moderation_note="活动评语",
         )
 
     def test_status_of_infers_related_name(self):

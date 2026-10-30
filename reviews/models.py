@@ -28,12 +28,14 @@ class Review(TargetBackfillMixin, models.Model):
     ]
 
     status = models.CharField("状态", max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING)
-    comment = models.TextField("评语", blank=True, default="")
-    reviewer = models.ForeignKey(
+    # B2：审计三件套统一命名（moderated_by / moderated_at / moderation_note）。
+    # 原为 reviewer / reviewed_at / comment——六张表曾用五套不同的名字指同一组概念。
+    moderation_note = models.TextField("评语", blank=True, default="")
+    moderated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name="moderated_reviews", verbose_name="审核人",
     )
-    reviewed_at = models.DateTimeField("审核时间", null=True, blank=True)
+    moderated_at = models.DateTimeField("审核时间", null=True, blank=True)
 
     news = models.OneToOneField(
         "news.News", on_delete=models.CASCADE,
@@ -108,12 +110,13 @@ class Feedback(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name="created_feedbacks", verbose_name="创建人",
     )
-    closed_by = models.ForeignKey(
+    # B2：审计三件套（原 closed_by / closed_at / close_note）
+    moderated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name="closed_feedbacks", verbose_name="了结人",
     )
-    closed_at = models.DateTimeField("了结时间", null=True, blank=True)
-    close_note = models.TextField("了结说明", blank=True, default="")
+    moderated_at = models.DateTimeField("了结时间", null=True, blank=True)
+    moderation_note = models.TextField("了结说明", blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -177,12 +180,13 @@ class ReportCase(TargetBackfillMixin, models.Model):
         "common.ContentTarget", on_delete=models.CASCADE,
         null=True, blank=True, related_name="report_cases", verbose_name="内容目标",
     )
-    resolved_by = models.ForeignKey(
+    # B2：审计三件套（原 resolved_by / resolved_at / resolution_comment）
+    moderated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name="resolved_report_cases", verbose_name="处理人",
     )
-    resolved_at = models.DateTimeField("处理时间", null=True, blank=True)
-    resolution_comment = models.TextField("处理说明", blank=True, default="")
+    moderated_at = models.DateTimeField("处理时间", null=True, blank=True)
+    moderation_note = models.TextField("处理说明", blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

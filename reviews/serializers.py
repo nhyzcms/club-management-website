@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from attachments.serializers import AttachmentSerializer
+from common.targets import content_host, host_ref
 from tasks.serializers import SimpleUserSerializer
 
 from .models import Feedback, ReportCase, ReportFiling, Review
@@ -8,9 +9,16 @@ from .report_lifecycle import target_id_of, target_type_of
 
 
 class ReviewSerializer(serializers.ModelSerializer):
-    """审核队列条目：带目标类型/标题，供统一队列展示。"""
+    """审核队列条目：带目标类型/标题，供统一队列展示。
 
-    reviewer = SimpleUserSerializer(read_only=True)
+    **对外字段名保持原样**（``comment`` / ``reviewer`` / ``reviewed_at``），用
+    ``source=`` 映射到 B2 统一后的模型字段（``moderation_note`` / ``moderated_by``
+    / ``moderated_at``）。改名只发生在模型层，前端契约零变化。
+    """
+
+    reviewer = SimpleUserSerializer(read_only=True, source="moderated_by")
+    comment = serializers.CharField(source="moderation_note", read_only=True)
+    reviewed_at = serializers.DateTimeField(source="moderated_at", read_only=True)
     target_type = serializers.SerializerMethodField()
     target_id = serializers.SerializerMethodField()
     title = serializers.SerializerMethodField()
@@ -24,25 +32,18 @@ class ReviewSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_target_type(self, obj):
-        if obj.news_id:
-            return "news"
-        if obj.activity_id:
-            return "activity"
-        if obj.tutorial_id:
-            return "tutorial"
-        return None
+        ref = host_ref(obj)
+        return ref[0] if ref else None
 
     def get_target_id(self, obj):
-        return obj.news_id or obj.activity_id or obj.tutorial_id
+        ref = host_ref(obj)
+        return ref[1] if ref else None
 
     def get_title(self, obj):
-        if obj.news_id:
-            return obj.news.title
-        if obj.activity_id:
-            return obj.activity.title
-        if obj.tutorial_id:
-            return obj.tutorial.title
-        return ""
+        host = content_host(obj)
+        if host is None:
+            return ""
+        return getattr(host, "title", "") or ""
 
 
 def _creator_repr(obj):
@@ -54,6 +55,8 @@ def _creator_repr(obj):
 class FeedbackListSerializer(serializers.ModelSerializer):
     creator = serializers.SerializerMethodField()
     attachment_count = serializers.SerializerMethodField()
+    # 对外仍叫 close_note（B2 只改模型字段名）
+    close_note = serializers.CharField(source="moderation_note", read_only=True)
 
     class Meta:
         model = Feedback
@@ -73,7 +76,9 @@ class FeedbackListSerializer(serializers.ModelSerializer):
 
 class FeedbackDetailSerializer(serializers.ModelSerializer):
     creator = serializers.SerializerMethodField()
-    closed_by = SimpleUserSerializer(read_only=True)
+    closed_by = SimpleUserSerializer(read_only=True, source="moderated_by")
+    closed_at = serializers.DateTimeField(source="moderated_at", read_only=True)
+    close_note = serializers.CharField(source="moderation_note", read_only=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
 
     class Meta:
@@ -111,7 +116,9 @@ class ReportFilingSerializer(serializers.ModelSerializer):
 
 
 class ReportCaseSerializer(serializers.ModelSerializer):
-    resolved_by = SimpleUserSerializer(read_only=True)
+    resolved_by = SimpleUserSerializer(read_only=True, source="moderated_by")
+    resolved_at = serializers.DateTimeField(source="moderated_at", read_only=True)
+    resolution_comment = serializers.CharField(source="moderation_note", read_only=True)
     filings = ReportFilingSerializer(many=True, read_only=True)
     target_type = serializers.SerializerMethodField()
     target_id = serializers.SerializerMethodField()
@@ -133,18 +140,16 @@ class ReportCaseSerializer(serializers.ModelSerializer):
         return target_id_of(obj)
 
     def get_title(self, obj):
-        if obj.news_id:
-            return obj.news.title
-        if obj.activity_id:
-            return obj.activity.title
-        if obj.tutorial_id:
-            return obj.tutorial.title
-        if obj.comment_id:
-            text = (obj.comment.content or "").strip()
-            return text[:80] + ("…" if len(text) > 80 else "")
+        # reported_user 不走 ContentTarget（「人」不是「内容」），先判它
         if obj.reported_user_id:
             return obj.reported_user.username
-        return ""
+        host = content_host(obj)
+        if host is None:
+            return ""
+        if host._meta.model_name == "comment":
+            text = (host.content or "").strip()
+            return text[:80] + ("…" if len(text) > 80 else "")
+        return getattr(host, "title", "") or ""
 
 
 class ReportCreateSerializer(serializers.Serializer):

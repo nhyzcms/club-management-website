@@ -123,7 +123,7 @@ class FeedbackCloseTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.row.refresh_from_db()
         self.assertEqual(self.row.status, Feedback.STATUS_CLOSED)
-        self.assertEqual(self.row.close_note, "已线下跟进")
+        self.assertEqual(self.row.moderation_note, "已线下跟进")
         note = Notification.objects.get(recipient=self.member, category="review", event="closed")
         self.assertEqual(note.payload["id"], self.row.pk)
         self.assertEqual(note.payload["url"], f"/feedback/{self.row.pk}")

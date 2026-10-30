@@ -41,24 +41,24 @@ class ReportDenied(Exception):
 
 
 def target_type_of(case):
-    if case.news_id:
-        return TARGET_NEWS
-    if case.activity_id:
-        return TARGET_ACTIVITY
-    if case.tutorial_id:
-        return TARGET_TUTORIAL
-    if case.comment_id:
-        return TARGET_COMMENT
+    """举报对象类型。先走 ContentTarget，回落旧列，最后认「被举报用户」。
+
+    ``reported_user`` 不参与 ContentTarget（「人」不是「内容」，用户删除后举报案
+    要留档），所以它是这条链上唯一的非 target 分支。
+    """
+    ref = host_ref(case)
+    if ref is not None:
+        return ref[0]
     if case.reported_user_id:
         return TARGET_USER
     return None
 
 
 def target_id_of(case):
-    return (
-        case.news_id or case.activity_id or case.tutorial_id
-        or case.comment_id or case.reported_user_id
-    )
+    ref = host_ref(case)
+    if ref is not None:
+        return ref[1]
+    return case.reported_user_id
 
 
 def file(*, actor, target_type, target_id, reason):
@@ -123,11 +123,11 @@ def dismiss(case, actor, *, comment):
     if not comment:
         raise ReportDenied("请填写驳回理由")
     case.status = ReportCase.STATUS_DISMISSED
-    case.resolved_by = actor
-    case.resolved_at = timezone.now()
-    case.resolution_comment = comment
+    case.moderated_by = actor
+    case.moderated_at = timezone.now()
+    case.moderation_note = comment
     case.save(update_fields=[
-        "status", "resolved_by", "resolved_at", "resolution_comment", "updated_at",
+        "status", "moderated_by", "moderated_at", "moderation_note", "updated_at",
     ])
     _notify_reporters(case, actor)
     return case
@@ -161,11 +161,11 @@ def uphold(case, actor, *, comment="", ends_at=None):
     except MessagingError as exc:
         raise ReportDenied(exc.detail) from exc
     case.status = ReportCase.STATUS_UPHELD
-    case.resolved_by = actor
-    case.resolved_at = timezone.now()
-    case.resolution_comment = note
+    case.moderated_by = actor
+    case.moderated_at = timezone.now()
+    case.moderation_note = note
     case.save(update_fields=[
-        "status", "resolved_by", "resolved_at", "resolution_comment", "updated_at",
+        "status", "moderated_by", "moderated_at", "moderation_note", "updated_at",
     ])
     _notify_reporters(case, actor)
     return case

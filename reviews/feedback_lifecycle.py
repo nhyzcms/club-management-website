@@ -43,10 +43,10 @@ def close(feedback, actor, *, note=""):
         raise FeedbackDenied("当前状态不可了结")
     note = (note or "").strip()
     feedback.status = Feedback.STATUS_CLOSED
-    feedback.closed_by = actor
-    feedback.closed_at = timezone.now()
-    feedback.close_note = note
-    feedback.save(update_fields=["status", "closed_by", "closed_at", "close_note", "updated_at"])
+    feedback.moderated_by = actor
+    feedback.moderated_at = timezone.now()
+    feedback.moderation_note = note
+    feedback.save(update_fields=["status", "moderated_by", "moderated_at", "moderation_note", "updated_at"])
     if feedback.creator_id is not None:
         payload = {
             "type": "feedback",

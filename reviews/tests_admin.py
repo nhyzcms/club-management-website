@@ -117,7 +117,7 @@ class ReviewAdminActionsTest(TestCase):
         )
         self.pending.refresh_from_db()
         self.assertEqual(self.pending.status, Review.STATUS_REJECTED)
-        self.assertEqual(self.pending.comment, "后台批量驳回")
+        self.assertEqual(self.pending.moderation_note, "后台批量驳回")
 
     def test_remove_approved(self):
         self.ma.remove_selected(

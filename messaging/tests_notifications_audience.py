@@ -189,12 +189,12 @@ class WiringTest(TestCase):
     def test_identity_approved_notifies_applicant(self):
         from accounts.identity_review import approve_manual
 
-        reviewer = User.objects.create_user(username="rv", password="x")
+        moderated_by = User.objects.create_user(username="rv", password="x")
         Verification.objects.update_or_create(
             user=self.user, channel=Verification.CHANNEL_MANUAL,
             defaults={"status": Verification.STATUS_PENDING},
         )
-        approve_manual(self.user, reviewer)
+        approve_manual(self.user, moderated_by)
         n = Notification.objects.get(recipient=self.user, event="identity_resolved")
         self.assertEqual(n.payload.get("result"), "approved")
 
