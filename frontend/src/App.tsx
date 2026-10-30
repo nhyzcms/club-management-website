@@ -35,6 +35,9 @@ const FeedbackDetailPage = lazy(() => import("./pages/FeedbackDetailPage"));
 const ActivityListPage = lazy(() => import("./pages/ActivityListPage"));
 const ActivityFormPage = lazy(() => import("./pages/ActivityFormPage"));
 const ActivityDetailPage = lazy(() => import("./pages/ActivityDetailPage"));
+const EventsPage = lazy(() => import("./pages/EventsPage"));
+const EventDetailPage = lazy(() => import("./pages/EventDetailPage"));
+const EventFormPage = lazy(() => import("./pages/EventFormPage"));
 const InboxPage = lazy(() => import("./pages/InboxPage"));
 const NewsListPage = lazy(() => import("./pages/NewsListPage"));
 const NewsDetailPage = lazy(() => import("./pages/NewsDetailPage"));
@@ -150,6 +153,9 @@ export default function App() {
           <Route path="/activity/:id/survey-edit" element={<ProtectedRoute><SurveyEditorPage /></ProtectedRoute>} />
           <Route path="/activity/:id/survey-responses" element={<ProtectedRoute><SurveyResponsesPage /></ProtectedRoute>} />
           <Route path="/activity/:id/survey-stats" element={<ProtectedRoute><SurveyStatsPage /></ProtectedRoute>} />
+          <Route path="/events" element={<EventsPage />} />
+          <Route path="/events/new" element={<ProtectedRoute><EventFormPage /></ProtectedRoute>} />
+          <Route path="/events/:id" element={<EventDetailPage />} />
           <Route path="/inbox" element={<MobileAware to="/m/inbox"><ProtectedRoute><InboxPage /></ProtectedRoute></MobileAware>} />
           <Route path="/feedback" element={<FeedbackPage />} />
           <Route path="/feedback/:id" element={<ProtectedRoute><FeedbackDetailPage /></ProtectedRoute>} />
