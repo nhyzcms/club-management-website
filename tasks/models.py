@@ -1,22 +1,10 @@
 from django.conf import settings
 from django.db import models
 
-
-class Tag(models.Model):
-    """标签"""
-    name = models.CharField("名称", max_length=50, unique=True)
-    color = models.CharField("颜色", max_length=7, default="#007bff")
-
-    class Meta:
-        verbose_name = "标签"
-        verbose_name_plural = "标签"
-        ordering = ["name"]
-        permissions = [
-            ("manage_tags", "可管理标签"),
-        ]
-
-    def __str__(self):
-        return self.name
+# Tag 已移到 ``common``（B7）。这里保留导入路径，让既有
+# ``from tasks.models import Tag`` 不必一次性全改；新代码请直接
+# ``from common.models import Tag``。物理表仍是 ``tasks_tag``（零 DDL）。
+from common.models import Tag  # noqa: F401
 
 
 class Task(models.Model):

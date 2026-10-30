@@ -5,7 +5,8 @@ from rest_framework.exceptions import PermissionDenied
 from attachments.serializers import AttachmentSerializer
 
 from .lifecycle import available_actions, status_for_assignee
-from .models import Tag, Task, TaskClaimRequest
+from common.models import Tag
+from .models import Task, TaskClaimRequest
 
 # 新闻 / 活动详情序列化也复用（与 SimpleUserSerializer 同模式）。
 _THREAD_STATUSES = ("open", "muted", "closed")

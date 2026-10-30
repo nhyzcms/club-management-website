@@ -9,7 +9,7 @@ from rest_framework import serializers
 
 from common.rich_text import sanitize_html
 from reviews.visibility import comment_for, public_q, status_of
-from tasks.models import Tag
+from common.models import Tag
 from tasks.serializers import CommentThreadHostMixin, SimpleUserSerializer
 
 from .models import COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News, NewsDraft
@@ -52,7 +52,7 @@ def _draft_saved_at_for(obj, request):
 
 
 class NewsTagSerializer(serializers.ModelSerializer):
-    """新闻标签（带新闻数）。复用 tasks.Tag，但按新闻维度计数。"""
+    """新闻标签（带新闻数）。复用 common.Tag，但按新闻维度计数。"""
 
     news_count = serializers.SerializerMethodField()
 

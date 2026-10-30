@@ -41,7 +41,7 @@ class CanAssignTask(permissions.BasePermission):
 
 
 class CanManageTag(permissions.BasePermission):
-    """标签管理：所有登录用户可读；写需 tasks.manage_tags 权限"""
+    """标签管理：所有登录用户可读；写需 common.manage_tags 权限"""
 
     def has_permission(self, request, view):
         user = request.user
@@ -49,4 +49,4 @@ class CanManageTag(permissions.BasePermission):
             return False
         if request.method in permissions.SAFE_METHODS:
             return True
-        return user.has_perm("tasks.manage_tags")
+        return user.has_perm("common.manage_tags")

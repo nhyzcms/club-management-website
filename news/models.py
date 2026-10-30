@@ -36,7 +36,7 @@ class News(models.Model):
         related_name="news", verbose_name="作者",
     )
     tags = models.ManyToManyField(
-        "tasks.Tag", blank=True, related_name="news", verbose_name="标签",
+        "common.Tag", blank=True, related_name="news", verbose_name="标签",
     )
 
     featured = models.BooleanField("头条", default=False)

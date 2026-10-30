@@ -17,7 +17,8 @@ from .lifecycle import (
     REJECT_COMPLETION,
     apply,
 )
-from .models import Tag, Task, TaskClaimRequest
+from common.models import Tag
+from .models import Task, TaskClaimRequest
 from .permissions import (
     CanAssignTask,
     CanCreateTask,

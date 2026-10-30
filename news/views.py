@@ -15,7 +15,7 @@ from accounts.utils import get_client_ip
 from messaging.services import thread_for
 from reviews.lifecycle import open_review
 from reviews.visibility import public_q, visible_queryset
-from tasks.models import Tag
+from common.models import Tag
 
 from .models import (
     COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News, NewsDraft, NewsView,

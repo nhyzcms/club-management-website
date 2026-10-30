@@ -2,7 +2,15 @@ from django.contrib import admin
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 
-from .models import SiteSettings
+from .models import SiteSettings, Tag
+
+
+@admin.register(Tag)
+class TagAdmin(admin.ModelAdmin):
+    """标签（跨模块公共概念，2026-10 从 tasks 移来）。"""
+
+    list_display = ["name", "color"]
+    search_fields = ["name"]
 
 
 @admin.register(SiteSettings)

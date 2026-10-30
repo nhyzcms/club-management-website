@@ -42,7 +42,8 @@ from messaging.models import Conversation, Message, Notification
 from news.models import News
 from recruitment.models import RecruitmentNotice
 from reviews.models import Feedback, ReportCase, ReportFiling, Review
-from tasks.models import Tag, Task
+from common.models import Tag
+from tasks.models import Task
 from tutorials.models import Tutorial
 
 E2E_USERS = ("e2e_info", "e2e_plain", "e2e_stepup", "e2e_validity")
