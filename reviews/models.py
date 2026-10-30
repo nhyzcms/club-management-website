@@ -7,9 +7,14 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from common.targets import TargetBackfillMixin
 
-class Review(models.Model):
+
+class Review(TargetBackfillMixin, models.Model):
     """审核记录：待审 → 通过 / 驳回，通过后可下架。"""
+
+    # B1：双写期把旧列折射到 target（B9 删旧列时一并移除）。
+    TARGET_LEGACY_FIELDS = {"news": "news", "activity": "activity", "tutorial": "tutorial"}
 
     STATUS_PENDING = "pending"
     STATUS_APPROVED = "approved"
@@ -41,6 +46,11 @@ class Review(models.Model):
     tutorial = models.OneToOneField(
         "tutorials.Tutorial", on_delete=models.CASCADE,
         null=True, blank=True, related_name="review", verbose_name="教程",
+    )
+    # B1：统一宿主锚点（双写期，B9 删上面三个旧列）。
+    target = models.OneToOneField(
+        "common.ContentTarget", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="review", verbose_name="内容目标",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -120,8 +130,16 @@ class Feedback(models.Model):
         return f"{self.get_category_display()}: {self.title}"
 
 
-class ReportCase(models.Model):
+class ReportCase(TargetBackfillMixin, models.Model):
     """举报案：有对象的调查票。进行中 → 驳回 / 成立并处置。"""
+
+    # B1：双写期把旧内容列折射到 target。reported_user 不在此列——「人」不是内容。
+    TARGET_LEGACY_FIELDS = {
+        "news": "news",
+        "activity": "activity",
+        "tutorial": "tutorial",
+        "comment": "comment",
+    }
 
     STATUS_OPEN = "open"
     STATUS_DISMISSED = "dismissed"
@@ -152,6 +170,12 @@ class ReportCase(models.Model):
     reported_user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
         null=True, blank=True, related_name="report_cases_against", verbose_name="被举报用户",
+    )
+    # B1：统一宿主锚点（双写期）。**被举报用户不进 target**——「人」不是「内容」，
+    # 语义不同，且用户删除后举报案应留档。所以 reported_user 保持独立列。
+    target = models.ForeignKey(
+        "common.ContentTarget", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="report_cases", verbose_name="内容目标",
     )
     resolved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,

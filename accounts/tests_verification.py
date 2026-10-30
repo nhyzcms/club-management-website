@@ -143,15 +143,21 @@ class VerificationDefaultTrustMigrationTest(TransactionTestCase):
         self.apps_after = executor.loader.project_state(self.migrate_to).apps
 
     def tearDown(self):
-        """把 accounts 迁回最新节点（否则会污染后续测试）。
+        """把**所有 app** 迁回最新节点（否则会污染后续测试）。
 
-        本类把 schema 停在 0004；TransactionTestCase 不回收 DDL，后续同类测试（也
+        本类把 schema 停在 accounts/0004；TransactionTestCase 不回收 DDL，后续同类测试（也
         不回滚）只要碰到 0005 之后的列就会炸——例如删委任行时 collector 必须读回
         ``accounts_verification``（含 ``expires_at``）。
+
+        **必须恢复到全图叶子，而不是 ``leaf_nodes("accounts")``。** ``setUp`` 里
+        ``executor.migrate(migrate_from)`` 回退 accounts 时，Django 会连带 unapply
+        依赖它的其他 app 迁移；只恢复 accounts 会把那些 app 留在旧 schema 上，
+        后续测试报 ``no such column``（2026-10 B1 加 ``messaging_commentthread.target_id``
+        时暴露：单独跑 messaging 绿、跑完本文件再跑就红）。
         """
         executor = MigrationExecutor(connection)
         executor.loader.build_graph()
-        executor.migrate(executor.loader.graph.leaf_nodes("accounts"))
+        executor.migrate(executor.loader.graph.leaf_nodes())
 
     def _seed_pre_feature_users(self, apps):
         User = apps.get_model("auth", "User")

@@ -14,6 +14,8 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from common.targets import TargetBackfillMixin
+
 from rest_framework_tus import states as tus_states
 from rest_framework_tus.models import AbstractUpload, custom_upload_path
 
@@ -24,8 +26,17 @@ def attachment_upload_path(instance, filename):
     return f"attachments/{uuid.uuid4().hex}{ext}"
 
 
-class Attachment(models.Model):
+class Attachment(TargetBackfillMixin, models.Model):
     """统一附件：恰好挂在一个父级（任务、意见反馈或新闻）上。"""
+
+    # B1：双写期把旧列折射到 target（B9 删旧列时一并移除）。
+    TARGET_LEGACY_FIELDS = {
+        "task": "task",
+        "feedback": "feedback",
+        "news": "news",
+        "submission": "submission",
+        "exhibit": "exhibit",
+    }
 
     FILE_TYPE_CHOICES = [
         ("image", "图片"),
@@ -58,6 +69,12 @@ class Attachment(models.Model):
     exhibit = models.ForeignKey(
         "activities.Exhibit", on_delete=models.CASCADE,
         null=True, blank=True, related_name="attachments", verbose_name="展品",
+    )
+    # B1：统一宿主锚点。双写期与上面 5 个旧列并存（旧约束仍要求「恰好一个旧列
+    # 非空」）；PR 2 切读，B9 删旧列。
+    target = models.ForeignKey(
+        "common.ContentTarget", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="attachments", verbose_name="内容目标",
     )
     file = models.FileField("文件", upload_to=attachment_upload_path)
     file_type = models.CharField("文件类型", max_length=20, choices=FILE_TYPE_CHOICES)

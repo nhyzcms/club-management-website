@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from common.targets import TargetBackfillMixin
+
 
 class Conversation(models.Model):
     """1:1 私人对话。任务/申报讨论已拆到 CommentThread / Notification。"""
@@ -93,8 +95,11 @@ def unread_message_count(user, conversation=None):
     return qs.exclude(read_statuses__user=user).count()
 
 
-class CommentThread(models.Model):
+class CommentThread(TargetBackfillMixin, models.Model):
     """宿主评论区：恰好挂在一条新闻 / 活动 / 任务上。"""
+
+    # B1：双写期把旧列折射到 target（B9 删旧列时一并移除）。
+    TARGET_LEGACY_FIELDS = {"news": "news", "activity": "activity", "task": "task"}
 
     STATUS_OPEN = "open"
     STATUS_MUTED = "muted"
@@ -116,6 +121,11 @@ class CommentThread(models.Model):
     task = models.OneToOneField(
         "tasks.Task", on_delete=models.CASCADE,
         null=True, blank=True, related_name="comment_thread", verbose_name="任务",
+    )
+    # B1：统一宿主锚点（双写期，B9 删上面三个旧列）。
+    target = models.OneToOneField(
+        "common.ContentTarget", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="comment_thread", verbose_name="内容目标",
     )
     status = models.CharField(
         "状态", max_length=10, choices=STATUS_CHOICES, default=STATUS_OPEN,
