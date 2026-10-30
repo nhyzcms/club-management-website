@@ -70,7 +70,7 @@ class SiteSettings(models.Model):
     content_review_enabled = models.BooleanField(
         "开启内容审核",
         default=DEFAULT_CONTENT_REVIEW_ENABLED,
-        help_text="关闭后新建新闻、活动、教程直接通过，不进待审队列；已有待审条目不会批量通过。",
+        help_text="关闭后新建新闻、互动、教程直接通过，不进待审队列；已有待审条目不会批量通过。",
     )
     registration_enabled = models.BooleanField(
         "开放自助注册",

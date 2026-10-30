@@ -104,7 +104,7 @@ export const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, string> 
   review: "审核",
   discipline: "纪律",
   dm: "私信",
-  activity: "活动",
+  activity: "互动",
   announcement: "全站公告",
   validity: "身份有效期",
 };

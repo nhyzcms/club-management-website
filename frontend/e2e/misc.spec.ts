@@ -6,9 +6,9 @@ test("未知路由：兜底重定向回首页", async ({ page }) => {
   await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
 });
 
-test("活动：发起活动表单", async ({ page }) => {
+test("互动：发起互动表单", async ({ page }) => {
   await page.goto("/#/activity/new");
-  await expect(page.getByRole("heading", { name: "发起活动", level: 1 })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("heading", { name: "发起互动", level: 1 })).toBeVisible({ timeout: 10_000 });
 });
 
 test("教程：上传教程表单", async ({ page }) => {

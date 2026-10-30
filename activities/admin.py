@@ -58,7 +58,7 @@ class QuestionnaireAdmin(SurveyJSAdminMixin, admin.ModelAdmin):
         return (obj.schema or {}).get("title") or "—"
     schema_title.short_description = "标题"
 
-    @admin.display(description="调研活动")
+    @admin.display(description="所属调研")
     def activity_link(self, obj):
         activity = getattr(obj, "survey_activity", None)
         if activity is None:

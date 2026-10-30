@@ -39,7 +39,7 @@ const NAV: { label: string; path: string }[] = [
   { label: "主页", path: "/" },
   { label: "关于我们", path: "/about" },
   { label: "新闻", path: "/news" },
-  { label: "活动", path: "/activity" },
+  { label: "互动", path: "/activity" },
   { label: "反馈", path: "/feedback" },
   { label: "任务", path: "/tasks" },
 ];
@@ -317,7 +317,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 </button>
               )}
               <button className="sheet-item" type="button" onClick={() => go("/tasks")}><span className="ico">{ICONS.tasks}</span>任务管理</button>
-              <button className="sheet-item" type="button" onClick={() => go("/activity")}><span className="ico">{ICONS.activity}</span>活动</button>
+              <button className="sheet-item" type="button" onClick={() => go("/activity")}><span className="ico">{ICONS.activity}</span>互动</button>
               <button className="sheet-item" type="button" onClick={() => go("/feedback")}><span className="ico">{ICONS.feedback}</span>意见反馈</button>
               {showReviewQueue && (
                 <button className="sheet-item" type="button" onClick={() => go("/reviews")}><span className="ico">{ICONS.review}</span>审核队列</button>
@@ -396,7 +396,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <a href="#" onClick={(e) => { e.preventDefault(); go("/about"); }}>关于我们</a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/"); }}>主页</a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/news"); }}>新闻</a>
-            <a href="#" onClick={(e) => { e.preventDefault(); go("/activity"); }}>活动</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); go("/activity"); }}>互动</a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/feedback"); }}>反馈</a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/tasks"); }}>任务</a>
           </div>

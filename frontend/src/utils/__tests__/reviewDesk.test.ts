@@ -22,7 +22,7 @@ describe("reviewDesk.deskTabs", () => {
     expect(deskTabs({ canIdentity: true })).toEqual([{ kind: "identity", label: "身份" }]);
   });
 
-  it("内容审核权限展开成新闻 / 活动 / 教程三桌", () => {
+  it("内容审核权限展开成新闻 / 互动 / 教程三桌", () => {
     expect(deskTabs({ canContent: true }).map((t) => t.kind)).toEqual([
       "news",
       "activity",
@@ -48,7 +48,7 @@ describe("reviewDesk.deskTabs", () => {
       { kind: "identity", label: "身份" },
       { kind: "passwordReset", label: "密码重置" },
       { kind: "news", label: "新闻" },
-      { kind: "activity", label: "活动" },
+      { kind: "activity", label: "互动" },
       { kind: "tutorial", label: "教程" },
       { kind: "feedback", label: "意见反馈" },
       { kind: "reports", label: "举报案" },

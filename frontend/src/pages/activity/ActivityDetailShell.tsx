@@ -53,7 +53,7 @@ export default function ActivityDetailShell({
   const phase = activityPhase(a.type, a.status);
 
   const closeLabel = a.is_permanent
-    ? "终结活动"
+    ? "终结互动"
     : isDeliberation
       ? "提前结束投票"
       : isCollection
@@ -63,8 +63,8 @@ export default function ActivityDetailShell({
           : "提前结束展示";
   const closeConfirm = a.is_permanent
     ? isCollection
-      ? (a.review_enabled ? "终结这个长期活动？将结束收件并进入复审。" : "终结这个长期活动？将结束收件并归档。")
-      : "终结这个长期活动？终结后不可再参与，且不可恢复。"
+      ? (a.review_enabled ? "终结这个长期互动？将结束收件并进入复审。" : "终结这个长期互动？将结束收件并归档。")
+      : "终结这个长期互动？终结后不可再参与，且不可恢复。"
     : isDeliberation
       ? "提前结束投票并结算？"
       : isCollection
@@ -137,7 +137,7 @@ export default function ActivityDetailShell({
       <div className="page-head">
         <div className="container act-head-row">
           <nav className="breadcrumb">
-            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>活动</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>互动</a>
             <span className="sep">/</span>
             <span>{a.title}</span>
           </nav>
@@ -202,8 +202,8 @@ export default function ActivityDetailShell({
             extra={
               a.review_status === "pending" && a.status !== "closed" && a.status !== "archived"
                 ? (isSurvey
-                  ? "活动会按你设的时间推进，但在审核通过前访客/成员看不到、也作答不了。"
-                  : "活动会按你设的时间推进，但在审核通过前成员看不到、也投不了。")
+                  ? "互动会按你设的时间推进，但在审核通过前访客/成员看不到、也作答不了。"
+                  : "互动会按你设的时间推进，但在审核通过前成员看不到、也投不了。")
                 : undefined
             }
           />
@@ -214,7 +214,7 @@ export default function ActivityDetailShell({
 
         {memberDebt && canManage && (
           <details className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
-            <summary className="section-h" style={{ cursor: "pointer" }}>管理活动</summary>
+            <summary className="section-h" style={{ cursor: "pointer" }}>管理互动</summary>
             <div style={{ marginTop: "var(--s-3)", display: "flex", gap: 8, flexWrap: "wrap" }}>
               {a.status === "scheduled" && (
                 <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/activity/${a.id}/edit`)}>编辑</button>
@@ -269,7 +269,7 @@ export default function ActivityDetailShell({
             <Link to={`/u/${a.creator.id}`}><Avatar user={a.creator} size="md" /></Link>
             <div>
               <div className="ac-name">{a.creator.nickname || a.creator.username}</div>
-              <div className="ac-desc">@{a.creator.username} · 活动发起人</div>
+              <div className="ac-desc">@{a.creator.username} · 互动发起人</div>
             </div>
           </div>
         )}

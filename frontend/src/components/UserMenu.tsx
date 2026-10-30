@@ -256,7 +256,7 @@ function entriesOf({
   }
   entries.push(
     { key: "tasks", label: "任务管理", icon: ICONS.tasks, dividerBefore: true, onSelect: () => onNavigate("/tasks") },
-    { key: "activity", label: "活动", icon: ICONS.activity, onSelect: () => onNavigate("/activity") },
+    { key: "activity", label: "互动", icon: ICONS.activity, onSelect: () => onNavigate("/activity") },
     { key: "feedback", label: "意见反馈", icon: ICONS.feedback, onSelect: () => onNavigate("/feedback") },
   );
   if (canReview) {

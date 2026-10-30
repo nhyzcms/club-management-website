@@ -274,12 +274,12 @@ export default function ActivityFormPage() {
       <div className="page-head">
         <div className="container">
           <nav className="breadcrumb">
-            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>活动</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>互动</a>
             <span className="sep">/</span>
-            <span>{editId ? "编辑活动" : "发起活动"}</span>
+            <span>{editId ? "编辑互动" : "发起互动"}</span>
           </nav>
-          <h1>{editId ? "编辑活动" : "发起活动"}</h1>
-          <p className="section-sub">{editId ? "修改待开始活动的时间与内容（开放后即锁定）。" : "发起一场众议、征集、展示或调研。调研可在发起前直接把问卷设计好。"}</p>
+          <h1>{editId ? "编辑互动" : "发起互动"}</h1>
+          <p className="section-sub">{editId ? "修改待开始互动的时间与内容（开放后即锁定）。" : "发起一场众议、征集、展示或调研。调研可在发起前直接把问卷设计好。"}</p>
         </div>
       </div>
 
@@ -449,7 +449,7 @@ export default function ActivityFormPage() {
                 <div className="hint">
                   {editId
                     ? "在弹层里增删题目，点「完成」后回填本页，再点「保存修改」落库。"
-                    : "在弹层里增删题目，点「完成」后回填本页，题目会随「发起活动」一起创建。"}
+                    : "在弹层里增删题目，点「完成」后回填本页，题目会随「发起互动」一起创建。"}
                 </div>
               </div>
               {audienceField("公开：访客可列出、打开、提交；仅成员：须登录。创建后不可改。问卷题目可在本页设计。")}
@@ -460,7 +460,7 @@ export default function ActivityFormPage() {
           <CommentThreadStatusField value={commentThreadStatus} onChange={setCommentThreadStatus} />
 
           <div style={{ display: "flex", gap: 12, marginTop: "var(--s-4)" }}>
-            <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? "保存中…" : editId ? "保存修改" : "发起活动"}</button>
+            <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? "保存中…" : editId ? "保存修改" : "发起互动"}</button>
             <button className="btn btn-ghost" type="button" onClick={() => navigate("/activity")}>取消</button>
           </div>
         </form>

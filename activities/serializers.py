@@ -250,7 +250,7 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
             and end_at is None
         ):
             raise serializers.ValidationError(
-                {"end_at": "非长期活动须填写截止时间（不设截止请勾选「长期有效」）"}
+                {"end_at": "非长期互动须填写截止时间（不设截止请勾选「长期有效」）"}
             )
         if start_at and end_at and start_at >= end_at:
             raise serializers.ValidationError({"start_at": "开始时间须早于截止时间"})

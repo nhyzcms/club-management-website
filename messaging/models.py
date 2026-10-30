@@ -111,7 +111,7 @@ class CommentThread(models.Model):
     )
     activity = models.OneToOneField(
         "activities.Activity", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="comment_thread", verbose_name="活动",
+        null=True, blank=True, related_name="comment_thread", verbose_name="互动",
     )
     task = models.OneToOneField(
         "tasks.Task", on_delete=models.CASCADE,
@@ -135,7 +135,7 @@ class CommentThread(models.Model):
                     | models.Q(news__isnull=True, activity__isnull=True, task__isnull=False)
                 ),
                 name="commentthread_exactly_one_parent",
-                violation_error_message="评论区必须且只能挂在一个宿主（新闻/活动/任务）上。",
+                violation_error_message="评论区必须且只能挂在一个宿主（新闻/互动/任务）上。",
             ),
         ]
 
@@ -143,7 +143,7 @@ class CommentThread(models.Model):
         if self.news_id:
             return f"评论区 · 新闻 {self.news_id}"
         if self.activity_id:
-            return f"评论区 · 活动 {self.activity_id}"
+            return f"评论区 · 互动 {self.activity_id}"
         if self.task_id:
             return f"评论区 · 任务 {self.task_id}"
         return f"评论区 {self.pk}"
@@ -199,7 +199,7 @@ class Notification(models.Model):
     # category 与 messaging.notifications.sources 的源 key 对齐
     CATEGORY_CHOICES = [
         (CATEGORY_REVIEW, "审核"),
-        (CATEGORY_ACTIVITY, "活动"),
+        (CATEGORY_ACTIVITY, "互动"),
         (CATEGORY_COMMENT, "评论"),
         (CATEGORY_DM, "私信"),
         (CATEGORY_ANNOUNCEMENT, "广播"),

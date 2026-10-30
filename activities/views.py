@@ -205,15 +205,15 @@ class ActivityViewSet(viewsets.ModelViewSet):
         incoming = serializer.validated_data
         general_keys = [k for k in incoming if k not in ("schema", "audience")]
         if general_keys and not can_edit(instance):
-            raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+            raise PermissionDenied("互动开放后不可修改，仅待开始期间可改")
         if "schema" in incoming:
             if instance.type == "survey":
                 if not can_edit_schema(instance):
                     raise PermissionDenied("当前不可修改问卷")
             elif not can_edit(instance):
-                raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+                raise PermissionDenied("互动开放后不可修改，仅待开始期间可改")
         elif not incoming and not can_edit(instance) and not getattr(serializer, "_comment_thread_status", None):
-            raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+            raise PermissionDenied("互动开放后不可修改，仅待开始期间可改")
         super().perform_update(serializer)
 
     # ── 众议投票（公开受众任何人；仅成员须登录 + 已认证）──
