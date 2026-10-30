@@ -22,6 +22,7 @@ const CAP_LABELS: Record<string, string> = {
   can_manage_announcement: "管理横幅公告",
   can_manage_announcements: "发布全站弹窗公告",
   can_review_password_reset: "审批密码重置",
+  can_manage_events: "管理活动（限时）",
 };
 
 /** 统一的 24x24 线性图标外壳，沿用项目内联 SVG 约定（stroke=currentColor）。 */

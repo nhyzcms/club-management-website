@@ -34,10 +34,10 @@ export default function EventDetailPage() {
     api.me().then(setMe).catch(() => setMe(null));
   }, [id]);
 
-  const permissions: string[] = me?.user?.permissions ?? [];
+  // /auth/me/ 的 permissions 是「能力投影对象」，不是权限代号数组
   const canManage = !!me && !!event && (
     me.user?.id === event.organizer?.id ||
-    permissions.includes("events.manage_events") ||
+    me.user?.permissions?.can_manage_events === true ||
     me.role?.variant === "superadmin"
   );
 
