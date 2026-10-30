@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from reviews.test_helpers import approve_news
-from .models import News
+from .models import News, NewsDraft
 
 
 def _info(user):
@@ -121,9 +121,9 @@ class NewsDraftApiTest(TestCase):
         self.assertEqual(self.published.content, "<p>旧版</p>")
 
     def test_detail_draft_saved_at_editor_only(self):
-        self.published.draft_content = "<p>草稿</p>"
-        self.published.draft_saved_at = timezone.now()
-        self.published.save()
+        NewsDraft.objects.create(
+            news=self.published, content="<p>草稿</p>", saved_at=timezone.now(),
+        )
         anon = APIClient().get(self.detail_url(self.published))
         self.assertIsNone(anon.data["draft_saved_at"])
         self.client.force_authenticate(self.normal)
@@ -133,9 +133,9 @@ class NewsDraftApiTest(TestCase):
 
     def test_list_exposes_draft_saved_at_editor_only(self):
         # 「我的稿件」列表要能标出「有未发布修改」；权限门与详情一致（匿名 / 普通用户恒 null）
-        self.published.draft_content = "<p>草稿</p>"
-        self.published.draft_saved_at = timezone.now()
-        self.published.save()
+        NewsDraft.objects.create(
+            news=self.published, content="<p>草稿</p>", saved_at=timezone.now(),
+        )
         anon = APIClient().get("/news/news/")
         items = anon.data.get("results", anon.data)
         item = next(i for i in items if i["id"] == self.published.pk)

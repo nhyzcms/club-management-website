@@ -12,7 +12,7 @@ from reviews.visibility import comment_for, public_q, status_of
 from tasks.models import Tag
 from tasks.serializers import CommentThreadHostMixin, SimpleUserSerializer
 
-from .models import COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News
+from .models import COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News, NewsDraft
 from .thumbnails import make_cover_thumbnail
 from attachments.models import Attachment
 from attachments.serializers import AttachmentSerializer
@@ -288,14 +288,12 @@ class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
         # 由未发布转为发布时补发布时间
         if validated_data.get("is_published") and not instance.published_at:
             instance.published_at = timezone.now()
-        # 正文类字段随本次更新写入正式区 → 草稿区视为已消费（清空）；
+        # 正文类字段随本次更新写入正式区 → 草稿区视为已消费（删行）；
         # 仅动 featured / 评论状态等元数据的更新不清草稿（未发布修改仍待发布）。
-        if any(k in validated_data for k in ("title", "summary", "content")):
-            instance.draft_title = ""
-            instance.draft_summary = ""
-            instance.draft_content = ""
-            instance.draft_saved_at = None
+        consume_draft = any(k in validated_data for k in ("title", "summary", "content"))
         instance.save()
+        if consume_draft:
+            NewsDraft.objects.filter(news=instance).delete()
         if tags is not None:
             instance.tags.set(tags)
         # 换过封面则重新生成；旧数据缺缩略图时顺手补上
