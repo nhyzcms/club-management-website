@@ -70,7 +70,7 @@ export default function HomePage() {
         <div className="hero-inner">
           <span className="hero-badge"><EqBars /> 上海市南汇第一中学 · 传媒社</span>
           <h1>用镜头记录青春<br /><span className="accent">以创新展望未来</span></h1>
-          <p className="hero-sub">校园影像、新媒体作品的策展窗口；加入社团、社团动态与活动申报，一站式直达。</p>
+          <p className="hero-sub">校园影像、新媒体作品的策展窗口；加入社团、社团动态与互动，一站式直达。</p>
           <div className="hero-actions">
             <button className="btn btn-primary btn-lg" type="button" onClick={() => navigate("/join")}>
               加入社团
@@ -80,7 +80,7 @@ export default function HomePage() {
           </div>
           <div className="quick-strip">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v12H7l-3 3z" /></svg> 活动申报
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16v12H7l-3 3z" /></svg> 互动
             </a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/tasks"); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l2 2 4-4" /><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M9 3v4M15 3v4" /></svg> 任务
@@ -138,9 +138,9 @@ export default function HomePage() {
             </div>
             <div className="rail-card rail-actions">
               <h4><span className="bar" /> 快速入口</h4>
-              <button className="btn btn-secondary btn-sm" type="button" onClick={() => go("/activity/new")}>提交活动申报</button>
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => go("/activity/new")}>发起互动</button>
               <button className="btn btn-ghost btn-sm" type="button" onClick={() => go("/tasks")}>我的任务</button>
-              <button className="btn btn-ghost btn-sm" type="button" onClick={() => navigate("/activity")}>浏览活动申报</button>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => navigate("/activity")}>浏览互动</button>
             </div>
           </aside>
 

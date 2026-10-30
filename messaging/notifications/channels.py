@@ -92,9 +92,9 @@ def _copy_for(category: str, event: str, payload: dict) -> str:
             return "你提交的意见反馈已被处理了结。"
     if category == "activity":
         if event == "published":
-            return f"{quoted or '新活动'}已发布上线，快来看看吧！"
+            return f"{quoted or '新互动'}已发布上线，快来看看吧！"
         if event == "opened":
-            return f"{quoted or '活动'}已开始，现在可以参与了。"
+            return f"{quoted or '互动'}已开始，现在可以参与了。"
     if category == "comment":
         if event == "comment_replied":
             return "有人回复了你的评论，点击查看详情。"

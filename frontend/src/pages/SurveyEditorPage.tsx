@@ -36,7 +36,7 @@ export default function SurveyEditorPage() {
   return (
     <SurveyCreatorPage key={activityId} title="编辑问卷" load={load} save={save} canSave={canSave}>
       <nav className="breadcrumb">
-        <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>活动</a>
+        <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>互动</a>
         <span className="sep">/</span>
         <a href="#" onClick={(e) => { e.preventDefault(); navigate(`/activity/${activityId}`); }}>{crumbTitle || "调研"}</a>
         <span className="sep">/</span>

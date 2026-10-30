@@ -29,7 +29,7 @@ def initial_status(activity_type, start_at=None):
         return OPEN
     if activity_type == "collection":
         return COLLECTING
-    raise ValueError(f"未知活动类型: {activity_type!r}")
+    raise ValueError(f"未知互动类型: {activity_type!r}")
 
 
 def transition_due_starts():

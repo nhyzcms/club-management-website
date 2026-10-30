@@ -30,7 +30,7 @@ const SELF_TABS = [
   { key: "account", label: "账号与安全" },
   { key: "notify", label: "通知" },
   { key: "news", label: "我的新闻", divider: true },
-  { key: "activities", label: "我的活动" },
+  { key: "activities", label: "我的互动" },
   { key: "tutorials", label: "我的教程" },
   { key: "feedback", label: "我的反馈" },
   { key: "tasks", label: "我的任务" },
@@ -123,7 +123,7 @@ export default function UserProfile() {
     ? SELF_TABS
     : [
         { key: "news", label: "ta 的新闻" },
-        { key: "activities", label: "ta 的活动" },
+        { key: "activities", label: "ta 的互动" },
         { key: "tutorials", label: "ta 的教程" },
         ...(isAdmin ? [{ key: "permissions", label: "权限" }] : []),
       ];

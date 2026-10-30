@@ -67,7 +67,7 @@ def thread_for(host) -> CommentThread:
     """取或建该宿主上恰好一条评论区（默认开放）。"""
     field = host._meta.model_name
     if field not in ("news", "activity", "task"):
-        raise MessagingError("评论区只能挂在新闻、活动或任务上")
+        raise MessagingError("评论区只能挂在新闻、互动或任务上")
     thread, _created = CommentThread.objects.get_or_create(
         **{field: host},
         defaults={"status": CommentThread.STATUS_OPEN},

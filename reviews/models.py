@@ -36,7 +36,7 @@ class Review(models.Model):
     )
     activity = models.OneToOneField(
         "activities.Activity", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="publication_review", verbose_name="活动",
+        null=True, blank=True, related_name="publication_review", verbose_name="互动",
     )
     tutorial = models.OneToOneField(
         "tutorials.Tutorial", on_delete=models.CASCADE,
@@ -139,7 +139,7 @@ class ReportCase(models.Model):
     )
     activity = models.ForeignKey(
         "activities.Activity", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="report_cases", verbose_name="活动",
+        null=True, blank=True, related_name="report_cases", verbose_name="互动",
     )
     tutorial = models.ForeignKey(
         "tutorials.Tutorial", on_delete=models.CASCADE,

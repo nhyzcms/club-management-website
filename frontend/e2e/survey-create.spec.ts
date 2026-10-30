@@ -5,12 +5,12 @@ import { test, expect } from "@playwright/test";
 // 题目保存逻辑由 src/pages/__tests__/ActivityFormPage.test.tsx 覆盖。
 test("调研：发起页可直接打开问卷设计弹层", async ({ page }) => {
   await page.goto("/#/activity/new");
-  await expect(page.getByRole("heading", { name: "发起活动", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "发起互动", level: 1 })).toBeVisible();
 
   // 切到调研：问卷设计区块出现，默认空表
   await page.getByRole("button", { name: "调研（问卷）" }).click();
   await expect(page.getByText("尚未添加题目")).toBeVisible();
-  await expect(page.getByText("题目会随「发起活动」一起创建")).toBeVisible();
+  await expect(page.getByText("题目会随「发起互动」一起创建")).toBeVisible();
 
   // 打开设计弹层：Creator 首次加载较慢（独立 chunk），等工具箱渲染
   await page.getByRole("button", { name: "设计问卷" }).click();

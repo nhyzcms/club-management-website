@@ -5,6 +5,12 @@
 
 问卷 Schema 与作答是独立模型（``Questionnaire`` / ``QuestionnaireResponse``）；
 调研活动以外键指向问卷，门户调研页与加入页只作投影入口。
+
+命名说明（2026-10 定）：本 app 承载的四种形态（众议 / 征集 / 展示 / 调研）在
+**用户可见中文里统称「互动」**，不再叫「活动」——它们都是「中心向成员发起、等
+成员交回东西」的星形结构，与真正的活动（有时间窗、参与者之间会发生关系的事件）
+是两回事。代码层保留 ``Activity`` / ``activities`` / ``/activities/`` 全部标识符
+**不作重命名**（全站引用太多，收益为零、风险极高）；新增的中文文案一律写「互动」。
 """
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -238,12 +244,12 @@ class Activity(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "活动"
-        verbose_name_plural = "活动"
+        verbose_name = "互动"
+        verbose_name_plural = "互动"
         ordering = ["-created_at"]
         permissions = [
             ("review_collection", "可复审征集作品"),
-            ("manage_activity", "可管理任意活动"),
+            ("manage_activity", "可管理任意互动"),
         ]
 
     def __str__(self):
@@ -268,7 +274,7 @@ class Activity(models.Model):
         super().clean()
         if self.is_permanent and self.end_at is not None:
             raise ValidationError(
-                {"end_at": "长期活动不能设截止时间；请清空截止时间或取消「长期有效」"}
+                {"end_at": "长期互动不能设截止时间；请清空截止时间或取消「长期有效」"}
             )
 
     def save(self, *args, **kwargs):
@@ -287,7 +293,7 @@ class VoteOption(models.Model):
 
     activity = models.ForeignKey(
         Activity, on_delete=models.CASCADE,
-        related_name="options", verbose_name="活动",
+        related_name="options", verbose_name="互动",
     )
     text = models.CharField("选项文本", max_length=200)
     order = models.PositiveIntegerField("顺序", default=0)
@@ -312,7 +318,7 @@ class Ballot(models.Model):
 
     activity = models.ForeignKey(
         Activity, on_delete=models.CASCADE,
-        related_name="ballots", verbose_name="活动",
+        related_name="ballots", verbose_name="互动",
     )
     voter = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
@@ -378,7 +384,7 @@ class Submission(models.Model):
 
     activity = models.ForeignKey(
         Activity, on_delete=models.CASCADE,
-        related_name="submissions", verbose_name="活动",
+        related_name="submissions", verbose_name="互动",
     )
     submitter = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,

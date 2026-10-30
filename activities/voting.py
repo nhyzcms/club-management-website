@@ -107,7 +107,7 @@ def cast_ballot(*, activity, user, option_ids, ip_address=None, device_id=""):
     except (TypeError, ValueError):
         raise BallotError("无效的选项")
     if not set(ids).issubset(valid_ids):
-        raise BallotError("存在不属于本活动的选项")
+        raise BallotError("存在不属于本互动的选项")
 
     with transaction.atomic():
         try:
