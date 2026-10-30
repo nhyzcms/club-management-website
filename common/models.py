@@ -69,6 +69,71 @@ class Tag(models.Model):
         return self.name
 
 
+class ContentTarget(models.Model):
+    """「可被评论 / 审核 / 举报 / 挂附件的对象」的统一锚点。
+
+    ## 为什么需要它
+
+    在此之前，同一个概念被实现了四遍：``Attachment`` 用 5 个可空外键、
+    ``Review`` 3 个、``ReportCase`` 5 个、``CommentThread`` 3 个，每张表再配一条
+    2^n 项的 ``CheckConstraint`` 保证「恰好挂在一个父级上」。
+
+    代价不是代码丑，是**加一种可评论的东西要改四张表**：加列、重写约束、
+    改所有 queryset 与序列化器。而且每加一种宿主，约束的项数就翻一倍。
+
+    ## 形态
+
+    ``(kind, object_id)`` 唯一标识一个对象。宿主模型删除时由
+    ``common/targets.py`` 的信号删掉这条 target，``CASCADE`` 会带走挂在它上面的
+    附件 / 审核 / 举报 / 评论区。
+
+    新增一种宿主 = ``KIND_CHOICES`` 加一项 + ``targets.KIND_TO_MODEL`` 加一行，
+    **零 DDL**。
+
+    ## 为什么不给 object_id 加外键
+
+    它指向 8 张不同的表。要拿到数据库级外键完整性，就得在每张宿主表上各加一个
+    反向 OneToOne——那是再改 8 张表，换来的只是「防止信号漏接」。代价不对等。
+    孤儿 target 由 ``prune_orphan_targets`` 管理命令兜底（B9）。
+    """
+
+    KIND_NEWS = "news"
+    KIND_ACTIVITY = "activity"
+    KIND_TUTORIAL = "tutorial"
+    KIND_TASK = "task"
+    KIND_COMMENT = "comment"
+    KIND_SUBMISSION = "submission"
+    KIND_EXHIBIT = "exhibit"
+    KIND_FEEDBACK = "feedback"
+    KIND_CHOICES = [
+        (KIND_NEWS, "新闻"),
+        (KIND_ACTIVITY, "活动"),
+        (KIND_TUTORIAL, "教程"),
+        (KIND_TASK, "任务"),
+        (KIND_COMMENT, "评论"),
+        (KIND_SUBMISSION, "作品"),
+        (KIND_EXHIBIT, "展品"),
+        (KIND_FEEDBACK, "意见反馈"),
+    ]
+
+    kind = models.CharField("类型", max_length=20, choices=KIND_CHOICES)
+    object_id = models.PositiveBigIntegerField("对象 ID")
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "内容目标"
+        verbose_name_plural = "内容目标"
+        ordering = ["-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kind", "object_id"], name="uniq_content_target",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()}#{self.object_id}"
+
+
 class SiteSettings(models.Model):
     """Singleton operational knobs (pk always 1). Edit in Django admin."""
 
