@@ -180,6 +180,23 @@ class ActivityViewSet(viewsets.ModelViewSet):
         open_review(activity=activity, actor=self.request.user)
         thread_for(activity)
 
+    def perform_destroy(self, instance):
+        """删除活动：只允许「零投稿 + 零选票」的活动。
+
+        2026-10-31 审计 H-3：原先只要 CanModifyActivity 就放行，而
+        ``Submission.activity`` / ``Ballot.activity`` 都是 CASCADE，
+        ``Attachment`` 删除还会连带删磁盘文件 —— 发起人一次 DELETE 就能把别人的
+        投稿、附件与选票审计记录全部抹掉，且不可恢复。
+
+        收口原则取「不销毁他人数据」这一条最小面：空活动仍可随时删（保留既有 UX，
+        清理误建活动不必先等结束），一旦有人投过稿 / 投过票就必须走下架。
+        """
+        from rest_framework.exceptions import PermissionDenied
+
+        if instance.submissions.exists() or instance.ballots.exists():
+            raise PermissionDenied("活动已有投稿或选票，不能直接删除（请改为下架）")
+        super().perform_destroy(instance)
+
     @action(detail=False, methods=["get"])
     def mine(self, request):
         """作者预览：当前用户发起的全部活动（含待审/驳回/下架）。"""

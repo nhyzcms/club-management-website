@@ -1814,3 +1814,40 @@ class PublicExhibitionGuestVoteTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["my_selections"], [oid])
+
+
+class ActivityDeleteGuardTest(TestCase):
+    """H-3 回归：有投稿 / 选票的活动不能被 DELETE 级联抹掉。
+
+    反证：删掉 ``perform_destroy`` 里的存在性检查，两条用例变红（204）。
+    """
+
+    def setUp(self):
+        self.author = grant_verification(User.objects.create_user(username="del_author", password="x"))
+        self.client = APIClient()
+        self.client.force_authenticate(self.author)
+
+    def test_cannot_delete_collection_with_submissions(self):
+        act = Activity.objects.create(
+            type="collection", title="征集", creator=self.author, status="in_progress",
+            start_at=timezone.now() - timedelta(hours=1),
+            end_at=timezone.now() + timedelta(days=1),
+        )
+        approve_activity(act)
+        act.submissions.create(submitter=self.author)
+        resp = self.client.delete(f"/activities/activities/{act.pk}/")
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertTrue(Activity.objects.filter(pk=act.pk).exists())
+
+    def test_cannot_delete_deliberation_with_ballots(self):
+        act = Activity.objects.create(
+            type="deliberation", title="众议", creator=self.author, status="in_progress",
+            start_at=timezone.now() - timedelta(hours=1),
+            end_at=timezone.now() + timedelta(days=1),
+        )
+        approve_activity(act)
+        opt = act.options.create(text="A")
+        act.ballots.create(voter=self.author, voter_ip="1.2.3.4")
+        resp = self.client.delete(f"/activities/activities/{act.pk}/")
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertTrue(Activity.objects.filter(pk=act.pk).exists())
