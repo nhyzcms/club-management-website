@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from accounts.models import MemberIdentity
 from accounts.utils import get_client_ip
 from messaging.services import thread_for
-from reviews.lifecycle import open_review
+from reviews.lifecycle import open_review, reopen_on_edit
 from reviews.visibility import public_q, visible_queryset
 from common.models import Tag
 
@@ -87,6 +87,17 @@ class NewsViewSet(viewsets.ModelViewSet):
         news = serializer.save(author=self.request.user)
         open_review(news=news, actor=self.request.user)
         thread_for(news)
+
+    # 会改变「已过审版本」的实质字段。featured（头条位）/ is_published（发布开关）
+    # 不改内容，不重新入审。
+    _CONTENT_FIELDS = {"title", "summary", "content", "cover_image", "cover_image_ref", "tags"}
+
+    def perform_update(self, serializer):
+        incoming = set(serializer.validated_data)
+        news = serializer.save()
+        if incoming & self._CONTENT_FIELDS and reopen_on_edit(news=news, actor=self.request.user):
+            # 序列化器可能已缓存旧 review 关系；清掉缓存，让响应反映 pending。
+            news.refresh_from_db()
 
     @action(detail=False, methods=["get"])
     def mine(self, request):

@@ -57,6 +57,44 @@ def open_review(*, news=None, activity=None, tutorial=None, actor, force_publish
     return review
 
 
+def reopen_on_edit(*, news=None, activity=None, tutorial=None, actor):
+    """已过审（或已驳回）的宿主被实质修改 → 退回待审，重新走一遍审核。
+
+    审核只对「提交时的版本」有效：否则先提交良性版本过审、通过后再把正文换成
+    同源 iframe / 钓鱼内容，对象仍显示 approved，审核形同虚设（审计 H-5）。
+
+    免审发布者（``reviews.force_publish``）与站点关闭审核时不复位——与
+    ``open_review`` 的免审口径保持一致。仅 approved / rejected 复位；
+    pending 保持 pending，removed 不因编辑自动恢复（需重新走人工流程）。
+    """
+    if actor is not None and actor.has_perm("reviews.force_publish"):
+        return None
+    if not get_policy().content_review_enabled:
+        return None
+    lookup = {
+        key: value
+        for key, value in {"news": news, "activity": activity, "tutorial": tutorial}.items()
+        if value is not None
+    }
+    if not lookup:
+        return None
+    review = Review.objects.filter(**lookup).first()
+    if review is None or review.status not in (Review.STATUS_APPROVED, Review.STATUS_REJECTED):
+        return review
+
+    review.status = Review.STATUS_PENDING
+    review.moderation_note = ""
+    review.moderated_by = None
+    review.moderated_at = None
+    review.save(
+        update_fields=[
+            "status", "moderation_note", "moderated_by", "moderated_at", "updated_at",
+        ]
+    )
+    _notify_reviewers(review, actor)
+    return review
+
+
 def apply(action, review, user, *, comment=""):
     """执行通过 / 驳回 / 下架。非法转移抛 TransitionDenied。"""
     allowed = _ALLOWED.get(action)

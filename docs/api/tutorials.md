@@ -18,7 +18,7 @@
 | DELETE | /tutorials/tutorials/{id}/ | 登录 | 上传者或 `tutorials.manage_tutorials` | 删除 |
 | POST | /tutorials/tutorials/{id}/favorite/ | 已认证 | — | 收藏 / 取消收藏（切换），返回最新详情 |
 
-审核轴：`review_status` ∈ `pending` / `approved` / `rejected` / `removed`（无审核行为 `null`）；公开列表只出 `approved`。持 `reviews.force_publish` 或站点关闭 `content_review_enabled` 时上传即 `approved`。教程入库即生效（审核只门控公开展示，不改生命周期），视频不转码、原文件直播。
+审核轴：`review_status` ∈ `pending` / `approved` / `rejected` / `removed`（无审核行为 `null`）；公开列表只出 `approved`。持 `reviews.force_publish` 或站点关闭 `content_review_enabled` 时上传即 `approved`。教程入库即生效（审核只门控公开展示，不改生命周期），视频不转码、原文件直播。**已过审教程再改标题 / 简介会退回 `pending` 重新入审**；`file_type` / `file_name` / `file_size` / `views` 为服务端派生字段，客户端不可写。
 
 ## 端点详情
 
