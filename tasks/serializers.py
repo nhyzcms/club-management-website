@@ -80,8 +80,10 @@ class SimpleUserSerializer(serializers.ModelSerializer):
         fields = ["id", "username", "nickname", "avatar", "is_deleted"]
 
     def get_avatar(self, obj):
+        from accounts.models import is_deleted_user
+
         profile = getattr(obj, "profile", None)
-        if profile and profile.avatar and profile.deleted_at is None:
+        if profile and profile.avatar and not is_deleted_user(obj):
             return profile.avatar.url
         return None
 

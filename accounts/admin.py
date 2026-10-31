@@ -346,13 +346,13 @@ class CustomUserAdmin(UserAdmin):
     actions = ["ban_users", "mute_users"]
 
     def get_queryset(self, request):
-        # 已注销列读 profile.deleted_at：一次性 select_related，避免列表 N+1。
-        return super().get_queryset(request).select_related("profile")
+        # 已注销列读 user.lifecycle：一次性 select_related，避免列表 N+1。
+        return super().get_queryset(request).select_related("lifecycle")
 
     @admin.display(boolean=True, description="已注销")
     def deleted(self, obj):
-        profile = getattr(obj, "profile", None)
-        return bool(profile and profile.deleted_at)
+        lifecycle = getattr(obj, "lifecycle", None)
+        return bool(lifecycle and lifecycle.deleted_at is not None)
 
     def get_actions(self, request):
         actions = super().get_actions(request)

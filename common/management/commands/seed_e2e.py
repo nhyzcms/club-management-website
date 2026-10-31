@@ -35,7 +35,7 @@ from django.utils import timezone
 from about.models import AboutBlock, AboutPage
 from accounts import stepup
 from accounts.member_codes import barcode_payload, make_signature
-from accounts.models import IdentityProof, MemberIdentity, Profile, UserSession, Verification
+from accounts.models import AccountLifecycle, IdentityProof, MemberIdentity, Profile, UserSession, Verification
 from activities.models import Activity, Questionnaire, VoteOption, default_join_schema
 from exam_board.models import Exam, ExamBatch, ExamSubject
 from messaging.models import Conversation, Message, Notification
@@ -126,9 +126,9 @@ class Command(BaseCommand):
         from accounts.validity_summary import account_validity
 
         for user in (info, plain, stepup_user):
-            profile = Profile.objects.get(user=user)
-            profile.validity_notice_ack = account_validity(user)["key"]
-            profile.save(update_fields=["validity_notice_ack"])
+            lifecycle, _ = AccountLifecycle.objects.get_or_create(user=user)
+            lifecycle.validity_notice_ack = account_validity(user)["key"]
+            lifecycle.save(update_fields=["validity_notice_ack"])
 
         # 登录保护：清掉旧会话，保证每次运行的首次登录都被放行
         UserSession.objects.filter(user__username__in=E2E_USERS).delete()
