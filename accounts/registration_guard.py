@@ -29,6 +29,7 @@ from django.db.models import Q
 
 from .member_roster import normalize_card_no
 from .models import MemberIdentity, Profile, Verification
+from .queries import deleted_q
 
 _WHITESPACE = re.compile(r"\s+")
 
@@ -87,8 +88,7 @@ def _email_owner(email: str) -> User | None:
 
 
 def _deleted(user: User) -> bool:
-    profile = Profile.objects.filter(user=user).only("deleted_at").first()
-    return bool(profile and profile.deleted_at)
+    return Profile.objects.filter(user=user).filter(deleted_q()).exists()
 
 
 def _same_name_and_card(profile: Profile, name_variants: set[str], card_key: str) -> bool:
