@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deskTabs } from "../reviewDesk";
+import { deskOrdering, deskTabs } from "../reviewDesk";
 
 /**
  * 审核台的「桌」清单是桌面 / 手机两套 UI 的共同契约：
@@ -59,5 +59,24 @@ describe("reviewDesk.deskTabs", () => {
     expect(deskTabs({ canFeedback: true })).toEqual([
       { kind: "feedback", label: "意见反馈" },
     ]);
+  });
+});
+
+/**
+ * 排序契约：未处理队列先到先处理（正序），历史记录最新在前（倒序）。
+ */
+describe("reviewDesk.deskOrdering", () => {
+  it("待处理队列按时间正序", () => {
+    expect(deskOrdering("pending", "pending")).toBe("created_at");
+    expect(deskOrdering("open", "open")).toBe("created_at");
+  });
+
+  it("历史状态与「全部」按时间倒序", () => {
+    for (const status of ["approved", "rejected", "removed", ""]) {
+      expect(deskOrdering("pending", status)).toBe("-created_at");
+    }
+    for (const status of ["dismissed", "upheld", ""]) {
+      expect(deskOrdering("open", status)).toBe("-created_at");
+    }
   });
 });

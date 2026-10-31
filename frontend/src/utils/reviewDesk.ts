@@ -65,6 +65,17 @@ export function deskTabs(p: DeskPermissions): DeskTab[] {
   return tabs;
 }
 
+/**
+ * 队列排序：未处理队列（待审 / 待处理 / 进行中）按时间正序，先到先处理；
+ * 翻看历史（已通过 / 已驳回 / 已下架 / 已了结 / 全部）按时间倒序，最新的排在最前。
+ *
+ * 后端 DRF 的默认排序本来就是 `-created_at`，历史视图这里显式指定，
+ * 避免以后有人改了后端默认值就悄悄把历史顺序翻回去。
+ */
+export function deskOrdering(activeStatus: string, status: string): string {
+  return status === activeStatus ? "created_at" : "-created_at";
+}
+
 async function firstOf<T extends { id: number }>(
   fetchPage: (page: number) => Promise<{ results: T[]; next: string | null }>,
   excludeId?: number,
@@ -114,7 +125,10 @@ export async function firstContent(
 ) {
   return firstOf(
     async (page) => {
-      const params: Record<string, string> = { ordering: "created_at", page: String(page) };
+      const params: Record<string, string> = {
+        ordering: deskOrdering("pending", status),
+        page: String(page),
+      };
       if (status) params.status = status;
       const data = await reviewsApi.list(params);
       return {
@@ -134,7 +148,10 @@ export async function firstFeedback(
 ) {
   return firstOf(
     (page) => {
-      const params: Record<string, string> = { ordering: "created_at", page: String(page) };
+      const params: Record<string, string> = {
+        ordering: deskOrdering("pending", status),
+        page: String(page),
+      };
       if (status) params.status = status;
       return feedbackApi.list(params);
     },
@@ -150,7 +167,10 @@ export async function firstReport(
 ) {
   return firstOf(
     (page) => {
-      const params: Record<string, string> = { ordering: "created_at", page: String(page) };
+      const params: Record<string, string> = {
+        ordering: deskOrdering("open", status),
+        page: String(page),
+      };
       if (status) params.status = status;
       return reportsApi.list(params);
     },
