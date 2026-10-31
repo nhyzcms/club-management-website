@@ -337,3 +337,22 @@ class SurveyNestedChoiceExportTest(TestCase):
         # paneldynamic 的作答是「每行一个 dict」的列表，摊成普通列会永远为空
         # → 维持既有行为：不摊平（等真正用到时再按行展开）
         self.assertEqual(survey_export.extract_questions(schema), [])
+
+
+class SurveyCsvInjectionTest(TestCase):
+    """M-5 回归：以 = + - @ 开头的作答单元格加单引号，Excel 不执行公式。"""
+
+    def setUp(self):
+        self.q = Questionnaire.objects.create(kind=Questionnaire.KIND_SURVEY, schema=_schema())
+
+    def test_formula_prefixed_answers_are_escaped(self):
+        QuestionnaireResponse.objects.create(
+            questionnaire=self.q,
+            answers={"grade": "=HYPERLINK(\"http://evil\",\"x\")", "note": "@SUM(1,1)"},
+        )
+        data, _content_type, _filename = survey_export.export_responses([self.q], "csv")
+        text = data.decode("utf-8-sig")
+        self.assertIn("'=HYPERLINK", text)
+        self.assertIn("'@SUM", text)
+        self.assertNotIn("\n=HYPERLINK", text)
+        self.assertNotIn(",=HYPERLINK", text)
