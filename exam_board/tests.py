@@ -279,9 +279,20 @@ class ExamErrataTest(TestCase):
         return self.client.post("/exam_board/errata/", payload, format="multipart")
 
     def test_current_empty(self):
-        resp = self.client.get("/exam_board/errata/current/")
+        resp = self.client.get(f"/exam_board/errata/current/?exam={self.exam.id}")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["data"], [])
+
+    def test_current_requires_exam(self):
+        resp = self.client.get("/exam_board/errata/current/")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("exam", resp.data["message"])
+
+    def test_dismiss_requires_exam(self):
+        self.client.force_authenticate(self.writer)
+        resp = self.client.post("/exam_board/errata/dismiss/", {}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("exam", resp.data["message"])
 
     def test_anon_cannot_publish(self):
         resp = self.client.post(
