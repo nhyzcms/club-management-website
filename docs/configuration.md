@@ -12,12 +12,12 @@
 
 ## 一、环境变量（`.env.example` 全部条目）
 
-复制模板开始：`cp .env.example .env`。生产由 `scripts/install.sh` 就位（它会写 `SECRET_KEY`、`FRONTEND_URL`、`ALLOWED_HOSTS`、`DJANGO_DEBUG=0`）；`start.sh` 在 `.env` 缺失时会自动从模板复制一份，然后 `set -a; . ./.env` 导出给 Gunicorn/Django。
+复制模板开始：`cp .env.example .env`。生产由 `scripts/install.sh` 就位（它会写 `SECRET_KEY`、`FRONTEND_URL`、`ALLOWED_HOSTS`、`DJANGO_DEBUG=0`）；`start.sh` 不再自动复制模板——`.env` 缺失时直接报错退出，避免把开发默认值带进生产。
 
 | 变量 | 用途 | 必填 | 默认 / 示例 |
 |---|---|---|---|
 | `SECRET_KEY` | Django 签名密钥（session cookie、密码重置 token 等） | 生产必填 | 空。留空且 `DEBUG` 开时回退 `settings.py` 里的公开占位；`DJANGO_DEBUG=0` 且留空则 **拒绝启动**（`ImproperlyConfigured`） |
-| `DJANGO_DEBUG` | 调试模式开关 | 否 | `1`（开）。生产务必设 `0` / `false`；取值 `1/true/yes/on`（不区分大小写）为真 |
+| `DJANGO_DEBUG` | 调试模式开关 | 否 | `0`（关）。只有显式写 `1/true/yes/on`（不区分大小写）才开；留空 / 无法识别一律按关。本地开发在 `.env` 里改 `1` |
 | `ALLOWED_HOSTS` | 允许的 Host 头，逗号分隔 | 生产必填 | 空 → `[]`（本地由 DEBUG 兜底）。示例：`media-club.example.com,api.example.com` |
 | `FRONTEND_URL` | 前端来源，用于拼接发给用户的邮件链接（邮箱认证、密码重置） | 生产建议填 | `http://localhost:3000`。示例：`https://media-club.example.com` |
 | `EMAIL_HOST_USER` | 163 邮箱账号；**配了就切到 SMTP 后端** | 否 | 空。留空 → dev 用 console 后端（邮件打印到终端） |
@@ -63,7 +63,7 @@
 | 设置 | 值 / 逻辑 | 说明 |
 |---|---|---|
 | `TESTING` | `"test" in sys.argv or DJANGO_TESTING == "1"` | 仅据此切换「测试期才该变」的设置，绝不影响 runserver / 生产 |
-| `DEBUG` | `DJANGO_DEBUG` 默认 `1` | 见环境变量表 |
+| `DEBUG` | `DJANGO_DEBUG` 默认 `0`（关） | 见环境变量表 |
 | `SECRET_KEY` | `_secret_key(env, debug=DEBUG)` | 空值处理见上；DEBUG 回退 `_DEV_SECRET_KEY` |
 | `ALLOWED_HOSTS` | `_parse_allowed_hosts(env)` | 逗号分隔 → list，逐项 strip，空项丢弃 |
 | `SECURE_PROXY_SSL_HEADER` | `("HTTP_X_FORWARDED_PROTO", "https")` | nginx 写 `X-Forwarded-Proto`；HSTS 与 `is_secure()` 靠这一条认出 HTTPS。客户端自带的该头由 nginx `proxy_set_header` 覆盖 |

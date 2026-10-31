@@ -69,8 +69,17 @@ def _parse_allowed_hosts(raw):
 _DEV_SECRET_KEY = "django-insecure-8725+3f=oec+rp*g+(dq_86xa$87!1)40k9)r@zc&oyc8&db%+"
 
 
+def _parse_debug(raw):
+    """DJANGO_DEBUG 解析：缺省 / 空 / 无法识别一律 False（生产安全默认）。
+
+    只有显式写 1 / true / yes / on 才开启调试。旧默认是「缺省即 1」，
+    部署漏配 `.env` 时直接以 DEBUG 跑生产（审计 H-6）。
+    """
+    return (raw or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _secret_key(raw, *, debug):
-    """空 / 未设：debug 回退公开占位；生产（DEBUG=0）要求显式填写。"""
+    """空 / 未设：debug（或测试运行）回退公开占位；生产（DEBUG=0）要求显式填写。"""
     key = (raw or "").strip()
     if key:
         return key
@@ -85,10 +94,11 @@ def _secret_key(raw, *, debug):
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# 密钥 / 调试 / 允许主机全部走环境变量（模板见 .env.example）。下列默认值仅保本地开箱即用；
-# 生产务必通过 .env / 进程环境覆盖（尤其 SECRET_KEY，默认值是公开占位、不安全）。
-DEBUG = os.environ.get("DJANGO_DEBUG", "1").lower() in ("1", "true", "yes", "on")
-SECRET_KEY = _secret_key(os.environ.get("SECRET_KEY"), debug=DEBUG)
+# 密钥 / 调试 / 允许主机全部走环境变量（模板见 .env.example）。DEBUG 缺省 False：
+# 生产漏配 .env 时拒绝以调试模式启动；本地开发在 .env 里显式写 DJANGO_DEBUG=1。
+DEBUG = _parse_debug(os.environ.get("DJANGO_DEBUG"))
+# 测试运行没有 .env 也要能起：仅测试期允许公开占位密钥（测试库每次清空）。
+SECRET_KEY = _secret_key(os.environ.get("SECRET_KEY"), debug=DEBUG or TESTING)
 
 ALLOWED_HOSTS = _parse_allowed_hosts(os.environ.get("ALLOWED_HOSTS", ""))
 

@@ -14,8 +14,12 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-# .env 缺则从模板兜底复制（生产应由 install.sh 就位）；不覆盖既有。
-[ -f .env ] || cp .env.example .env
+# .env 必须由 install.sh / 运维显式生成：不再从模板自动复制。
+# 自动复制会把模板里的开发默认值（含 DJANGO_DEBUG）原样带进生产（审计 H-6）。
+if [ ! -f .env ]; then
+  echo "缺少 $DIR/.env：生产请先运行 scripts/install.sh；本地开发请 cp .env.example .env 并填写 SECRET_KEY / DJANGO_DEBUG=1。" >&2
+  exit 1
+fi
 # 导出 .env 供 gunicorn/Django 读（手动单跑时需要；systemd 调用时也幂等）。
 set -a; . ./.env; set +a
 
