@@ -264,6 +264,19 @@ class PasswordResetConfirmViewTest(TestCase):
             self.client.login(username="testuser", password="newsecret456")
         )
 
+    def test_weak_password_rejected_by_validators(self):
+        uid, token = self._get_reset_token()
+        response = self.client.post(
+            "/auth/password-reset/confirm/",
+            data=json.dumps({
+                "uid": uid, "token": token, "new_password": "12345678",
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("oldsecret123"))
+
     def test_password_reset_confirm_invalid_token(self):
         from django.utils.encoding import force_bytes
         from django.utils.http import urlsafe_base64_encode
