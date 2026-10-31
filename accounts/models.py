@@ -565,8 +565,9 @@ class PasswordResetRequest(models.Model):
 
     背景：邮箱找回依赖已认证邮箱；没有邮箱 / 邮箱已失效的社员无法自助重置。
     本流程让申请人上传身份证明，由持 ``accounts.review_password_reset`` 的管理员在
-    审核台核对后批准：密码重置为 :data:`accounts.password_reset.DEFAULT_RESET_PASSWORD`
-    并置 ``Profile.must_change_password``，强制下次登录改密。
+    审核台核对后批准：密码重置为**一次性随机临时密码**（见
+    ``accounts.password_reset.generate_temp_password``）并置 ``Profile.must_change_password``，
+    强制下次登录改密。
 
     证明文件与身份证明一样落 **私有存储**（PRIVATE_MEDIA_ROOT），只经鉴权视图下发，
     绝不经公开 MEDIA_URL 暴露；账号注销时随 Profile 级联删除（见 accounts/deletion.py）。

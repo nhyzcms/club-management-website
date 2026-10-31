@@ -92,7 +92,8 @@
 
 忘记密码的**人工通道**（`accounts.password_reset_review`）：邮箱失效 / 未绑定的成员在 `/#/forgot-password` 的「联系管理员」页签提交申请（账号 + 身份证明（**学生证/校牌**，页面明确提示**不要提交身份证照片**），附件落私有存储），持 `accounts.review_password_reset` 的人在 `/reviews` 的「密码重置」桌处理。
 
-- **批准**：密码重置为 `123456`、`Profile.must_change_password=true`、**吊销该账号全部会话**（`revoked_reason=security`），写处理人 / 时间 / 说明并通知当事人；对方首次登录必须改密。
+- **批准**：密码重置为**一次性随机临时密码**（批准响应里回显一次，有邮箱时同时发信）、`Profile.must_change_password=true`、**吊销该账号全部会话**（`revoked_reason=security`），写处理人 / 时间 / 说明并通知当事人；对方首次登录必须改密。
+- **权限上限**：不能重置权限高于自己的账号（超管只能超管重置、`is_staff` 只能 `is_staff` 重置），否则 `403 target_outranks_reviewer`。
 - **驳回**：只改申请状态，不动密码与会话。
 - 只能处理 `pending`；重复处理 409 `already_reviewed`；**不能审批自己的申请**（403 `cannot_review_self`）。
 - 申请与队列的接口细节见[账号 API](../api/accounts.md)「手动重置密码」。
@@ -121,7 +122,7 @@
 | `reviews.read_feedback` | 查看并了结意见反馈 | `can_view_feedback` |
 | `reviews.handle_report` | 查看并处理举报案（驳回 / 成立并处置） | `can_handle_reports` |
 | `accounts.can_review_identity` | 身份审核：通过 / 驳回 / 停用账号 | `can_review_identity` |
-| `accounts.review_password_reset` | 密码重置申请：批准（重置为 `123456` + 强制改密 + 吊销会话）/ 驳回 | `can_review_password_reset` |
+| `accounts.review_password_reset` | 密码重置申请：批准（重置为一次性随机临时密码 + 强制改密 + 吊销会话）/ 驳回 | `can_review_password_reset` |
 
 **分配思路**（默认偏粗，ADR-0005 决策 5）：
 

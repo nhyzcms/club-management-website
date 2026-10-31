@@ -52,7 +52,6 @@ from .models import (
     verification_valid_days,
 )
 from .password_reset import (
-    DEFAULT_RESET_PASSWORD,
     pending_request_for,
     resolve_account,
 )
@@ -1600,8 +1599,6 @@ def force_change_password_view(request):
         errors.append("新密码不能为空")
     if new_password != new_password2:
         errors.append("两次输入的密码不一致")
-    if new_password and new_password == DEFAULT_RESET_PASSWORD:
-        errors.append("新密码不能与默认密码相同")
     if new_password:
         try:
             validate_password(new_password)
