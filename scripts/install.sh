@@ -284,7 +284,7 @@ server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name $SERVER_NAME;
-    client_max_body_size 20M;
+    client_max_body_size 600M;
     server_tokens off;
 
     # 静态文件缓存：哈希构建产物（webpack [contenthash]，文件名含 20 位十六进制）→ 1 年 immutable；
@@ -337,7 +337,7 @@ server {
 #     server_name $SERVER_NAME;
 #     ssl_certificate     /etc/letsencrypt/live/$SERVER_NAME/fullchain.pem;
 #     ssl_certificate_key /etc/letsencrypt/live/$SERVER_NAME/privkey.pem;
-#     client_max_body_size 20M;
+#     client_max_body_size 600M;
 #     server_tokens off;
 #     add_header Strict-Transport-Security "max-age=31536000" always;
 # }
@@ -667,7 +667,8 @@ fi
 
 echo "==> chown -R $APP_USER:$APP_USER $DIR"
 chown -R "$APP_USER:$APP_USER" "$DIR"
-install -d -o "$APP_USER" -g "$APP_USER" "$DIR/run" "$DIR/backups"
+install -d -o "$APP_USER" -g "$APP_USER" -m 700 "$DIR/run" "$DIR/backups"
+install -d -o "$APP_USER" -g "$APP_USER" -m 700 "$DIR/backups/releases"
 
 APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
 [ -n "$APP_HOME" ] || { echo "用户 $APP_USER 不存在。" >&2; exit 1; }
@@ -768,7 +769,7 @@ systemctl reload nginx 2>/dev/null || systemctl start nginx
 
 echo "==> 写 /etc/sudoers.d/$SERVICE_NAME（$APP_USER 免密 systemctl $SERVICE_NAME）"
 cat > "/etc/sudoers.d/$SERVICE_NAME" <<SUDOERS
-$APP_USER ALL=(ALL) NOPASSWD: $SYSTEMCTL start $SERVICE_NAME, $SYSTEMCTL stop $SERVICE_NAME, $SYSTEMCTL restart $SERVICE_NAME, $SYSTEMCTL reload $SERVICE_NAME, $SYSTEMCTL is-active $SERVICE_NAME
+$APP_USER ALL=(ALL) NOPASSWD: $SYSTEMCTL start $SERVICE_NAME, $SYSTEMCTL stop $SERVICE_NAME, $SYSTEMCTL restart $SERVICE_NAME, $SYSTEMCTL reload $SERVICE_NAME, $SYSTEMCTL is-active $SERVICE_NAME, $SYSTEMCTL is-active --quiet $SERVICE_NAME
 SUDOERS
 chmod 440 "/etc/sudoers.d/$SERVICE_NAME"
 visudo -c -f "/etc/sudoers.d/$SERVICE_NAME"
