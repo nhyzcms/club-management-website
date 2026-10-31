@@ -1,4 +1,4 @@
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from common.rich_text import sanitize_html
 
@@ -18,6 +18,27 @@ class RichTextSanitizeTest(SimpleTestCase):
         return sanitize_html(html)
 
     # ---- iframe 嵌入闸门（任意 https iframe；非域白名单）----
+    # ---- 同源 iframe 一律剥（S-3：sandbox 含 allow-same-origin，同源等于没沙箱）----
+    def test_strips_same_origin_iframe(self):
+        """指向本站的 iframe = 把任意落盘 HTML 当脚本执行，必须剥。"""
+        out = self._clean('<iframe src="https://testserver/media/x/xss.html"></iframe>')
+        self.assertNotIn("<iframe", out)
+
+    def test_strips_protocol_relative_same_origin(self):
+        out = self._clean('<iframe src="//testserver/media/x/xss.html"></iframe>')
+        self.assertNotIn("<iframe", out)
+
+    @override_settings(ALLOWED_HOSTS=[".example.com"])
+    def test_strips_subdomain_of_allowed_host(self):
+        out = self._clean('<iframe src="https://a.example.com/media/x.html"></iframe>')
+        self.assertNotIn("<iframe", out)
+
+    def test_keeps_cross_origin_iframe_with_sandbox(self):
+        """跨源 embed（B 站 / YouTube）不受影响，sandbox 戳照旧。"""
+        out = self._clean('<iframe src="https://player.bilibili.com/player.html?bvid=x"></iframe>')
+        self.assertIn("<iframe", out)
+        self.assertIn('sandbox="allow-scripts', out)
+
     def test_keeps_arbitrary_https_iframe(self):
         out = self._clean('<iframe src="https://embed.example.com/widget"></iframe>')
         self.assertIn("embed.example.com", out)
