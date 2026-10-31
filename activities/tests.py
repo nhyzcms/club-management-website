@@ -1247,6 +1247,22 @@ class ExhibitionTest(TestCase):
         files = [f for e in r.data["exhibits"] for f in e["files"]]
         self.assertEqual(len(files), 2)
 
+    def test_import_from_foreign_collection_denied(self):
+        """H-1 回归：不能从别人的征集导入作品（原实现只校验目标展示归属）。
+
+        反证：删掉 ``_can_import_from`` 检查，本条变红（200 且作品被复制）。
+        """
+        other = grant_verification(User.objects.create_user(username="other_curator", password="x"))
+        cid, sub_ids = self._make_collection_with_submissions(other, n=1)
+        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=True).data["id"]
+        self.client.force_authenticate(self.curator)
+        r = self.client.post(
+            f"/activities/activities/{aid}/import_from_collection/",
+            data={"collection_id": cid, "submission_ids": sub_ids},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 403, r.content)
+
     def test_import_from_collection_allowed_when_open(self):
         # 展示中(未排期)仍可导入
         cid, sub_ids = self._make_collection_with_submissions(self.curator, n=1)
