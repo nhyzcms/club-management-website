@@ -138,74 +138,147 @@ def format_byte_cap(n: int) -> str:
     return f"{n} 字节"
 
 
-def _snapshot(row) -> SitePolicy:
-    if row is None:
-        return SitePolicy.defaults()
+def _snapshot(rows) -> SitePolicy:
+    """把五张策略表的行组装成一个 ``SitePolicy``。
+
+    ``rows`` 是 ``{"auth": ..., "rate": ..., "upload": ..., "updater": ..., "content": ...}``，
+    任一项可以是 ``None``（表里还没建行 / 迁移未跑）——那时用该字段的默认值，
+    而不是整份回落 defaults。这样「只配了频控、没配上传」也能正常工作。
+    """
+    auth = rows.get("auth")
+    rate = rows.get("rate")
+    upload = rows.get("upload")
+    updater = rows.get("updater")
+    content = rows.get("content")
+
+    def pick(row, name, default):
+        return getattr(row, name, default) if row is not None else default
+
     return SitePolicy(
-        verification_enabled=row.verification_enabled,
-        content_review_enabled=row.content_review_enabled,
-        registration_enabled=row.registration_enabled,
-        register_per_ip_per_day=row.register_per_ip_per_day,
-        resend_verification_per_ip_per_hour=row.resend_verification_per_ip_per_hour,
-        login_per_ip_per_hour=row.login_per_ip_per_hour,
-        login_per_username_per_hour=row.login_per_username_per_hour,
-        feedback_anon_per_ip_per_day=row.feedback_anon_per_ip_per_day,
-        reports_per_user_per_day=getattr(
-            row, "reports_per_user_per_day", DEFAULT_REPORTS_PER_USER_PER_DAY,
+        verification_enabled=pick(
+            auth, "verification_enabled", DEFAULT_VERIFICATION_ENABLED,
         ),
-        authcode_redeem_per_user_per_hour=getattr(
-            row, "authcode_redeem_per_user_per_hour", DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
+        content_review_enabled=pick(
+            content, "content_review_enabled", DEFAULT_CONTENT_REVIEW_ENABLED,
         ),
-        member_claim_enabled=getattr(row, "member_claim_enabled", DEFAULT_MEMBER_CLAIM_ENABLED),
-        member_claim_per_user_per_hour=getattr(
-            row, "member_claim_per_user_per_hour", DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
+        registration_enabled=pick(
+            auth, "registration_enabled", DEFAULT_REGISTRATION_ENABLED,
         ),
-        member_claim_per_ip_per_day=getattr(
-            row, "member_claim_per_ip_per_day", DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
+        register_per_ip_per_day=pick(
+            rate, "register_per_ip_per_day", DEFAULT_REGISTER_PER_IP_PER_DAY,
         ),
-        member_check_per_ip_per_hour=getattr(
-            row, "member_check_per_ip_per_hour", DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+        resend_verification_per_ip_per_hour=pick(
+            rate, "resend_verification_per_ip_per_hour",
+            DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
         ),
-        member_lookup_per_ip_per_hour=getattr(
-            row, "member_lookup_per_ip_per_hour", DEFAULT_MEMBER_LOOKUP_PER_IP_PER_HOUR,
+        login_per_ip_per_hour=pick(
+            rate, "login_per_ip_per_hour", DEFAULT_LOGIN_PER_IP_PER_HOUR,
         ),
-        stepup_email_per_user_per_hour=getattr(
-            row, "stepup_email_per_user_per_hour", DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
+        login_per_username_per_hour=pick(
+            rate, "login_per_username_per_hour", DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
         ),
-        stepup_email_per_ip_per_hour=getattr(
-            row, "stepup_email_per_ip_per_hour", DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
+        feedback_anon_per_ip_per_day=pick(
+            rate, "feedback_anon_per_ip_per_day", DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
         ),
-        sync_upload_max_bytes=row.sync_upload_max_bytes,
-        tus_media_max_bytes=row.tus_media_max_bytes,
-        auto_update_enabled=row.auto_update_enabled,
-        update_poll_interval_seconds=row.update_poll_interval_seconds,
-        update_timezone=row.update_timezone,
-        update_window_start_hour=row.update_window_start_hour,
-        update_window_end_hour=row.update_window_end_hour,
-        update_apply_cutoff_minutes_before_end=row.update_apply_cutoff_minutes_before_end,
-        update_release_keep=row.update_release_keep,
-        update_db_backup_keep=row.update_db_backup_keep,
-        comments_enabled=row.comments_enabled,
-        comment_max_depth=row.comment_max_depth,
-        dms_enabled=row.dms_enabled,
-        verification_valid_days=row.verification_valid_days,
-        admin_valid_days=row.admin_valid_days,
-        registration_verify_days=row.registration_verify_days,
+        reports_per_user_per_day=pick(
+            rate, "reports_per_user_per_day", DEFAULT_REPORTS_PER_USER_PER_DAY,
+        ),
+        authcode_redeem_per_user_per_hour=pick(
+            rate, "authcode_redeem_per_user_per_hour",
+            DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
+        ),
+        member_claim_enabled=pick(
+            auth, "member_claim_enabled", DEFAULT_MEMBER_CLAIM_ENABLED,
+        ),
+        member_claim_per_user_per_hour=pick(
+            rate, "member_claim_per_user_per_hour",
+            DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
+        ),
+        member_claim_per_ip_per_day=pick(
+            rate, "member_claim_per_ip_per_day", DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
+        ),
+        member_check_per_ip_per_hour=pick(
+            rate, "member_check_per_ip_per_hour", DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+        ),
+        member_lookup_per_ip_per_hour=pick(
+            rate, "member_lookup_per_ip_per_hour", DEFAULT_MEMBER_LOOKUP_PER_IP_PER_HOUR,
+        ),
+        stepup_email_per_user_per_hour=pick(
+            rate, "stepup_email_per_user_per_hour", DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
+        ),
+        stepup_email_per_ip_per_hour=pick(
+            rate, "stepup_email_per_ip_per_hour", DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
+        ),
+        sync_upload_max_bytes=pick(
+            upload, "sync_upload_max_bytes", DEFAULT_SYNC_UPLOAD_MAX_BYTES,
+        ),
+        tus_media_max_bytes=pick(
+            upload, "tus_media_max_bytes", DEFAULT_TUS_MEDIA_MAX_BYTES,
+        ),
+        auto_update_enabled=pick(
+            updater, "auto_update_enabled", DEFAULT_AUTO_UPDATE_ENABLED,
+        ),
+        update_poll_interval_seconds=pick(
+            updater, "update_poll_interval_seconds", DEFAULT_UPDATE_POLL_INTERVAL_SECONDS,
+        ),
+        update_timezone=pick(updater, "update_timezone", DEFAULT_UPDATE_TIMEZONE),
+        update_window_start_hour=pick(
+            updater, "update_window_start_hour", DEFAULT_UPDATE_WINDOW_START_HOUR,
+        ),
+        update_window_end_hour=pick(
+            updater, "update_window_end_hour", DEFAULT_UPDATE_WINDOW_END_HOUR,
+        ),
+        update_apply_cutoff_minutes_before_end=pick(
+            updater, "update_apply_cutoff_minutes_before_end",
+            DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
+        ),
+        update_release_keep=pick(
+            updater, "update_release_keep", DEFAULT_UPDATE_RELEASE_KEEP,
+        ),
+        update_db_backup_keep=pick(
+            updater, "update_db_backup_keep", DEFAULT_UPDATE_DB_BACKUP_KEEP,
+        ),
+        comments_enabled=pick(content, "comments_enabled", DEFAULT_COMMENTS_ENABLED),
+        comment_max_depth=pick(content, "comment_max_depth", DEFAULT_COMMENT_MAX_DEPTH),
+        dms_enabled=pick(content, "dms_enabled", DEFAULT_DMS_ENABLED),
+        verification_valid_days=pick(
+            auth, "verification_valid_days", DEFAULT_VERIFICATION_VALID_DAYS,
+        ),
+        admin_valid_days=pick(auth, "admin_valid_days", DEFAULT_ADMIN_VALID_DAYS),
+        registration_verify_days=pick(
+            auth, "registration_verify_days", DEFAULT_REGISTRATION_VERIFY_DAYS,
+        ),
     )
 
 
 def get_policy() -> SitePolicy:
-    """Return the cached site-policy snapshot (defaults if no row yet)."""
+    """Return the cached site-policy snapshot.
+
+    五张表各读一行（都按 pk=1）。表里没行时该领域回落默认值，不是整份回落——
+    「只配了频控、没配上传」是合法状态。
+    """
     cached = cache.get(CACHE_KEY)
     if isinstance(cached, SitePolicy):
         return cached
-    from .models import SiteSettings
+    from .models import (
+        AuthPolicy,
+        ContentPolicy,
+        RateLimitPolicy,
+        UpdaterPolicy,
+        UploadPolicy,
+    )
 
     try:
-        row = SiteSettings.objects.filter(pk=1).first()
+        rows = {
+            "auth": AuthPolicy.objects.filter(pk=1).first(),
+            "rate": RateLimitPolicy.objects.filter(pk=1).first(),
+            "upload": UploadPolicy.objects.filter(pk=1).first(),
+            "updater": UpdaterPolicy.objects.filter(pk=1).first(),
+            "content": ContentPolicy.objects.filter(pk=1).first(),
+        }
     except (OperationalError, ProgrammingError):
         return SitePolicy.defaults()
-    policy = _snapshot(row)
+    policy = _snapshot(rows)
     cache.set(CACHE_KEY, policy, timeout=None)
     return policy
 

@@ -11,7 +11,6 @@ from django.core.cache import cache
 from django.test import Client, TestCase
 from django.utils import timezone
 
-from common.models import SiteSettings
 
 from accounts.authcode import AuthCodeError, redeem_authcode
 from accounts.models import (
@@ -30,12 +29,6 @@ from accounts.validity import enforce_account_validity
 LOGIN_URL = "/auth/login/"
 
 
-def set_policy(**kwargs):
-    obj, _ = SiteSettings.objects.get_or_create(pk=1)
-    for key, value in kwargs.items():
-        setattr(obj, key, value)
-    obj.save()
-    return obj
 
 
 def approve(user, channel=Verification.CHANNEL_MANUAL, *, expires_at=None, days=365):

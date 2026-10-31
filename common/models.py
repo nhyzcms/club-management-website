@@ -325,3 +325,250 @@ class SiteSettings(models.Model):
 
     def delete(self, *args, **kwargs):
         return 0, {}
+
+
+# ── B5：SiteSettings 拆五 ────────────────────────────────────────────────
+#
+# 为什么拆：SiteSettings 一张表 33 个字段，横跨认证、频控、上传、自动更新、
+# 内容五个互不相干的领域。admin 里是一个 33 个输入框的表单，改上传上限要连带
+# 提交全部字段；两个人同时编辑不同领域会互相覆盖。
+#
+# 拆开后每张表只装一个领域，各自 singleton（pk=1）。**读取入口不变**——
+# get_policy() 仍返回同一个 SitePolicy dataclass，调用方一行都不用改。
+
+
+class _SingletonPolicy(models.Model):
+    """五张策略表的公共基类：pk 恒为 1，保存后清策略缓存。"""
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+        invalidate_policy_cache()
+
+    def delete(self, *args, **kwargs):
+        # 策略表永远保留一行，删掉会让 get_policy() 静默回落默认值
+        return 0, {}
+
+    def __str__(self):
+        return self._meta.verbose_name
+
+
+class AuthPolicy(_SingletonPolicy):
+    """认证与身份：谁能注册、认证多久有效、注册后多久必须认证。"""
+
+    verification_enabled = models.BooleanField(
+        "认证通道开启",
+        default=DEFAULT_VERIFICATION_ENABLED,
+        help_text="关闭后不可新开或完成任何认证通道；已通过者仍算已认证。",
+    )
+    verification_valid_days = models.PositiveIntegerField(
+        "认证有效期（天）",
+        default=DEFAULT_VERIFICATION_VALID_DAYS,
+        validators=[MinValueValidator(1)],
+        help_text="认证码 / 人工核验 / 邮箱认证通过后，认证状态的有效天数；过期需重新认证。",
+    )
+    admin_valid_days = models.PositiveIntegerField(
+        "管理员身份有效期（天）",
+        default=DEFAULT_ADMIN_VALID_DAYS,
+        validators=[MinValueValidator(1)],
+        help_text="管理员身份自授予之日起的有效天数；过期需重新授予。超级管理员不受限。",
+    )
+    registration_verify_days = models.PositiveIntegerField(
+        "注册后认证宽限（天）",
+        default=DEFAULT_REGISTRATION_VERIFY_DAYS,
+        validators=[MinValueValidator(1)],
+        help_text="注册后未完成认证的宽限天数；超期将停用该账号。",
+    )
+    registration_enabled = models.BooleanField(
+        "开放自助注册",
+        default=DEFAULT_REGISTRATION_ENABLED,
+        help_text="关闭后自助注册接口返回 403。",
+    )
+    member_claim_enabled = models.BooleanField(
+        "开放社员身份自助认领",
+        default=DEFAULT_MEMBER_CLAIM_ENABLED,
+        help_text="关闭后：认领接口 403、注册后的认领阶段不展示；已绑定关系不受影响。",
+    )
+
+    class Meta:
+        verbose_name = "认证策略"
+        verbose_name_plural = "认证策略"
+
+
+class RateLimitPolicy(_SingletonPolicy):
+    """频控额度。全部是「每 X 每 Y 最多 N 次」的同构参数，集中在一处才看得出松紧。"""
+
+    register_per_ip_per_day = models.PositiveIntegerField(
+        "每 IP 每日注册次数",
+        default=DEFAULT_REGISTER_PER_IP_PER_DAY,
+    )
+    resend_verification_per_ip_per_hour = models.PositiveIntegerField(
+        "每 IP 每小时重发认证邮件次数",
+        default=DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
+    )
+    login_per_ip_per_hour = models.PositiveIntegerField(
+        "每 IP 每小时登录失败次数",
+        default=DEFAULT_LOGIN_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="门户登录与 Django admin 登录共用。只计失败，成功登录不占额度。",
+    )
+    login_per_username_per_hour = models.PositiveIntegerField(
+        "每用户名每小时登录失败次数",
+        default=DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="按用户名或邮箱计，防针对单一账号的撞库。",
+    )
+    feedback_anon_per_ip_per_day = models.PositiveIntegerField(
+        "每 IP 每日匿名反馈次数",
+        default=DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
+    )
+    reports_per_user_per_day = models.PositiveIntegerField(
+        "每用户每日举报次数",
+        default=DEFAULT_REPORTS_PER_USER_PER_DAY,
+        validators=[MinValueValidator(1)],
+        help_text="已认证成员提交举报的日上限。",
+    )
+    authcode_redeem_per_user_per_hour = models.PositiveIntegerField(
+        "每账号每小时认证码兑换失败次数",
+        default=DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="认证码兑换只计失败；成功兑换不占额度。",
+    )
+    member_claim_per_user_per_hour = models.PositiveIntegerField(
+        "每账号每小时认领失败次数",
+        default=DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="自助认领只计失败；成功认领不占额度。",
+    )
+    member_claim_per_ip_per_day = models.PositiveIntegerField(
+        "每 IP 每日认领失败次数",
+        default=DEFAULT_MEMBER_CLAIM_PER_IP_PER_DAY,
+        validators=[MinValueValidator(1)],
+    )
+    member_check_per_ip_per_hour = models.PositiveIntegerField(
+        "每 IP 每小时扫码校验次数",
+        default=DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="工牌二维码校验的公开端点频控（计全部请求）。",
+    )
+    member_lookup_per_ip_per_hour = models.PositiveIntegerField(
+        "每 IP 每小时条码载荷查询次数",
+        default=DEFAULT_MEMBER_LOOKUP_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="12 位条码载荷的匿名查询频控；现场连续核对需要比二维码校验更宽。",
+    )
+    stepup_email_per_user_per_hour = models.PositiveIntegerField(
+        "安全验证：每账号每小时验证码次数",
+        default=DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="安全验证邮箱验证码的每小时上限（按账号）。",
+    )
+    stepup_email_per_ip_per_hour = models.PositiveIntegerField(
+        "安全验证：每 IP 每小时验证码次数",
+        default=DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="安全验证邮箱验证码的每小时上限（按 IP）。",
+    )
+
+    class Meta:
+        verbose_name = "频控策略"
+        verbose_name_plural = "频控策略"
+
+
+class UploadPolicy(_SingletonPolicy):
+    """上传体积上限。"""
+
+    sync_upload_max_bytes = models.PositiveBigIntegerField(
+        "同步上传单文件上限（字节）",
+        default=DEFAULT_SYNC_UPLOAD_MAX_BYTES,
+        help_text="任意类型走同步通路的上限；超过则仅图片/视频可走 tus。",
+    )
+    tus_media_max_bytes = models.PositiveBigIntegerField(
+        "tus 图/视频上限（字节）",
+        default=DEFAULT_TUS_MEDIA_MAX_BYTES,
+    )
+
+    class Meta:
+        verbose_name = "上传策略"
+        verbose_name_plural = "上传策略"
+
+
+class UpdaterPolicy(_SingletonPolicy):
+    """自动更新守护进程的参数。改错会直接导致线上不更新，所以单独一张表。"""
+
+    auto_update_enabled = models.BooleanField(
+        "开启自动更新",
+        default=DEFAULT_AUTO_UPDATE_ENABLED,
+        help_text="关闭后守护进程跳过下载与应用。",
+    )
+    update_poll_interval_seconds = models.PositiveIntegerField(
+        "轮询间隔（秒）",
+        default=DEFAULT_UPDATE_POLL_INTERVAL_SECONDS,
+    )
+    update_timezone = models.CharField(
+        "更新时区",
+        max_length=63,
+        default=DEFAULT_UPDATE_TIMEZONE,
+        help_text="IANA 时区名；不用 Django TIME_ZONE。",
+    )
+    update_window_start_hour = models.PositiveSmallIntegerField(
+        "窗口开始时刻（时）",
+        default=DEFAULT_UPDATE_WINDOW_START_HOUR,
+        validators=_HOUR_VALIDATORS,
+        help_text="应用窗口为 [开始, 结束) 的整点小时，时区见「更新时区」。",
+    )
+    update_window_end_hour = models.PositiveSmallIntegerField(
+        "窗口结束时刻（时）",
+        default=DEFAULT_UPDATE_WINDOW_END_HOUR,
+        validators=_HOUR_VALIDATORS,
+    )
+    update_apply_cutoff_minutes_before_end = models.PositiveIntegerField(
+        "窗口结束前截止分钟",
+        default=DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
+        help_text="窗口结束前 N 分钟起不再开始应用更新。",
+    )
+    update_release_keep = models.PositiveIntegerField(
+        "保留发行包份数",
+        default=DEFAULT_UPDATE_RELEASE_KEEP,
+    )
+    update_db_backup_keep = models.PositiveIntegerField(
+        "保留数据库快照份数",
+        default=DEFAULT_UPDATE_DB_BACKUP_KEEP,
+    )
+
+    class Meta:
+        verbose_name = "更新策略"
+        verbose_name_plural = "更新策略"
+
+
+class ContentPolicy(_SingletonPolicy):
+    """内容侧开关：审核、评论区、私信。"""
+
+    content_review_enabled = models.BooleanField(
+        "开启内容审核",
+        default=DEFAULT_CONTENT_REVIEW_ENABLED,
+        help_text="关闭后新建新闻、活动、教程直接通过，不进待审队列；已有待审条目不会批量通过。",
+    )
+    comments_enabled = models.BooleanField(
+        "启用评论区",
+        default=DEFAULT_COMMENTS_ENABLED,
+        help_text="关闭后前端不再显示评论区，且无法发表新评论；已有评论保留。",
+    )
+    comment_max_depth = models.PositiveSmallIntegerField(
+        "评论最大嵌套深度",
+        default=DEFAULT_COMMENT_MAX_DEPTH,
+        validators=[MinValueValidator(1), MaxValueValidator(32)],
+        help_text="1 表示仅允许根评论；超过则拒绝，不改挂。",
+    )
+    dms_enabled = models.BooleanField(
+        "启用私信",
+        default=DEFAULT_DMS_ENABLED,
+        help_text="关闭后前端不再显示私信入口，且无法发起或发送私信；已有会话保留。",
+    )
+
+    class Meta:
+        verbose_name = "内容策略"
+        verbose_name_plural = "内容策略"

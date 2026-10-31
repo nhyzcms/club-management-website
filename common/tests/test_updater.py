@@ -19,8 +19,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase, override_settings
 
-from common.models import SiteSettings
 from common.policy import SitePolicy, get_policy
+from common.models import UpdaterPolicy
+from common.testing import set_policy
 from common.updater import (
     ApplyError,
     ApplyInterrupted,
@@ -933,11 +934,10 @@ class LoadPolicyCacheTest(TestCase):
         super().tearDown()
 
     def test_load_policy_invalidates_then_rereads(self):
-        obj, _ = SiteSettings.objects.get_or_create(pk=1)
-        obj.auto_update_enabled = True
-        obj.save()
+        set_policy(auto_update_enabled=True)
         self.assertTrue(get_policy().auto_update_enabled)
-        SiteSettings.objects.filter(pk=1).update(auto_update_enabled=False)
+        # 绕过 save() 直接改库：缓存不该失效（这是被测行为本身）
+        UpdaterPolicy.objects.filter(pk=1).update(auto_update_enabled=False)
         self.assertTrue(get_policy().auto_update_enabled)
         self.assertFalse(load_policy().auto_update_enabled)
 

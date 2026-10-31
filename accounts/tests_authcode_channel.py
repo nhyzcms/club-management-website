@@ -13,7 +13,6 @@ from django.core.cache import cache
 from django.test import Client, RequestFactory, TestCase
 from django.utils import timezone
 
-from common.models import SiteSettings
 
 from accounts.admin import AuthCodeAdmin, AuthCodeRedemptionAdmin, revoke_authcodes
 from accounts.authcode import (
@@ -23,17 +22,12 @@ from accounts.authcode import (
     redeem_authcode,
 )
 from accounts.models import AuthCode, AuthCodeRedemption, Verification, is_verified
+from common.testing import set_policy
 
 REDEEM_URL = "/auth/verification/authcode/redeem/"
 STATUS_URL = "/auth/verification/"
 
 
-def set_policy(**kwargs):
-    obj, _ = SiteSettings.objects.get_or_create(pk=1)
-    for key, value in kwargs.items():
-        setattr(obj, key, value)
-    obj.save()
-    return obj
 
 
 def make_code(code="TEST2345ABCD", *, expires_in=timedelta(days=1), max_uses=1, revoked=False, created_by=None):

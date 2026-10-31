@@ -19,7 +19,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import IdentityProof, Profile, UserSession, Verification, is_verified
-from common.models import SiteSettings
+from common.testing import set_policy
 
 
 PNG_BYTES = bytes.fromhex(
@@ -36,12 +36,6 @@ def grant_review(user):
     return User.objects.get(pk=user.pk)
 
 
-def set_policy(**kwargs):
-    obj, _ = SiteSettings.objects.get_or_create(pk=1)
-    for key, value in kwargs.items():
-        setattr(obj, key, value)
-    obj.save()
-    return obj
 
 
 def _proof(name="p.png"):

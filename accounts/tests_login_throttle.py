@@ -4,16 +4,10 @@ import json
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import TestCase
+from common.testing import set_policy
 
-from common.models import SiteSettings
 
 
-def set_policy(**kwargs):
-    obj, _ = SiteSettings.objects.get_or_create(pk=1)
-    for key, value in kwargs.items():
-        setattr(obj, key, value)
-    obj.save()
-    return obj
 
 
 class _ThrottleTestCase(TestCase):
