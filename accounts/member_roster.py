@@ -16,6 +16,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils import timezone
 
@@ -362,7 +363,9 @@ def auto_match_identities(rows: list[MemberIdentity] | None = None) -> int:
     )
     candidates: dict[str, list] = defaultdict(list)
     for p in profiles:
-        candidates[normalize_name(p.real_name)].append(p.user)
+        identity = _identity_of(p)
+        if identity is not None:
+            candidates[normalize_name(identity.real_name)].append(p.user)
 
     bound_ids = set(
         MemberIdentity.objects.exclude(user__isnull=True).values_list("user_id", flat=True)
@@ -385,6 +388,21 @@ def auto_match_identities(rows: list[MemberIdentity] | None = None) -> int:
     return matched
 
 
+def _identity_of(profile):
+    """取 ``AccountIdentity``；缺行返回 ``None``（``Profile.save()`` 正常会补）。"""
+    try:
+        return profile.user.identity_record
+    except ObjectDoesNotExist:
+        return None
+
+
+def _clear_pending(identity) -> None:
+    """清空账号侧的「待绑定暂存」。"""
+    if identity is not None and identity.pending_card_no:
+        identity.pending_card_no = ""
+        identity.save(update_fields=["pending_card_no"])
+
+
 def _align_card_no(row: MemberIdentity, profile: Profile) -> str:
     """让名册行与账号侧暂存对齐。**名册是权威**，账号侧只是「还没进名册」的暂存。
 
@@ -396,22 +414,21 @@ def _align_card_no(row: MemberIdentity, profile: Profile) -> str:
 
     返回 ``"row"``（写了名册）/ ``"cleared"``（清空了暂存）/ ``""``（无需变更）。
     """
+    identity = _identity_of(profile)
+    pending = ((identity.pending_card_no if identity is not None else "") or "").strip()
     row_card = (row.card_no or "").strip()
-    pending = (profile.card_no or "").strip()
 
     if row_card:
         # 名册已有值 → 账号侧的暂存没有存在意义了
         if pending:
-            profile.card_no = ""
-            profile.save(update_fields=["card_no"])
+            _clear_pending(identity)
             return "cleared"
         return ""
     if pending:
         # 名册空、账号有暂存 → 补进名册，然后清空暂存
         row.card_no = pending
         row.save(update_fields=["card_no", "updated_at"])
-        profile.card_no = ""
-        profile.save(update_fields=["card_no"])
+        _clear_pending(identity)
         return "row"
     return ""
 
@@ -423,8 +440,11 @@ def auto_bind_on_register(user, profile) -> MemberIdentity | None:
     没命中（名册未导入 / 校牌号不同 / 同名多行）不报错，资料里的校牌号留待名册导入后
     由 :func:`sync_card_numbers` 按姓名写回。返回绑定的名册行（没绑定则为 None）。
     """
-    wanted = normalize_card_no(getattr(profile, "card_no", ""))
-    name_n = normalize_name(getattr(profile, "real_name", ""))
+    identity = _identity_of(profile)
+    if identity is None:
+        return None
+    wanted = normalize_card_no(identity.pending_card_no or "")
+    name_n = normalize_name(identity.real_name or "")
     if not wanted or not name_n:
         return None
     if MemberIdentity.objects.filter(user=user).exists():
@@ -432,7 +452,9 @@ def auto_bind_on_register(user, profile) -> MemberIdentity | None:
 
     matches = [
         row
-        for row in MemberIdentity.objects.filter(user__isnull=True, card_no__iexact=profile.card_no.strip())
+        for row in MemberIdentity.objects.filter(
+            user__isnull=True, card_no__iexact=(identity.pending_card_no or "").strip(),
+        )
         if normalize_name(row.name) == name_n and normalize_card_no(row.card_no) == wanted
     ]
     if len(matches) != 1:
@@ -456,13 +478,16 @@ def sync_card_numbers() -> dict:
     - 已绑定行：名册有值 → 覆盖资料；名册为空 → 用资料补（名册是学校档案，为准）。
     """
     profiles = list(
-        Profile.objects.filter(user__is_active=True).filter(not_deleted_q()).select_related("user")
+        Profile.objects.filter(user__is_active=True).filter(not_deleted_q()).select_related("user", "user__identity_record")
     )
     by_user = {p.user_id: p for p in profiles}
     by_name: dict[str, list[Profile]] = defaultdict(list)
     for p in profiles:
-        if (p.card_no or "").strip() and (p.real_name or "").strip():
-            by_name[normalize_name(p.real_name)].append(p)
+        identity = _identity_of(p)
+        if identity is None:
+            continue
+        if (identity.pending_card_no or "").strip() and (identity.real_name or "").strip():
+            by_name[normalize_name(identity.real_name)].append(p)
     bound_user_ids = set(
         MemberIdentity.objects.exclude(user__isnull=True).values_list("user_id", flat=True)
     )
@@ -486,10 +511,10 @@ def sync_card_numbers() -> dict:
 
 def claim_candidates(user) -> list[MemberIdentity]:
     """本人可认领的候选：真实姓名匹配、尚未绑定的名册行。"""
-    profile = getattr(user, "profile", None)
-    if profile is None or not (profile.real_name or "").strip():
+    identity = getattr(user, "identity_record", None)
+    if identity is None or not (identity.real_name or "").strip():
         return []
-    name_n = normalize_name(profile.real_name)
+    name_n = normalize_name(identity.real_name)
     return [
         row
         for row in MemberIdentity.objects.filter(user__isnull=True)
@@ -513,7 +538,8 @@ def claim_identity(user, identity_id: int, phone_last4: str) -> MemberIdentity:
             raise ClaimError("该身份已被认领。")
 
         profile = getattr(user, "profile", None)
-        if profile is None or normalize_name(profile.real_name) != normalize_name(row.name):
+        identity = getattr(user, "identity_record", None)
+        if identity is None or normalize_name(identity.real_name) != normalize_name(row.name):
             raise ClaimError("身份信息与账号不匹配，无法认领。")
 
         row_digits = _DIGIT_RE.sub("", row.phone or "")
@@ -527,5 +553,6 @@ def claim_identity(user, identity_id: int, phone_last4: str) -> MemberIdentity:
         row.bound_by = None
         row.bind_method = MemberIdentity.BIND_SELF
         row.save(update_fields=["user", "bound_at", "bound_by", "bind_method", "updated_at"])
-        _align_card_no(row, profile)
+        if profile is not None:
+            _align_card_no(row, profile)
     return row

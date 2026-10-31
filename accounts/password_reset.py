@@ -24,6 +24,7 @@ from .identity_review import revoke_user_sessions
 from .models import PasswordResetRequest, Profile, Verification
 from .queries import identity_q
 from .registration_guard import normalize_name
+from .status import set_needs_password_change
 
 # 管理员重置后的默认密码（须在首次登录时强制修改）。
 DEFAULT_RESET_PASSWORD = "123456"
@@ -110,9 +111,8 @@ def approve_request(
 
         user.set_password(DEFAULT_RESET_PASSWORD)
         user.save(update_fields=["password"])
-        profile, _ = Profile.objects.get_or_create(user=user)
-        profile.must_change_password = True
-        profile.save(update_fields=["must_change_password"])
+        Profile.objects.get_or_create(user=user)
+        set_needs_password_change(user, True)
 
         # 已有会话一律失效：否则持有旧会话的人可绕过「首次登录」直接进入站点。
         revoke_user_sessions(user)

@@ -58,7 +58,7 @@ class ManualSubmitTest(TestCase):
         self.assertEqual(v.status, Verification.STATUS_PENDING)
         self.assertEqual(IdentityProof.objects.filter(user=self.user).count(), 1)
         self.user.profile.refresh_from_db()
-        self.assertEqual(self.user.profile.real_name, "李四")
+        self.assertEqual(self.user.identity_record.real_name, "李四")
         self.assertFalse(is_verified(self.user))  # pending 不算已认证
 
     def test_submit_multiple_proofs_accumulate(self):
@@ -91,7 +91,7 @@ class ManualSubmitTest(TestCase):
             c.force_login(user)
             resp = self._submit(c, real_name="测", identity=ident)
             self.assertEqual(resp.status_code, 200, f"{ident} 应被接受: {resp.content}")
-            self.assertEqual(User.objects.get(username=f"u_{ident}").profile.identity, ident)
+            self.assertEqual(User.objects.get(username=f"u_{ident}").identity_record.identity, ident)
 
     def test_submit_requires_proof(self):
         c = self._client()

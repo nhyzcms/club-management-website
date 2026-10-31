@@ -14,6 +14,8 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.core.cache import cache
 from django.test import TestCase
+
+from .testing import make_profile
 from django.utils import timezone
 
 from accounts import stepup
@@ -22,7 +24,7 @@ from accounts.models import Profile, SecurityQuestion, StepUpEmailCode, StepUpEv
 
 def make_user(username="u1", email_ok=True):
     user = User.objects.create_user(username=username, password="StrongPass123!", email="")
-    Profile.objects.create(user=user, real_name="测试用户")
+    make_profile(user=user, real_name="测试用户")
     if email_ok:
         user.email = f"{username}@example.test"  # User.email 只装已认证邮箱
         user.save(update_fields=["email"])

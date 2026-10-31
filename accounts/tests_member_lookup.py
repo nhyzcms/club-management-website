@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .models import MemberIdentity, Profile, Verification
+from .testing import make_profile
 
 
 def _verify(user):
@@ -124,7 +125,7 @@ class MemberLookupTest(TestCase):
 
     def test_verified_teacher_is_unlimited(self):
         user = _verify(User.objects.create_user(username="teacher", password="x"))
-        Profile.objects.create(user=user, identity="teacher")
+        make_profile(user=user, identity="teacher")
         self.client.force_login(user)
         for _ in range(30):
             self.assertEqual(self.post("张三").status_code, 200)

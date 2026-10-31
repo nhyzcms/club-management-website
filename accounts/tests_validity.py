@@ -24,6 +24,7 @@ from accounts.models import (
     is_verified,
     rank_of,
 )
+from accounts.testing import make_profile
 from accounts.validity import enforce_account_validity
 
 LOGIN_URL = "/auth/login/"
@@ -161,7 +162,7 @@ class EnforceAccountValidityTest(TestCase):
         self.assertEqual(enforce_account_validity(u), "unverified_expired")
         u.refresh_from_db()
         self.assertFalse(u.is_active)
-        self.assertIsNotNone(u.profile.expiry_disabled_at)
+        self.assertIsNotNone(u.lifecycle.expiry_disabled_at)
 
     def test_unverified_within_grace_not_disabled(self):
         u = User.objects.create_user(username="u", password="p")
@@ -181,7 +182,7 @@ class EnforceAccountValidityTest(TestCase):
     def test_registration_deadline_override_extends(self):
         u = User.objects.create_user(username="u", password="p")
         backdate_joined(u, 61)
-        Profile.objects.create(user=u, registration_deadline=timezone.now() + timedelta(days=1))
+        make_profile(user=u, registration_deadline=timezone.now() + timedelta(days=1))
         self.assertIsNone(enforce_account_validity(u))
         u.refresh_from_db()
         self.assertTrue(u.is_active)

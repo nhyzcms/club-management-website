@@ -35,8 +35,8 @@ class PasswordResetRequestSerializer(serializers.ModelSerializer):
 
     def get_real_name(self, obj):
         try:
-            return obj.user.profile.real_name or ""
-        except Exception:  # Profile.DoesNotExist 等（防御：老数据）
+            return obj.user.identity_record.real_name or ""
+        except Exception:  # AccountIdentity.DoesNotExist 等（防御：老数据）
             return ""
 
     def get_proof_url(self, obj):

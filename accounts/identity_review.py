@@ -21,7 +21,7 @@ from rest_framework.response import Response
 from common.policy import get_policy
 from messaging.services import notify
 
-from .models import IdentityProof, Profile, UserSession, Verification, verification_valid_days
+from .models import AccountIdentity, IdentityProof, Profile, UserSession, Verification, verification_valid_days
 from .permissions import CanReviewIdentity
 
 
@@ -145,11 +145,12 @@ def disable_user(user):
 
 
 def _profile_attr(user, name):
+    """读 ``AccountIdentity`` 的实名字段（B4 PR 3b2 之后不在 ``Profile`` 上）。"""
     try:
-        profile = user.profile
-    except Profile.DoesNotExist:
+        identity = user.identity_record
+    except AccountIdentity.DoesNotExist:
         return ""
-    return getattr(profile, name, "") or ""
+    return getattr(identity, name, "") or ""
 
 
 class IdentityProofBriefSerializer(serializers.ModelSerializer):

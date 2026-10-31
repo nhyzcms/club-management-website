@@ -15,6 +15,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from .models import MemberIdentity, PasswordResetRequest, Profile, UserSession, Verification
+from .testing import make_profile
 
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
@@ -45,7 +46,7 @@ class RegistrationDuplicateTest(TestCase):
         self.existing = User.objects.create_user(
             username="olduser", email="old@163.com", password="StrongPass123!",
         )
-        Profile.objects.create(
+        make_profile(
             user=self.existing, real_name="李四", identity="student", card_no="A-1024",
         )
 
@@ -89,8 +90,8 @@ class RegistrationDuplicateTest(TestCase):
 
     def test_same_name_and_roster_card_rejected_when_profile_blank(self):
         # 历史账号只绑了名册、Profile.card_no 还没回写：仍要拦住
-        self.existing.profile.card_no = ""
-        self.existing.profile.save(update_fields=["card_no"])
+        self.existing.identity_record.pending_card_no = ""
+        self.existing.identity_record.save(update_fields=["pending_card_no"])
         MemberIdentity.objects.create(
             name="李四", card_no="B-2000", admit_year=2025, cohort=1,
             code="25010101", user=self.existing, bind_method=MemberIdentity.BIND_ADMIN,
@@ -106,7 +107,7 @@ class RegistrationDuplicateTest(TestCase):
 
     def test_duplicate_pending_email_rejected(self):
         pending = User.objects.create_user(username="pendinguser", password="StrongPass123!")
-        Profile.objects.create(user=pending, real_name="赵六", identity="student")
+        make_profile(user=pending, real_name="赵六", identity="student")
         Verification.objects.create(
             user=pending, channel=Verification.CHANNEL_EMAIL,
             status=Verification.STATUS_PENDING, identifier="pending@qq.com",
@@ -116,8 +117,8 @@ class RegistrationDuplicateTest(TestCase):
         self.assertEqual(resp.json()["field"], "email")
 
     def test_deleted_account_gets_distinct_message(self):
-        self.existing.profile.deleted_at = timezone.now()
-        self.existing.profile.save(update_fields=["deleted_at"])
+        self.existing.lifecycle.deleted_at = timezone.now()
+        self.existing.lifecycle.save(update_fields=["deleted_at"])
         resp = self.post(username="olduser")
         self.assertEqual(resp.status_code, 409, resp.content)
         body = resp.json()
@@ -135,7 +136,7 @@ class PasswordResetRequestTest(TestCase):
         self.user = User.objects.create_user(
             username="member", email="member@163.com", password="OldPass123!",
         )
-        Profile.objects.create(user=self.user, real_name="周九", identity="student")
+        make_profile(user=self.user, real_name="周九", identity="student")
         self.reviewer = User.objects.create_user(username="boss", password="BossPass123!")
         perm = Permission.objects.get(
             content_type__app_label="accounts", codename="review_password_reset",
@@ -178,7 +179,7 @@ class PasswordResetRequestTest(TestCase):
 
     def test_submit_ambiguous_real_name(self):
         other = User.objects.create_user(username="other", password="StrongPass123!")
-        Profile.objects.create(user=other, real_name="周九", identity="student")
+        make_profile(user=other, real_name="周九", identity="student")
         resp = self.submit(account="周九")
         self.assertEqual(resp.status_code, 400, resp.content)
         self.assertEqual(resp.json()["reason"], "account_ambiguous")
@@ -199,8 +200,8 @@ class PasswordResetRequestTest(TestCase):
         self.assertEqual(resp.json()["reason"], "request_pending")
 
     def test_submit_rejects_deleted_account(self):
-        self.user.profile.deleted_at = timezone.now()
-        self.user.profile.save(update_fields=["deleted_at"])
+        self.user.lifecycle.deleted_at = timezone.now()
+        self.user.lifecycle.save(update_fields=["deleted_at"])
         resp = self.submit()
         self.assertEqual(resp.status_code, 400, resp.content)
         self.assertEqual(resp.json()["reason"], "account_deleted")
@@ -260,7 +261,7 @@ class PasswordResetRequestTest(TestCase):
         self.assertEqual(request_obj.moderation_note, "学生证核对无误")
         self.assertIsNotNone(request_obj.reset_at)
         self.assertTrue(self.user.check_password("123456"))
-        self.assertTrue(self.user.profile.must_change_password)
+        self.assertTrue(self.user.lifecycle.must_change_password)
         self.assertFalse(
             UserSession.objects.filter(user=self.user, revoked_at__isnull=True).exists()
         )
@@ -291,7 +292,7 @@ class PasswordResetRequestTest(TestCase):
         self.user.profile.refresh_from_db()
         self.assertEqual(request_obj.status, PasswordResetRequest.STATUS_REJECTED)
         self.assertTrue(self.user.check_password("OldPass123!"))
-        self.assertFalse(self.user.profile.must_change_password)
+        self.assertFalse(self.user.lifecycle.must_change_password)
 
     def test_double_review_conflicts(self):
         self.submit()
@@ -315,7 +316,7 @@ class ForcedPasswordChangeTest(TestCase):
         self.user = User.objects.create_user(
             username="resetme", email="resetme@163.com", password="123456",
         )
-        self.profile = Profile.objects.create(
+        self.profile = make_profile(
             user=self.user, real_name="吴十", identity="student", must_change_password=True,
         )
 
@@ -349,7 +350,7 @@ class ForcedPasswordChangeTest(TestCase):
         self.user.refresh_from_db()
         self.profile.refresh_from_db()
         self.assertTrue(self.user.check_password("BrandNewPass123!"))
-        self.assertFalse(self.profile.must_change_password)
+        self.assertFalse(self.user.lifecycle.must_change_password)
 
         # 放行普通接口（verification 需要登录，200/内部状态即可）
         allowed = self.client.get("/auth/verification/")
@@ -372,8 +373,8 @@ class ForcedPasswordChangeTest(TestCase):
         self.assertEqual(mismatch.status_code, 400, mismatch.content)
 
     def test_force_change_not_required_for_normal_account(self):
-        self.profile.must_change_password = False
-        self.profile.save(update_fields=["must_change_password"])
+        self.user.lifecycle.must_change_password = False
+        self.user.lifecycle.save(update_fields=["must_change_password"])
         self.client.force_login(self.user)
         resp = self.client.post(
             "/auth/password/force-change/",

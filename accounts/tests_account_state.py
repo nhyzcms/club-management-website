@@ -19,6 +19,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from .models import AccountIdentity, AccountLifecycle, Profile
+from .testing import make_profile
 from .status import (
     ACTIVE,
     ADMIN_EXPIRED,
@@ -48,7 +49,7 @@ class AccountStateTest(TestCase):
 
     def test_deleted(self):
         user = _user("b", is_active=False)
-        Profile.objects.create(user=user, deleted_at=timezone.now())
+        make_profile(user=user, deleted_at=timezone.now())
         state, reason = account_state(user)
         self.assertEqual(state, DELETED)
         self.assertIn("注销", reason)
@@ -56,7 +57,7 @@ class AccountStateTest(TestCase):
 
     def test_unverified_expired(self):
         user = _user("c", is_active=False)
-        Profile.objects.create(user=user, expiry_disabled_at=timezone.now())
+        make_profile(user=user, expiry_disabled_at=timezone.now())
         state, reason = account_state(user)
         self.assertEqual(state, UNVERIFIED_EXPIRED)
         self.assertIn("认证", reason)
@@ -75,49 +76,20 @@ class AccountStateTest(TestCase):
         他会被告知「已被管理员停用」——真相是他自己注销的。
         """
         user = _user("e", is_active=False)
-        Profile.objects.create(user=user, deleted_at=timezone.now())
+        make_profile(user=user, deleted_at=timezone.now())
         self.assertEqual(account_state(user)[0], DELETED)
 
     def test_deleted_beats_unverified_expired(self):
         """注销也优先于超期停用（注销是用户主动行为，信息量更高）。"""
         user = _user("f", is_active=False)
         now = timezone.now()
-        Profile.objects.create(user=user, deleted_at=now, expiry_disabled_at=now)
+        make_profile(user=user, deleted_at=now, expiry_disabled_at=now)
         self.assertEqual(account_state(user)[0], DELETED)
-
-    def test_falls_back_to_profile_when_lifecycle_missing(self):
-        """新表没有行时必须回落 Profile，不能默认「正常」。
-
-        反证：把 status.py 的 ``_lifecycle_or_profile`` 改成直接返回 None
-        （不回落），这条会红——已注销账号被判成 active。
-        """
-        user = _user("g", is_active=False)
-        Profile.objects.create(user=user, deleted_at=timezone.now())
-        _drop_split_rows(user)
-        self.assertFalse(AccountLifecycle.objects.filter(user=user).exists())
-        self.assertEqual(account_state(user)[0], DELETED)
-
-    def test_falls_back_to_profile_expiry(self):
-        user = _user("h", is_active=False)
-        Profile.objects.create(user=user, expiry_disabled_at=timezone.now())
-        _drop_split_rows(user)
-        self.assertEqual(account_state(user)[0], UNVERIFIED_EXPIRED)
 
     def test_no_profile_no_lifecycle_still_answers(self):
         """两表都没有（迁移前的老账号 / 测试夹具）：不能抛异常。"""
         user = _user("i")
         self.assertEqual(account_state(user), (ACTIVE, ""))
-
-    def test_lifecycle_wins_over_profile(self):
-        """两表都有且不一致时，新表优先（PR 2 之后新表才是真源）。
-
-        用 ``.update()`` 改新表——它不触发 ``Profile.save()``，不会回写旧列，
-        这样才能造出「两表不一致」。
-        """
-        user = _user("j", is_active=False)
-        Profile.objects.create(user=user)  # 旧列：没注销
-        AccountLifecycle.objects.filter(user=user).update(deleted_at=timezone.now())
-        self.assertEqual(account_state(user)[0], DELETED)
 
 
 class AccountIdentityModelTest(TestCase):
@@ -131,5 +103,5 @@ class AccountIdentityModelTest(TestCase):
         field = AccountIdentity._meta.get_field("identity")
         self.assertEqual(
             [c[0] for c in field.choices],
-            [c[0] for c in Profile._meta.get_field("identity").choices],
+            [c[0] for c in Profile.IDENTITY_CHOICES],
         )

@@ -24,7 +24,7 @@ from django.core.exceptions import FieldDoesNotExist
 from django.core.management.base import BaseCommand
 
 from accounts.models import AccountIdentity, AccountLifecycle, Profile
-from accounts.sync import sync_from_profile
+from accounts.sync import ensure_split_rows
 
 
 def _has_field(model, name):
@@ -148,7 +148,7 @@ class Command(BaseCommand):
                 raise SystemExit(1)
             fixed = 0
             for profile in profiles.iterator():
-                sync_from_profile(profile)
+                ensure_split_rows(profile)
                 fixed += 1
             self.stdout.write(self.style.WARNING(f"已按 Profile 修复 {fixed} 行"))
             return

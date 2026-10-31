@@ -25,6 +25,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 
 from .member_roster import normalize_card_no
@@ -91,9 +92,26 @@ def _deleted(user: User) -> bool:
     return Profile.objects.filter(user=user).filter(deleted_q()).exists()
 
 
+def _identity_of(profile):
+    """取 ``AccountIdentity``；缺行返回 ``None``（``Profile.save()`` 正常会补）。"""
+    try:
+        return profile.user.identity_record
+    except ObjectDoesNotExist:
+        return None
+
+
 def _same_name_and_card(profile: Profile, name_variants: set[str], card_key: str) -> bool:
-    return _name_matches(profile.real_name, name_variants) and (
-        normalize_card_no(profile.card_no) == card_key
+    """账号侧的「姓名 + 校牌号」是否与注册输入一致。
+
+    B4 PR 3b2 之后 ``card_no`` 变成 ``AccountIdentity.pending_card_no``，只存
+    **还没进名册**的校牌号。已绑定名册的用户这里取到空串，靠 :func:`find_duplicate`
+    的第二条路径（``MemberIdentity.card_no``）兜住。
+    """
+    identity = _identity_of(profile)
+    if identity is None:
+        return False
+    return _name_matches(identity.real_name, name_variants) and (
+        normalize_card_no(identity.pending_card_no or "") == card_key
     )
 
 
@@ -126,13 +144,13 @@ def find_duplicate(
             name_filter |= identity_q("real_name", iexact=variant)
         profiles = (
             Profile.objects.filter(name_filter)
-            .select_related("user")
+            .select_related("user", "user__identity_record")
             .order_by("pk")
         )
         for profile in profiles:
             if _same_name_and_card(profile, name_variants, card_key):
                 return DuplicateAccount(
-                    "real_name_card_no", profile.user, bool(profile.deleted_at),
+                    "real_name_card_no", profile.user, _deleted(profile.user),
                 )
 
         # 历史账号 / 后台手工绑定：名册行有校牌号但 Profile.card_no 尚未回写。
@@ -141,16 +159,17 @@ def find_duplicate(
             card_filter |= Q(card_no__iexact=variant)
         rows = (
             MemberIdentity.objects.filter(card_filter, user__isnull=False)
-            .select_related("user", "user__profile")
+            .select_related("user", "user__identity_record")
             .order_by("pk")
         )
         for row in rows:
             profile = getattr(row.user, "profile", None)
-            # 行上的校牌号已由查询命中（覆盖 Profile.card_no 未回写的情况），
+            # 行上的校牌号已由查询命中（覆盖暂存未回写的情况），
             # 这里只需确认姓名一致。
-            if profile is not None and _name_matches(profile.real_name, name_variants):
+            identity = _identity_of(profile) if profile is not None else None
+            if identity is not None and _name_matches(identity.real_name, name_variants):
                 return DuplicateAccount(
-                    "real_name_card_no", row.user, bool(profile.deleted_at),
+                    "real_name_card_no", row.user, _deleted(row.user),
                 )
 
     return None

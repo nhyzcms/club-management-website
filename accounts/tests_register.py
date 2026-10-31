@@ -100,8 +100,8 @@ class RegisterViewTest(TestCase):
     def test_real_name_identity_stored_on_profile(self):
         self.post(valid_payload(real_name="李四", identity="teacher"))
         user = User.objects.get(username="newbie")
-        self.assertEqual(user.profile.real_name, "李四")
-        self.assertEqual(user.profile.identity, "teacher")
+        self.assertEqual(user.identity_record.real_name, "李四")
+        self.assertEqual(user.identity_record.identity, "teacher")
 
     def test_register_requires_real_name(self):
         resp = self.post(valid_payload(real_name=""))
@@ -276,11 +276,11 @@ class RegisterCardNoTest(TestCase):
                 username=username, real_name=f"测试{idx}", identity=identity, card_no=" A-1024 ",
             )
             self.assertEqual(resp.status_code, 201, resp.content)
-            self.assertEqual(User.objects.get(username=username).profile.card_no, "A-1024")
+            self.assertEqual(User.objects.get(username=username).identity_record.pending_card_no, "A-1024")
 
     def test_card_no_ignored_for_other_identities(self):
         self.post(identity="teacher", card_no="A001")
-        self.assertEqual(User.objects.get(username="newbie").profile.card_no, "")
+        self.assertEqual(User.objects.get(username="newbie").identity_record.pending_card_no, "")
 
     def test_card_no_too_long_rejected(self):
         resp = self.post(card_no="X" * 21)
@@ -297,21 +297,21 @@ class RegisterCardNoTest(TestCase):
         self.assertEqual(row.user_id, user.id)
         self.assertEqual(row.bind_method, MemberIdentity.BIND_REGISTER)
         # B4：绑定成功 → 暂存清空，权威在名册行
-        self.assertEqual(user.profile.card_no, "")
+        self.assertEqual(user.identity_record.pending_card_no, "")
 
     def test_no_bind_when_card_differs(self):
         row = self.make_row(card_no="A001")
         self.post(card_no="A002")
         row.refresh_from_db()
         self.assertIsNone(row.user_id)
-        self.assertEqual(User.objects.get(username="newbie").profile.card_no, "A002")
+        self.assertEqual(User.objects.get(username="newbie").identity_record.pending_card_no, "A002")
 
     def test_no_bind_when_roster_card_blank(self):
         row = self.make_row(card_no="")
         self.post(card_no="A001")
         row.refresh_from_db()
         self.assertIsNone(row.user_id)  # 名册没有校牌号 → 不猜，留给认领
-        self.assertEqual(User.objects.get(username="newbie").profile.card_no, "A001")
+        self.assertEqual(User.objects.get(username="newbie").identity_record.pending_card_no, "A001")
 
     def test_binds_matching_row_among_same_name(self):
         mine = self.make_row(card_no="A001", code="26020001")
@@ -325,7 +325,7 @@ class RegisterCardNoTest(TestCase):
     def test_register_without_card_no_still_works(self):
         resp = self.post()
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(User.objects.get(username="newbie").profile.card_no, "")
+        self.assertEqual(User.objects.get(username="newbie").identity_record.pending_card_no, "")
 
 
 class IdentityProofStorageTest(TestCase):

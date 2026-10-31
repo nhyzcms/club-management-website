@@ -13,6 +13,8 @@ from django.core import mail
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+
+from .testing import make_profile
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -52,7 +54,7 @@ class IdentityReviewApiTest(TestCase):
         self.reviewer = grant_review(User.objects.create_user(username="rev", password="p"))
         self.other = User.objects.create_user(username="other", password="p")
         self.target = User.objects.create_user(username="tgt", password="p", email="t@e.com")
-        Profile.objects.create(user=self.target, real_name="李四", identity="student")
+        make_profile(user=self.target, real_name="李四", identity="student")
         self.v = Verification.objects.create(
             user=self.target, channel=Verification.CHANNEL_MANUAL,
             status=Verification.STATUS_PENDING,

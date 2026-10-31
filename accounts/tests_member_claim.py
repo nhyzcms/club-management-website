@@ -8,9 +8,11 @@ from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import TestCase
 
+from .testing import make_profile
+
 from accounts.member_codes import make_signature
 from accounts.member_roster import claim_candidates, claim_identity, commit_import, parse_roster
-from accounts.models import MemberIdentity, Profile, UserSession
+from accounts.models import AccountIdentity, MemberIdentity, Profile, UserSession
 from accounts.tests_register import valid_payload
 from common.models import SiteSettings
 
@@ -24,7 +26,7 @@ def make_row(name="张三", cohort=2, phone="11451419198", code="26020001", card
 
 def make_user(username="u1", real_name="张三"):
     user = User.objects.create_user(username=username, password="StrongPass123!")
-    Profile.objects.create(user=user, real_name=real_name)
+    make_profile(user=user, real_name=real_name)
     return user
 
 
@@ -223,7 +225,7 @@ class CardNoSyncTest(TestCase):
 
     def test_claim_fills_blank_row_card_no_from_profile(self):
         user = make_user()
-        Profile.objects.filter(user=user).update(card_no="A009")
+        AccountIdentity.objects.filter(user=user).update(pending_card_no="A009")
         row = make_row()
         self.client.force_login(user)
         resp = self.client.post(
@@ -237,7 +239,7 @@ class CardNoSyncTest(TestCase):
 
     def test_claim_roster_card_no_wins(self):
         user = make_user()
-        Profile.objects.filter(user=user).update(card_no="B002")
+        AccountIdentity.objects.filter(user=user).update(pending_card_no="B002")
         row = make_row(card_no="A001")
         self.client.force_login(user)
         self.client.post(
@@ -247,12 +249,12 @@ class CardNoSyncTest(TestCase):
         )
         user.profile.refresh_from_db()
         # B4：名册是唯一权威，账号侧的「待绑定暂存」在绑定后清空
-        self.assertEqual(user.profile.card_no, "")
+        self.assertEqual(user.identity_record.pending_card_no, "")
         self.assertEqual(MemberIdentity.objects.get(pk=row.pk).card_no, "A001")
 
     def test_import_writes_profile_card_no_back_to_row(self):
         user = make_user()  # 张三，注册时填了校牌号但名册还没导入
-        Profile.objects.filter(user=user).update(card_no="A001")
+        AccountIdentity.objects.filter(user=user).update(pending_card_no="A001")
         content = (self.CSV_HEADER + "张三,1,,2026,20260303,2,男,11451419198\n").encode("utf-8-sig")
         commit_import(parse_roster("a.csv", content), file_name="a.csv")
         row = MemberIdentity.objects.get(name="张三")

@@ -14,6 +14,8 @@ from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 
+from .testing import make_profile
+
 from accounts import stepup
 from accounts.deletion import AccountDeletionError, delete_account
 from accounts.models import (
@@ -46,7 +48,7 @@ def tearDownModule():
 
 def make_user(username="alice", password="StrongPass123!", email="alice@163.com"):
     user = User.objects.create_user(username=username, password=password, email=email)
-    Profile.objects.create(
+    make_profile(
         user=user,
         real_name="张三",
         nickname="小张",
@@ -127,7 +129,7 @@ class DeleteAccountApiTest(TestCase):
         # 未真正注销
         self.user.refresh_from_db()
         self.assertTrue(self.user.is_active)
-        self.assertIsNone(self.user.profile.deleted_at)
+        self.assertIsNone(self.user.lifecycle.deleted_at)
 
     def test_wrong_password_or_confirmation_is_rejected(self):
         grant = stepup.issue_grant(self.user, "delete_account")
@@ -158,10 +160,10 @@ class DeleteAccountApiTest(TestCase):
         self.assertEqual(self.user.username, "alice")
         self.assertEqual(self.user.email, "")
         self.assertFalse(self.user.check_password("StrongPass123!"))
-        self.assertIsNotNone(self.profile.deleted_at)
+        self.assertIsNotNone(self.user.lifecycle.deleted_at)
 
         # 资料：真实姓名 / 昵称保留（后台审计），其余敏感字段清空。
-        self.assertEqual(self.profile.real_name, "张三")
+        self.assertEqual(self.user.identity_record.real_name, "张三")
         self.assertEqual(self.profile.nickname, "小张")
         self.assertEqual(self.profile.bio, "")
         self.assertIsNone(self.profile.birthday)

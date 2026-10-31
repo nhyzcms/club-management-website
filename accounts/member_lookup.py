@@ -28,7 +28,7 @@ from datetime import datetime, timezone as dt_timezone
 from django.core.cache import cache
 
 from .member_codes import split_barcode_payload, verify_barcode_signature
-from .models import MemberIdentity, Profile, is_verified
+from .models import AccountIdentity, MemberIdentity, Profile, is_verified
 from .utils import get_client_ip
 
 WINDOW_SECONDS = 24 * 60 * 60
@@ -57,7 +57,7 @@ def lookup_limit(user) -> int | None:
     if MemberIdentity.objects.filter(user=user).exists():
         return None
     identity = (
-        Profile.objects.filter(user=user).values_list("identity", flat=True).first()
+        AccountIdentity.objects.filter(user=user).values_list("identity", flat=True).first()
     )
     if identity == "teacher" and is_verified(user):
         return None

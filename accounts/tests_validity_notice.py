@@ -16,6 +16,7 @@ from django.utils import timezone
 from messaging.models import Conversation, Message
 
 from accounts.models import Profile, Verification
+from accounts.testing import make_profile
 from accounts.validity_summary import (
     STATUS_ADMIN,
     STATUS_EXPIRED,
@@ -32,7 +33,7 @@ PASSWORD = "secret123"
 
 def make_user(username, **kwargs):
     user = User.objects.create_user(username=username, password=PASSWORD, **kwargs)
-    Profile.objects.create(user=user, real_name=username)
+    make_profile(user=user, real_name=username)
     return user
 
 
@@ -78,14 +79,14 @@ class AccountValiditySnapshotTest(TestCase):
 
     def test_profile_deadline_override_wins(self):
         user = make_user("late")
-        profile = user.profile
-        profile.registration_deadline = timezone.now() + timedelta(days=3)
-        profile.save(update_fields=["registration_deadline"])
+        lifecycle = user.lifecycle
+        lifecycle.registration_deadline = timezone.now() + timedelta(days=3)
+        lifecycle.save(update_fields=["registration_deadline"])
         data = account_validity(user)
         self.assertEqual(data["remaining_days"], 3)
         self.assertEqual(
             data["registration_deadline"],
-            profile.registration_deadline.isoformat(),
+            lifecycle.registration_deadline.isoformat(),
         )
 
     def test_verified_uses_last_channel_expiry(self):
@@ -117,7 +118,7 @@ class AccountValiditySnapshotTest(TestCase):
 
     def test_superuser_is_permanent(self):
         user = User.objects.create_superuser("root", "root@163.com", PASSWORD)
-        Profile.objects.create(user=user, real_name="root")
+        make_profile(user=user, real_name="root")
         data = account_validity(user)
         self.assertEqual(data["status"], STATUS_PERMANENT)
         self.assertIsNone(data["expires_at"])
@@ -188,14 +189,14 @@ class ValidityEndpointTest(TestCase):
 class BroadcastCommandTest(TestCase):
     def setUp(self):
         self.sender = User.objects.create_superuser("root", "root@163.com", PASSWORD)
-        Profile.objects.create(user=self.sender, real_name="root")
+        make_profile(user=self.sender, real_name="root")
         self.alice = make_user("alice")
         self.bob = make_user("bob")
         approve(self.alice, days=365)
 
         self.gone = make_user("gone")
-        self.gone.profile.deleted_at = timezone.now()
-        self.gone.profile.save(update_fields=["deleted_at"])
+        self.gone.lifecycle.deleted_at = timezone.now()
+        self.gone.lifecycle.save(update_fields=["deleted_at"])
 
     def _messages(self):
         return Message.objects.filter(sender=self.sender)

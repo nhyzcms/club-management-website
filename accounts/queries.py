@@ -1,63 +1,73 @@
-"""B4 PR 2b：把「生命周期字段」的 queryset 过滤切到新表，且**不改变结果集**。
+"""B4 之后「账号实名 / 生命周期字段」的查询条件构造。
 
 ## 为什么需要这一层
 
-`Profile.objects.filter(deleted_at__isnull=True)` 拼的是 SQL 列名，绕不过 ORM 的
-property——所以要切到新表，只能改查询本身：
+``Profile.objects.filter(deleted_at__isnull=True)`` 拼的是 SQL 列名，绕不过 ORM 的
+property。B4 把这些字段拆到 ``AccountIdentity`` / ``AccountLifecycle`` 后，查询必须
+写成联结形式：
 
 ```python
-Profile.objects.filter(user__lifecycle__deleted_at__isnull=True)   # 直觉写法，但是错的
+Profile.objects.filter(user__lifecycle__deleted_at__isnull=True)
 ```
 
-**错在哪**：`user__lifecycle` 是 INNER JOIN。新表没有行的用户（PR 1 之后、PR 2a
-之前注册的历史用户，或任何回填遗漏）会被**直接排除**。
+## 历史：这里曾经有「回落旧列」分支
 
-旧写法 `filter(deleted_at__isnull=True)` 会**包含**他。
-
-方向反了：把可用用户从名册里排除，比把注销用户包含进来更糟——前者是数据消失，
-后者只是多显示一行。
-
-## 做法
-
-新表有行 → 看新表；新表缺行 → 回落旧列。与 B1 的 `related_to` 同一个思路：
+PR 2b / 3b1 阶段旧列还在，新表可能有缺行（PR 1 之后、2a 之前创建的用户）。
+那时每个条件都是两条分支：
 
 ```python
 Q(user__lifecycle__isnull=False) & Q(user__lifecycle__deleted_at__isnull=True)   # 新表有行
-| Q(user__lifecycle__isnull=True) & Q(deleted_at__isnull=True)                   # 缺行回落
+| Q(user__lifecycle__isnull=True) & Q(deleted_at__isnull=True)                   # 缺行回落旧列
 ```
 
-PR 3 删掉 `Profile` 的旧列后，回落分支会变成无效条件（列不存在），届时删除即可。
+PR 3b2 删掉旧列后回落分支失去意义（字段不存在），只剩新表分支。
+
+## 缺行的用户会怎样
+
+INNER JOIN 语义：``AccountLifecycle`` 没行的用户会被**排除**。
+
+这是有意的——缺行属异常状态。两道保险保证它不会发生：
+
+1. ``0035_drop_profile_legacy_columns`` 迁移在删列前补齐所有存量
+2. ``Profile.save()`` → ``ensure_split_rows()`` 保证新注册用户建行
+
+真出现了用 ``manage.py check_profile_sync`` 排查。
 """
 from __future__ import annotations
 
 from django.db.models import Q
 
 
-def lifecycle_q(field, *, value=None, isnull=None):
-    """构造「新表优先 + 缺行回落旧列」的 ``Q``。
+def _split_q(relation, field, suffix):
+    """``relation`` 是 ``user__lifecycle`` 或 ``user__identity_record``。
 
-    ``field`` 是 ``AccountLifecycle`` 与 ``Profile`` **同名**的字段：
-    ``deleted_at`` / ``expiry_disabled_at`` / ``registration_deadline`` /
-    ``validity_notice_ack`` / ``must_change_password``。
+    ``suffix`` 的键有两种来源，必须区分：
+    - ``lifecycle_q`` 传 ``""`` / ``"__isnull"``（已经带分隔符）
+    - ``identity_q`` 传 ``"iexact"`` / ``"contains"``（裸 lookup 名，要补 ``__``）
 
-    只能用同名且语义相同的字段。``card_no`` 不在此列——它在新表叫
-    ``pending_card_no`` 且语义变了（「待绑定」而非「校牌号」），不能这样回落。
+    混用会让 ``real_name`` + ``exact`` 拼成 ``real_nameexact``——Django 报
+    ``Unsupported lookup``，但只在真正执行查询时才炸，很容易漏。
     """
-    if (value is None) == (isnull is None):
-        raise ValueError("lifecycle_q 需要 value 或 isnull 恰好一个")
-
-    suffix = {}
-    if value is not None:
-        suffix[""] = value
-    else:
-        suffix["__isnull"] = isnull
-
-    new_branch = Q(user__lifecycle__isnull=False)
-    old_branch = Q(user__lifecycle__isnull=True)
+    q = Q()
     for sfx, val in suffix.items():
-        new_branch &= Q(**{f"user__lifecycle__{field}{sfx}": val})
-        old_branch &= Q(**{f"{field}{sfx}": val})
-    return new_branch | old_branch
+        sep = "" if sfx == "" or sfx.startswith("__") else "__"
+        q &= Q(**{f"{relation}__{field}{sep}{sfx}": val})
+    return q
+
+
+def _suffix(value, isnull):
+    if (value is None) == (isnull is None):
+        raise ValueError("需要 value 或 isnull 恰好一个")
+    return {"": value} if value is not None else {"__isnull": isnull}
+
+
+def lifecycle_q(field, *, value=None, isnull=None):
+    """生命周期字段的查询条件。
+
+    ``field``：``deleted_at`` / ``expiry_disabled_at`` / ``registration_deadline`` /
+    ``validity_notice_ack`` / ``must_change_password``。
+    """
+    return _split_q("user__lifecycle", field, _suffix(value, isnull))
 
 
 def not_deleted_q():
@@ -81,9 +91,9 @@ def must_change_password_q():
 
 
 def identity_q(field, **lookup):
-    """构造「``AccountIdentity`` 优先 + 缺行回落旧列」的 ``Q``。
+    """实名资料字段的查询条件。
 
-    ``field`` 必须是两边**同名且语义相同**的字段：``real_name`` / ``identity``。
+    ``field`` 只接受两边**同名且语义相同**的字段：``real_name`` / ``identity``。
 
     **不包括 ``card_no``** —— 它在新表叫 ``pending_card_no``，语义也从「校牌号」
     变成了「待绑定暂存」（B4 PR 3a）。混用会让「已绑定用户」的查询意外命中，
@@ -96,10 +106,4 @@ def identity_q(field, **lookup):
     """
     if not lookup:
         raise ValueError("identity_q 至少需要一个查询条件")
-
-    new_branch = Q(user__identity_record__isnull=False)
-    old_branch = Q(user__identity_record__isnull=True)
-    for sfx, val in lookup.items():
-        new_branch &= Q(**{f"user__identity_record__{field}__{sfx}": val})
-        old_branch &= Q(**{f"{field}__{sfx}": val})
-    return new_branch | old_branch
+    return _split_q("user__identity_record", field, lookup)

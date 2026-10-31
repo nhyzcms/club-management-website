@@ -37,18 +37,17 @@ STATE_LABELS = {
 }
 
 
-def _lifecycle_or_profile(user):
-    """取生命周期数据源：新表优先，缺失时回落 ``Profile``。
+def lifecycle_of(user):
+    """取 ``AccountLifecycle``；缺行返回 ``None``。
 
-    B4 PR 1 阶段两张表并存（``Profile`` 的旧列还没删，迁移已回填新表）。
-    回落的意义：回填之后才注册的用户若因任何原因没建 lifecycle 行，判定不能
-    凭空变成「正常」——那是最危险的方向（把停用账号当可用）。
+    B4 PR 3b2 之前这里还要回落 ``Profile`` 的旧列。旧列删掉后回落失去意义，
+    只剩新表——两道保险保证不会缺行（``0035`` 迁移补齐存量、``Profile.save()``
+    补新增），所以缺行 = 数据异常，调用方按「无标记」处理，与历史行为一致。
     """
     try:
         return user.lifecycle
     except ObjectDoesNotExist:
-        # getattr 带默认值能兜住 RelatedObjectDoesNotExist（它同时继承 AttributeError）
-        return getattr(user, "profile", None)
+        return None
 
 
 def account_state(user):
@@ -57,10 +56,10 @@ def account_state(user):
     ``state`` ∈ ``{active, deleted, unverified_expired, admin_expired}``，
     ``reason`` 是给人看的说明（``active`` 时为空串）。
 
-    只读缓存/关联，不额外查询：``user.lifecycle`` 与 ``user.profile`` 都是
-    OneToOne 反向访问器，Django 会缓存在 ``_state.fields_cache``。
+    只读缓存/关联，不额外查询：``user.lifecycle`` 是 OneToOne 反向访问器，
+    Django 会缓存在 ``_state.fields_cache``。
     """
-    source = _lifecycle_or_profile(user)
+    source = lifecycle_of(user)
 
     def field(name):
         return getattr(source, name, None) if source is not None else None
@@ -83,3 +82,20 @@ def account_state(user):
 def is_usable(user):
     """账号当前是否可用。等价于 ``account_state(user)[0] == ACTIVE``。"""
     return account_state(user)[0] == ACTIVE
+
+
+def needs_password_change(user) -> bool:
+    """是否处于「管理员重置后必须改密」状态（缺行视为否）。"""
+    lifecycle = lifecycle_of(user)
+    return bool(lifecycle.must_change_password) if lifecycle is not None else False
+
+
+def set_needs_password_change(user, value: bool) -> None:
+    """设置强制改密标记。缺行时先补行（``Profile.save()`` 正常会补，这里是兜底）。"""
+    from .models import AccountLifecycle
+
+    lifecycle = lifecycle_of(user)
+    if lifecycle is None:
+        lifecycle, _ = AccountLifecycle.objects.get_or_create(user=user)
+    lifecycle.must_change_password = value
+    lifecycle.save(update_fields=["must_change_password"])
