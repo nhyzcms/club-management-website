@@ -32,7 +32,7 @@
 | Node.js | 22（CI 固定值） | `.github/workflows/ci.yml` 用 `actions/setup-node` 固定 `node-version: "22"`；`frontend/package.json` 未声明 `engines`，本地比 22 略新/略旧通常也可用 |
 | npm | 随 Node 附带 | 前端依赖用 `npm ci` 按 lockfile 安装 |
 
-不需要预先准备 `.env`：`config/settings.py` 自带本地默认值（`DEBUG` 默认开、`SECRET_KEY` 回退公开占位、邮件走 console 后端），开箱即可跑起来。生产必填项见 [配置参考](configuration.md)。
+需要准备 `.env`：`cp .env.example .env`，把 `DJANGO_DEBUG` 改成 `1`（默认是生产安全的 `0`）。`SECRET_KEY` 留空时测试 / 本地调试可用公开占位；生产（`DJANGO_DEBUG=0`）必须显式填写，否则拒绝启动。邮件默认走 console 后端。生产必填项见 [配置参考](configuration.md)。
 
 ## 快速开始
 

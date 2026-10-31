@@ -86,6 +86,27 @@ class SettingsHygieneTest(TestCase):
         self.assertTrue(settings.SECRET_KEY)
         self.assertTrue(settings.SECRET_KEY.startswith("django-insecure-"))
 
+    def test_debug_parser_defaults_off(self):
+        # 审计 H-6：缺省 / 空 / 无法识别一律按关闭；只有显式真值才开。
+        from config import settings as cfg
+
+        for raw in (None, "", "  ", "0", "false", "no", "off", "banana"):
+            self.assertFalse(cfg._parse_debug(raw), raw)
+        for raw in ("1", "true", "TRUE", "yes", "on", " 1 "):
+            self.assertTrue(cfg._parse_debug(raw), raw)
+
+    def test_env_example_defaults_debug_off(self):
+        # 模板是生产安全默认；本地开发需手动改 1。
+        text = (Path(settings.BASE_DIR) / ".env.example").read_text(encoding="utf-8")
+        self.assertIn("DJANGO_DEBUG=0", text)
+        self.assertNotIn("DJANGO_DEBUG=1", text)
+
+    def test_start_sh_does_not_autocopy_env(self):
+        # 生产缺 .env 必须报错退出，不能把模板默认值带进生产。
+        text = (Path(settings.BASE_DIR) / "start.sh").read_text(encoding="utf-8")
+        self.assertNotIn("[ -f .env ] || cp .env.example .env", text)
+        self.assertIn("缺少 $DIR/.env", text)
+
     def test_secret_key_helper_empty_string_falls_back_in_debug(self):
         # .env.example 的 `SECRET_KEY=` 会把空串写进 environ；必须当未设置处理。
         from django.core.exceptions import ImproperlyConfigured
