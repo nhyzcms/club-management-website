@@ -12,7 +12,15 @@ from tasks.serializers import CommentThreadHostMixin, SimpleUserSerializer  # �
 from .debt import owed_for
 from .device import device_id_from_request
 from .lifecycle import can_edit_schema, initial_status
-from .models import Activity, Ballot, Exhibit, VoteOption, Submission
+from .models import (
+    Activity,
+    Ballot,
+    Exhibit,
+    Questionnaire,
+    Submission,
+    VoteOption,
+    default_survey_schema,
+)
 from .voting import ballots_visible_to, options_locked, voting_active
 
 
@@ -301,8 +309,16 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
             validated_data["end_at"] = base + timedelta(days=days)
         validated_data["status"] = initial_status(activity_type, start_at)
         activity = Activity.objects.create(**validated_data)
-        if activity_type == "survey" and schema is not None:
-            activity.schema = schema
+        if activity_type == "survey":
+            # B8：问卷创建从 Activity.save() 搬到这儿。**必须排在设 schema 之前**
+            # ——Activity.schema 的 setter 在没有 questionnaire_id 时静默 return，
+            # 顺序反了会让调用方传的 schema 无声消失。
+            questionnaire = Questionnaire.objects.create(
+                kind=Questionnaire.KIND_SURVEY,
+                schema=schema if schema is not None else default_survey_schema(),
+            )
+            Activity.objects.filter(pk=activity.pk).update(questionnaire=questionnaire)
+            activity.questionnaire = questionnaire
         for i, text in enumerate(texts):
             VoteOption.objects.create(activity=activity, text=text, order=i)
         return self.apply_comment_thread_status(activity)

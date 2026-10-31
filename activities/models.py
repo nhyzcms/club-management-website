@@ -82,6 +82,10 @@ class Questionnaire(models.Model):
     ]
 
     kind = models.CharField("用途", max_length=12, choices=KIND_CHOICES)
+    # schema["title"] 的冗余。JSONField 里的值在 SQL 层没法建索引、没法排序，
+    # admin 列表要按标题搜索就必须落到真实列上。每次 save() 从 schema 重算，
+    # 调用方不需要（也不应该）手动维护。
+    title = models.CharField("标题", max_length=200, blank=True, default="")
     schema = models.JSONField("问卷 Schema", default=default_survey_schema)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -98,10 +102,14 @@ class Questionnaire(models.Model):
             ),
         ]
 
+    def save(self, *args, **kwargs):
+        # title 是派生值：始终以 schema["title"] 为准，避免两处不一致。
+        self.title = ((self.schema or {}).get("title") or "")[:200]
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        title = (self.schema or {}).get("title") or ""
         label = self.get_kind_display()  # type: ignore[attr-defined]
-        return f"{label}: {title}" if title else label
+        return f"{label}: {self.title}" if self.title else label
 
     @classmethod
     def get_join(cls):
@@ -302,14 +310,11 @@ class Activity(models.Model):
             )
 
     def save(self, *args, **kwargs):
+        # B8（2026-10-31）：这里原来会为 survey 类型顺手建一份 Questionnaire。
+        # model 层做跨表创建有三个问题：admin / shell 里建活动会意外多出一份问卷、
+        # 事务边界说不清、而且「建活动」和「建问卷」是两件事，只是恰好一起发生。
+        # 现在由 activities/serializers.py 的 create() 显式创建。
         super().save(*args, **kwargs)
-        if self.type == "survey" and self.questionnaire_id is None:
-            q = Questionnaire.objects.create(
-                kind=Questionnaire.KIND_SURVEY, schema=default_survey_schema(),
-            )
-            type(self).objects.filter(pk=self.pk).update(questionnaire=q)
-            self.questionnaire_id = q.pk
-            self.questionnaire = q
 
 
 class VoteOption(models.Model):

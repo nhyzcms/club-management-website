@@ -16,6 +16,7 @@ from accounts.test_helpers import grant_verification
 from reviews.test_helpers import approve_activity
 
 from .models import Activity, QuestionnaireResponse, default_survey_schema
+from .testing import make_survey_activity
 
 
 def _publish_created(resp):
@@ -187,12 +188,12 @@ class ActivityCreateReadTest(TestCase):
 
     def test_unauthenticated_list_only_public_surveys(self):
         Activity.objects.create(type="deliberation", status="open", title="hidden-delib", creator=self.author)
-        approve_activity(Activity.objects.create(
-            type="survey", status="open", title="public-survey",
+        approve_activity(make_survey_activity(
+            status="open", title="public-survey",
             creator=self.author, audience="public",
         ))
-        approve_activity(Activity.objects.create(
-            type="survey", status="open", title="members-survey",
+        approve_activity(make_survey_activity(
+            status="open", title="members-survey",
             creator=self.author, audience="members",
         ))
         self.client.force_authenticate(None)

@@ -30,6 +30,7 @@ from .lifecycle import (
     transition_overdue,
 )
 from .models import Activity, QuestionnaireResponse
+from .testing import make_survey_activity
 
 
 class InitialStatusTest(TestCase):
@@ -138,8 +139,8 @@ class TransitionOverdueTest(TestCase):
         self.assertEqual(Activity.objects.get(pk=a.pk).status, OPEN)
 
     def test_overdue_survey_flips_to_closed(self):
-        a = Activity.objects.create(
-            type="survey", status=OPEN, title="s",
+        a = make_survey_activity(
+            status=OPEN, title="s",
             end_at=timezone.now() - timedelta(minutes=1),
         )
         closed = transition_overdue()
@@ -197,9 +198,12 @@ class CanCurateTest(TestCase):
 class CanEditSchemaTest(TestCase):
     def setUp(self):
         self.user = grant_verification(User.objects.create_user(username="u", password="x"))
-        self.scheduled = Activity.objects.create(type="survey", status=SCHEDULED, title="s")
-        self.open = Activity.objects.create(type="survey", status=OPEN, title="o")
-        self.closed = Activity.objects.create(type="survey", status=CLOSED, title="c")
+        self.scheduled = make_survey_activity(
+            status=SCHEDULED, title="s")
+        self.open = make_survey_activity(
+            status=OPEN, title="o")
+        self.closed = make_survey_activity(
+            status=CLOSED, title="c")
         self.deliberation = Activity.objects.create(
             type="deliberation", status=OPEN, title="d", max_choices_per_voter=1,
         )
@@ -226,17 +230,17 @@ class CanEditSchemaTest(TestCase):
 class CanRespondTest(TestCase):
     def setUp(self):
         self.user = grant_verification(User.objects.create_user(username="u", password="x"))
-        self.public_open = Activity.objects.create(
-            type="survey", status=OPEN, title="p", audience="public",
+        self.public_open = make_survey_activity(
+            status=OPEN, title="p", audience="public",
         )
-        self.members_open = Activity.objects.create(
-            type="survey", status=OPEN, title="m", audience="members",
+        self.members_open = make_survey_activity(
+            status=OPEN, title="m", audience="members",
         )
-        self.public_closed = Activity.objects.create(
-            type="survey", status=CLOSED, title="c", audience="public",
+        self.public_closed = make_survey_activity(
+            status=CLOSED, title="c", audience="public",
         )
-        self.scheduled = Activity.objects.create(
-            type="survey", status=SCHEDULED, title="s", audience="public",
+        self.scheduled = make_survey_activity(
+            status=SCHEDULED, title="s", audience="public",
         )
         self.deliberation = Activity.objects.create(
             type="deliberation", status=OPEN, title="d", max_choices_per_voter=1,

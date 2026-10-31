@@ -1,4 +1,5 @@
 from django.contrib import admin, messages
+from django.db import models
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
@@ -47,16 +48,51 @@ class ActivityAdmin(admin.ModelAdmin):
         return format_html('<a href="{}">{}</a>', url, obj.questionnaire)
 
 
+class OrphanedSurveyFilter(admin.SimpleListFilter):
+    """无活动引用的调研问卷（B8）。
+
+    删活动时 `Activity.questionnaire` 是 `SET_NULL`，问卷留下来继续持有作答——
+    作答是历史资产，绝不连带删除。这类问卷在列表里不可见会变成沉默的黑洞，
+    所以单独一个筛选项。
+
+    **`kind=join` 不算孤儿**：它本来就不属于任何活动，是全局单例。
+    """
+
+    title = "孤儿问卷"
+    parameter_name = "orphaned"
+
+    def lookups(self, request, model_admin):
+        return (("yes", "是（无活动引用）"), ("no", "否"))
+
+    def queryset(self, request, queryset):
+        orphaned = models.Q(kind=Questionnaire.KIND_SURVEY) & models.Q(
+            survey_activity__isnull=True
+        )
+        if self.value() == "yes":
+            return queryset.filter(orphaned)
+        if self.value() == "no":
+            return queryset.exclude(orphaned)
+        return queryset
+
+
 @admin.register(Questionnaire)
 class QuestionnaireAdmin(SurveyJSAdminMixin, admin.ModelAdmin):
-    list_display = ["id", "kind", "schema_title", "activity_link", "updated_at"]
-    list_filter = ["kind"]
-    search_fields = ["id", "kind"]
+    list_display = [
+        "id", "kind", "title", "activity_link", "response_count", "updated_at",
+    ]
+    list_filter = ["kind", OrphanedSurveyFilter]
+    search_fields = ["title", "id"]
     date_hierarchy = "updated_at"
 
-    def schema_title(self, obj):
-        return (obj.schema or {}).get("title") or "—"
-    schema_title.short_description = "标题"
+    def get_queryset(self, request):
+        # response_count 每行一次 count → 一次 annotate 解决
+        return super().get_queryset(request).annotate(
+            _response_count=models.Count("responses")
+        )
+
+    @admin.display(description="作答数", ordering="_response_count")
+    def response_count(self, obj):
+        return getattr(obj, "_response_count", 0)
 
     @admin.display(description="调研活动")
     def activity_link(self, obj):

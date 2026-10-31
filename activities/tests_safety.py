@@ -19,6 +19,7 @@ from accounts.models import AccountDevice, UserSession
 from django.contrib.auth.models import User
 
 from .models import Activity, Questionnaire, QuestionnaireResponse, default_survey_schema
+from .testing import make_survey_activity
 
 
 class ActivityDeleteKeepsQuestionnaireTest(TestCase):
@@ -30,8 +31,8 @@ class ActivityDeleteKeepsQuestionnaireTest(TestCase):
     """
 
     def setUp(self):
-        self.activity = Activity.objects.create(
-            type="survey", status="open", title="社团现状调研", audience="members",
+        self.activity = make_survey_activity(
+            status="open", title="社团现状调研", audience="members",
         )
         self.questionnaire = self.activity.questionnaire
         self.assertIsNotNone(self.questionnaire, "调研活动应在保存时自动获得问卷")
@@ -119,8 +120,8 @@ class QuestionnaireResponseSnapshotTest(TestCase):
     """
 
     def setUp(self):
-        self.activity = Activity.objects.create(
-            type="survey", status="open", title="快照测试", audience="members",
+        self.activity = make_survey_activity(
+            status="open", title="快照测试", audience="members",
         )
         self.questionnaire = self.activity.questionnaire
         self.schema_v1 = {
@@ -183,8 +184,8 @@ class QuestionnaireResponseSnapshotTest(TestCase):
 
     def test_default_schema_still_usable(self):
         """没有内容的默认问卷也要能正常快照（不能因为空 dict 判断而漏写）。"""
-        fresh = Activity.objects.create(
-            type="survey", status="open", title="默认问卷", audience="members",
+        fresh = make_survey_activity(
+            status="open", title="默认问卷", audience="members",
         )
         resp = QuestionnaireResponse.objects.create(
             questionnaire=fresh.questionnaire, answers={},

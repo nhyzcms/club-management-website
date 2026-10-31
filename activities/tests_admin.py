@@ -8,14 +8,14 @@ from django.test import Client, RequestFactory, TestCase
 from .admin import ActivityAdmin, QuestionnaireResponseAdmin
 from .lifecycle import ARCHIVED, COLLECTING, OPEN
 from .models import Activity, Questionnaire, QuestionnaireResponse
+from .testing import make_survey_activity
 
 
 class QuestionnaireAdminDashboardTest(TestCase):
     def setUp(self):
         self.admin = User.objects.create_superuser("adm", "a@e.com", "x")
         self.staff = User.objects.create_user("st", password="x", is_staff=True)
-        self.survey = Activity.objects.create(
-            type="survey",
+        self.survey = make_survey_activity(
             status="open",
             title="后台调研",
         )
