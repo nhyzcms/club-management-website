@@ -76,8 +76,11 @@ from .throttles import (
 )
 from .turnstile import passes_turnstile, turnstile_error_response
 from .utils import (
+    DEVICE_COOKIE_MAX_AGE,
+    DEVICE_COOKIE_NAME,
     MAX_ACTIVE_SESSIONS,
     SESSION_HISTORY_LIMIT,
+    new_device_id,
     record_user_session,
 )
 from .validity import enforce_account_validity
@@ -235,12 +238,18 @@ def login_view(request):
 
     device, is_new_device = get_or_create_device(candidate, request)
     # 陌生设备（未通过过二次验证）→ 有 2FA 就挑战；没有任何 2FA 则本次豁免放行。
+    #
+    # `device is None` = 客户端没带 club_device Cookie（脚本直连，或刻意删掉 Cookie）。
+    # 旧实现把它当成「不需要挑战」，等于让一个缺失的 Cookie 关掉整个二次验证
+    # （2026-10-31 审计 S-1，实测：无 Cookie 登录返回 200）。现在一律视为陌生设备：
+    # 挑战通过后才建设备记录并标记信任。
     exempt = False
-    if settings.LOGIN_CHALLENGE_ENABLED and device is not None and not device.is_trusted:
+    if settings.LOGIN_CHALLENGE_ENABLED and (device is None or not device.is_trusted):
         methods = challenges.available_factors(candidate)
         if methods:
+            challenge_device_id = device.device_id if device is not None else new_device_id()
             challenge = challenges.create_challenge(
-                candidate, device.device_id, bool(form.cleaned_data.get("remember"))
+                candidate, challenge_device_id, bool(form.cleaned_data.get("remember"))
             )
             record_login_event(
                 request,
@@ -251,7 +260,19 @@ def login_view(request):
                 second_factor="",
                 is_new_device=True,
             )
-            return JsonResponse(challenges.challenge_payload(challenge), status=202)
+            response = JsonResponse(challenges.challenge_payload(challenge), status=202)
+            # 把本次挑战绑定的设备号发给客户端：验证通过后它就是被信任的那台设备。
+            response.set_cookie(
+                DEVICE_COOKIE_NAME,
+                challenge_device_id,
+                max_age=DEVICE_COOKIE_MAX_AGE,
+                httponly=True,
+                samesite="Lax",
+                secure=request.is_secure(),
+            )
+            # 告知中间件本响应已设过设备 Cookie，别再覆盖成另一个随机值。
+            request._club_device_cookie_set = True
+            return response
         exempt = True
 
     login(request, candidate)

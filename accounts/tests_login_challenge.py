@@ -45,6 +45,37 @@ class LoginChallengeTests(TestCase):
         self.assertFalse(self.client.session.get("_auth_user_id"))
         self.assertEqual(LoginEvent.objects.get().status, "challenge")
 
+    def test_login_without_device_cookie_still_challenges(self):
+        """S-1 回归：脚本直连不带 club_device Cookie，不得跳过二次验证。
+
+        反证：views.py 里把 `device is None or not device.is_trusted` 改回
+        `device is not None and not device.is_trusted`，本条立即变红（返回 200）。
+        """
+        self.client.cookies.pop(DEVICE_COOKIE_NAME, None)
+        resp = self._login()
+        self.assertEqual(resp.status_code, 202, resp.content)
+        self.assertEqual(resp.json()["reason"], "new_device")
+        self.assertFalse(self.client.session.get("_auth_user_id"))
+        # 202 里必须把服务端本次绑定的设备号发回来，否则验证通过后无从认设备
+        self.assertIn(DEVICE_COOKIE_NAME, resp.cookies)
+
+    def test_invalid_device_cookie_still_challenges(self):
+        """非法设备号同样视为陌生设备（旧实现会返回 200）。"""
+        self.client.cookies[DEVICE_COOKIE_NAME] = "not-a-valid-id"
+        resp = self._login()
+        self.assertEqual(resp.status_code, 202, resp.content)
+
+    def test_verify_without_prior_device_creates_trusted_device(self):
+        """无 Cookie 登录 → 挑战通过 → 设备记录补建并标记信任。"""
+        self.client.cookies.pop(DEVICE_COOKIE_NAME, None)
+        data = self._login().json()
+        issued = self.client.cookies[DEVICE_COOKIE_NAME].value
+        resp = self._verify(data["challenge"], method="totp", code=totp.code_at(self.secret))
+        self.assertEqual(resp.status_code, 200, resp.content)
+        device = AccountDevice.objects.get(user=self.user, device_id=issued)
+        self.assertIsNotNone(device.trusted_at)
+        self.assertTrue(self.client.session.get("_auth_user_id"))
+
     def test_verify_totp_trusts_device(self):
         data = self._login().json()
         resp = self._verify(data["challenge"], method="totp", code=totp.code_at(self.secret))
