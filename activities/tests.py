@@ -1814,3 +1814,70 @@ class PublicExhibitionGuestVoteTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["my_selections"], [oid])
+
+
+class SurveyAnswerValidationTest(TestCase):
+    """M-2 回归：作答按 Schema 校验；一人一份有 DB 级唯一键。"""
+
+    SCHEMA = {
+        "title": "校验",
+        "pages": [{
+            "name": "page1",
+            "elements": [
+                {"type": "text", "name": "q1", "title": "意见", "isRequired": True},
+                {"type": "radiogroup", "name": "q2", "choices": ["A", "B"]},
+            ],
+        }],
+    }
+
+    def setUp(self):
+        self.author = grant_verification(User.objects.create_user(username="val_author", password="x"))
+        self.client = APIClient()
+        resp = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "survey", "title": "校验问卷", "body": "<p>x</p>", "schema": self.SCHEMA,
+        })
+        self.assertEqual(resp.status_code, 201)
+        self.aid = resp.data["id"]
+
+    def _respond(self, answers):
+        return _json(
+            self.client, "post", f"/activities/activities/{self.aid}/respond/",
+            self.author, {"answers": answers},
+        )
+
+    def test_valid_answers_accepted(self):
+        self.assertEqual(self._respond({"q1": "ok", "q2": "A"}).status_code, 201)
+
+    def test_missing_required_rejected(self):
+        resp = self._respond({"q2": "A"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("q1", resp.data["detail"])
+
+    def test_unknown_question_rejected(self):
+        resp = self._respond({"q1": "ok", "ghost": 1})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("ghost", resp.data["detail"])
+
+    def test_invalid_choice_rejected(self):
+        resp = self._respond({"q1": "ok", "q2": "C"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("q2", resp.data["detail"])
+
+    def test_second_response_hits_db_uniqueness(self):
+        self.assertEqual(self._respond({"q1": "第一次"}).status_code, 201)
+        resp = self._respond({"q1": "第二次"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data["detail"], "你已经提交过了")
+
+    def test_dedupe_key_unique_at_db_level(self):
+        from django.db import IntegrityError
+        from .models import QuestionnaireResponse
+
+        questionnaire = Activity.objects.get(pk=self.aid).questionnaire
+        QuestionnaireResponse.objects.create(
+            questionnaire=questionnaire, user=self.author, dedupe_key="q-test:u-test",
+        )
+        with self.assertRaises(IntegrityError):
+            QuestionnaireResponse.objects.create(
+                questionnaire=questionnaire, user=self.author, dedupe_key="q-test:u-test",
+            )
