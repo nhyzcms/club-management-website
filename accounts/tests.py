@@ -1,10 +1,11 @@
 import json
+import uuid
 from datetime import timedelta
 from django.test import TestCase, Client, RequestFactory, override_settings
 from django.contrib.auth.models import Group, User
 from django.utils import timezone
 from .models import UserSession
-from .utils import get_client_ip, parse_user_agent, record_user_session
+from .utils import DEVICE_COOKIE_NAME, get_client_ip, parse_user_agent, record_user_session
 
 
 class LoginViewTest(TestCase):
@@ -295,8 +296,8 @@ class UserSessionModelTest(TestCase):
     def test_create_session_defaults(self):
         s = UserSession.objects.create(user=self.user, session_key="abc")
         self.assertTrue(s.is_active)
-        self.assertEqual(s.device_type, "Unknown")
-        self.assertEqual(s.device_name, "")
+        # B6：设备展示信息在 AccountDevice 上；没有 club_device cookie 的会话不关联设备
+        self.assertIsNone(s.account_device)
 
     def test_str_contains_username(self):
         s = UserSession.objects.create(user=self.user, session_key="abcdef0123456789")
@@ -344,12 +345,16 @@ class RecordUserSessionTest(TestCase):
         self.factory = RequestFactory()
         self.user = User.objects.create_user(username="u", password="p")
 
-    def _req(self):
-        return self.factory.get(
+    def _req(self, device_id=None):
+        req = self.factory.get(
             "/",
             REMOTE_ADDR="9.9.9.9",
             HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
         )
+        # B6：设备记录由 club_device cookie 触发。默认每次不同——否则多设备用例
+        # 会全被认成同一台，触发「同设备重登让位」而不是「名额顶替」。
+        req.COOKIES[DEVICE_COOKIE_NAME] = device_id or uuid.uuid4().hex
+        return req
 
     def test_creates_online_row(self):
         record_user_session(self._req(), self.user, "keyA")
@@ -357,8 +362,8 @@ class RecordUserSessionTest(TestCase):
         self.assertTrue(s.is_active)
         self.assertIsNotNone(s.last_seen_at)
         self.assertEqual(s.client_kind, "web")
-        self.assertEqual(s.ip_address, "9.9.9.9")
-        self.assertEqual(s.device_type, "Desktop")
+        self.assertEqual(s.account_device.last_ip, "9.9.9.9")
+        self.assertEqual(s.account_device.device_type, "Desktop")
 
     def test_three_devices_stay_online(self):
         for key in ("keyA", "keyB", "keyC"):
@@ -430,6 +435,8 @@ class LoginSignalIntegrationTest(TestCase):
 
     def test_login_records_device_info(self):
         c = Client()
+        # B6：设备信息挂在 AccountDevice 上，由 club_device cookie 触发创建
+        c.cookies[DEVICE_COOKIE_NAME] = "b" * 32
         c.post(
             "/auth/login/",
             data=json.dumps({"username": "u", "password": "secret123"}),
@@ -438,10 +445,10 @@ class LoginSignalIntegrationTest(TestCase):
             HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
         )
         s = UserSession.objects.get(user=self.user)
-        self.assertEqual(s.ip_address, "1.2.3.4")
-        self.assertEqual(s.device_type, "Desktop")
+        self.assertEqual(s.account_device.last_ip, "1.2.3.4")
+        self.assertEqual(s.account_device.device_type, "Desktop")
         self.assertEqual(s.client_kind, "web")
-        self.assertIn("Chrome", s.device_name)
+        self.assertIn("Chrome", s.account_device.label)
 
     def test_three_devices_stay_online(self):
         for _ in range(3):
@@ -463,6 +470,8 @@ class MultiDeviceSessionMiddlewareTest(TestCase):
 
     def _login(self, ua=DESKTOP_UA):
         c = Client()
+        # B6：设备记录由 club_device cookie 触发，每次登录用新设备 ID
+        c.cookies[DEVICE_COOKIE_NAME] = uuid.uuid4().hex
         resp = c.post(
             "/auth/login/",
             data=json.dumps({"username": "u", "password": "secret123"}),
@@ -702,6 +711,8 @@ class SessionsViewTest(TestCase):
 
     def _login(self):
         c = Client()
+        # B6：设备记录由 club_device cookie 触发
+        c.cookies[DEVICE_COOKIE_NAME] = uuid.uuid4().hex
         c.post(
             "/auth/login/",
             data=json.dumps({"username": "testuser", "password": "secret123"}),
