@@ -5,17 +5,22 @@ T1 范围：创建（已认证成员）+ 列表/详情（成员可读）+ 正文
 """
 import json
 from datetime import timedelta
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.contrib.auth.models import Permission, User
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory
 
 from accounts.test_helpers import grant_verification
+from common.models import SiteSettings
 from reviews.test_helpers import approve_activity
 
 from .models import Activity, QuestionnaireResponse, default_survey_schema
+from .throttles import PublicVoteThrottle
 
 
 def _publish_created(resp):
@@ -1814,3 +1819,72 @@ class PublicExhibitionGuestVoteTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["my_selections"], [oid])
+
+
+class PublicVoteThrottleTest(TestCase):
+    """H-2 回归：游客轮换 ``X-Device-Id`` 仍被（IP + 活动）限流兜住。
+
+    反证：去掉 ``vote`` 上的 ``throttle_classes``，第三条用例变红（200）。
+    """
+
+    DEF_DEV = "aaaaaaaa-bbbb-4ccc-8ddd-{:012d}"
+
+    def setUp(self):
+        cache.clear()
+        self.author = grant_verification(User.objects.create_user(username="thr_author", password="x"))
+        self.client = APIClient()
+        SiteSettings.objects.create(public_vote_per_ip_per_hour=2)
+        self.act = Activity.objects.create(
+            type="deliberation", title="限流众议", creator=self.author, status="open",
+            audience="public", max_choices_per_voter=1,
+            start_at=timezone.now() - timedelta(hours=1),
+            end_at=timezone.now() + timedelta(days=1),
+        )
+        approve_activity(self.act)
+        self.opt = self.act.options.create(text="A")
+
+    def tearDown(self):
+        cache.clear()
+
+    def _guest_vote(self, dev_seq, ip="198.51.100.10"):
+        self.client.force_authenticate(None)
+        return self.client.post(
+            f"/activities/activities/{self.act.pk}/vote/",
+            data=json.dumps({"option_ids": [self.opt.pk]}),
+            content_type="application/json",
+            HTTP_X_DEVICE_ID=self.DEF_DEV.format(dev_seq),
+            HTTP_X_FORWARDED_FOR=ip,
+        )
+
+    def test_rotating_device_ids_is_rate_limited_per_ip(self):
+        self.assertEqual(self._guest_vote(1).status_code, 200)
+        self.assertEqual(self._guest_vote(2).status_code, 200)
+        resp = self._guest_vote(3)
+        self.assertEqual(resp.status_code, 429)
+        self.assertIn("过于频繁", resp.data["detail"])
+        self.assertEqual(self.act.ballots.count(), 2)  # 第三条未落库
+
+    def test_other_ip_has_its_own_bucket(self):
+        self._guest_vote(1)
+        self._guest_vote(2)
+        self.assertEqual(self._guest_vote(3).status_code, 429)
+        self.assertEqual(self._guest_vote(4, ip="198.51.100.11").status_code, 200)
+
+    def test_authenticated_requests_are_not_throttled(self):
+        request = APIRequestFactory().post("/")
+        request.user = self.author
+        view = SimpleNamespace(kwargs={"pk": self.act.pk})
+        self.assertIsNone(PublicVoteThrottle().get_cache_key(request, view))
+
+    def test_turnstile_required_for_guest_when_enabled(self):
+        with patch("activities.views.passes_turnstile", return_value=False):
+            resp = self._guest_vote(1)
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(self.act.ballots.count(), 0)
+
+    def test_turnstile_token_accepted_when_verified(self):
+        with patch("activities.views.passes_turnstile", return_value=True) as verify:
+            resp = self._guest_vote(1)
+        self.assertEqual(resp.status_code, 200)
+        verify.assert_called_once()
+        self.assertEqual(verify.call_args.args[1], "")  # 无 token 时传空串，由校验函数决定

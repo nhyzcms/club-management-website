@@ -17,6 +17,7 @@ from rest_framework.response import Response
 
 from accounts.models import is_verified
 from accounts.permissions import IsVerified
+from accounts.turnstile import passes_turnstile, turnstile_error_response
 
 from attachments.create import create_attachment
 from attachments.validation import upload_error
@@ -57,6 +58,7 @@ from .permissions import (
     CanReviewSubmission,
 )
 from .serializers import ActivityDetailSerializer, ActivityListSerializer
+from .throttles import PublicVoteThrottle
 
 # 正文内嵌图片上限（与新闻一致）
 _CONTENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024
@@ -222,7 +224,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
         super().perform_update(serializer)
 
     # ── 众议投票（公开受众任何人；仅成员须登录 + 已认证）──
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], throttle_classes=[PublicVoteThrottle])
     def vote(self, request, pk=None):
         activity = self.get_object()  # 触发惰性结算（若已到点则已 closed）
         user = request.user if request.user.is_authenticated else None
@@ -231,6 +233,12 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "仅成员可投票，请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
             if not is_verified(user):
                 return Response({"detail": "请先完成账号认证后再投票。"}, status=status.HTTP_403_FORBIDDEN)
+        elif user is None:
+            # 游客投票：设备号可轮换（ADR-0019），配置了 Turnstile 时逐票校验，
+            # 把脚本刷票的成本抬到「每票解一次挑战」。
+            token = request.data.get("turnstile_token") if hasattr(request.data, "get") else ""
+            if not passes_turnstile(request, token or ""):
+                return turnstile_error_response(drf=True)
         try:
             voting.cast_ballot(
                 activity=activity,
