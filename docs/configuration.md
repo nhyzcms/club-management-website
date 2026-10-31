@@ -193,6 +193,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `login_per_username_per_hour` | `10` | 每用户名 / 邮箱每小时登录失败次数 |
 | `feedback_anon_per_ip_per_day` | `10` | 每 IP 每日匿名反馈次数 |
 | `reports_per_user_per_day` | `10` | 每用户每日举报次数 |
+| `public_vote_per_ip_per_hour` | `120` | 公开受众投票：每 IP 每活动每小时游客票上限（只计未登录请求；NAT 出口共用 IP 时调高） |
 | `authcode_redeem_per_user_per_hour` | `10` | 每账号每小时认证码兑换**失败**次数（只计失败） |
 | `member_claim_enabled` | `True` | 开放社员身份自助认领；关闭后认领接口 403、注册后认领阶段不展示（已绑定不受影响） |
 | `member_claim_per_user_per_hour` | `5` | 每账号每小时认领**失败**次数（只计失败） |

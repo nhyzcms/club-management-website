@@ -3,6 +3,7 @@ import { activityApi } from "../../api/activities";
 import type { ActivityDetail, ActivityListItem } from "../../types/activities";
 import type { Attachment } from "../../types/tasks";
 import Avatar from "../../components/Avatar";
+import { useTurnstile } from "../../turnstile";
 import type { ActivityPanelProps } from "./types";
 
 function renderExFile(f: Attachment) {
@@ -32,6 +33,12 @@ export default function ExhibitionPanel({
   const mySel = a.my_selections ?? [];
   const canVote = votingActive && a.status === "open" && !voted;
   const total = a.total_ballots ?? 0;
+  // 游客投票在启用 Turnstile 时逐票校验；成员按账号判重，不需要。
+  const {
+    containerRef: turnstileRef, token: turnstileToken, reset: resetTurnstile,
+    enabled: turnstileEnabled,
+  } = useTurnstile(!user);
+  const needTurnstile = canVote && turnstileEnabled && !turnstileToken;
 
   useEffect(() => {
     setSelected(a.my_selections ?? []);
@@ -53,7 +60,17 @@ export default function ExhibitionPanel({
     finally { setBusy(false); }
   };
 
-  const doVote = () => { if (selected.length >= 1) void run(() => activityApi.vote(a.id, selected)); };
+  const doVote = () => {
+    if (selected.length < 1 || needTurnstile) return;
+    void run(async () => {
+      try {
+        return await activityApi.vote(a.id, selected, turnstileToken || undefined);
+      } catch (e) {
+        if (turnstileEnabled) resetTurnstile();
+        throw e;
+      }
+    });
+  };
   const doRate = (eid: number, choice: "like" | "dislike") => void run(() => activityApi.rate(a.id, eid, choice));
   const doAddExhibit = async () => {
     if (newFiles.length < 1) return;
@@ -210,7 +227,8 @@ export default function ExhibitionPanel({
           </div>
           {canVote && (
             <div style={{ marginTop: 8 }}>
-              <button className="btn btn-primary btn-sm" onClick={doVote} disabled={busy || selected.length < 1}>投票</button>
+              {turnstileEnabled && <div ref={turnstileRef} style={{ margin: "0 0 8px" }} />}
+              <button className="btn btn-primary btn-sm" onClick={doVote} disabled={busy || selected.length < 1 || needTurnstile}>投票</button>
             </div>
           )}
           {votingActive && !canVote && <div className="muted" style={{ marginTop: 8 }}>共 {total} 人投票</div>}

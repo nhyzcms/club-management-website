@@ -23,6 +23,10 @@ DEFAULT_LOGIN_PER_IP_PER_HOUR = 30
 DEFAULT_LOGIN_PER_USERNAME_PER_HOUR = 10
 DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY = 10
 DEFAULT_REPORTS_PER_USER_PER_DAY = 10
+# 公开受众投票：游客按设备标识判重（ADR-0019），设备号可轮换，故再按
+# （IP + 活动）限速兜底。学校 NAT 出口多人共用一个 IP，额度按「一次班会/
+# 一节课能投完」估：120/时；现场大型评选可在站点策略里调高。
+DEFAULT_PUBLIC_VOTE_PER_IP_PER_HOUR = 120
 DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR = 10
 # 社员身份编号（ADR-0025）：自助认领 / 扫码校验开关与限流。
 DEFAULT_MEMBER_CLAIM_ENABLED = True
@@ -65,6 +69,7 @@ class SitePolicy:
     login_per_username_per_hour: int
     feedback_anon_per_ip_per_day: int
     reports_per_user_per_day: int
+    public_vote_per_ip_per_hour: int
     authcode_redeem_per_user_per_hour: int
     member_claim_enabled: bool
     member_claim_per_user_per_hour: int
@@ -102,6 +107,7 @@ class SitePolicy:
             login_per_username_per_hour=DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
             feedback_anon_per_ip_per_day=DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
             reports_per_user_per_day=DEFAULT_REPORTS_PER_USER_PER_DAY,
+            public_vote_per_ip_per_hour=DEFAULT_PUBLIC_VOTE_PER_IP_PER_HOUR,
             authcode_redeem_per_user_per_hour=DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
             member_claim_enabled=DEFAULT_MEMBER_CLAIM_ENABLED,
             member_claim_per_user_per_hour=DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
@@ -152,6 +158,9 @@ def _snapshot(row) -> SitePolicy:
         feedback_anon_per_ip_per_day=row.feedback_anon_per_ip_per_day,
         reports_per_user_per_day=getattr(
             row, "reports_per_user_per_day", DEFAULT_REPORTS_PER_USER_PER_DAY,
+        ),
+        public_vote_per_ip_per_hour=getattr(
+            row, "public_vote_per_ip_per_hour", DEFAULT_PUBLIC_VOTE_PER_IP_PER_HOUR,
         ),
         authcode_redeem_per_user_per_hour=getattr(
             row, "authcode_redeem_per_user_per_hour", DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,

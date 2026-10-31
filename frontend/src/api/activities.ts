@@ -32,10 +32,14 @@ export const activityApi = {
   remove: (id: number) => request(`/activities/${id}/`, { method: "DELETE" }),
 
   // 众议投票（option_ids：选 1..K 项；展示的 option_ids 即展品的 vote_option_id）
-  vote: (id: number, optionIds: number[]): Promise<ActivityDetail> =>
+  // 游客在启用 Turnstile 时须带 turnstile_token（每次投票一个、单次有效）。
+  vote: (id: number, optionIds: number[], turnstileToken?: string): Promise<ActivityDetail> =>
     request(`/activities/${id}/vote/`, {
       method: "POST",
-      body: JSON.stringify({ option_ids: optionIds }),
+      body: JSON.stringify({
+        option_ids: optionIds,
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+      }),
     }),
 
   // 调研作答（公开受众任何人；仅成员须登录；已登录一人一次；访客按设备一次）

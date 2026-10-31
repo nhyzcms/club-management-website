@@ -12,6 +12,7 @@ from .policy import (
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
     DEFAULT_REGISTRATION_VERIFY_DAYS,
     DEFAULT_REPORTS_PER_USER_PER_DAY,
+    DEFAULT_PUBLIC_VOTE_PER_IP_PER_HOUR,
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
     DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
     DEFAULT_MEMBER_CHECK_PER_IP_PER_HOUR,
@@ -199,6 +200,12 @@ class SiteSettings(models.Model):
         default=DEFAULT_REPORTS_PER_USER_PER_DAY,
         validators=[MinValueValidator(1)],
         help_text="已认证成员提交举报的日上限。",
+    )
+    public_vote_per_ip_per_hour = models.PositiveIntegerField(
+        "公开投票：每 IP 每小时投票次数",
+        default=DEFAULT_PUBLIC_VOTE_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="仅对未登录游客按（IP + 活动）计数；NAT 出口多人共用 IP 时需调高。",
     )
     authcode_redeem_per_user_per_hour = models.PositiveIntegerField(
         "每账号每小时认证码兑换失败次数",
