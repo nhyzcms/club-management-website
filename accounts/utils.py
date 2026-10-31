@@ -122,7 +122,6 @@ def record_user_session(request, user, session_key):
     3. 顶替只写 ``revoked_at`` / ``replaced_by_session_key``，不删 Django Session，
        让被顶设备的下一次请求能拿到 401 + 接管设备信息（前端弹「已被迫下线」）。
     """
-    ip = get_client_ip(request)
     ua = request.META.get("HTTP_USER_AGENT", "")
     device_type, device_name = parse_user_agent(ua)
     client_kind = detect_client_kind(ua, device_type)
@@ -138,14 +137,17 @@ def record_user_session(request, user, session_key):
             replaced_by_session_key=session_key,
         )
 
+    # 设备展示信息统一在 AccountDevice（B6）。局部 import：devices.py 反过来
+    # 依赖本模块的 get_client_ip，模块级 import 会成环。
+    from .devices import get_or_create_device
+
+    device, _ = get_or_create_device(user, request)
+
     UserSession.objects.update_or_create(
         session_key=session_key,
         defaults={
             "user": user,
-            "ip_address": ip,
-            "user_agent": ua,
-            "device_type": device_type,
-            "device_name": device_name,
+            "account_device": device,
             "client_kind": client_kind,
             "device_id": device_id,
             "last_seen_at": now,

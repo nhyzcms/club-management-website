@@ -23,7 +23,7 @@ from django.utils import timezone
 
 from .geolocate import geolocate
 from .models import AccountDevice, LoginEvent
-from .utils import device_id_from_request, get_client_ip
+from .utils import device_id_from_request, get_client_ip, parse_user_agent
 
 _DEVICE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
@@ -149,12 +149,16 @@ def get_or_create_device(user, request):
     )
     ip = get_client_ip(request)
     geo = geolocate(ip)
+    # B6：设备类型（Desktop / Mobile / Tablet / Bot）从 UA 解析，存在设备上而不是
+    # 每个会话上——同一台设备不该有五种类型。
+    device_type, _ = parse_user_agent(request.META.get("HTTP_USER_AGENT", ""))
 
     device, created = AccountDevice.objects.get_or_create(
         user=user,
         device_id=device_id,
         defaults={
             **info,
+            "device_type": device_type[:16],
             "last_ip": ip,
             "last_city": geo["city"],
             "last_country": geo["country"],
@@ -163,7 +167,8 @@ def get_or_create_device(user, request):
     if not created:
         device.last_seen = timezone.now()
         device.last_ip = ip
-        changed = ["last_seen", "last_ip", *info.keys()]
+        device.device_type = device_type[:16]
+        changed = ["last_seen", "last_ip", "device_type", *info.keys()]
         for field, value in info.items():
             setattr(device, field, value)
         if geo["city"]:
@@ -174,6 +179,24 @@ def get_or_create_device(user, request):
             changed.append("last_country")
         device.save(update_fields=changed)
     return device, created
+
+
+def session_device_label(session) -> str:
+    """会话关联设备的展示名。无设备记录（脚本直连 / 老会话）时给「未知设备」。"""
+    device = session.account_device
+    return (device.label if device is not None else "") or "未知设备"
+
+
+def session_device_type(session) -> str:
+    """会话关联设备的类型（Desktop / Mobile / Tablet / Bot / Unknown）。"""
+    device = session.account_device
+    return (device.device_type if device is not None else "") or "未知"
+
+
+def session_ip(session):
+    """会话关联设备的最近 IP。无设备记录时为空。"""
+    device = session.account_device
+    return device.last_ip if device is not None else None
 
 
 def record_login_event(

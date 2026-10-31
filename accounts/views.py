@@ -66,7 +66,13 @@ from .password_reset import (
 )
 from .registration_guard import duplicate_message, find_duplicate
 from .tokens import email_verification_token
-from .devices import get_or_create_device, record_login_event
+from .devices import (
+    get_or_create_device,
+    record_login_event,
+    session_device_label,
+    session_device_type,
+    session_ip,
+)
 from . import login_challenge as challenges
 from .validity_summary import account_validity, ack_notice
 from .throttles import (
@@ -934,7 +940,9 @@ def sessions_view(request):
     数据按用户裁剪到 ``SESSION_HISTORY_LIMIT`` 条，分页沿用同一上限做单页，
     返回完整信封（count/next/previous/results）供前端统一消费。
     """
-    qs = UserSession.objects.filter(user=request.user).order_by("-created_at", "-id")
+    qs = UserSession.objects.filter(user=request.user).select_related(
+        "account_device"
+    ).order_by("-created_at", "-id")
     paginator = PageNumberPagination()
     paginator.page_size = SESSION_HISTORY_LIMIT
     page = paginator.paginate_queryset(qs, Request(request))  # 单页（存储层已裁剪）
@@ -948,10 +956,10 @@ def sessions_view(request):
         "results": [
             {
                 "id": r.id, # type: ignore
-                "device_name": r.device_name,
-                "device_type": r.device_type,
+                "device_name": session_device_label(r),
+                "device_type": session_device_type(r),
                 "client_kind": r.client_kind,
-                "ip_address": r.ip_address,
+                "ip_address": session_ip(r),
                 "created_at": r.created_at.isoformat(),
                 "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else None,
                 "is_active": r.is_active,

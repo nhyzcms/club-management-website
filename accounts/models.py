@@ -608,6 +608,7 @@ class AccountDevice(models.Model):
     mac_address = models.CharField(
         "MAC（浏览器不可得，预留给原生端）", max_length=32, blank=True, default=""
     )
+    device_type = models.CharField("设备类型", max_length=16, default="Unknown")
     first_seen = models.DateTimeField("首次出现", auto_now_add=True)
     last_seen = models.DateTimeField("最近活跃", default=timezone.now)
     last_ip = models.GenericIPAddressField("最近 IP", null=True, blank=True)
@@ -803,10 +804,21 @@ class UserSession(models.Model):
     # 迟早会在换生成算法或接原生端时炸掉——一处截断、另一处完整，认不出是同一台。
     device_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     client_kind = models.CharField(max_length=8, blank=True, default="web")
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    user_agent = models.TextField(blank=True, default="")
-    device_type = models.CharField(max_length=16, default="Unknown")
-    device_name = models.CharField(max_length=128, blank=True, default="")
+    # B6（2026-10-31）：设备的展示信息统一在 AccountDevice 上，会话只引用它。
+    # 原来这里有 ip_address / user_agent / device_type / device_name 四个字段，
+    # 与 AccountDevice 的 last_ip / browser / platform / label 是同一批信息的第二份。
+    #
+    # 字段名不能叫 ``device``——那会和已有的 ``device_id``（字符串，跨设备复用名额的
+    # 键）撞 attname。``device_id`` 保留是因为无 cookie 的会话没有 FK 可依。
+    account_device = models.ForeignKey(
+        "AccountDevice",
+        verbose_name="设备",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sessions",
+        help_text="无 club_device cookie 的会话（脚本直连 API）为空。",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)

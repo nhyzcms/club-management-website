@@ -7,6 +7,7 @@ from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django.utils.html import escape
 
+from .devices import session_device_label, session_device_type, session_ip
 from .models import Profile, UserSession
 from .queries import must_change_password_q
 from .throttles import login_blocked_response
@@ -129,8 +130,8 @@ def _superseded_page(takeover, revoked_reason=""):
     if takeover is not None:
         local = takeover.created_at.astimezone(ZoneInfo("Asia/Shanghai"))
         device_block = (
-            f"<div>接管设备：<b>{escape(takeover.device_name or '未知设备')}</b>"
-            f"（{escape(takeover.device_type or '未知')}）</div>"
+            f"<div>接管设备：<b>{escape(session_device_label(takeover))}</b>"
+            f"（{escape(session_device_type(takeover))}）</div>"
             f"<div>登录时间：<b>{escape(local.strftime('%Y-%m-%d %H:%M') + '（北京时间）')}</b></div>"
         )
     return _SUPERSEDED_HTML.format(
@@ -240,9 +241,9 @@ class MultiDeviceSessionMiddleware:
             "reason": "session_superseded",
             "revoked_reason": row.revoked_reason,
             "takeover": {
-                "device_name": takeover.device_name,
-                "device_type": takeover.device_type,
-                "ip": takeover.ip_address,
+                "device_name": session_device_label(takeover),
+                "device_type": session_device_type(takeover),
+                "ip": session_ip(takeover),
                 "time": takeover.created_at.isoformat(),
             } if takeover is not None else {},
         }
