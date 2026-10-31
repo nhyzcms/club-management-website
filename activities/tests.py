@@ -1814,3 +1814,33 @@ class PublicExhibitionGuestVoteTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["my_selections"], [oid])
+
+
+class BallotPrivacyTest(TestCase):
+    """H-4 回归：非秘密投票的明细也不再对匿名公开。
+
+    反证：把 ``ballots_visible_to`` 里那句「匿名 return False」去掉，本条变红。
+    """
+
+    def setUp(self):
+        self.user = grant_verification(User.objects.create_user(username="voter1", password="x"))
+        self.client = APIClient()
+        self.activity = Activity.objects.create(
+            type="deliberation", title="众议", audience="public",
+            creator=self.user, status="in_progress", is_secret_ballot=False,
+            start_at=timezone.now() - timedelta(hours=1),
+            end_at=timezone.now() + timedelta(days=1),
+        )
+        self.activity.options.create(text="方案 A")
+        approve_activity(self.activity)
+
+    def test_anonymous_cannot_see_ballots(self):
+        resp = self.client.get(f"/activities/activities/{self.activity.pk}/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertIsNone(resp.data["ballots"])
+
+    def test_member_can_see_ballots(self):
+        self.client.force_authenticate(self.user)
+        resp = self.client.get(f"/activities/activities/{self.activity.pk}/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertIsNotNone(resp.data["ballots"])
