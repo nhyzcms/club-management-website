@@ -271,3 +271,30 @@ class ReviewCapabilitiesTest(TestCase):
         perms = client.get("/auth/me/").json()["user"]["permissions"]
         self.assertFalse(perms["can_review_content"])
         self.assertFalse(perms["can_force_publish"])
+
+
+class SelfReviewDeniedTest(TestCase):
+    """L-10 回归：同一账号不能批准自己创建的内容。"""
+
+    def setUp(self):
+        self.author = _grant(_author(), "reviews", "moderate")
+        client = APIClient()
+        client.force_authenticate(self.author)
+        created = client.post("/news/news/", {"title": "自审稿"}, format="json")
+        self.review_id = Review.objects.get(news_id=created.data["id"]).pk
+        self.client = APIClient()
+        self.client.force_authenticate(self.author)
+
+    def test_cannot_approve_own_content(self):
+        resp = self.client.post(f"/reviews/reviews/{self.review_id}/approve/")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("自己", resp.data["detail"])
+        self.assertEqual(Review.objects.get(pk=self.review_id).status, Review.STATUS_PENDING)
+
+    def test_force_publisher_can_self_approve(self):
+        _grant(self.author, "reviews", "force_publish")
+        author = User.objects.get(pk=self.author.pk)
+        self.client.force_authenticate(author)
+        resp = self.client.post(f"/reviews/reviews/{self.review_id}/approve/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["status"], Review.STATUS_APPROVED)

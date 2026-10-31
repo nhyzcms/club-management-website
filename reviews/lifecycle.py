@@ -64,6 +64,15 @@ def apply(action, review, user, *, comment=""):
         raise TransitionDenied("当前状态不可执行该审核动作")
     if action == REJECT and not (comment or "").strip():
         raise TransitionDenied("请填写驳回评语")
+    if action == APPROVE:
+        # 不能自己批准自己的内容（审计 L-10）；持 force_publish 者本就免审直发，
+        # 不在此限制。否则「创建权 + moderate」就能绕过审核轴。
+        _host, owner, _kind = _host_owner(review)
+        if (
+            owner is not None and owner.pk == user.pk
+            and not user.has_perm("reviews.force_publish")
+        ):
+            raise TransitionDenied("不能审核自己创建的内容")
 
     review.moderated_by = user
     review.moderated_at = timezone.now()
