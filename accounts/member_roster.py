@@ -21,7 +21,7 @@ from django.utils import timezone
 
 from .member_codes import MemberCodeError, generate_code, name_sort_key, next_serial
 from .models import IdentityImportBatch, MemberIdentity, Profile
-from .queries import not_deleted_q
+from .queries import identity_q, not_deleted_q
 
 # 列清单（2026-10-23 修订）：只收「不会随时间变」的档案信息。
 # - 不含「年级」：年级每年随升学年变动，需要时按「入学年份 + 当前学年」推算；
@@ -352,10 +352,11 @@ def auto_match_identities(rows: list[MemberIdentity] | None = None) -> int:
     unbound = list(qs)
 
     profiles = (
-        Profile.objects.exclude(real_name="")
+        Profile.objects.exclude(identity_q("real_name", exact=""))
         # 已注销 / 已停用账号不参与自动匹配（ADR-0027）：否则同名的新名册行会被绑到
         # 一个永远不会再登录的账号上，且无法再被本人认领。
-        .filter(user__is_active=True, deleted_at__isnull=True)
+        .filter(user__is_active=True)
+        .filter(not_deleted_q())
         .filter(user__member_identity__isnull=True)
         .select_related("user")
     )

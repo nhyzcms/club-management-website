@@ -78,3 +78,28 @@ def expiry_disabled_q():
 def must_change_password_q():
     """「需强制改密」——等价于旧的 ``must_change_password=True``。"""
     return lifecycle_q("must_change_password", value=True)
+
+
+def identity_q(field, **lookup):
+    """构造「``AccountIdentity`` 优先 + 缺行回落旧列」的 ``Q``。
+
+    ``field`` 必须是两边**同名且语义相同**的字段：``real_name`` / ``identity``。
+
+    **不包括 ``card_no``** —— 它在新表叫 ``pending_card_no``，语义也从「校牌号」
+    变成了「待绑定暂存」（B4 PR 3a）。混用会让「已绑定用户」的查询意外命中，
+    而绑定之后暂存本该是空的。
+
+    用法::
+
+        Profile.objects.filter(identity_q("real_name", iexact=name))
+        Profile.objects.filter(identity_q("real_name", contains=kw))
+    """
+    if not lookup:
+        raise ValueError("identity_q 至少需要一个查询条件")
+
+    new_branch = Q(user__identity_record__isnull=False)
+    old_branch = Q(user__identity_record__isnull=True)
+    for sfx, val in lookup.items():
+        new_branch &= Q(**{f"user__identity_record__{field}__{sfx}": val})
+        old_branch &= Q(**{f"{field}__{sfx}": val})
+    return new_branch | old_branch

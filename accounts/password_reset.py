@@ -22,6 +22,7 @@ from messaging.services import notify
 
 from .identity_review import revoke_user_sessions
 from .models import PasswordResetRequest, Profile, Verification
+from .queries import identity_q
 from .registration_guard import normalize_name
 
 # 管理员重置后的默认密码（须在首次登录时强制修改）。
@@ -187,7 +188,7 @@ def resolve_account(identifier: str) -> tuple[User | None, str]:
 
     name = normalize_name(identifier)
     profiles = list(
-        Profile.objects.filter(real_name__iexact=name).select_related("user").order_by("pk")[:2]
+        Profile.objects.filter(identity_q("real_name", iexact=name)).select_related("user").order_by("pk")[:2]
     )
     if len(profiles) == 1:
         return profiles[0].user, ""
