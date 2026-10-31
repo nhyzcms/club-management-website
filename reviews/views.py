@@ -22,6 +22,27 @@ from .serializers import (
 from .throttles import FeedbackAnonThrottle, ReportDailyThrottle
 
 
+_TRUE_STRINGS = frozenset({"1", "true", "yes", "on"})
+_FALSE_STRINGS = frozenset({"", "0", "false", "no", "off"})
+
+
+def _parse_bool(raw, *, field="disclose_identity"):
+    """multipart / urlencoded 的布尔值：``"false"`` 不能被 ``bool()`` 当成 True（M-9）。"""
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return False
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    if isinstance(raw, str):
+        value = raw.strip().lower()
+        if value in _TRUE_STRINGS:
+            return True
+        if value in _FALSE_STRINGS:
+            return False
+    raise ValueError(f"{field} 须为布尔值")
+
+
 class ReviewViewSet(viewsets.ReadOnlyModelViewSet):
     """统一审核队列：列出待审项，对新闻/活动执行通过、驳回、下架。"""
 
@@ -97,7 +118,13 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
     def submit(self, request):
         """意见反馈：可匿名（默认）或署名（登录后显式选择）提交。"""
         data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
-        disclose_identity = bool(data.pop("disclose_identity", False))
+        try:
+            raw_disclose = data.pop("disclose_identity", False)
+            if isinstance(raw_disclose, (list, tuple)):  # QueryDict.pop 返回列表
+                raw_disclose = raw_disclose[-1] if raw_disclose else False
+            disclose_identity = _parse_bool(raw_disclose)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         token = data.pop("turnstile_token", "") or ""
         if not request.user.is_authenticated and not passes_turnstile(request, token):
             return turnstile_error_response(drf=True)

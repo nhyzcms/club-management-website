@@ -811,3 +811,33 @@ class SubmissionParentTest(_AttachmentTestCase):
         self.assertEqual(self.client.delete(f"/attachments/{self.att.pk}/").status_code, 403)
 
 
+
+
+class FeedbackEvidenceAfterCloseTest(_AttachmentTestCase):
+    """M-9 回归：反馈了结后，创建者/上传者不能删除证据附件；处理人可以。"""
+
+    def setUp(self):
+        super().setUp()
+        self.creator = User.objects.create_user(username="ev_creator", password="x")
+        self.president = make_president(User.objects.create_user(username="ev_pres", password="x"))
+        self.client = APIClient()
+        self.feedback = Feedback.objects.create(
+            category="complaint", status="pending", title="f", creator=self.creator,
+        )
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(
+            "/attachments/", {"file": upload(), "feedback_id": self.feedback.pk}, format="multipart",
+        )
+        self.attachment_id = resp.data["id"]  # pyright: ignore[reportAttributeAccessIssue]
+        self.feedback.status = "closed"
+        self.feedback.save(update_fields=["status"])
+
+    def test_creator_cannot_delete_evidence_after_close(self):
+        self.client.force_authenticate(self.creator)
+        resp = self.client.delete(f"/attachments/{self.attachment_id}/")
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(Attachment.objects.filter(pk=self.attachment_id).exists())
+
+    def test_president_can_delete_evidence_after_close(self):
+        self.client.force_authenticate(self.president)
+        self.assertEqual(self.client.delete(f"/attachments/{self.attachment_id}/").status_code, 204)

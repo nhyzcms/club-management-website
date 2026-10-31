@@ -151,3 +151,39 @@ class FeedbackCloseTest(TestCase):
         self.client.force_authenticate(self.member)
         resp = self.client.get("/reviews/feedbacks/")
         self.assertEqual(resp.status_code, 403)
+
+
+class FeedbackDiscloseIdentityParsingTest(TestCase):
+    """M-9 回归：multipart 的 ``"false"`` 不能再被当成 True。"""
+
+    def setUp(self):
+        cache.clear()
+        self.member = User.objects.create_user(username="bool_member", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.member)
+
+    def tearDown(self):
+        cache.clear()
+
+    def _submit(self, value):
+        return self.client.post(
+            "/reviews/feedbacks/submit/",
+            {"title": "布尔", "description": "x", "category": "other", "disclose_identity": value},
+            format="multipart",
+        )
+
+    def test_string_false_stays_anonymous(self):
+        resp = self._submit("false")
+        self.assertEqual(resp.status_code, 201)
+        self.assertIsNone(resp.data["creator"])
+        self.assertIsNone(Feedback.objects.get(pk=resp.data["id"]).creator)
+
+    def test_string_true_is_attributed(self):
+        resp = self._submit("true")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["creator"]["username"], "bool_member")
+
+    def test_invalid_value_rejected(self):
+        resp = self._submit("maybe")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("disclose_identity", resp.data["detail"])
