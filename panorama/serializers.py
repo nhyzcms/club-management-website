@@ -3,6 +3,24 @@ from rest_framework import serializers
 from .models import Panorama
 
 
+_SENSITIVE_METADATA_KEYS = ("gps", "latitude", "longitude", "serial")
+
+
+def _redact_metadata(value):
+    """递归移除 GPS / 经纬度 / 序列号字段（大小写不敏感）。"""
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            lowered = str(key).lower()
+            if any(token in lowered for token in _SENSITIVE_METADATA_KEYS):
+                continue
+            out[key] = _redact_metadata(item)
+        return out
+    if isinstance(value, list):
+        return [_redact_metadata(item) for item in value]
+    return value
+
+
 def _absolute(context, url: str | None) -> str | None:
     """相对 MEDIA_URL 的资产地址 → 绝对地址（无请求上下文时原样返回）。"""
     if not url:
@@ -61,6 +79,7 @@ class PanoramaDetailSerializer(serializers.ModelSerializer):
     preview_url = serializers.SerializerMethodField()
     source_url = serializers.SerializerMethodField()
     tile_url_template = serializers.SerializerMethodField()
+    metadata = serializers.SerializerMethodField()
 
     class Meta:
         model = Panorama
@@ -86,6 +105,19 @@ class PanoramaDetailSerializer(serializers.ModelSerializer):
 
     def get_preview_url(self, obj):
         return _absolute(self.context, obj.preview_url)
+
+    def get_metadata(self, obj):
+        """公开侧隐去 GPS / 序列号等设备隐私字段（审计 L-3）。
+
+        全景原图的 XMP 常含拍摄点经纬度、无人机序列号；管理者保留全量用于追溯，
+        匿名 / 普通成员只看到机型、投影、尺寸等展示所需字段。
+        """
+        meta = obj.metadata or {}
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user and user.is_authenticated and user.has_perm("panorama.manage_panoramas"):
+            return meta
+        return _redact_metadata(meta)
 
     def get_tile_url_template(self, obj):
         return _absolute_raw(self.context, obj.tile_url_template)

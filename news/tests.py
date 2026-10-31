@@ -11,6 +11,7 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from accounts.models import MemberIdentity
+from common.models import Tag
 from activities.models import Activity
 from tasks.models import Task
 
@@ -625,3 +626,24 @@ class NewsCoverPreuploadTest(TestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, 400)
+
+
+class NewsTagCountPrivacyTest(TestCase):
+    """L-2 回归：标签计数只含公开已发布新闻。"""
+
+    def setUp(self):
+        self.author = _info(User.objects.create_user(username="tag_info", password="x"))
+        self.tag = Tag.objects.create(name="校园", color="#123456")
+        public = approve_news(News.objects.create(
+            title="公开", author=self.author, is_published=True,
+        ))
+        public.tags.add(self.tag)
+        draft = News.objects.create(title="未公开", author=self.author, is_published=False)
+        draft.tags.add(self.tag)
+
+    def test_tag_count_hides_unpublished(self):
+        resp = APIClient().get("/news/news/tags/")
+        self.assertEqual(resp.status_code, 200)
+        rows = resp.data["results"] if isinstance(resp.data, dict) else resp.data
+        row = next(r for r in rows if r["id"] == self.tag.pk)
+        self.assertEqual(row["news_count"], 1)

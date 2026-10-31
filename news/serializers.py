@@ -61,7 +61,8 @@ class NewsTagSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "color", "news_count"]
 
     def get_news_count(self, obj):
-        return obj.news.count()
+        # 只计公开且已发布的新闻，避免标签云泄露未公开稿数量（审计 L-2）。
+        return obj.news.filter(public_q("news"), is_published=True).count()
 
 
 class NewsListSerializer(serializers.ModelSerializer):
