@@ -36,14 +36,23 @@ def options_locked(activity):
 
 
 def ballots_visible_to(activity, user):
-    """选票明细是否对该用户可见。无投票轴则否；秘密投票仅超级管理员。"""
+    """选票明细是否对该用户可见。
+
+    - 无投票轴 → 否；
+    - 秘密投票 → 仅超级管理员；
+    - 非秘密投票 → 仅**已登录**用户；匿名一律不可见。
+
+    2026-10-31 审计 H-4：原先「非秘密投票」分支直接 ``return True``，把
+    「谁投了哪个选项」暴露给未登录公网。``is_secret_ballot`` 默认 False，等于默认公开，
+    可用于施压 / 验票 / 去匿名化。投票结果（聚合计数）仍然公开，只收起明细。
+    """
     if not voting_active(activity):
+        return False
+    if not (user and getattr(user, "is_authenticated", False)):
         return False
     if not activity.is_secret_ballot:
         return True
-    return bool(
-        user and getattr(user, "is_authenticated", False) and user.is_superuser
-    )
+    return bool(user.is_superuser)
 
 
 def maybe_close_deliberation_on_full_vote(activity):
