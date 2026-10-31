@@ -14,7 +14,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 
-from .models import MemberIdentity, PasswordResetRequest, Profile, UserSession, Verification
+from .models import (
+    AccountLifecycle, MemberIdentity, PasswordResetRequest, Profile, UserSession, Verification,
+)
 from .testing import make_profile
 
 PNG_BYTES = bytes.fromhex(
@@ -255,12 +257,14 @@ class PasswordResetRequestTest(TestCase):
         self.assertEqual(resp.status_code, 200, resp.content)
         request_obj.refresh_from_db()
         self.user.refresh_from_db()
-        self.user.profile.refresh_from_db()
+        self.user.lifecycle.refresh_from_db()
         self.assertEqual(request_obj.status, PasswordResetRequest.STATUS_APPROVED)
         self.assertEqual(request_obj.moderated_by, self.reviewer)
         self.assertEqual(request_obj.moderation_note, "学生证核对无误")
         self.assertIsNotNone(request_obj.reset_at)
-        self.assertTrue(self.user.check_password("123456"))
+        temp = resp.json()["temp_password"]
+        self.assertNotEqual(temp, "123456")
+        self.assertTrue(self.user.check_password(temp))
         self.assertTrue(self.user.lifecycle.must_change_password)
         self.assertFalse(
             UserSession.objects.filter(user=self.user, revoked_at__isnull=True).exists()
@@ -289,7 +293,7 @@ class PasswordResetRequestTest(TestCase):
         self.assertEqual(resp.status_code, 200, resp.content)
         request_obj.refresh_from_db()
         self.user.refresh_from_db()
-        self.user.profile.refresh_from_db()
+        self.user.lifecycle.refresh_from_db()
         self.assertEqual(request_obj.status, PasswordResetRequest.STATUS_REJECTED)
         self.assertTrue(self.user.check_password("OldPass123!"))
         self.assertFalse(self.user.lifecycle.must_change_password)
@@ -348,7 +352,7 @@ class ForcedPasswordChangeTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.user.refresh_from_db()
-        self.profile.refresh_from_db()
+        self.user.lifecycle.refresh_from_db()
         self.assertTrue(self.user.check_password("BrandNewPass123!"))
         self.assertFalse(self.user.lifecycle.must_change_password)
 
@@ -383,3 +387,82 @@ class ForcedPasswordChangeTest(TestCase):
         )
         self.assertEqual(resp.status_code, 400, resp.content)
         self.assertEqual(resp.json()["reason"], "not_required")
+
+
+class PasswordResetPrivilegeTests(TestCase):
+    """S-2 回归：审批人不得重置权限高于自己的账号；不再使用固定默认密码。
+
+    反证：
+    - 去掉 ``password_reset.py`` 里的 ``_ensure_can_target()`` 调用 → 前两条变红（200）；
+    - 把 ``generate_temp_password()`` 换回 ``"123456"`` → 临时密码那条变红。
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.reviewer = User.objects.create_user(username="rev_x", password="Passw0rd!2026")
+        perm = Permission.objects.get(
+            content_type__app_label="accounts", codename="review_password_reset",
+        )
+        self.reviewer.user_permissions.add(perm)
+        self.root = User.objects.create_superuser(
+            username="root_x", email="root@example.com", password="RootPass!2026",
+        )
+
+    def _pending_for(self, user):
+        return PasswordResetRequest.objects.create(user=user, identifier=user.username)
+
+    def _approve(self, req, reviewer=None):
+        self.client.force_login(reviewer or self.reviewer)
+        return self.client.post(
+            f"/auth/password-reset-requests/{req.pk}/approve/",
+            data={}, content_type="application/json",
+        )
+
+    def test_cannot_reset_superuser(self):
+        """持 review_password_reset 的普通管理员不能重置超管（纵向提权闸门）。"""
+        req = self._pending_for(self.root)
+        resp = self._approve(req)
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertEqual(resp.json()["reason"], "target_outranks_reviewer")
+        self.root.refresh_from_db()
+        self.assertTrue(self.root.check_password("RootPass!2026"))
+
+    def test_cannot_reset_staff_when_not_staff(self):
+        staff = User.objects.create_user(username="staff_x", password="StaffPass!2026")
+        staff.is_staff = True
+        staff.save(update_fields=["is_staff"])
+        resp = self._approve(self._pending_for(staff))
+        self.assertEqual(resp.status_code, 403, resp.content)
+        self.assertEqual(resp.json()["reason"], "target_outranks_reviewer")
+
+    def test_superuser_can_reset_superuser(self):
+        """同级不限：超管重置超管仍允许。"""
+        victim = User.objects.create_superuser(
+            username="root_y", email="y@example.com", password="RootPass!2026",
+        )
+        boss = User.objects.create_superuser(
+            username="root_z", email="z@example.com", password="RootPass!2026",
+        )
+        resp = self._approve(self._pending_for(victim), reviewer=boss)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.json().get("temp_password"))
+
+    def test_temp_password_is_random_and_can_log_in(self):
+        """不再有固定 123456：重置后只能靠响应里那串一次性密码登录。"""
+        member = User.objects.create_user(username="member_x", password="OldPass!2026")
+        resp = self._approve(self._pending_for(member))
+        self.assertEqual(resp.status_code, 200, resp.content)
+        temp = resp.json()["temp_password"]
+        self.assertNotEqual(temp, "123456")
+        self.assertEqual(len(temp), 14)
+        member.refresh_from_db()
+        self.assertTrue(member.check_password(temp))
+        self.assertFalse(member.check_password("123456"))
+        self.assertTrue(AccountLifecycle.objects.get(user=member).must_change_password)
+
+    def test_temp_password_is_not_reused(self):
+        a = User.objects.create_user(username="m_a", password="OldPass!2026")
+        b = User.objects.create_user(username="m_b", password="OldPass!2026")
+        pa = self._approve(self._pending_for(a)).json()["temp_password"]
+        pb = self._approve(self._pending_for(b)).json()["temp_password"]
+        self.assertNotEqual(pa, pb)
