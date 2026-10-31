@@ -21,7 +21,7 @@ from accounts.permissions import IsVerified
 from attachments.create import create_attachment
 from attachments.validation import upload_error
 from messaging.services import thread_for
-from reviews.lifecycle import open_review
+from reviews.lifecycle import open_review, reopen
 from reviews.models import Review
 from reviews.visibility import status_of, visible_queryset
 
@@ -220,6 +220,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
         elif not incoming and not can_edit(instance) and not getattr(serializer, "_comment_thread_status", None):
             raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
         super().perform_update(serializer)
+        # 已过审的调研改了 schema → 退回待审（审计 S-4）。
+        # 不加这一步就是「先交正常问卷骗过审核，开放且零作答时再换成恶意 schema」，
+        # 审核环节彻底形同虚设；退回后公开页暂时不可见，审核通过再恢复。
+        if "schema" in incoming and status_of(instance) == Review.STATUS_APPROVED:
+            reopen(activity=instance, actor=self.request.user)
 
     # ── 众议投票（公开受众任何人；仅成员须登录 + 已认证）──
     @action(detail=True, methods=["post"])

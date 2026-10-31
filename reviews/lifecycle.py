@@ -34,6 +34,31 @@ class TransitionDenied(Exception):
     """当前状态不允许该审核动作。"""
 
 
+def reopen(*, activity=None, news=None, tutorial=None, actor=None):
+    """把已过审的对象**退回待审**（内容被实质性修改后调用）。
+
+    动机（2026-10-31 审计 S-4/H-5）：审核只对「提交时的那个版本」有效。
+    若对象过审后还能改内容而不复位，就等于允许「先交良性版本骗过审核、再换成
+    任意版本公开」——调研 schema、新闻正文、教程元数据都是这个模式。
+
+    已有 Review 行就地把状态改回 pending（不新建，避免一个对象多条审核记录）；
+    没有则按 ``open_review`` 新建。返回最终处于 pending 的 review（免审者原样返回）。
+    """
+    kwargs = {"news": news, "activity": activity, "tutorial": tutorial}
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+    existing = Review.objects.filter(**kwargs).first()
+    if existing is None:
+        return open_review(actor=actor, **kwargs)
+    if existing.status == Review.STATUS_PENDING:
+        return existing
+    existing.status = Review.STATUS_PENDING
+    existing.moderated_by = None
+    existing.moderated_at = None
+    existing.save(update_fields=["status", "moderated_by", "moderated_at"])
+    _notify_reviewers(existing, actor)
+    return existing
+
+
 def open_review(*, news=None, activity=None, tutorial=None, actor, force_publish=None):
     """为新对象打开一条审核。免审发布者或内容审核关闭时直接通过，否则待审。
 

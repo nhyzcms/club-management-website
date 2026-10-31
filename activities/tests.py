@@ -1814,3 +1814,62 @@ class PublicExhibitionGuestVoteTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["my_selections"], [oid])
+
+
+class SurveySchemaReopenTest(TestCase):
+    """S-4 回归：已过审的调研改 schema → 必须退回待审。
+
+    反证：删掉 ``perform_update`` 里的 ``reopen(...)`` 调用，本条变红（仍是 approved）。
+    """
+
+    def setUp(self):
+        self.user = grant_verification(User.objects.create_user(username="survey_author", password="x"))
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.activity = Activity.objects.create(
+            type="survey", title="调研", audience="public",
+            creator=self.user, status="in_progress",
+            start_at=timezone.now() - timedelta(hours=1),
+            end_at=timezone.now() + timedelta(days=1),
+            schema={"pages": [{"name": "p1", "elements": [{"type": "text", "name": "q1"}]}]},
+        )
+        approve_activity(self.activity)
+
+    def _patch_schema(self, schema):
+        return self.client.patch(
+            f"/activities/activities/{self.activity.pk}/",
+            data=json.dumps({"schema": schema}),
+            content_type="application/json",
+        )
+
+    def test_schema_change_resets_review(self):
+        resp = self._patch_schema(
+            {"pages": [{"name": "p1", "elements": [{"type": "text", "name": "q2"}]}]},
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        from reviews.models import Review
+
+        self.activity.refresh_from_db()
+        review = Review.objects.get(activity=self.activity)
+        self.assertEqual(review.status, "pending")
+
+    def test_html_question_rejected_by_api(self):
+        resp = self._patch_schema(
+            {"pages": [{"elements": [{"type": "html", "html": "<img src=x onerror=alert(1)>"}]}]},
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_unchanged_review_when_patching_other_fields(self):
+        """只改标题不该触发重新审核（待开始期）。"""
+        self.activity.start_at = timezone.now() + timedelta(hours=2)
+        self.activity.save(update_fields=["start_at"])
+        resp = self.client.patch(
+            f"/activities/activities/{self.activity.pk}/",
+            data=json.dumps({"title": "改个标题"}),
+            content_type="application/json",
+        )
+        from reviews.models import Review
+
+        self.assertEqual(resp.status_code, 200, resp.content)
+        review = Review.objects.get(activity=self.activity)
+        self.assertEqual(review.status, "approved")
