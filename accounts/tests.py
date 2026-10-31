@@ -1227,3 +1227,43 @@ class PermissionNormalizationTest(TestCase):
     def test_president_gets_read_feedback(self):
         # reviews/0007 给社长 view_feedback → 0009 补 read_feedback
         self.assertIn("read_feedback", self._codenames("社长"))
+
+
+class PasswordResetEmailThrottleTest(TestCase):
+    """M-3 回归：自助找回密码按 IP / 邮箱限流。"""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.user = User.objects.create_user(
+            username="throttle_pw", email="throttle@example.com", password="secret123",
+        )
+        self.client = Client()
+
+    def tearDown(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def _post(self, email="throttle@example.com", ip="203.0.113.10"):
+        return self.client.post(
+            "/auth/password-reset/",
+            data=json.dumps({"email": email}),
+            content_type="application/json",
+            REMOTE_ADDR=ip,
+        )
+
+    def test_ip_hourly_cap(self):
+        # 每次换邮箱，避免触发「同一邮箱 3 次/小时」的 target 限流；
+        # 同一 IP 的第 6 次才应被 IP 配额拒绝。
+        for i in range(5):
+            resp = self._post(email=f"user{i}@example.com")
+            self.assertEqual(resp.status_code, 200, resp.content)
+        resp = self._post(email="user5@example.com")
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(resp.json()["reason"], "password_reset_throttled")
+
+    def test_target_email_cap_across_ips(self):
+        for i in range(3):
+            self.assertEqual(self._post(ip=f"203.0.113.{20 + i}").status_code, 200)
+        resp = self._post(ip="203.0.113.29")
+        self.assertEqual(resp.status_code, 429)

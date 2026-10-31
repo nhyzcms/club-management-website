@@ -19,7 +19,7 @@ from .serializers import (
     ReportCreateSerializer,
     ReviewSerializer,
 )
-from .throttles import FeedbackAnonThrottle, ReportDailyThrottle
+from .throttles import FeedbackAnonThrottle, FeedbackUserThrottle, ReportDailyThrottle
 
 
 class ReviewViewSet(viewsets.ReadOnlyModelViewSet):
@@ -93,7 +93,7 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
         return [IsAuthenticated(), CanViewFeedback()]
 
     @action(detail=False, methods=["post"], url_path="submit",
-            throttle_classes=[FeedbackAnonThrottle])
+            throttle_classes=[FeedbackAnonThrottle, FeedbackUserThrottle])
     def submit(self, request):
         """意见反馈：可匿名（默认）或署名（登录后显式选择）提交。"""
         data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)

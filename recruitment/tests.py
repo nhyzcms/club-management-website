@@ -1,4 +1,5 @@
 from django.contrib.auth.models import Permission, User
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -27,6 +28,9 @@ class RecruitmentLandingTest(TestCase):
 
 
 class NoticeAckGateTest(TestCase):
+    def setUp(self):
+        cache.clear()  # 限流缓存跨用例残留会误伤（M-3）
+
     def test_submit_without_ack_rejected(self):
         resp = APIClient().post(
             "/recruitment/responses/",
@@ -133,3 +137,35 @@ class SchemaPersistTest(TestCase):
         client = APIClient()
         client.force_authenticate(User.objects.create_user(username="u", password="x"))
         self.assertEqual(client.get("/recruitment/responses/").status_code, 403)
+
+
+class JoinAnswerThrottleTest(TestCase):
+    """M-3 回归：加入问卷按 IP 限流，轮换设备号也灌不爆。"""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.client = APIClient()
+
+    def tearDown(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def test_ip_hourly_cap(self):
+        for i in range(10):
+            resp = self.client.post(
+                "/recruitment/responses/",
+                {"answers": {"grade": "高一"}, "notice_acknowledged": True},
+                format="json",
+                HTTP_X_DEVICE_ID=f"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee{i:02d}",
+                REMOTE_ADDR="203.0.113.30",
+            )
+            self.assertIn(resp.status_code, (201, 400))
+        resp = self.client.post(
+            "/recruitment/responses/",
+            {"answers": {"grade": "高一"}, "notice_acknowledged": True},
+            format="json",
+            HTTP_X_DEVICE_ID="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee99",
+            REMOTE_ADDR="203.0.113.30",
+        )
+        self.assertEqual(resp.status_code, 429)

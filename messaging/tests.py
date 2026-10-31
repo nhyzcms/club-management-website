@@ -483,3 +483,27 @@ class NotificationPreferencesApiTest(TestCase):
         review = next(s for s in resp.json()["sources"] if s["key"] == "review")
         self.assertTrue(review["channels"]["site"])
 
+
+
+class CommentCreateThrottleTest(TestCase):
+    """M-3 回归：评论按用户限流。"""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.author = grant_verification(User.objects.create_user(username="cm_throttle", password="x"))
+        news = approve_news(News.objects.create(title="n", author=self.author, is_published=True))
+        self.thread = thread_for(news)
+        self.client = APIClient()
+        self.client.force_authenticate(self.author)
+
+    def tearDown(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def test_comment_rate_limited(self):
+        for i in range(30):
+            resp = _json_post(self.client, "/messaging/comments/", {"thread": self.thread.pk, "content": f"c{i}"})
+            self.assertEqual(resp.status_code, 201, getattr(resp, "data", None))
+        resp = _json_post(self.client, "/messaging/comments/", {"thread": self.thread.pk, "content": "overflow"})
+        self.assertEqual(resp.status_code, 429)

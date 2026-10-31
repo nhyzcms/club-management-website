@@ -67,7 +67,9 @@ from .throttles import (
     MemberClaimIpThrottle,
     MemberClaimThrottle,
     MemberLookupThrottle,
+    PasswordResetEmailThrottle,
     PasswordResetRequestThrottle,
+    PasswordResetTargetThrottle,
     RegisterThrottle,
     ResendVerificationThrottle,
     StepUpEmailIpThrottle,
@@ -1011,6 +1013,19 @@ def password_reset_view(request):
     body = _json_body(request)
     if body is None:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    # 每 IP / 每邮箱双维度限流（审计 M-3）：同步 SMTP 不能被匿名刷成邮件轰炸。
+    if not PasswordResetEmailThrottle().allow_request(request, None):
+        return JsonResponse(
+            {"error": "请求过于频繁，请稍后再试。", "reason": "password_reset_throttled"},
+            status=429,
+        )
+    request._password_reset_email = (body.get("email") or "").strip().lower()
+    if not PasswordResetTargetThrottle().allow_request(request, None):
+        return JsonResponse(
+            {"error": "该邮箱请求过于频繁，请稍后再试。", "reason": "password_reset_throttled"},
+            status=429,
+        )
 
     form = PasswordResetForm(body)
     if not form.is_valid():

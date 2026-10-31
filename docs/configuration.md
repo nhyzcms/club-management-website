@@ -160,7 +160,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `DEFAULT_AUTHENTICATION_CLASSES` | `rest_framework.authentication.SessionAuthentication`（无 JWT） |
 | `DEFAULT_PERMISSION_CLASSES` | `rest_framework.permissions.IsAuthenticated` |
 | `NUM_PROXIES` | `1` —— 一层 nginx，取 `X-Forwarded-For` 最右（真实客户端），忽略客户端伪造的前缀 |
-| `DEFAULT_THROTTLE_RATES` | `{}` —— 运营限流额度住在 `SiteSettings`（`get_policy()`），各限流类覆写 `get_rate()` 直接读快照，**不读**这个 map。限流类：`accounts/throttles.py` 的 `RegisterThrottle` / `ResendVerificationThrottle` / `LoginIpThrottle` / `LoginUsernameThrottle`，`reviews/throttles.py` 的 `FeedbackAnonThrottle` / `ReportDailyThrottle` |
+| `DEFAULT_THROTTLE_RATES` | `{}` —— 运营限流额度住在 `SiteSettings`（`get_policy()`），各限流类覆写 `get_rate()` 直接读快照，**不读**这个 map。限流类：`accounts/throttles.py` 的 `RegisterThrottle` / `ResendVerificationThrottle` / `LoginIpThrottle` / `LoginUsernameThrottle` / `PasswordResetEmailThrottle`（5/IP/时） / `PasswordResetTargetThrottle`（3/邮箱/时），`reviews/throttles.py` 的 `FeedbackAnonThrottle` / `FeedbackUserThrottle`（10/用户/时） / `ReportDailyThrottle`，`messaging/throttles.py` 的评论 / 私信 / 发起私信限额，`recruitment/throttles.py` 的加入问卷限额（10/IP/时） |
 | `DEFAULT_PAGINATION_CLASS` / `PAGE_SIZE` | `PageNumberPagination` / `20` |
 | `DEFAULT_FILTER_BACKENDS` | `DjangoFilterBackend` + `SearchFilter` + `OrderingFilter` |
 | `REST_FRAMEWORK_TUS["MAX_FILE_SIZE"]` | `500 * 1024 * 1024`（库级兜底；实际上限读 `get_policy().tus_media_max_bytes`） |
