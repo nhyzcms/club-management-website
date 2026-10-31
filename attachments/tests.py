@@ -516,6 +516,21 @@ class TusUploadTest(_AttachmentTestCase):
         # 搬运后的附件文件落盘且有内容
         self.assertTrue(att.file.storage.exists(att.file.name))
 
+    def test_completion_rejects_forbidden_extension(self):
+        """S-3/M-1 回归：tus 完成钩子原先不看扩展名，``.html`` 能落进 attachments/。
+
+        反证：删掉 ``create_attachment_from_tus`` 里的 ``extension_error()`` 检查，
+        本条变红（Attachment 被建出来）。
+        """
+        chunk = b"<script>alert(1)</script>"
+        resp = self._create(
+            self.creator, length=len(chunk), filetype="image/png", filename="xss.html",
+        )
+        self.assertEqual(resp.status_code, 201)
+        resp2 = self._patch(resp.get("Location") or resp["Location"], chunk)  # type: ignore[attr-defined]
+        self.assertEqual(resp2.status_code, 204)
+        self.assertFalse(Attachment.objects.filter(feedback=self.feedback).exists())
+
     def test_outsider_cannot_tus_create(self):
         self.assertEqual(self._create(self.outsider, length=4).status_code, 403)
 

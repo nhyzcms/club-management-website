@@ -29,7 +29,7 @@ from common.policy import format_byte_cap, get_policy
 from .create import PARENTS, create_attachment
 from .models import TusUpload
 from .permissions import can_upload_to_parent
-from .validation import classify_file_type, feedback_quota_error
+from .validation import classify_file_type, extension_error, feedback_quota_error
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +152,14 @@ def create_attachment_from_tus(sender, instance, **kwargs):
         return
 
     filename = meta.get("filename") or f"{instance.guid}.bin"
+
+    # 与同步通路同一条扩展名闸门（审计 M-1）：tus 原先只在创建时看尺寸分档，
+    # 完成钩子不校验扩展名，`.html` 可以直接落进 attachments/ 公开目录。
+    ext_err = extension_error(filename)
+    if ext_err:
+        logger.warning("tus 上传被扩展名闸门拒绝 %s（%s）", instance.guid, filename)
+        _cleanup_tus_files(instance)
+        return
 
     if not instance.uploaded_file:
         logger.warning("tus 完成但无落地文件 %s", instance.guid)

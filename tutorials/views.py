@@ -1,5 +1,6 @@
 from django.db.models import F
 import hashlib
+from django.core.exceptions import ValidationError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -7,6 +8,7 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsVerified
 from accounts.utils import get_client_ip
+from common.uploads import rename_upload, sniff_image_extension
 from reviews.lifecycle import open_review
 from reviews.models import Review
 from reviews.visibility import status_of, visible_queryset
@@ -64,6 +66,19 @@ class TutorialViewSet(viewsets.ModelViewSet):
         title = (request.data.get("title") or "").strip()
         if not title:
             return Response({"detail": "请填写标题"}, status=status.HTTP_400_BAD_REQUEST)
+        # 封面原先是 request.FILES.get("cover") 直接落库，完全不校验（审计 S-3）：
+        # 传一张 probe.html 声称 image/jpeg 就能把 HTML 送进公开 media 目录。
+        cover = request.FILES.get("cover")
+        if cover:
+            try:
+                rename_upload(
+                    cover, sniff_image_extension(cover, allowed={".jpg", ".jpeg", ".png", ".webp"}),
+                )
+            except ValidationError:
+                return Response(
+                    {"detail": "封面必须是 JPG / PNG / WebP 图片"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         tutorial = Tutorial.objects.create(
             title=title[:200],
             description=(request.data.get("description") or "")[:2000],
@@ -71,7 +86,7 @@ class TutorialViewSet(viewsets.ModelViewSet):
             file_type=file_type,
             file_name=upload.name,
             file_size=upload.size,
-            cover=request.FILES.get("cover") or "",
+            cover=cover or "",
             uploader=request.user,
         )
         open_review(tutorial=tutorial, actor=request.user)
