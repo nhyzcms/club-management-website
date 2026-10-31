@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.test import TestCase, Client, RequestFactory, override_settings
 from django.contrib.auth.models import Group, User
 from django.utils import timezone
+from . import stepup
 from .models import UserSession
 from .utils import get_client_ip, parse_user_agent, record_user_session
 
@@ -558,7 +559,8 @@ class MultiDeviceSessionMiddlewareTest(TestCase):
         a = self._login(self.DESKTOP_UA)
         b = self._login(self.MOBILE_UA)
         row_a = self._row(a)
-        resp = b.post(f"/auth/sessions/{row_a.id}/revoke/")
+        grant = stepup.issue_grant(self.user, "manage_devices")
+        resp = b.post(f"/auth/sessions/{row_a.id}/revoke/", HTTP_X_STEPUP_GRANT=grant)
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["revoked"])
         kicked = a.get("/auth/me/")
@@ -566,11 +568,21 @@ class MultiDeviceSessionMiddlewareTest(TestCase):
         self.assertEqual(kicked.json()["revoked_reason"], "manual")
         self.assertEqual(b.get("/auth/me/").status_code, 200)
 
+    def test_manual_revoke_requires_stepup(self):
+        a = self._login(self.DESKTOP_UA)
+        b = self._login(self.MOBILE_UA)
+        row_a = self._row(a)
+        resp = b.post(f"/auth/sessions/{row_a.id}/revoke/")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["reason"], "step_up_required")
+        self.assertEqual(a.get("/auth/me/").status_code, 200)
+
     def test_revoke_others_keeps_current_device(self):
         a = self._login(self.DESKTOP_UA)
         b = self._login(self.MOBILE_UA)
         c = self._login(self.APP_UA)
-        resp = b.post("/auth/sessions/revoke-others/")
+        grant = stepup.issue_grant(self.user, "manage_devices")
+        resp = b.post("/auth/sessions/revoke-others/", HTTP_X_STEPUP_GRANT=grant)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["revoked"], 2)
         self.assertEqual(resp.json()["active_count"], 1)
@@ -584,7 +596,10 @@ class MultiDeviceSessionMiddlewareTest(TestCase):
         other = Client()
         other.login(username="other", password="secret123")
         row = UserSession.objects.get(user__username="other")
-        self.assertEqual(a.post(f"/auth/sessions/{row.id}/revoke/").status_code, 404)
+        grant = stepup.issue_grant(self.user, "manage_devices")
+        self.assertEqual(
+            a.post(f"/auth/sessions/{row.id}/revoke/", HTTP_X_STEPUP_GRANT=grant).status_code, 404,
+        )
 
     def test_device_cookie_issued_and_reused(self):
         c = Client()
