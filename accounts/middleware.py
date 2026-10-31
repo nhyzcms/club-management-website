@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils.html import escape
 
 from .models import Profile, UserSession
+from .queries import must_change_password_q
 from .throttles import login_blocked_response
 from .utils import (
     DEVICE_COOKIE_MAX_AGE,
@@ -320,8 +321,8 @@ class PasswordChangeRequiredMiddleware:
             return cached
         try:
             required = Profile.objects.filter(
-                user_id=request.user.pk, must_change_password=True,
-            ).exists()
+                user_id=request.user.pk,
+            ).filter(must_change_password_q()).exists()
         except DatabaseError:
             return False
         session[self.SESSION_KEY] = required

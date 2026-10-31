@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from .member_codes import MemberCodeError, generate_code, name_sort_key, next_serial
 from .models import IdentityImportBatch, MemberIdentity, Profile
+from .queries import not_deleted_q
 
 # 列清单（2026-10-23 修订）：只收「不会随时间变」的档案信息。
 # - 不含「年级」：年级每年随升学年变动，需要时按「入学年份 + 当前学年」推算；
@@ -443,7 +444,7 @@ def sync_card_numbers() -> dict:
     - 已绑定行：名册有值 → 覆盖资料；名册为空 → 用资料补（名册是学校档案，为准）。
     """
     profiles = list(
-        Profile.objects.filter(user__is_active=True, deleted_at__isnull=True).select_related("user")
+        Profile.objects.filter(user__is_active=True).filter(not_deleted_q()).select_related("user")
     )
     by_user = {p.user_id: p for p in profiles}
     by_name: dict[str, list[Profile]] = defaultdict(list)

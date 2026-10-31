@@ -22,6 +22,7 @@ from django.views.decorators.http import require_GET, require_POST
 from . import factors, stepup
 from .devices import get_client_ip, record_login_event
 from .models import AccountDevice, LoginChallenge, Profile, SecurityQuestion
+from .queries import must_change_password_q
 
 CHALLENGE_TTL_SECONDS = 10 * 60
 MAX_ATTEMPTS = 5
@@ -140,7 +141,7 @@ def challenge_verify_view(request):
 
     login(request, user)
     request.session.set_expiry(settings.REMEMBER_LOGIN_SECONDS if challenge.remember else 0)
-    must_change = Profile.objects.filter(user=user, must_change_password=True).exists()
+    must_change = Profile.objects.filter(user=user).filter(must_change_password_q()).exists()
     request.session["pwd_change_required"] = must_change
     record_login_event(
         request,

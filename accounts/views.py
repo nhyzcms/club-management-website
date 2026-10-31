@@ -38,6 +38,7 @@ from .email_domains import (
     is_allowed_email_domain,
 )
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
+from .queries import deleted_q, expiry_disabled_q, must_change_password_q
 from .member_codes import verify_signature
 from .member_roster import ClaimError, auto_bind_on_register, claim_candidates, claim_identity
 from .models import (
@@ -195,7 +196,7 @@ def login_view(request):
         )
     if not candidate.is_active:
         # 已被 cron / 惰性执行停用的「超期未认证」账号（带 expiry_disabled_at 标记）也走专属提示。
-        if Profile.objects.filter(user=candidate, expiry_disabled_at__isnull=False).exists():
+        if Profile.objects.filter(user=candidate).filter(expiry_disabled_q()).exists():
             return JsonResponse(
                 {"error": _EXPIRED_UNVERIFIED_MESSAGE, "reason": "account_expired_unverified"},
                 status=403,
@@ -264,8 +265,8 @@ def login_view(request):
     # 管理员手动重置过密码 → 本次登录必须先去改密（前端据 must_change_password 跳转；
     # 会话值供 PasswordChangeRequiredMiddleware 免查库判定）。
     must_change = Profile.objects.filter(
-        user=candidate, must_change_password=True,
-    ).exists()
+        user=candidate,
+    ).filter(must_change_password_q()).exists()
     request.session["pwd_change_required"] = must_change
     # 「记住登录」：勾选 → 持久 cookie（settings.REMEMBER_LOGIN_SECONDS = 30 天）；
     # 不勾 → set_expiry(0)，Django 视为浏览器会话 cookie（max-age 不下发，关浏览器失效）。
@@ -1109,8 +1110,7 @@ def password_reset_request_view(request):
             status=404,
         )
 
-    profile = Profile.objects.filter(user=user).only("deleted_at").first()
-    if profile is not None and profile.deleted_at:
+    if Profile.objects.filter(user=user).filter(deleted_q()).exists():
         return JsonResponse(
             {"error": "该账号已注销，无法重置密码。如有疑问请联系信息组。", "reason": "account_deleted"},
             status=400,
