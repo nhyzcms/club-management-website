@@ -70,16 +70,24 @@ export const securityApi = {
 
   totpList: () => request("/totp/") as Promise<{ max: number; results: TotpRow[] }>,
 
-  totpSetup: (label: string) =>
-    request("/totp/setup/", { method: "POST", body: JSON.stringify({ label }) }) as Promise<{
+  totpSetup: (label: string, password: string, headers?: Record<string, string>) =>
+    request("/totp/setup/", {
+      method: "POST",
+      body: JSON.stringify({ label, password }),
+      headers,
+    }) as Promise<{
       id: number;
       secret: string;
       otpauth: string;
       qr: string;
     }>,
 
-  totpConfirm: (id: number, code: string) =>
-    request("/totp/confirm/", { method: "POST", body: JSON.stringify({ id, code }) }) as Promise<{
+  totpConfirm: (id: number, code: string, password: string, headers?: Record<string, string>) =>
+    request("/totp/confirm/", {
+      method: "POST",
+      body: JSON.stringify({ id, code, password }),
+      headers,
+    }) as Promise<{
       message: string;
       recovery_codes: string[] | null;
     }>,

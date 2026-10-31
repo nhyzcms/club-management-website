@@ -11,6 +11,7 @@ export default function TotpPanel() {
   const [rows, setRows] = useState<TotpRow[] | null>(null);
   const [max, setMax] = useState(5);
   const [label, setLabel] = useState("");
+  const [password, setPassword] = useState("");
   const [setup, setSetup] = useState<{ id: number; secret: string; qr: string } | null>(null);
   const [code, setCode] = useState("");
   const [codes, setCodes] = useState<string[] | null>(null);
@@ -36,9 +37,14 @@ export default function TotpPanel() {
     setNotice("");
     setCodes(null);
     try {
-      const d = await securityApi.totpSetup(label.trim());
+      // 添加因子必须验人：带 step-up grant，或重输登录密码（首次绑定没有因子可验）。
+      const d = await securityApi.totpSetup(label.trim(), password, stepupHeaders("manage_totp"));
       setSetup({ id: d.id, secret: d.secret, qr: d.qr });
     } catch (e: any) {
+      if (e?.status === 403) {
+        redirectToStepUp("manage_totp", "/security");
+        return;
+      }
       setError(e?.message || "生成失败，请稍后再试。");
     }
   };
@@ -61,14 +67,21 @@ export default function TotpPanel() {
     setBusy(true);
     setError("");
     try {
-      const d = await securityApi.totpConfirm(setup.id, code.trim());
+      const d = await securityApi.totpConfirm(
+        setup.id, code.trim(), password, stepupHeaders("manage_totp"),
+      );
       setCodes(d.recovery_codes);
       setNotice("滚动密钥已启用。");
       setSetup(null);
       setCode("");
       setLabel("");
+      setPassword("");
       load();
     } catch (err: any) {
+      if (err?.status === 403) {
+        redirectToStepUp("manage_totp", "/security");
+        return;
+      }
       setError(err?.message || "验证码不正确。");
     } finally {
       setBusy(false);
@@ -186,6 +199,14 @@ export default function TotpPanel() {
             value={label}
             maxLength={64}
             onChange={(e) => setLabel(e.target.value)}
+          />
+          <input
+            className="input"
+            type="password"
+            autoComplete="current-password"
+            placeholder="登录密码（确认身份；刚通过安全验证可留空）"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
           <button className="btn btn-primary" type="button" onClick={startSetup}>
             添加滚动密钥
