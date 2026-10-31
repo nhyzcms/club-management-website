@@ -133,9 +133,18 @@ def challenge_verify_view(request):
     challenge.save(update_fields=["consumed_at"])
 
     device = AccountDevice.objects.filter(user=user, device_id=challenge.device_id).first()
-    if device is not None and device.revoked_at is not None:
-        device.revoked_at = None
-    if device is not None:
+    if device is None:
+        # 登录时客户端没带 club_device Cookie（脚本直连 / 刻意删 Cookie，见 S-1），
+        # 设备记录在这次挑战通过后补建：既然因子验证过了，这台设备就是这人的。
+        device = AccountDevice.objects.create(
+            user=user,
+            device_id=challenge.device_id,
+            last_ip=get_client_ip(request) or None,
+            trusted_at=timezone.now(),
+        )
+    else:
+        if device.revoked_at is not None:
+            device.revoked_at = None
         device.trusted_at = timezone.now()
         device.save(update_fields=["trusted_at", "revoked_at"])
 

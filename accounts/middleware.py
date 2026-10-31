@@ -181,7 +181,7 @@ class MultiDeviceSessionMiddleware:
         response = self._guard(request)
         if response is None:
             response = self.get_response(request)
-        if not device_id_from_request(request):
+        if not getattr(request, "_club_device_cookie_set", False) and not device_id_from_request(request):
             response.set_cookie(
                 DEVICE_COOKIE_NAME,
                 new_device_id(),
