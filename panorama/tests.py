@@ -348,3 +348,42 @@ class ImportStaticPanoramasCommandTest(_MediaRootMixin, TestCase):
             "--dry-run", verbosity=0,
         )
         self.assertEqual(Panorama.objects.count(), 0)
+
+
+class PanoramaMetadataPrivacyTest(_MediaRootMixin, TestCase):
+    """L-3 回归：公开侧隐去 GPS / 序列号，管理者保留全量。"""
+
+    def setUp(self):
+        super().setUp()
+        self.manager = User.objects.create_user(username="pano_mgr", password="pw-12345")
+        self.manager.user_permissions.add(
+            Permission.objects.get(
+                codename="manage_panoramas", content_type__app_label="panorama",
+            )
+        )
+        self.pano = Panorama.objects.create(
+            title="操场", status=Panorama.STATUS_READY, is_published=True,
+            metadata={
+                "make": "DJI", "model": "Mavic 3",
+                "dji": {
+                    "drone-dji:GpsLatitude": 31.23,
+                    "drone-dji:GpsLongitude": 121.47,
+                    "drone-dji:SerialNumber": "SN123",
+                },
+                "GPano:ProjectionType": "equirectangular",
+            },
+        )
+
+    def test_public_metadata_redacted(self):
+        body = self.client.get(f"/panorama/panoramas/{self.pano.pk}/").json()
+        self.assertEqual(body["metadata"]["make"], "DJI")
+        dji = body["metadata"].get("dji", {})
+        self.assertNotIn("drone-dji:GpsLatitude", dji)
+        self.assertNotIn("drone-dji:GpsLongitude", dji)
+        self.assertNotIn("drone-dji:SerialNumber", dji)
+        self.assertEqual(body["metadata"]["GPano:ProjectionType"], "equirectangular")
+
+    def test_manager_sees_full_metadata(self):
+        self.client.force_login(self.manager)
+        body = self.client.get(f"/panorama/panoramas/{self.pano.pk}/").json()
+        self.assertEqual(body["metadata"]["dji"]["drone-dji:SerialNumber"], "SN123")
