@@ -17,6 +17,7 @@ from rest_framework.response import Response
 
 from accounts.models import is_verified
 from accounts.permissions import IsVerified
+from common.survey_answers import InvalidSurveyAnswers, validate_answers
 
 from attachments.create import create_attachment
 from attachments.validation import upload_error
@@ -261,24 +262,24 @@ class ActivityViewSet(viewsets.ModelViewSet):
         questionnaire = activity.questionnaire
         if questionnaire is None:
             return Response({"detail": "问卷不存在"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            answers = validate_answers(questionnaire.schema or {}, answers)
+        except InvalidSurveyAnswers as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         user = request.user if request.user.is_authenticated else None
         device_id = device_id_from_request(request)
         if user is None:
             if not device_id:
                 return Response({"detail": "缺少设备标识"}, status=status.HTTP_400_BAD_REQUEST)
-            if QuestionnaireResponse.objects.filter(
-                questionnaire=questionnaire, user__isnull=True, device_id=device_id,
-            ).exists():
-                return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
-        elif QuestionnaireResponse.objects.filter(
-            questionnaire=questionnaire, user=user,
-        ).exists():
-            return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
+            dedupe_key = f"q{questionnaire.pk}:d{device_id}"
+        else:
+            dedupe_key = f"q{questionnaire.pk}:u{user.pk}"
         try:
             with transaction.atomic():
                 QuestionnaireResponse.objects.create(
                     questionnaire=questionnaire, user=user,
                     device_id=device_id if user is None else "",
+                    dedupe_key=dedupe_key,
                     answers=answers,
                 )
         except IntegrityError:

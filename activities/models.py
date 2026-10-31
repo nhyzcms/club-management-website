@@ -126,6 +126,12 @@ class QuestionnaireResponse(models.Model):
         related_name="questionnaire_responses", verbose_name="作答者",
     )
     device_id = models.CharField("设备标识", max_length=36, blank=True, default="")
+    # 调研「一人一份 / 一设备一份」的 DB 级判重键（审计 M-2）。
+    # 仅 ``activities.respond`` 写：``q{问卷id}:u{user_id}`` / ``q{问卷id}:d{device_id}``。
+    # 加入问卷允许 5 次、历史行未回填 → 留空；多个 NULL 不受唯一约束限制。
+    dedupe_key = models.CharField(
+        "判重键", max_length=80, null=True, blank=True, unique=True,
+    )
     answers = models.JSONField("作答", default=dict)
     # 作答时的问卷 Schema 快照（2026-10）。
     # ``Questionnaire.schema`` 是可编辑的 JSON：改题（改名 / 删题 / 改选项）之后，
