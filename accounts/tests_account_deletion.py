@@ -18,7 +18,9 @@ from accounts import stepup
 from accounts.deletion import AccountDeletionError, delete_account
 from accounts.models import (
     DELETED_ACCOUNT_LABEL,
+    AccountDevice,
     IdentityProof,
+    LoginEvent,
     MemberIdentity,
     Profile,
     SecurityQuestion,
@@ -144,6 +146,12 @@ class DeleteAccountApiTest(TestCase):
 
     def test_delete_scrubs_sensitive_data_and_keeps_identity(self):
         user_id = self.user.pk
+        device = AccountDevice.objects.create(
+            user=self.user, device_id="dev-m7", last_ip="203.0.113.8", last_city="上海",
+        )
+        LoginEvent.objects.create(
+            user=self.user, device=device, ip="203.0.113.8", status="success",
+        )
         grant = stepup.issue_grant(self.user, "delete_account")
         resp = self._post(self._payload(), grant=grant)
         self.assertEqual(resp.status_code, 200)
@@ -176,6 +184,8 @@ class DeleteAccountApiTest(TestCase):
         # 验证通道 / 会话 / 安全验证残留 / 通知全部清除。
         self.assertEqual(Verification.objects.filter(user_id=user_id).count(), 0)
         self.assertEqual(UserSession.objects.filter(user_id=user_id).count(), 0)
+        self.assertEqual(AccountDevice.objects.filter(user_id=user_id).count(), 0)
+        self.assertEqual(LoginEvent.objects.filter(user_id=user_id).count(), 0)
         self.assertEqual(SecurityQuestion.objects.filter(user_id=user_id).count(), 0)
         self.assertEqual(StepUpEmailCode.objects.filter(user_id=user_id).count(), 0)
         self.assertEqual(StepUpEvent.objects.filter(user_id=user_id).count(), 0)
