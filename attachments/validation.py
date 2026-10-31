@@ -57,9 +57,12 @@ def classify_file_type(content_type):
     return "other"
 
 
-def upload_error(file):
-    """返回上传文件的错误消息（若合法则返回 None）。"""
-    cap = get_policy().sync_upload_max_bytes
+def upload_error(file, *, max_bytes=None):
+    """返回上传文件的错误消息（若合法则返回 None）。
+
+    ``max_bytes`` 缺省用站点同步上限；tus 完成钩子按自己的上限传入（审计 M-1）。
+    """
+    cap = get_policy().sync_upload_max_bytes if max_bytes is None else max_bytes
     if file.size > cap:
         return f"文件大小不能超过 {format_byte_cap(cap)}"
     ext = extension_of(file.name)
