@@ -72,6 +72,77 @@
 | `panorama` | 校园全景图库 | DJI 导入、分层切片、多级浏览 | [API](../api/panorama.md) · [ADR-0022](../adr/0022-campus-panorama-library.md) |
 | `announcements` | 全站弹窗公告 | 原件保真渲染（PDF / .docx）、受众、已读台账 | [API](../api/announcements.md) · [ADR-0042](../adr/0042-site-wide-popup-announcement.md) |
 
+## 数据模型
+
+68 张表里，有四组结构值得先知道，否则读代码时容易迷路。
+
+### 账号：一张 `User` 拆成三张
+
+`auth.User` 只管登录凭据。业务信息分三处：
+
+| 表 | 装什么 | 谁维护 |
+|---|---|---|
+| `accounts.Profile` | 展示用：头像、昵称、简介 | 用户自己 |
+| `accounts.AccountIdentity` | 名册身份：真实姓名、识别码、待绑定校牌号 | 名册导入 / 身份审核 |
+| `accounts.AccountLifecycle` | 账号状态：注销、停用、有效期、公告确认 | 系统 / 管理员 |
+
+**为什么拆**：`Profile` 原来四种职责混在一行，「改昵称」和「管理员停用」会互相覆盖，
+而「这个用户能不能登录」要 JOIN 一张宽表、条件散落在 20 多个 queryset 里。
+
+状态判定只有一处入口：`accounts/status.py:account_state(user)`，返回
+`active` / `deleted` / `unverified_expired` / `admin_expired` 四态，
+优先级「注销 > 管理员停用 > 超期停用 > 可用」。详见 [ADR-0044](../adr/0044-account-tables-split.md)。
+
+### 内容锚点：`ContentTarget`
+
+评论、审核、举报、附件这四张表要挂到「任意一种内容」上。原来各写一套
+「N 个可空外键 + 恰好一个非空的约束」，加一种宿主要改四张表。
+
+现在统一成 `common.ContentTarget`：一个 `(kind, object_id)` 的唯一索引，
+四张多态表各自持有一个 `target` 外键。
+
+```python
+ContentTarget(kind="news", object_id=42)   # 新闻 #42 的锚点
+```
+
+- `kind` 的取值登记在 `common/targets.py:KIND_TO_MODEL`（8 种）
+- `object_id` **不加外键**——它指向 8 张不同的表，SQL 没有这种外键；
+  孤儿由 `manage.py prune_orphan_targets` 兜底
+- **`ReportCase.reported_user` 不走 target**：「人」不是「内容」，举报某人和举报
+  某条内容可以同时存在，且用户注销后举报案要留档
+
+详见 [ADR-0045](../adr/0045-content-target.md)。
+
+### 站点策略：五张 singleton
+
+`SiteSettings` 原来是一张 33 字段的单例表。现在拆成 `AuthPolicy` / `RateLimitPolicy` /
+`UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`，各管一域、各自 `pk=1`。
+
+**读取入口没变**：`common/policy.py:get_policy()` 仍然返回同一个 `SitePolicy` dataclass，
+33 个字段一个不差。改一处配置只写那一行，不再整行覆盖。
+详见 [ADR-0046](../adr/0046-site-settings-split.md)。
+
+### 命名约定：事件时间字段
+
+**行创建本身就是业务事件时，字段用事件名而不是 `created_at`。**
+
+| 表 | 字段 | 为什么不叫 `created_at` |
+|---|---|---|
+| `Attachment` / `IdentityProof` / `IdentityImportBatch` | `uploaded_at` | 上传即建行，但「上传」是用户动作 |
+| `QuestionnaireResponse` | `submitted_at` | 提交即建行 |
+| `NewsView` / `TutorialView` | `viewed_at` | 浏览即建行 |
+| `AuthCodeRedemption` | `redeemed_at` | 兑换即建行 |
+| `AnnouncementRead` / `MessageReadStatus` | `read_at` | 读即建行 |
+| `AccountDevice` | `first_seen` | 首次见到这台设备 |
+| `ValidityNotice` | `sent_at` | 发出通知 |
+
+这**不是**命名不统一，而是刻意保留的语义：`viewed_at` 告诉你发生了什么，`created_at`
+只说「这行存在」。如果以后要支持补录历史（比如导入旧的问卷作答），`submitted_at`
+需要可写，而 `created_at` 应该保持入库时间——两者会分叉。
+
+反过来，纯粹是「这行什么时候进库」的审计字段，统一叫 `created_at` / `updated_at`
+（B2 已把六张表的 `reviewed_at` / `reviewed_by` / `review_comment` 归一）。
+
 ## 横切机制
 
 ### 访问控制：角色能力 = 权限
