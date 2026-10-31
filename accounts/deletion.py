@@ -21,7 +21,9 @@ from django.utils import timezone
 
 from .identity_review import revoke_user_sessions
 from .models import (
+    AccountDevice,
     IdentityProof,
+    LoginEvent,
     PasswordResetRequest,
     Profile,
     SecurityQuestion,
@@ -86,8 +88,11 @@ def delete_account(user: User) -> Profile:
     Verification.objects.filter(user=user).delete()
 
     # 4) 登录会话与设备记录：先删 Django Session（强制下线），再删 UserSession 行。
+    #    设备指纹 / 最后 IP / 城市 / UA / 登录时间线也属于个人数据，随注销一并清除（审计 M-7）。
     revoke_user_sessions(user)
     UserSession.objects.filter(user=user).delete()
+    LoginEvent.objects.filter(user=user).delete()
+    AccountDevice.objects.filter(user=user).delete()
 
     # 4.1) 安全验证（Step-up，ADR-0026）的敏感残留：安全问题答案哈希、邮箱验证码
     #      （sent_to 是邮箱原文）、带 IP 的审计事件。
