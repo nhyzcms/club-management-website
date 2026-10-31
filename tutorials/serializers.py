@@ -2,16 +2,14 @@ from rest_framework import serializers
 
 from tasks.serializers import SimpleUserSerializer
 
+from common.uploads import extension_of
 from reviews.visibility import comment_for, status_of
 
 from .models import Tutorial
 
-_VIDEO_TYPES = {"video/mp4", "video/webm", "video/ogg", "video/quicktime"}
-_DOC_TYPES = {
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/msword",
-}
+# 分类只看扩展名：客户端声明的 content_type 可以随便伪造，不能作为判据。
+_VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".ogv", ".mov"})
+_DOC_EXTENSIONS = frozenset({".pdf", ".docx", ".doc"})
 _MAX_BYTES = 500 * 1024 * 1024
 
 
@@ -70,11 +68,11 @@ class TutorialDetailSerializer(TutorialListSerializer):
 
 
 def classify_tutorial_file(upload):
-    content_type = getattr(upload, "content_type", "") or ""
-    name = (upload.name or "").lower()
-    if content_type in _VIDEO_TYPES or name.endswith((".mp4", ".webm", ".ogv", ".mov")):
+    """按**扩展名**分类（content_type 可伪造，不再作为判据）。"""
+    ext = extension_of(upload.name)
+    if ext in _VIDEO_EXTENSIONS:
         return Tutorial.FILE_VIDEO
-    if content_type in _DOC_TYPES or name.endswith((".pdf", ".docx", ".doc")):
+    if ext in _DOC_EXTENSIONS:
         return Tutorial.FILE_DOCUMENT
     raise serializers.ValidationError({"file": "仅支持视频（mp4/webm）或文档（pdf/docx）"})
 

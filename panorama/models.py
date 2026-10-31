@@ -8,7 +8,6 @@
   ``EquirectGeometry`` 一层一图的取片单位），由 nginx 直供并长缓存；
 - 记录删除时连产物一起回收（``post_delete`` 信号 + ``delete_assets()``）。
 """
-import os
 import uuid
 
 from django.conf import settings
@@ -17,11 +16,13 @@ from django.db import models
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
+from common.uploads import safe_extension
+
 from .tiling import delete_prefix
 
 
 def panorama_source_path(instance, filename):
-    extension = (os.path.splitext(filename)[1] or ".jpg").lower()
+    extension = safe_extension(filename, ".jpg")
     return f"panorama/sources/{uuid.uuid4().hex}{extension}"
 
 

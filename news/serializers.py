@@ -3,16 +3,18 @@ import re
 from urllib.parse import unquote, urlparse
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.utils import timezone
 from rest_framework import serializers
 
 from common.rich_text import sanitize_html
+from common.uploads import rename_upload, sniff_image_extension
 from reviews.visibility import comment_for, public_q, status_of
 from common.models import Tag
 from tasks.serializers import CommentThreadHostMixin, SimpleUserSerializer
 
-from .models import COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News, NewsDraft
+from .models import COVER_MAX_SIZE, News, NewsDraft
 from .thumbnails import make_cover_thumbnail
 from attachments.models import Attachment
 from attachments.serializers import AttachmentSerializer
@@ -191,12 +193,14 @@ class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
         return attrs
 
     def validate_cover_image(self, value):
-        # 大小与类型双校验（客户端 5MB 检查可被直接 API 调用绕过）
+        # 大小与**真实类型**双校验（客户端 5MB 检查与 content_type 都可被直接 API 调用绕过）
         if value:
             if getattr(value, "size", 0) > COVER_MAX_SIZE:
                 raise serializers.ValidationError("封面图不能超过 5MB。")
-            if getattr(value, "content_type", "") not in COVER_ALLOWED_TYPES:
-                raise serializers.ValidationError("封面仅支持 JPG、PNG、GIF、WebP 格式。")
+            try:
+                rename_upload(value, sniff_image_extension(value))
+            except ValidationError as exc:
+                raise serializers.ValidationError(exc.messages[0]) from exc
         return value
 
     def validate_cover_image_ref(self, value):

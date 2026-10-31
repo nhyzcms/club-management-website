@@ -2,6 +2,7 @@ import hashlib
 import os
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db.models import F, Q
 from django.utils import timezone
@@ -16,9 +17,10 @@ from messaging.services import thread_for
 from reviews.lifecycle import open_review
 from reviews.visibility import public_q, visible_queryset
 from common.models import Tag
+from common.uploads import rename_upload, sniff_image_extension
 
 from .models import (
-    COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News, NewsDraft, NewsView,
+    COVER_MAX_SIZE, News, NewsDraft, NewsView,
     cover_upload_path,
 )
 from .permissions import CanManageNews, CanManageNewsDraft
@@ -107,12 +109,13 @@ class NewsViewSet(viewsets.ModelViewSet):
             return Response({"detail": "请选择图片。"}, status=status.HTTP_400_BAD_REQUEST)
         if file.size > _CONTENT_IMAGE_MAX_SIZE:
             return Response({"detail": "图片不能超过 5MB。"}, status=status.HTTP_400_BAD_REQUEST)
-        if file.content_type not in _CONTENT_IMAGE_TYPES:
-            return Response(
-                {"detail": "仅支持 JPG、PNG、GIF、WebP 格式。"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        path = default_storage.save(_content_image_path(file.name), file)
+        # 只认真实解码成功的图片：客户端声明的 content_type 可伪造，文件名后缀
+        # 决定 nginx 直出的 Content-Type —— 一律由服务端按识别结果改写。
+        try:
+            ext = sniff_image_extension(file)
+        except ValidationError as exc:
+            return Response({"detail": exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        path = default_storage.save(_content_image_path(rename_upload(file, ext).name), file)
         return Response({"url": request.build_absolute_uri(default_storage.url(path))})
 
     @action(detail=False, methods=["post"], url_path="upload_cover")
@@ -127,12 +130,11 @@ class NewsViewSet(viewsets.ModelViewSet):
             return Response({"detail": "请选择图片。"}, status=status.HTTP_400_BAD_REQUEST)
         if file.size > COVER_MAX_SIZE:
             return Response({"detail": "封面图不能超过 5MB。"}, status=status.HTTP_400_BAD_REQUEST)
-        if file.content_type not in COVER_ALLOWED_TYPES:
-            return Response(
-                {"detail": "封面仅支持 JPG、PNG、GIF、WebP 格式。"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        path = default_storage.save(cover_upload_path(None, file.name), file)
+        try:
+            ext = sniff_image_extension(file)
+        except ValidationError as exc:
+            return Response({"detail": exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        path = default_storage.save(cover_upload_path(None, rename_upload(file, ext).name), file)
         return Response({"url": request.build_absolute_uri(default_storage.url(path))})
 
     @action(detail=True, methods=["get", "post", "delete"], url_path="draft")

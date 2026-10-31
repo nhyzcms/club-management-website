@@ -1,8 +1,10 @@
 from django.db import models
 
+from common.uploads import safe_extension
+
 
 def about_document_path(instance, filename):
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    ext = safe_extension(filename)[1:]
     return f"about_documents/{instance.key}.{ext}"
 
 

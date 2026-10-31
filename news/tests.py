@@ -541,6 +541,30 @@ class NewsCoverPreuploadTest(TestCase):
         bad = SimpleUploadedFile("note.txt", b"hello", content_type="text/plain")
         self.assertEqual(self._upload(bad).status_code, 400)
 
+    def test_upload_cover_rejects_html_disguised_as_image(self):
+        """HTML 声称 image/png：必须按真实内容拒（否则 .html 会落进 /media/ 同源执行）。"""
+        probe = SimpleUploadedFile(
+            "xss.html", b"<html><script>alert(document.domain)</script></html>",
+            content_type="image/png",
+        )
+        self.assertEqual(self._upload(probe).status_code, 400)
+
+    def test_upload_cover_stores_server_side_extension(self):
+        """真图片但文件名撒谎（.html）→ 落盘扩展名仍由服务端给成 .jpg/.png。"""
+        probe = self._image_file(fmt="PNG", name="looks-like.html")
+        resp = self._upload(probe)
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.data["url"].endswith(".html"), resp.data["url"])
+
+    def test_upload_image_rejects_html_disguised_as_image(self):
+        probe = SimpleUploadedFile(
+            "xss.html", b"<html><script>alert(1)</script></html>", content_type="image/png",
+        )
+        resp = self.client.post(
+            "/news/news/upload_image/", {"image": probe}, format="multipart",
+        )
+        self.assertEqual(resp.status_code, 400)
+
     def test_upload_cover_requires_permission(self):
         """无 news.manage_news → 403（与正文图上传同门）。"""
         self.client.force_authenticate(User.objects.create_user(username="nobody_pre", password="x"))
