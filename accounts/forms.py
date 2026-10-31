@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
 
 from .models import Profile
 
@@ -38,6 +39,12 @@ class PasswordResetConfirmForm(forms.Form):
     token = forms.CharField(required=True)
     new_password = forms.CharField(required=True)
 
+    def clean_new_password(self):
+        # 与注册 / 强制改密同一套校验器（审计 L-7）。
+        value = self.cleaned_data["new_password"]
+        validate_password(value)
+        return value
+
 
 class ProfileForm(forms.Form):
     nickname = forms.CharField(max_length=50, required=False)
@@ -49,3 +56,8 @@ class ProfileForm(forms.Form):
 class ChangePasswordForm(forms.Form):
     old_password = forms.CharField(required=True)
     new_password = forms.CharField(required=True, min_length=8)
+
+    def clean_new_password(self):
+        value = self.cleaned_data["new_password"]
+        validate_password(value)
+        return value
