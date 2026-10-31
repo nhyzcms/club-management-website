@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from accounts.test_helpers import grant_verification
 from common.models import SiteSettings
 from reviews.models import Review
+from reviews.test_helpers import approve_tutorial
 from tutorials.models import Tutorial
 
 
@@ -248,3 +249,48 @@ class TutorialMineAndOrphanVisibilityTest(TestCase):
         for _ in range(3):
             self.assertEqual(client.get(f"/tutorials/tutorials/{tid}/").status_code, 200)
         self.assertEqual(Tutorial.objects.get(pk=tid).views, 0)
+
+
+class TutorialEditReopenTest(TestCase):
+    """H-5 回归：过审后改标题 / 简介 → 重新入审；服务端字段不可回填。"""
+
+    def setUp(self):
+        self.user = _member("tut_reopen")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        created = self.client.post(
+            "/tutorials/tutorials/",
+            {"title": "原教程", "description": "原简介", "file": _mp4()},
+            format="multipart",
+        )
+        self.tid = created.data["id"]
+        self.tutorial = approve_tutorial(Tutorial.objects.get(pk=self.tid))
+
+    def _review_status(self):
+        return Review.objects.get(tutorial_id=self.tid).status
+
+    def test_title_edit_reopens_review(self):
+        resp = self.client.patch(f"/tutorials/tutorials/{self.tid}/", {"title": "新教程"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["review_status"], "pending")
+        self.assertEqual(self._review_status(), Review.STATUS_PENDING)
+
+    def test_description_edit_reopens_review(self):
+        resp = self.client.patch(f"/tutorials/tutorials/{self.tid}/", {"description": "新简介"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._review_status(), Review.STATUS_PENDING)
+
+    def test_server_derived_fields_are_read_only(self):
+        resp = self.client.patch(
+            f"/tutorials/tutorials/{self.tid}/",
+            {"file_type": "document", "file_name": "payload.html", "file_size": 999, "views": 12345},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.tutorial.refresh_from_db()
+        self.assertEqual(self.tutorial.file_type, "video")
+        self.assertEqual(self.tutorial.file_name, "demo.mp4")
+        self.assertNotEqual(self.tutorial.file_size, 999)
+        self.assertEqual(self.tutorial.views, 0)
+        # 只改只读字段 → 不触发重新入审
+        self.assertEqual(self._review_status(), Review.STATUS_APPROVED)

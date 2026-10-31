@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsVerified
 from accounts.utils import get_client_ip
-from reviews.lifecycle import open_review
+from reviews.lifecycle import open_review, reopen_on_edit
 from reviews.models import Review
 from reviews.visibility import status_of, visible_queryset
 
@@ -77,6 +77,20 @@ class TutorialViewSet(viewsets.ModelViewSet):
         open_review(tutorial=tutorial, actor=request.user)
         serializer = TutorialDetailSerializer(tutorial, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def perform_update(self, serializer):
+        """标题 / 简介是实质内容：已过审后再改须重新入审（审计 H-5）。
+
+        ``file_type`` / ``file_name`` / ``file_size`` / ``views`` 由服务端派生，
+        序列化器已设为只读，客户端改不动。
+        """
+        incoming = set(serializer.validated_data)
+        tutorial = serializer.save()
+        if incoming & {"title", "description"} and reopen_on_edit(
+            tutorial=tutorial, actor=self.request.user
+        ):
+            # 序列化器可能已缓存旧 review 关系；清掉缓存，让响应反映 pending。
+            tutorial.refresh_from_db()
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
