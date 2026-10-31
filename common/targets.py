@@ -92,50 +92,16 @@ def _on_host_deleted(sender, instance, **kwargs):  # noqa: ARG001
     ContentTarget.objects.filter(kind=kind, object_id=instance.pk).delete()
 
 
-class TargetBackfillMixin:
-    """双写期兜底：旧列有值但 ``target`` 为空时，保存前自动补上。
-
-    B1 引入，B9 删掉旧列后整体移除。
-
-    为什么放在 ``save()`` 而不是四个调用点：写路径太多（视图、序列化器、admin、
-    shell、管理命令、测试夹具），漏一个就会留下 target 为空的行，而 PR 2 切读
-    之后这些行**直接查不到**——症状是「评论/附件凭空消失」，且只在特定入口复现。
-    """
-
-    #: 旧列名 → kind。子类按自己的多态列填。
-    TARGET_LEGACY_FIELDS: dict[str, str] = {}
-
-    def legacy_target_ref(self):
-        """返回 ``(kind, object_id)``；没有旧列命中则 None。"""
-        for field, kind in self.TARGET_LEGACY_FIELDS.items():
-            object_id = getattr(self, f"{field}_id", None)
-            if object_id is not None:
-                return kind, object_id
-        return None
-
-    def save(self, *args, **kwargs):
-        if getattr(self, "target_id", None) is None:
-            ref = self.legacy_target_ref()
-            if ref is not None:
-                self.target = target_for(*ref)
-        super().save(*args, **kwargs)
-
-
 def host_ref(obj):
     """内容行（Attachment / Review / ReportCase / CommentThread）→ ``(kind, object_id)``。
 
-    优先 ``target``，回落旧列。两者都没有返回 None。
-
-    回落不是保险丝而是**必需品**：双写期仍可能存在 target 为空的存量行——
-    回填迁移漏掉的、或绕过 ``save()`` 的裸 SQL 写入的。切读后这些行会「凭空消失」，
-    所以读取路径必须两条路都走。
+    B9 删掉 5 个旧父级列之后，``target`` 是唯一来源。target 为空说明这行是在
+    删列之前就漏了回填的——返回 None，调用方按「没有宿主」处理。
     """
-    if getattr(obj, "target_id", None) is not None:
-        target = obj.target
-        return target.kind, target.object_id
-    if hasattr(obj, "legacy_target_ref"):
-        return obj.legacy_target_ref()
-    return None
+    if getattr(obj, "target_id", None) is None:
+        return None
+    target = obj.target
+    return target.kind, target.object_id
 
 
 def content_host(obj):
@@ -151,26 +117,13 @@ def content_host(obj):
     return model_for(kind).objects.filter(pk=object_id).first()
 
 
-def _has_field(model, name):
-    return any(f.name == name for f in model._meta.get_fields())
-
-
 def related_to(model, host):
     """某宿主上挂的内容行 queryset（四张多态表通用）。
 
-    切读期同时匹配 ``target`` 与旧列，覆盖「已回填」和「尚未回填」两种存量；
-    B9 删掉旧列后这个 OR 可以退化成单个 ``target`` 条件。
-
-    旧列名与 kind 名恰好一一对应（``news`` / ``activity`` / ``tutorial`` /
-    ``task`` / ``comment`` / ``submission`` / ``exhibit`` / ``feedback``），
-    所以不需要额外的映射表——但要判断该表**有没有**这一列（例如
-    ``CommentThread`` 没有 ``comment`` 列）。
+    ``target`` 的 ``(kind, object_id)`` 唯一标识一个宿主，所以一条等值条件就够。
+    B9 之前这里还有一个 ``Q(**{kind: host})`` 的旧列分支，删列后去掉。
     """
-    kind = kind_of(host)
-    q = models.Q(target__kind=kind, target__object_id=host.pk)
-    if _has_field(model, kind):
-        q |= models.Q(**{kind: host})
-    return model.objects.filter(q)
+    return model.objects.filter(target__kind=kind_of(host), target__object_id=host.pk)
 
 
 def connect_host(kind):

@@ -6,6 +6,7 @@ T1 范围：创建（已认证成员）+ 列表/详情（成员可读）+ 正文
 import json
 from datetime import timedelta
 
+from attachments.queries import attachments_of
 from django.contrib.auth.models import Permission, User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -1286,7 +1287,7 @@ class ExhibitionTest(TestCase):
                          data={"collection_id": cid, "submission_ids": sub_ids},
                          content_type="application/json")
         from .models import Submission
-        Submission.objects.get(pk=sub_ids[0]).attachments.all().delete()
+        attachments_of(Submission.objects.get(pk=sub_ids[0])).delete()
         detail = self.client.get(f"/activities/activities/{aid}/").data
         self.assertEqual(len(detail["exhibits"][0]["files"]), 1)
 

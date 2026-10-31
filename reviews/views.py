@@ -32,8 +32,7 @@ class ReviewViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return Review.objects.select_related(
-            "news", "activity", "tutorial",
-            "moderated_by__profile",
+            "target", "moderated_by__profile",
         )
 
     def get_permissions(self):
@@ -69,10 +68,12 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
     ordering = ["-created_at"]
 
     def get_queryset(self):
+        # B9：Feedback 不是 ContentTarget 的宿主之一（附件从没挂过它），
+        # 所以这里没有可 prefetch 的反向关系——序列化器按需查。
         qs = Feedback.objects.select_related(
             "creator", "creator__profile",
             "moderated_by__profile",
-        ).prefetch_related("attachments", "attachments__uploaded_by")
+        )
         user = self.request.user
         if not user.is_authenticated:
             return qs.none()
@@ -117,7 +118,7 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
         )
         feedback = Feedback.objects.select_related(
             "creator", "creator__profile", "moderated_by", "moderated_by__profile",
-        ).prefetch_related("attachments").get(pk=feedback.pk)
+        ).get(pk=feedback.pk)
         return Response(
             FeedbackDetailSerializer(feedback, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -143,8 +144,7 @@ class ReportCaseViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
 
     def get_queryset(self):
         return ReportCase.objects.select_related(
-            "news", "activity", "tutorial", "comment", "comment__author",
-            "reported_user", "reported_user__profile",
+            "target", "reported_user", "reported_user__profile",
             "moderated_by__profile",
         ).prefetch_related("filings", "filings__reporter", "filings__reporter__profile")
 

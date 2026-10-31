@@ -39,7 +39,7 @@ class MessageReadStatusAdmin(admin.ModelAdmin):
 
 @admin.register(CommentThread)
 class CommentThreadAdmin(admin.ModelAdmin):
-    list_display = ["id", "status", "news", "activity", "task"]
+    list_display = ["id", "status", "target"]
     list_filter = ["status"]
 
 

@@ -90,7 +90,7 @@ class TutorialReviewVisibilityTest(TestCase):
             format="multipart",
         )
         self.tid = created.data["id"]
-        self.review_id = Review.objects.get(tutorial_id=self.tid).pk
+        self.review_id = Review.objects.get(target__kind="tutorial", target__object_id=self.tid).pk
 
     def test_public_list_hides_pending(self):
         listing = APIClient().get("/tutorials/tutorials/")

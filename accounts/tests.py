@@ -1,5 +1,6 @@
 import json
 import uuid
+from common.targets import target_of
 from datetime import timedelta
 from django.test import TestCase, Client, RequestFactory, override_settings
 from django.contrib.auth.models import Group, User
@@ -1009,7 +1010,7 @@ class UserContentViewTest(TestCase):
         pending_act = Activity.objects.create(
             type="deliberation", status="open", title="pending-act", creator=self.owner,
         )
-        Review.objects.create(activity=pending_act, status=Review.STATUS_PENDING)
+        Review.objects.create(target=target_of(pending_act), status=Review.STATUS_PENDING)
         approved_act = Activity.objects.create(
             type="deliberation", status="open", title="approved-act", creator=self.owner,
         )

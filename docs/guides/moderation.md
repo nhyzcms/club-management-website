@@ -26,7 +26,7 @@
 
 ### 1. 发布审核（Review）
 
-**一条 Review 恰好挂一个父级**（新闻 / 活动 / 教程，三条可空 OneToOne + XOR 约束，不用 GenericFK），表示「这条内容可否公开」。
+**一条 Review 恰好挂一个父级**（新闻 / 活动 / 教程），通过 `ContentTarget` 的 `(kind, object_id)` 锚定，不用 GenericFK（见 [ADR-0045](../adr/0045-content-target.md)）。它表示「这条内容可否公开」。
 
 **它是正交的可见性轴，不是对象生命周期。** 活动照常按自己的 `scheduled` / `open` / `closed` 推进，教程照常入库，新闻照常写——只有**公开展示**受审核门控。因此：
 

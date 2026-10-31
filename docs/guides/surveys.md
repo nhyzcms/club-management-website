@@ -32,7 +32,7 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
    ├─ status: scheduled → open → closed    ├─ schema（SurveyJS JSON）
    ├─ audience: public / members           └─ responses（QuestionnaireResponse）
    ├─ start_at / end_at
-   └─ publication_review（审核轴）
+   └─ Review（经 ContentTarget 锚定，见 ADR-0045）
 ```
 
 拆分的理由（ADR-0014）：窗口（排期 / 受众 / 审核 / 列表）是活动该管的；拆的是表单与结果，不是窗口。因此：
@@ -57,7 +57,7 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 
 ### 审核轴怎么作用在调研上
 
-调研照常受统一审核轴门控（见 [审核系统指南](moderation.md)）：活动创建时自动开一条 `Review`（`related_name="publication_review"`），只有**公开展示**受它门控，**不阻断状态机**——到点照常 `open` / `closed`，只是审核通过前访客/成员看不到、也作答不了。
+调研照常受统一审核轴门控（见 [审核系统指南](moderation.md)）：活动创建时自动开一条 `Review`，通过 `ContentTarget`（`kind="activity"`）锚定活动，只有**公开展示**受它门控，**不阻断状态机**——到点照常 `open` / `closed`，只是审核通过前访客/成员看不到、也作答不了。
 
 - 作答入口额外判一次：审核状态非 `approved`（且非「无审核行」）时返回 400「调研尚未公开」。
 - 发起人自己能看到待审/驳回/下架的活动（`GET /activities/activities/mine/`），并看到审核评语。

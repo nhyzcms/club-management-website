@@ -14,7 +14,6 @@ import uuid
 from django.conf import settings
 from django.db import models
 
-from common.targets import TargetBackfillMixin
 
 from rest_framework_tus import states as tus_states
 from rest_framework_tus.models import AbstractUpload, custom_upload_path
@@ -26,17 +25,10 @@ def attachment_upload_path(instance, filename):
     return f"attachments/{uuid.uuid4().hex}{ext}"
 
 
-class Attachment(TargetBackfillMixin, models.Model):
+class Attachment(models.Model):
     """统一附件：恰好挂在一个父级（任务、意见反馈或新闻）上。"""
 
     # B1：双写期把旧列折射到 target（B9 删旧列时一并移除）。
-    TARGET_LEGACY_FIELDS = {
-        "task": "task",
-        "feedback": "feedback",
-        "news": "news",
-        "submission": "submission",
-        "exhibit": "exhibit",
-    }
 
     FILE_TYPE_CHOICES = [
         ("image", "图片"),
@@ -50,28 +42,8 @@ class Attachment(TargetBackfillMixin, models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
         related_name="uploaded_attachments", verbose_name="上传者",
     )
-    task = models.ForeignKey(
-        "tasks.Task", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="attachments", verbose_name="任务",
-    )
-    feedback = models.ForeignKey(
-        "reviews.Feedback", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="attachments", verbose_name="意见反馈",
-    )
-    news = models.ForeignKey(
-        "news.News", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="attachments", verbose_name="新闻",
-    )
-    submission = models.ForeignKey(
-        "activities.Submission", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="attachments", verbose_name="作品",
-    )
-    exhibit = models.ForeignKey(
-        "activities.Exhibit", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="attachments", verbose_name="展品",
-    )
-    # B1：统一宿主锚点。双写期与上面 5 个旧列并存（旧约束仍要求「恰好一个旧列
-    # 非空」）；PR 2 切读，B9 删旧列。
+    # B9：5 个旧父级列（task / feedback / news / submission / exhibit）已删。
+    # B1 引入的 target 是唯一宿主锚点，指向 ContentTarget 这张 8 选 1 的登记表。
     target = models.ForeignKey(
         "common.ContentTarget", on_delete=models.CASCADE,
         null=True, blank=True, related_name="attachments", verbose_name="内容目标",
@@ -86,20 +58,6 @@ class Attachment(TargetBackfillMixin, models.Model):
         verbose_name = "附件"
         verbose_name_plural = "附件"
         ordering = ["-uploaded_at"]
-        constraints = [
-            models.CheckConstraint(
-                condition=(
-                    # 恰好一个父级：任务 / 意见反馈 / 新闻 / 作品(征集) / 展品(展示)
-                    models.Q(task__isnull=False, feedback__isnull=True, news__isnull=True, submission__isnull=True, exhibit__isnull=True)
-                    | models.Q(task__isnull=True, feedback__isnull=False, news__isnull=True, submission__isnull=True, exhibit__isnull=True)
-                    | models.Q(task__isnull=True, feedback__isnull=True, news__isnull=False, submission__isnull=True, exhibit__isnull=True)
-                    | models.Q(task__isnull=True, feedback__isnull=True, news__isnull=True, submission__isnull=False, exhibit__isnull=True)
-                    | models.Q(task__isnull=True, feedback__isnull=True, news__isnull=True, submission__isnull=True, exhibit__isnull=False)
-                ),
-                name="attachment_exactly_one_parent",
-                violation_error_message="附件必须且只能挂在一个父级（任务/意见反馈/新闻/作品/展品）上。",
-            ),
-        ]
 
     def __str__(self):
         return self.file_name

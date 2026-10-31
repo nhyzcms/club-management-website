@@ -6,6 +6,8 @@ from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
+from attachments.queries import attachments_of
+from common.targets import target_of
 from accounts.test_helpers import grant_verification
 from attachments.models import Attachment
 
@@ -39,8 +41,8 @@ class CreateExhibitTest(TestCase):
         self.assertEqual(exhibit.title, "作品A")
         self.assertIsNotNone(exhibit.vote_option_id)
         self.assertEqual(exhibit.vote_option.text, "作品A")
-        self.assertEqual(exhibit.attachments.count(), 2)
-        att = exhibit.attachments.first()
+        self.assertEqual(attachments_of(exhibit).count(), 2)
+        att = attachments_of(exhibit).first()
         self.assertEqual(att.uploaded_by_id, self.curator.pk)
         self.assertEqual(VoteOption.objects.filter(activity=activity).count(), 1)
 
@@ -51,7 +53,7 @@ class CreateExhibitTest(TestCase):
         )
         self.assertIsNone(exhibit.vote_option_id)
         self.assertEqual(VoteOption.objects.filter(activity=activity).count(), 0)
-        self.assertEqual(Attachment.objects.filter(exhibit=exhibit).count(), 1)
+        self.assertEqual(Attachment.objects.filter(target=target_of(exhibit)).count(), 1)
 
     def test_create_exhibit_allowed_when_open(self):
         activity = self._exhibition(status=OPEN, voting_enabled=True)

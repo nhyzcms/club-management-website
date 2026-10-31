@@ -1,3 +1,4 @@
+from common.targets import target_of
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -53,15 +54,15 @@ class ReportCaseApiTest(TestCase):
         resp = self._file(self.reporter)
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.data["status"], ReportCase.STATUS_OPEN)
-        self.assertEqual(ReportCase.objects.filter(news=self.news, status=ReportCase.STATUS_OPEN).count(), 1)
+        self.assertEqual(ReportCase.objects.filter(target=target_of(self.news), status=ReportCase.STATUS_OPEN).count(), 1)
         self.assertEqual(ReportFiling.objects.filter(reporter=self.reporter).count(), 1)
 
     def test_second_reporter_attaches(self):
         self.assertEqual(self._file(self.reporter).status_code, 201)
         resp = self._file(self.other, reason="我也看到了")
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(ReportCase.objects.filter(news=self.news).count(), 1)
-        case = ReportCase.objects.get(news=self.news)
+        self.assertEqual(ReportCase.objects.filter(target=target_of(self.news)).count(), 1)
+        case = ReportCase.objects.get(target=target_of(self.news))
         self.assertEqual(case.filings.count(), 2)
 
     def test_duplicate_reporter_400(self):
@@ -71,7 +72,7 @@ class ReportCaseApiTest(TestCase):
 
     def test_closed_case_opens_new(self):
         self.assertEqual(self._file(self.reporter).status_code, 201)
-        case = ReportCase.objects.get(news=self.news)
+        case = ReportCase.objects.get(target=target_of(self.news))
         self.client.force_authenticate(self.handler)
         self.assertEqual(
             self.client.post(
@@ -83,8 +84,8 @@ class ReportCaseApiTest(TestCase):
         )
         resp = self._file(self.other, reason="新一轮")
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(ReportCase.objects.filter(news=self.news).count(), 2)
-        self.assertEqual(ReportCase.objects.filter(news=self.news, status=ReportCase.STATUS_OPEN).count(), 1)
+        self.assertEqual(ReportCase.objects.filter(target=target_of(self.news)).count(), 2)
+        self.assertEqual(ReportCase.objects.filter(target=target_of(self.news), status=ReportCase.STATUS_OPEN).count(), 1)
 
     def test_self_report_400(self):
         resp = self._file(self.author)
@@ -101,14 +102,14 @@ class ReportCaseApiTest(TestCase):
 
     def test_dismiss_requires_reason(self):
         self.assertEqual(self._file(self.reporter).status_code, 201)
-        case = ReportCase.objects.get(news=self.news)
+        case = ReportCase.objects.get(target=target_of(self.news))
         self.client.force_authenticate(self.handler)
         resp = self.client.post(f"/reviews/reports/{case.pk}/dismiss/", {"comment": ""}, format="json")
         self.assertEqual(resp.status_code, 400)
 
     def test_handler_without_moderate_can_uphold_remove(self):
         self.assertEqual(self._file(self.reporter).status_code, 201)
-        case = ReportCase.objects.get(news=self.news)
+        case = ReportCase.objects.get(target=target_of(self.news))
         self.assertFalse(self.handler.has_perm("reviews.moderate"))
         self.client.force_authenticate(self.handler)
         resp = self.client.post(
@@ -118,15 +119,18 @@ class ReportCaseApiTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.news.refresh_from_db()
-        self.assertEqual(self.news.review.status, Review.STATUS_REMOVED)
+        self.assertEqual(
+            Review.objects.get(target=target_of(self.news)).status, Review.STATUS_REMOVED,
+        )
         case.refresh_from_db()
         self.assertEqual(case.status, ReportCase.STATUS_UPHELD)
 
     def test_already_removed_is_idempotent(self):
         self.assertEqual(self._file(self.reporter).status_code, 201)
-        self.news.review.status = Review.STATUS_REMOVED
-        self.news.review.save()
-        case = ReportCase.objects.get(news=self.news)
+        Review.objects.filter(target=target_of(self.news)).update(
+            status=Review.STATUS_REMOVED,
+        )
+        case = ReportCase.objects.get(target=target_of(self.news))
         self.client.force_authenticate(self.handler)
         resp = self.client.post(f"/reviews/reports/{case.pk}/uphold/", {"comment": "ok"}, format="json")
         self.assertEqual(resp.status_code, 200)

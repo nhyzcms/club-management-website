@@ -10,6 +10,7 @@
 import base64
 import shutil
 import tempfile
+from common.targets import target_of
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -499,7 +500,7 @@ class TusUploadTest(_AttachmentTestCase):
         resp2 = self._patch(location, chunk)
         self.assertEqual(resp2.status_code, 204)
 
-        att = Attachment.objects.get(feedback=self.feedback)
+        att = Attachment.objects.get(target=target_of(self.feedback))
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "image")
         self.assertEqual(att.file_size, len(chunk))
@@ -549,7 +550,7 @@ class TusUploadTest(_AttachmentTestCase):
         self.feedback.save()
         resp2 = self._patch(resp.get("Location") or resp["Location"], chunk)  # type: ignore[attr-defined]
         self.assertEqual(resp2.status_code, 204)
-        self.assertFalse(Attachment.objects.filter(feedback=self.feedback).exists())
+        self.assertFalse(Attachment.objects.filter(target=target_of(self.feedback)).exists())
 
     def test_tus_quota_enforced_at_create(self):
         with mock.patch("attachments.validation.FEEDBACK_MAX_ATTACHMENTS", 0):
@@ -564,7 +565,7 @@ class TusUploadTest(_AttachmentTestCase):
         )
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(self._patch(resp.get("Location") or resp["Location"], chunk).status_code, 204)  # type: ignore[attr-defined]
-        att = Attachment.objects.get(task=task)
+        att = Attachment.objects.get(target=target_of(task))
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "image")
 
@@ -579,7 +580,7 @@ class TusUploadTest(_AttachmentTestCase):
         )
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(self._patch(resp.get("Location") or resp["Location"], chunk).status_code, 204)  # type: ignore[attr-defined]
-        att = Attachment.objects.get(feedback=fb)
+        att = Attachment.objects.get(target=target_of(fb))
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "image")
 
@@ -602,14 +603,18 @@ class TusUploadTest(_AttachmentTestCase):
         )
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(self._patch(resp.get("Location") or resp["Location"], chunk).status_code, 204)  # type: ignore[attr-defined]
-        att = Attachment.objects.get(news=news)
+        att = Attachment.objects.get(target=target_of(news))
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "video")
 
 
 # ── news 父级（#新闻视频）──
 class AttachmentNewsParentTest(_AttachmentTestCase):
-    """Attachment 可挂 news 父级；task/feedback/news 三选一。"""
+    """附件挂在新闻上。
+
+    B9 之后只有 ``target`` 一个锚点，「同时挂两个父级」在结构上就不可能，
+    原来那条 ``test_news_and_task_rejected`` 测的约束已随旧列一起删除。
+    """
 
     def setUp(self):
         super().setUp()
@@ -617,27 +622,16 @@ class AttachmentNewsParentTest(_AttachmentTestCase):
         from news.models import News
         self.user = User.objects.create_user(username="author", password="x")
         self.news = News.objects.create(title="n", author=self.user, is_published=True)
-        self.task = Task.objects.create(title="t", creator=self.user, status="pending")
 
-    def test_news_only_attachment_valid(self):
+    def test_news_attachment_valid(self):
         att = Attachment(
-            uploaded_by=self.user, news=self.news,
+            uploaded_by=self.user, target=target_of(self.news),
             file=upload("v.mp4", b"x", "video/mp4"),
             file_type="video", file_name="v.mp4", file_size=1,
         )
         att.full_clean()  # 不抛
         att.save()
-        self.assertEqual(Attachment.objects.get(pk=att.pk).news_id, self.news.pk)
-
-    def test_news_and_task_rejected(self):
-        from django.db import IntegrityError
-        att = Attachment(
-            uploaded_by=self.user, news=self.news, task=self.task,
-            file=upload("v.mp4", b"x", "video/mp4"),
-            file_type="video", file_name="v.mp4", file_size=1,
-        )
-        with self.assertRaises(IntegrityError):
-            att.save()
+        self.assertEqual(Attachment.objects.get(pk=att.pk).target.object_id, self.news.pk)
 
 
 # ── news 父级上传权限（#新闻视频）──
@@ -790,7 +784,8 @@ class SubmissionParentTest(_AttachmentTestCase):
         self.client = APIClient()
 
     def test_create_attachment_binds_submission(self):
-        self.assertEqual(self.att.submission_id, self.submission.pk)
+        self.assertEqual(self.att.target.object_id, self.submission.pk)
+        self.assertEqual(self.att.target.kind, "submission")
         self.assertEqual(self.parent_of(self.att).pk, self.submission.pk)
 
     def test_http_rejects_submission_id(self):

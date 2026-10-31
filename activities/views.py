@@ -108,13 +108,13 @@ class ActivityViewSet(viewsets.ModelViewSet):
         transition_overdue()
         transition_overdue_collections()
         qs = Activity.objects.select_related(
-            "creator", "creator__profile", "publication_review", "questionnaire",
+            "creator", "creator__profile", "questionnaire",
         ).prefetch_related(
             "options", "options__selections",
             "ballots", "ballots__selections", "ballots__voter__profile",
-            "submissions", "submissions__attachments", "submissions__submitter__profile",
+            "submissions", "submissions__submitter__profile",
             "submissions__moderated_by",
-            "exhibits", "exhibits__attachments",
+            "exhibits",
             "exhibits__vote_option", "exhibits__vote_option__selections",
             "exhibits__ratings",
         )

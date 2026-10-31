@@ -82,14 +82,14 @@ class FixtureMixin:
         return News.objects.create(title=title, author=self.user)
 
 
-class LegacyColumnsBackfillTest(FixtureMixin, TestCase):
-    """双写兜底：走旧列创建的行，``target`` 必须自动补上。
+class TargetAnchorTest(FixtureMixin, TestCase):
+    """内容行只通过 ``target`` 锚定宿主——B9 删掉旧列之后这是唯一表示。
 
-    这四张表的写路径散落在视图、序列化器、管理命令与测试夹具里；只要有一个
-    入口没写 target，PR 2 切读之后那些行就查不到了。
+    原 ``LegacyColumnsBackfillTest`` 测的是「走旧列创建时 save() 自动补 target」，
+    那个 mixin 已随旧列一起删除，这里改为钉「创建路径确实写 target」。
     """
 
-    def test_attachment_from_news_gets_target(self):
+    def test_attachment_from_parent_gets_target(self):
         news = self.make_news()
         att = create_attachment(
             user=self.user, parent=news,
@@ -100,32 +100,38 @@ class LegacyColumnsBackfillTest(FixtureMixin, TestCase):
 
     def test_comment_thread_from_news_gets_target(self):
         news = self.make_news()
-        thread = CommentThread.objects.create(news=news)
+        thread = CommentThread.objects.create(target=target_of(news))
         self.assertEqual((thread.target.kind, thread.target.object_id), ("news", news.pk))
 
     def test_review_from_news_gets_target(self):
         news = self.make_news()
-        review = Review.objects.create(news=news)
+        review = Review.objects.create(target=target_of(news))
         self.assertEqual((review.target.kind, review.target.object_id), ("news", news.pk))
 
     def test_report_case_from_comment_gets_target(self):
         news = self.make_news()
-        thread = CommentThread.objects.create(news=news)
+        thread = CommentThread.objects.create(target=target_of(news))
         comment = Comment.objects.create(thread=thread, author=self.user, content="x")
-        case = ReportCase.objects.create(comment=comment)
+        case = ReportCase.objects.create(target=target_of(comment))
         self.assertEqual((case.target.kind, case.target.object_id), ("comment", comment.pk))
 
     def test_explicit_target_is_not_overwritten(self):
         news = self.make_news()
         target = target_for("news", news.pk)
-        review = Review.objects.create(news=news, target=target)
+        review = Review.objects.create(target=target_of(news))
         self.assertEqual(review.target_id, target.pk)
 
-    def test_saving_without_parent_does_not_crash(self):
-        """既没有 target 也没有旧列时不该炸——让 DB 约束去报错。"""
-        review = Review()
-        with self.assertRaises(Exception):
-            review.save()
+    def test_row_without_target_is_tolerated(self):
+        """``target`` 为空的排在 DB 层是允许的。
+
+        「必须有宿主」由创建路径（``create_attachment`` / ``open_review`` /
+        ``thread_for``）保证，不靠数据库约束——删列后没有合理默认值可以填进
+        非空约束。读取路径遇到这种行要安静返回 None，而不是炸。
+        """
+        review = Review.objects.create()
+        fresh = Review.objects.get(pk=review.pk)
+        self.assertIsNone(host_ref(fresh))
+        self.assertIsNone(content_host(fresh))
 
 
 class CascadeChainTest(FixtureMixin, TestCase):
@@ -133,11 +139,11 @@ class CascadeChainTest(FixtureMixin, TestCase):
 
     def test_deleting_news_removes_every_attached_thing(self):
         news = self.make_news()
-        thread = CommentThread.objects.create(news=news)
+        thread = CommentThread.objects.create(target=target_of(news))
         comment = Comment.objects.create(thread=thread, author=self.user, content="评")
-        review = Review.objects.create(news=news)
-        comment_case = ReportCase.objects.create(comment=comment)
-        news_case = ReportCase.objects.create(news=news)
+        review = Review.objects.create(target=target_of(news))
+        comment_case = ReportCase.objects.create(target=target_of(comment))
+        news_case = ReportCase.objects.create(target=target_of(news))
         att = create_attachment(
             user=self.user, parent=news,
             file=SimpleUploadedFile("a.txt", b"hi", content_type="text/plain"),
@@ -156,9 +162,9 @@ class CascadeChainTest(FixtureMixin, TestCase):
     def test_deleting_comment_removes_its_report_case_but_keeps_thread(self):
         """评论的 target 独立于宿主的 target——删评论不该动评论区。"""
         news = self.make_news()
-        thread = CommentThread.objects.create(news=news)
+        thread = CommentThread.objects.create(target=target_of(news))
         comment = Comment.objects.create(thread=thread, author=self.user, content="评")
-        case = ReportCase.objects.create(comment=comment)
+        case = ReportCase.objects.create(target=target_of(comment))
         comment_target = target_of(comment).pk
 
         comment.delete()
@@ -194,64 +200,51 @@ class CascadeChainTest(FixtureMixin, TestCase):
 
 
 class RelatedToTest(FixtureMixin, TestCase):
-    """``related_to`` 的两个分支都要真的工作。
+    """``related_to`` 按 ``(kind, object_id)`` 定位宿主。
 
-    切读期的核心风险：如果只按 ``target`` 查，任何 target 为空的存量行都会
-    「凭空消失」（评论没了、审核队列少了条目）。所以必须两条路都走，且两条路
-    各自单独可用。
+    原实现有一个 ``Q(**{kind: host})`` 的旧列分支，B9 删列后去掉了——所以这里
+    不再测「target 为空时靠旧列匹配」。
     """
 
-    def test_matches_by_legacy_column_when_target_is_null(self):
+    def test_matches_by_target(self):
         news = self.make_news()
-        thread = CommentThread.objects.create(news=news)
-        # 绕过 save() 清掉 target，模拟「回填漏掉的存量行」
-        CommentThread.objects.filter(pk=thread.pk).update(target=None)
-        found = related_to(CommentThread, news)
-        self.assertEqual(list(found), [CommentThread.objects.get(pk=thread.pk)])
-
-    def test_matches_by_target_when_legacy_column_points_elsewhere(self):
-        news_a = self.make_news("A")
-        news_b = self.make_news("B")
-        thread = CommentThread.objects.create(news=news_a)
-        # 绕过 save() 把 target 指向 B：旧列仍指向 A，target 指向 B
-        CommentThread.objects.filter(pk=thread.pk).update(target=target_for("news", news_b.pk))
-        self.assertEqual(list(related_to(CommentThread, news_a)), [thread])
-        self.assertEqual(list(related_to(CommentThread, news_b)), [thread])
+        thread = CommentThread.objects.create(target=target_of(news))
+        self.assertEqual(list(related_to(CommentThread, news)), [thread])
 
     def test_does_not_match_other_hosts(self):
         news = self.make_news()
         other = self.make_news("别的")
-        CommentThread.objects.create(news=news)
+        CommentThread.objects.create(target=target_of(news))
         self.assertEqual(list(related_to(CommentThread, other)), [])
 
-    def test_works_for_tables_without_that_column(self):
-        """``CommentThread`` 没有 ``comment`` 列——确认不会拼出非法字段名。"""
-        thread = CommentThread.objects.create(news=self.make_news())
-        comment = Comment.objects.create(thread=thread, author=self.user, content="x")
-        self.assertEqual(list(related_to(CommentThread, comment)), [])
+    def test_row_without_target_is_not_matched(self):
+        """没有 target 的行不属于任何宿主——不是「匹配所有人」。"""
+        news = self.make_news()
+        CommentThread.objects.create()
+        self.assertEqual(list(related_to(CommentThread, news)), [])
 
     def test_review_lookup_by_host(self):
         news = self.make_news()
-        review = Review.objects.create(news=news)
+        review = Review.objects.create(target=target_of(news))
         self.assertEqual(list(related_to(Review, news)), [review])
 
-    def test_host_ref_prefers_target_then_legacy(self):
+    def test_host_ref_reads_target(self):
         news = self.make_news()
-        review = Review.objects.create(news=news)
+        review = Review.objects.create(target=target_of(news))
         self.assertEqual(host_ref(review), ("news", news.pk))
-        Review.objects.filter(pk=review.pk).update(target=None)
-        self.assertEqual(host_ref(Review.objects.get(pk=review.pk)), ("news", news.pk))
 
     def test_content_host_returns_instance(self):
         news = self.make_news()
-        review = Review.objects.create(news=news)
+        review = Review.objects.create(target=target_of(news))
         self.assertEqual(content_host(review).pk, news.pk)
-        Review.objects.filter(pk=review.pk).update(target=None)
-        self.assertEqual(content_host(Review.objects.get(pk=review.pk)).pk, news.pk)
+
+    def test_content_host_is_none_without_target(self):
+        review = Review.objects.create()
+        self.assertIsNone(content_host(review))
 
 
 class ThreadForTest(FixtureMixin, TestCase):
-    """``thread_for`` 切读后仍然是「恰好一条」，且不会因 target 为空而重复建。"""
+    """``thread_for`` 仍然是「每个宿主恰好一条」评论区。"""
 
     def test_returns_same_thread_on_repeat_calls(self):
         news = self.make_news()
@@ -259,17 +252,6 @@ class ThreadForTest(FixtureMixin, TestCase):
         b = thread_for(news)
         self.assertEqual(a.pk, b.pk)
         self.assertEqual(CommentThread.objects.count(), 1)
-
-    def test_reuses_legacy_row_and_backfills_target(self):
-        news = self.make_news()
-        legacy = CommentThread.objects.create(news=news)
-        CommentThread.objects.filter(pk=legacy.pk).update(target=None)
-
-        thread = thread_for(news)
-
-        self.assertEqual(thread.pk, legacy.pk)
-        self.assertIsNotNone(thread.target_id, "命中存量行后应把 target 补上")
-        self.assertEqual(CommentThread.objects.count(), 1, "不该重复创建")
 
     def test_task_host_still_works(self):
         task = Task.objects.create(title="任务", creator=self.user)
@@ -291,8 +273,17 @@ class ContentHostTest(FixtureMixin, TestCase):
             file=SimpleUploadedFile("a.txt", b"hi", content_type="text/plain"),
         )
         self.assertEqual(parent_of(att).pk, news.pk)
-        Attachment.objects.filter(pk=att.pk).update(target=None)
-        self.assertEqual(parent_of(Attachment.objects.get(pk=att.pk)).pk, news.pk)
+
+    def test_attachment_without_target_has_no_parent(self):
+        """没有 target 的附件解析不出父级——返回 None，不炸。"""
+        from attachments.create import parent_of
+
+        att = Attachment.objects.create(
+            uploaded_by=self.user,
+            file=SimpleUploadedFile("b.txt", b"hi", content_type="text/plain"),
+            file_type="document", file_name="b.txt", file_size=2,
+        )
+        self.assertIsNone(parent_of(att))
 
 
 class AllKindsSmokeTest(FixtureMixin, TestCase):

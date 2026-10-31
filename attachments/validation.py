@@ -9,6 +9,7 @@ import os
 
 from django.db.models import Count, Sum
 
+from attachments.queries import attachments_of
 from common.policy import format_byte_cap, get_policy
 
 # 反馈附件配额（同步 / tus 通路共用）：每条 ≤9 个 / 总 ≤2GB。
@@ -73,7 +74,7 @@ def feedback_quota_error(parent, incoming_size):
 
     if not isinstance(parent, Feedback):
         return None
-    stats = parent.attachments.aggregate(n=Count("id"), total=Sum("file_size")) # pyright: ignore[reportAttributeAccessIssue]
+    stats = attachments_of(parent).aggregate(n=Count("id"), total=Sum("file_size")) # pyright: ignore[reportAttributeAccessIssue]
     if (stats["n"] or 0) >= FEEDBACK_MAX_ATTACHMENTS:
         return f"单条反馈最多 {FEEDBACK_MAX_ATTACHMENTS} 个附件"
     if (stats["total"] or 0) + incoming_size > FEEDBACK_MAX_TOTAL_BYTES:

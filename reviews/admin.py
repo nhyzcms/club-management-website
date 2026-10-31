@@ -4,25 +4,26 @@ from django.utils.html import format_html
 from .lifecycle import APPROVE, REJECT, REMOVE, TransitionDenied, apply
 from .models import Feedback, ReportCase, Review, UserMute
 
-_TARGET_HASH = (
-    ("news_id", "/news/{}"),
-    ("activity_id", "/activity/{}"),
-    ("tutorial_id", "/tutorials/{}"),
-)
+#: 审核对象的后台预览路径：kind → 前端路由模板。
+_TARGET_PREVIEW = {
+    "news": "/news/{}",
+    "activity": "/activity/{}",
+    "tutorial": "/tutorials/{}",
+}
 
 
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
-    list_display = ["id", "status", "news", "activity", "tutorial", "moderated_by", "moderated_at", "created_at"]
+    list_display = ["id", "status", "target", "moderated_by", "moderated_at", "created_at"]
     list_filter = ["status"]
-    search_fields = ["moderation_note", "news__title", "activity__title", "tutorial__title"]
+    search_fields = ["moderation_note"]
     readonly_fields = [
-        "news", "activity", "tutorial", "moderated_by",
+        "target", "moderated_by",
         "moderated_at", "created_at", "updated_at", "target_preview",
     ]
     fieldsets = (
         (None, {"fields": ("status", "moderation_note", "moderated_by", "moderated_at")}),
-        ("对象", {"fields": ("news", "activity", "tutorial")}),
+        ("对象", {"fields": ("target",)}),
         ("预览", {"fields": ("target_preview",)}),
     )
     actions = ["approve_selected", "reject_selected", "remove_selected"]
@@ -42,7 +43,7 @@ class ReviewAdmin(admin.ModelAdmin):
             self.message_user(request, "没有审核权限。", level=messages.ERROR)
             return
         ok = skip = 0
-        for review in queryset.select_related("news", "activity", "tutorial"):
+        for review in queryset.select_related("target"):
             try:
                 apply(action, review, request.user, comment=comment)
                 ok += 1
@@ -67,14 +68,13 @@ class ReviewAdmin(admin.ModelAdmin):
     def target_preview(self, obj):
         if not obj or not obj.pk:
             return "—"
-        path = None
-        for attr, tmpl in _TARGET_HASH:
-            pk = getattr(obj, attr, None)
-            if pk:
-                path = tmpl.format(pk)
-                break
-        if not path:
+        # B9：Review 只通过 target 锚定对象，没有 news_id / activity_id / tutorial_id
+        if obj.target_id is None:
             return "—"
+        tmpl = _TARGET_PREVIEW.get(obj.target.kind)
+        if tmpl is None:
+            return "—"
+        path = tmpl.format(obj.target.object_id)
         src = f"/#{path}?embed=1"
         return format_html(
             '<p style="margin:0 0 8px">'
@@ -97,7 +97,7 @@ class FeedbackAdmin(admin.ModelAdmin):
 
 @admin.register(ReportCase)
 class ReportCaseAdmin(admin.ModelAdmin):
-    list_display = ["id", "status", "news", "activity", "tutorial", "comment", "reported_user", "moderated_by", "created_at"]
+    list_display = ["id", "status", "target", "reported_user", "moderated_by", "created_at"]
     list_filter = ["status"]
     search_fields = ["moderation_note"]
     readonly_fields = ["created_at", "updated_at", "moderated_at"]
