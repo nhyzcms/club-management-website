@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from attachments.serializers import AttachmentSerializer
+from attachments.queries import attachments_of
 from common.rich_text import sanitize_html
 from common.survey_schema import InvalidSurveySchema, validate_schema_dict
 from reviews.visibility import comment_for, status_of
@@ -68,7 +69,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
         ]
 
     def get_files(self, obj):
-        return AttachmentSerializer(obj.attachments.all(), many=True, context=self.context).data
+        return AttachmentSerializer(attachments_of(obj), many=True, context=self.context).data
 
 
 class ExhibitSerializer(serializers.ModelSerializer):
@@ -91,7 +92,7 @@ class ExhibitSerializer(serializers.ModelSerializer):
                   "like_count", "dislike_count", "my_rating", "created_at"]
 
     def get_files(self, obj):
-        return AttachmentSerializer(obj.attachments.all(), many=True, context=self.context).data
+        return AttachmentSerializer(attachments_of(obj), many=True, context=self.context).data
 
     def get_vote_option_id(self, obj):
         return obj.vote_option_id

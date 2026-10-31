@@ -13,7 +13,7 @@ from news.models import News
 from reviews.models import Feedback
 from tasks.models import Task
 
-from common.targets import content_host
+from common.targets import content_host, target_of
 from .models import Attachment
 from .validation import classify_file_type
 
@@ -31,18 +31,17 @@ class ParentSpec:
     """父级注册表一行：谁能挂、HTTP 是否暴露、创建者字段名。"""
 
     key: str
-    fk: str
     model: type
     endpoint: bool
     creator_attr: str | None = None
 
 
 PARENTS = {
-    "task": ParentSpec("task", "task", Task, True, "creator_id"),
-    "feedback": ParentSpec("feedback", "feedback", Feedback, True, "creator_id"),
-    "news": ParentSpec("news", "news", News, True, "author_id"),
-    "submission": ParentSpec("submission", "submission", Submission, False),
-    "exhibit": ParentSpec("exhibit", "exhibit", Exhibit, False),
+    "task": ParentSpec("task", Task, True, "creator_id"),
+    "feedback": ParentSpec("feedback", Feedback, True, "creator_id"),
+    "news": ParentSpec("news", News, True, "author_id"),
+    "submission": ParentSpec("submission", Submission, False),
+    "exhibit": ParentSpec("exhibit", Exhibit, False),
 }
 
 
@@ -86,7 +85,7 @@ def create_attachment(*, user, parent, file, extra_validate=None):
     content_type = getattr(file, "content_type", None) or ""
     file_name = os.path.basename(getattr(file, "name", "") or "") or "file"
     return Attachment.objects.create(
-        **{spec.fk: parent},
+        target=target_of(parent),
         uploaded_by=user,
         file=file,
         file_type=classify_file_type(content_type),
@@ -101,7 +100,7 @@ def copy_attachment(*, user, parent, source):
     if spec is None:
         raise AttachmentCreateError("不支持的父级")
     new_att = Attachment(
-        **{spec.fk: parent},
+        target=target_of(parent),
         uploaded_by=user,
         file_type=source.file_type,
         file_name=source.file_name,

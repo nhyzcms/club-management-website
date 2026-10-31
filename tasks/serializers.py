@@ -2,6 +2,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
+from attachments.queries import attachments_of
 from attachments.serializers import AttachmentSerializer
 
 from .lifecycle import available_actions, status_for_assignee
@@ -152,7 +153,7 @@ class TaskListSerializer(serializers.ModelSerializer):
         ]
 
     def get_attachment_count(self, obj):
-        return obj.attachments.count()
+        return attachments_of(obj).count()
 
 
 class TaskDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
@@ -160,7 +161,14 @@ class TaskDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
     assignee = SimpleUserSerializer(read_only=True)
     collaborators = SimpleUserSerializer(many=True, read_only=True)
     tags = TagSerializer(many=True, read_only=True)
-    attachments = AttachmentSerializer(many=True, read_only=True)
+    attachments = serializers.SerializerMethodField()
+
+    def get_attachments(self, obj):
+        """B9：附件通过 ContentTarget 锚定，反向访问器已不存在。"""
+        return AttachmentSerializer(
+            attachments_of(obj), many=True, context=self.context,
+        ).data
+
     claim_requests = TaskClaimRequestSerializer(many=True, read_only=True)
     available_actions = serializers.SerializerMethodField()
 

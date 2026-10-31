@@ -82,7 +82,7 @@ def activity_debts_for(user):
     transition_overdue_collections()
     qs = annotate_activity_debt(
         Activity.objects.filter(public_q("activity")).select_related(
-            "creator", "creator__profile", "publication_review",
+            "creator", "creator__profile",
         ),
         user,
     )

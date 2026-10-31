@@ -6,6 +6,7 @@
 from django.db import transaction
 
 from attachments.create import AttachmentCreateError, copy_attachment, create_attachment
+from attachments.queries import attachments_of
 from attachments.validation import upload_error
 
 from .lifecycle import can_curate, can_edit_exhibit
@@ -85,7 +86,7 @@ def update_exhibit(*, activity, user, exhibit_id, title=None, files=None):
             if exhibit.vote_option_id:
                 VoteOption.objects.filter(pk=exhibit.vote_option_id).update(text=exhibit.title)
         if files:
-            exhibit.attachments.all().delete()
+            attachments_of(exhibit).delete()
             for f in files:
                 try:
                     create_attachment(user=user, parent=exhibit, file=f)
@@ -112,7 +113,7 @@ def import_submissions(*, activity, user, collection_id, submission_ids):
     with transaction.atomic():
         for sub in subs:
             exhibit = _build_exhibit(activity, user, "", [])
-            for att in sub.attachments.all():
+            for att in attachments_of(sub):
                 try:
                     copy_attachment(user=user, parent=exhibit, source=att)
                 except AttachmentCreateError as exc:

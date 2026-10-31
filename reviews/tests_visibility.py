@@ -1,12 +1,13 @@
 """审核读接口单元测试（reviews.visibility）。
 
 HTTP 作者预览仍由 tests.py / tests_activity.py / tutorials 覆盖；此处钉接口本身：
-related_name / owner_id 推断、活动夹具例外、visible_queryset 三档。
+owner_id 推断、活动夹具例外、visible_queryset 三档。
 """
 from django.contrib.auth.models import Permission, User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
+from common.targets import target_of
 from activities.models import Activity
 from news.models import News
 from reviews.models import Review
@@ -14,7 +15,6 @@ from reviews.visibility import (
     comment_for,
     owner_id,
     public_q,
-    related_name,
     status_of,
     visible_queryset,
 )
@@ -39,28 +39,26 @@ def _tutorial(user, title="教程"):
     )
 
 
-class RelatedNameAndOwnerIdTest(TestCase):
+class OwnerIdTest(TestCase):
+    """B9 之后 ``related_name()`` 不存在了——审核行只通过 ContentTarget 锚定，
+    宿主侧没有反向访问器。这里只测 ``owner_id``（它和审核轴无关，仍需要）。"""
+
     def setUp(self):
         self.user = User.objects.create_user(username="owner", password="x")
 
-    def test_news_review_and_author(self):
+    def test_news_author(self):
         news = News(title="n", author=self.user)
-        self.assertEqual(related_name(news), "review")
         self.assertEqual(owner_id(news), self.user.pk)
 
-    def test_activity_publication_review_and_creator(self):
+    def test_activity_creator(self):
         activity = Activity(type="deliberation", status="open", title="a", creator=self.user)
-        self.assertEqual(related_name(activity), "publication_review")
         self.assertEqual(owner_id(activity), self.user.pk)
 
-    def test_tutorial_review_and_uploader(self):
+    def test_tutorial_uploader(self):
         tutorial = Tutorial(title="t", uploader=self.user)
-        self.assertEqual(related_name(tutorial), "review")
         self.assertEqual(owner_id(tutorial), self.user.pk)
 
     def test_unknown_model_raises(self):
-        with self.assertRaises(TypeError):
-            related_name(self.user)
         with self.assertRaises(TypeError):
             owner_id(self.user)
 
@@ -81,7 +79,7 @@ class PublicQTest(TestCase):
         pending = Activity.objects.create(
             type="deliberation", status="open", title="pending", creator=self.user,
         )
-        Review.objects.create(activity=pending, status=Review.STATUS_PENDING)
+        Review.objects.create(target=target_of(pending), status=Review.STATUS_PENDING)
         self.assertFalse(
             Activity.objects.filter(public_q("activity"), pk=pending.pk).exists()
         )
@@ -90,7 +88,7 @@ class PublicQTest(TestCase):
         approved = Activity.objects.create(
             type="deliberation", status="open", title="ok", creator=self.user,
         )
-        Review.objects.create(activity=approved, status=Review.STATUS_APPROVED)
+        Review.objects.create(target=target_of(approved), status=Review.STATUS_APPROVED)
         self.assertTrue(
             Activity.objects.filter(public_q("activity"), pk=approved.pk).exists()
         )
@@ -104,7 +102,7 @@ class PublicQTest(TestCase):
     def test_news_approved_is_public_even_if_unpublished(self):
         # is_published 由新闻适配器相交，审核轴本身不过问
         news = News.objects.create(title="draft", author=self.user, is_published=False)
-        Review.objects.create(news=news, status=Review.STATUS_APPROVED)
+        Review.objects.create(target=target_of(news), status=Review.STATUS_APPROVED)
         self.assertTrue(
             News.objects.filter(public_q("news"), pk=news.pk).exists()
         )
@@ -126,14 +124,12 @@ class StatusAndCommentTest(TestCase):
         self.other = User.objects.create_user(username="other", password="x")
         self.mod = _grant_moderate(User.objects.create_user(username="mod", password="x"))
         self.news = News.objects.create(title="n", author=self.owner, is_published=True)
-        Review.objects.create(
-            news=self.news, status=Review.STATUS_REJECTED, moderation_note="改标题",
+        Review.objects.create(target=target_of(self.news), status=Review.STATUS_REJECTED, moderation_note="改标题",
         )
         self.activity = Activity.objects.create(
             type="deliberation", status="open", title="a", creator=self.owner,
         )
-        Review.objects.create(
-            activity=self.activity, status=Review.STATUS_PENDING, moderation_note="活动评语",
+        Review.objects.create(target=target_of(self.activity), status=Review.STATUS_PENDING, moderation_note="活动评语",
         )
 
     def test_status_of_infers_related_name(self):
@@ -158,9 +154,9 @@ class VisibleQuerysetTest(TestCase):
         self.other = User.objects.create_user(username="other", password="x")
         self.mod = _grant_moderate(User.objects.create_user(username="mod", password="x"))
         self.pending = News.objects.create(title="pending", author=self.owner, is_published=True)
-        Review.objects.create(news=self.pending, status=Review.STATUS_PENDING)
+        Review.objects.create(target=target_of(self.pending), status=Review.STATUS_PENDING)
         self.approved = News.objects.create(title="approved", author=self.owner, is_published=True)
-        Review.objects.create(news=self.approved, status=Review.STATUS_APPROVED)
+        Review.objects.create(target=target_of(self.approved), status=Review.STATUS_APPROVED)
 
     def _ids(self, qs):
         return set(qs.values_list("pk", flat=True))
@@ -188,7 +184,7 @@ class VisibleQuerysetTest(TestCase):
         pending = Activity.objects.create(
             type="deliberation", status="open", title="pending", creator=self.owner,
         )
-        Review.objects.create(activity=pending, status=Review.STATUS_PENDING)
+        Review.objects.create(target=target_of(pending), status=Review.STATUS_PENDING)
         qs = visible_queryset(Activity.objects.all(), self.other, "activity", action="list")
         self.assertIn(orphan.pk, self._ids(qs))
         self.assertNotIn(pending.pk, self._ids(qs))

@@ -151,7 +151,7 @@ class ActivityReviewQueueActionsTest(TestCase):
         self.other = grant_verification(User.objects.create_user(username="other", password="x"))
         created = _create(APIClient(), self.author, title="队列活动")
         self.activity_id = created.data["id"]
-        self.review_id = Review.objects.get(activity_id=self.activity_id).pk
+        self.review_id = Review.objects.get(target__kind="activity", target__object_id=self.activity_id).pk
         self.client = APIClient()
         self.client.force_authenticate(self.mod)
 

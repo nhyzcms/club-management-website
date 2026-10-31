@@ -47,9 +47,7 @@ class NewsViewSet(viewsets.ModelViewSet):
     ordering = ["-published_at"]
 
     def get_queryset(self): # pyright: ignore[reportIncompatibleMethodOverride]
-        qs = News.objects.select_related(
-            "author", "author__profile", "review",
-        ).prefetch_related("tags")
+        qs = News.objects.select_related("author", "author__profile").prefetch_related("tags")
         user = self.request.user
         if self.action == "mine":
             if not user.is_authenticated:

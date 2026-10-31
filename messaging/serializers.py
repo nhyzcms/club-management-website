@@ -75,12 +75,41 @@ class ConversationSerializer(serializers.ModelSerializer):
 
 
 class CommentThreadSerializer(serializers.ModelSerializer):
+    """评论区。
+
+    ## B9 之后为什么还有 news / activity / task
+
+    `CommentThread` 上的这三个外键删了，评论行只通过 `target` 锚定宿主。但
+    **前端的 `CommentThread` 类型仍然读这三个字段**（`frontend/src/types/messaging.ts`），
+    所以这里用方法字段从 target 推导出同名的三个 key——API 契约零变化。
+
+    三个字段恒有两个是 null（一条评论区只属于一个宿主）。
+    """
+
     can_manage = serializers.SerializerMethodField()
+    news = serializers.SerializerMethodField()
+    activity = serializers.SerializerMethodField()
+    task = serializers.SerializerMethodField()
 
     class Meta:
         model = CommentThread
         fields = ["id", "status", "news", "activity", "task", "can_manage"]
         read_only_fields = ["news", "activity", "task"]
+
+    def _host_id(self, obj, kind):
+        """该评论区属于 ``kind`` 时返回宿主 pk，否则 None。"""
+        if obj.target_id is None or obj.target.kind != kind:
+            return None
+        return obj.target.object_id
+
+    def get_news(self, obj):
+        return self._host_id(obj, "news")
+
+    def get_activity(self, obj):
+        return self._host_id(obj, "activity")
+
+    def get_task(self, obj):
+        return self._host_id(obj, "task")
 
     def get_can_manage(self, obj):
         request = self.context.get("request")

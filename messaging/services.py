@@ -62,31 +62,26 @@ def host_of(thread: CommentThread):
     return host
 
 
+#: 能开评论区的宿主类型。B9 之前这个白名单存在 ``CommentThread.TARGET_LEGACY_FIELDS``
+#: 上（旧列名即 kind 名），删列后单独列出来——它是业务规则，不是迁移脚手架。
+_COMMENTABLE_KINDS = frozenset({"news", "activity", "task"})
+
+
 def thread_for(host) -> CommentThread:
     """取或建该宿主上恰好一条评论区（默认开放）。
 
-    切读期同时认 target 与旧列：存量行可能只有旧列（回填漏掉的），新行两者都有。
-    创建时两个都写——旧列满足 ``commentthread_exactly_one_parent`` 约束，
-    target 供 B9 删列后继续工作。
+    ``CommentThread.target`` 是 OneToOne，唯一约束在数据库层兜住并发：
+    ``get_or_create`` 内部会捕获 IntegrityError 再取一次。
     """
     kind = kind_of(host)
-    if kind not in CommentThread.TARGET_LEGACY_FIELDS:
+    if kind not in _COMMENTABLE_KINDS:
         raise MessagingError("评论区只能挂在新闻、活动或任务上")
 
     target = target_for(kind, host.pk)
-    thread = CommentThread.objects.filter(
-        Q(target=target) | Q(**{kind: host}),
-    ).first()
-    if thread is None:
-        # get_or_create 兜住并发：旧列的 OneToOne 唯一约束会拦下第二次插入，
-        # get_or_create 捕获后重试取。
-        thread, _created = CommentThread.objects.get_or_create(
-            **{kind: host},
-            defaults={"target": target, "status": CommentThread.STATUS_OPEN},
-        )
-    if thread.target_id is None:
-        thread.target = target
-        thread.save(update_fields=["target"])
+    thread, _created = CommentThread.objects.get_or_create(
+        target=target,
+        defaults={"status": CommentThread.STATUS_OPEN},
+    )
     return thread
 
 
@@ -500,13 +495,18 @@ def _mentioned_users(content: str) -> list[User]:
 
 def _notify_comment(comment: Comment, author, parent: Comment | None) -> None:
     host = host_of(comment.thread)
+    # payload 是前端契约（notificationHref 读 news_id / activity_id / task_id 拼链接），
+    # 所以 B9 删掉 CommentThread 的三个旧列之后仍然发这三个 key——值从 target 推导。
+    thread_target = comment.thread.target if comment.thread.target_id else None
+    kind = thread_target.kind if thread_target else None
+    object_id = thread_target.object_id if thread_target else None
     payload = {
         "comment_id": comment.pk,
         "thread_id": comment.thread_id,
         "parent_id": parent.pk if parent else None,
-        "news_id": comment.thread.news_id,
-        "activity_id": comment.thread.activity_id,
-        "task_id": comment.thread.task_id,
+        "news_id": object_id if kind == "news" else None,
+        "activity_id": object_id if kind == "activity" else None,
+        "task_id": object_id if kind == "task" else None,
     }
     seen: set[int] = {author.pk}
     if parent is not None and parent.author_id not in seen:

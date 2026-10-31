@@ -61,7 +61,6 @@ class TaskViewSet(viewsets.ModelViewSet):
     ).prefetch_related(
         "tags",
         "collaborators", "collaborators__profile",
-        "attachments",
         "claim_requests", "claim_requests__claimant", "claim_requests__claimant__profile",
     )
 

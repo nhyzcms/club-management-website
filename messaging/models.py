@@ -2,7 +2,6 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from common.targets import TargetBackfillMixin
 
 
 class Conversation(models.Model):
@@ -95,11 +94,10 @@ def unread_message_count(user, conversation=None):
     return qs.exclude(read_statuses__user=user).count()
 
 
-class CommentThread(TargetBackfillMixin, models.Model):
+class CommentThread(models.Model):
     """宿主评论区：恰好挂在一条新闻 / 活动 / 任务上。"""
 
     # B1：双写期把旧列折射到 target（B9 删旧列时一并移除）。
-    TARGET_LEGACY_FIELDS = {"news": "news", "activity": "activity", "task": "task"}
 
     STATUS_OPEN = "open"
     STATUS_MUTED = "muted"
@@ -110,19 +108,7 @@ class CommentThread(TargetBackfillMixin, models.Model):
         (STATUS_CLOSED, "关闭"),
     ]
 
-    news = models.OneToOneField(
-        "news.News", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="comment_thread", verbose_name="新闻",
-    )
-    activity = models.OneToOneField(
-        "activities.Activity", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="comment_thread", verbose_name="活动",
-    )
-    task = models.OneToOneField(
-        "tasks.Task", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="comment_thread", verbose_name="任务",
-    )
-    # B1：统一宿主锚点（双写期，B9 删上面三个旧列）。
+    # B9：3 个旧列（news / activity / task）已删，target 是唯一锚点。
     target = models.OneToOneField(
         "common.ContentTarget", on_delete=models.CASCADE,
         null=True, blank=True, related_name="comment_thread", verbose_name="内容目标",
@@ -137,26 +123,11 @@ class CommentThread(TargetBackfillMixin, models.Model):
         permissions = [
             ("manage_comment_thread", "评论区协管"),
         ]
-        constraints = [
-            models.CheckConstraint(
-                condition=(
-                    models.Q(news__isnull=False, activity__isnull=True, task__isnull=True)
-                    | models.Q(news__isnull=True, activity__isnull=False, task__isnull=True)
-                    | models.Q(news__isnull=True, activity__isnull=True, task__isnull=False)
-                ),
-                name="commentthread_exactly_one_parent",
-                violation_error_message="评论区必须且只能挂在一个宿主（新闻/活动/任务）上。",
-            ),
-        ]
 
     def __str__(self):
-        if self.news_id:
-            return f"评论区 · 新闻 {self.news_id}"
-        if self.activity_id:
-            return f"评论区 · 活动 {self.activity_id}"
-        if self.task_id:
-            return f"评论区 · 任务 {self.task_id}"
-        return f"评论区 {self.pk}"
+        if self.target_id is None:
+            return f"评论区 {self.pk}（无宿主）"
+        return f"评论区 · {self.target.get_kind_display()} {self.target.object_id}"
 
 
 class Comment(models.Model):

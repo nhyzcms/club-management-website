@@ -30,9 +30,7 @@ class TutorialViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        qs = Tutorial.objects.select_related(
-            "uploader", "uploader__profile", "review",
-        ).prefetch_related("favorites")
+        qs = Tutorial.objects.select_related("uploader", "uploader__profile").prefetch_related("favorites")
         user = self.request.user
         if self.action == "list":
             return visible_queryset(qs, user, "tutorial", action="list")

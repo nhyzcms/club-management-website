@@ -15,6 +15,7 @@ from tasks.serializers import CommentThreadHostMixin, SimpleUserSerializer
 from .models import COVER_ALLOWED_TYPES, COVER_MAX_SIZE, News, NewsDraft
 from .thumbnails import make_cover_thumbnail
 from attachments.models import Attachment
+from attachments.queries import attachments_of
 from attachments.serializers import AttachmentSerializer
 
 # 正文 HTML 清洗：复用共享净化器 common.rich_text.sanitize_html（见 validate_content）。
@@ -129,7 +130,14 @@ class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
     cover_image_url = serializers.SerializerMethodField()
     cover_thumbnail_url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField()
-    attachments = NewsAttachmentSerializer(many=True, read_only=True)
+    attachments = serializers.SerializerMethodField()
+
+    def get_attachments(self, obj):
+        """B9：附件通过 ContentTarget 锚定，反向访问器 ``obj.attachments`` 已不存在。"""
+        return NewsAttachmentSerializer(
+            attachments_of(obj), many=True, context=self.context,
+        ).data
+
     review_status = serializers.SerializerMethodField()
     review_comment = serializers.SerializerMethodField()
     draft_saved_at = serializers.SerializerMethodField()

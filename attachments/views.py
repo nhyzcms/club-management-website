@@ -17,11 +17,7 @@ class AttachmentViewSet(
 ):
     """统一附件：仅提供创建（上传）与删除；列表随父级详情返回。"""
 
-    queryset = Attachment.objects.select_related(
-        "uploaded_by", "task", "feedback", "news",
-        "submission", "submission__activity",
-        "exhibit", "exhibit__activity",
-    )
+    queryset = Attachment.objects.select_related("uploaded_by", "target")
     serializer_class = AttachmentSerializer
     permission_classes = [IsAuthenticated]
 

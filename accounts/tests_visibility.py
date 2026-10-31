@@ -113,12 +113,36 @@ class ContentVisibilityTest(TestCase):
             ContentVisibility(denied=False, extra_q=Q()),
         )
 
+    def _pks(self, queryset):
+        return sorted(queryset.values_list("pk", flat=True))
+
     def test_news_other_only_published(self):
+        """他人看新闻：只看到「已发布 **且** 过审」的。
+
+        B9 之后 ``public_q`` 返回的是 ``Q(pk__in=<子查询>)``，两次调用拿到的是两个
+        不同的子查询实例，而 Django 的 ``Q.__eq__`` 比的是子查询对象本身——所以
+        不能再断言「Q 相等」。这里比**结果集**，并且额外钉死具体是哪一条，
+        避免两个都错成空集也算通过。
+        """
+        from common.targets import target_of
+        from news.models import News
+        from reviews.models import Review
+
+        published_ok = News.objects.create(title="ok", author=self.owner, is_published=True)
+        Review.objects.create(target=target_of(published_ok), status=Review.STATUS_APPROVED)
+
+        published_pending = News.objects.create(title="pending", author=self.owner, is_published=True)
+        Review.objects.create(target=target_of(published_pending), status=Review.STATUS_PENDING)
+
+        draft_ok = News.objects.create(title="draft", author=self.owner, is_published=False)
+        Review.objects.create(target=target_of(draft_ok), status=Review.STATUS_APPROVED)
+
         vis = content_visibility(self.other, self.owner, "news")
-        self.assertEqual(
-            vis,
-            ContentVisibility(denied=False, extra_q=public_q("news") & Q(is_published=True)),
-        )
+        self.assertFalse(vis.denied)
+        got = self._pks(News.objects.filter(vis.extra_q))
+        want = self._pks(News.objects.filter(public_q("news") & Q(is_published=True)))
+        self.assertEqual(got, want)
+        self.assertEqual(got, [published_ok.pk])
 
     def test_feedback_owner_sees_all(self):
         self.assertEqual(
@@ -152,9 +176,34 @@ class ContentVisibilityTest(TestCase):
         )
 
     def test_activities_other_extra_q_matches_public_q(self):
+        """他人看活动：过审的 + 从来没有审核行的（存量例外）。
+
+        B9 之后 ``public_q`` 是子查询，两个结构相同的 Q 不再相等，所以比结果集。
+        """
+        from activities.models import Activity
+        from common.targets import target_of
+        from reviews.models import Review
+
+        approved = Activity.objects.create(
+            type="deliberation", status="open", title="approved", creator=self.owner,
+        )
+        Review.objects.create(target=target_of(approved), status=Review.STATUS_APPROVED)
+
+        pending = Activity.objects.create(
+            type="deliberation", status="open", title="pending", creator=self.owner,
+        )
+        Review.objects.create(target=target_of(pending), status=Review.STATUS_PENDING)
+
+        never_reviewed = Activity.objects.create(
+            type="deliberation", status="open", title="bare", creator=self.owner,
+        )
+
         vis = content_visibility(self.other, self.owner, "activities")
         self.assertFalse(vis.denied)
-        self.assertEqual(vis.extra_q, public_q("activity"))
+        got = self._pks(Activity.objects.filter(vis.extra_q))
+        want = self._pks(Activity.objects.filter(public_q("activity")))
+        self.assertEqual(got, want)
+        self.assertEqual(got, sorted([approved.pk, never_reviewed.pk]))
 
     def test_tutorials_owner_sees_all(self):
         self.assertEqual(
@@ -163,9 +212,25 @@ class ContentVisibilityTest(TestCase):
         )
 
     def test_tutorials_other_extra_q_matches_public_q(self):
+        """他人看教程：只看到过审的（无审核行不公开）。"""
+        from common.targets import target_of
+        from reviews.models import Review
+        from tutorials.models import Tutorial
+
+        approved = Tutorial.objects.create(title="approved", uploader=self.owner)
+        Review.objects.create(target=target_of(approved), status=Review.STATUS_APPROVED)
+
+        pending = Tutorial.objects.create(title="pending", uploader=self.owner)
+        Review.objects.create(target=target_of(pending), status=Review.STATUS_PENDING)
+
+        bare = Tutorial.objects.create(title="bare", uploader=self.owner)
+
         vis = content_visibility(self.other, self.owner, "tutorials")
         self.assertFalse(vis.denied)
-        self.assertEqual(vis.extra_q, public_q("tutorial"))
+        got = self._pks(Tutorial.objects.filter(vis.extra_q))
+        want = self._pks(Tutorial.objects.filter(public_q("tutorial")))
+        self.assertEqual(got, want)
+        self.assertEqual(got, [approved.pk])
 
     def test_unknown_type_raises(self):
         with self.assertRaises(ValueError):

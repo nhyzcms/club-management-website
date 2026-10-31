@@ -64,11 +64,7 @@ _HOST_MODELS = {"news": News, "activity": Activity, "task": Task}
 
 
 def _thread_qs():
-    return CommentThread.objects.select_related(
-        "news", "news__author", "news__review",
-        "activity", "activity__creator", "activity__publication_review",
-        "task", "task__creator",
-    )
+    return CommentThread.objects.select_related("target")
 
 
 def _error_response(exc: MessagingError):
@@ -143,8 +139,7 @@ class CommentViewSet(viewsets.GenericViewSet):
 
     def get_queryset(self):
         return Comment.objects.select_related(
-            "author", "author__profile",
-            "thread", "thread__news", "thread__activity", "thread__task",
+            "author", "author__profile", "thread", "thread__target",
         )
 
     def get_permissions(self):

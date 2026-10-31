@@ -4,7 +4,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from common.targets import host_ref
+from common.targets import host_ref, target_of
 from messaging.models import Comment, CommentThread
 from messaging.services import (
     MessagingError,
@@ -27,13 +27,9 @@ TARGET_COMMENT = "comment"
 TARGET_USER = "user"
 TARGET_TYPES = (TARGET_NEWS, TARGET_ACTIVITY, TARGET_TUTORIAL, TARGET_COMMENT, TARGET_USER)
 
-_FK = {
-    TARGET_NEWS: "news",
-    TARGET_ACTIVITY: "activity",
-    TARGET_TUTORIAL: "tutorial",
-    TARGET_COMMENT: "comment",
-    TARGET_USER: "reported_user",
-}
+#: 举报「用户」时走 reported_user；举报「内容」时走 target。
+#: B9 删掉 4 个内容旧列之后，内容侧只剩 ContentTarget 一个锚点。
+_CONTENT_TARGETS = frozenset({TARGET_NEWS, TARGET_ACTIVITY, TARGET_TUTORIAL, TARGET_COMMENT})
 
 
 class ReportDenied(Exception):
@@ -81,18 +77,25 @@ def file(*, actor, target_type, target_id, reason):
     if not _visible_as_reader(actor, target_type, target):
         raise ReportDenied("不能举报该对象")
 
-    fk = _FK[target_type]
+    if target_type in _CONTENT_TARGETS:
+        anchor_filter = Q(target=target_of(target))
+        create_kwargs = {"target": target_of(target)}
+    else:
+        # TARGET_USER：「人」不是「内容」，走独立列（见 ReportCase 的注释）
+        anchor_filter = Q(reported_user=target)
+        create_kwargs = {"reported_user": target}
+
     created = False
     try:
         with transaction.atomic():
             open_case = (
                 ReportCase.objects.select_for_update()
-                .filter(status=ReportCase.STATUS_OPEN, **{fk: target})
+                .filter(anchor_filter, status=ReportCase.STATUS_OPEN)
                 .first()
             )
             if open_case is None:
                 open_case = ReportCase.objects.create(
-                    status=ReportCase.STATUS_OPEN, **{fk: target},
+                    status=ReportCase.STATUS_OPEN, **create_kwargs,
                 )
                 created = True
             if ReportFiling.objects.filter(case=open_case, reporter=actor).exists():
@@ -183,9 +186,7 @@ def _load_target(target_type, target_id):
         return Tutorial.objects.filter(pk=target_id).first()
     if target_type == TARGET_COMMENT:
         return (
-            Comment.objects.select_related(
-                "thread", "thread__news", "thread__activity", "thread__task", "author",
-            )
+            Comment.objects.select_related("thread", "thread__target", "author")
             .filter(pk=target_id)
             .first()
         )
@@ -252,7 +253,13 @@ def _dispose(case, actor, *, note, ends_at):
         _remove_publication(case, actor, note)
         return
     if kind == TARGET_COMMENT:
-        comment = case.comment
+        # B9：ReportCase 不再有 comment 列，评论对象从 target 取
+        from messaging.models import Comment
+
+        ref = host_ref(case)
+        comment = (
+            Comment.objects.filter(pk=ref[1]).first() if ref is not None else None
+        )
         if comment is not None:
             delete_comment_for_report(comment, actor)
         return
@@ -266,8 +273,7 @@ def _dispose(case, actor, *, note, ends_at):
 def _remove_publication(case, actor, note):
     """把被举报并成立的内容下架：找到它的审核记录并执行 remove。
 
-    切读期同时认 target 与旧列；``comment`` 型举报没有对应的审核记录（评论不经
-    审核发布），原样返回。
+    ``comment`` 型举报没有对应的审核记录（评论不经审核发布），原样返回。
     """
     ref = host_ref(case)
     if ref is None:
@@ -275,8 +281,9 @@ def _remove_publication(case, actor, note):
     kind, object_id = ref
     if kind not in ("news", "activity", "tutorial"):
         return
+    # B9：Review 只剩 target 锚点（旧列已删，那条 OR 分支去掉）
     review = Review.objects.filter(
-        Q(target__kind=kind, target__object_id=object_id) | Q(**{kind: object_id}),
+        target__kind=kind, target__object_id=object_id,
     ).first()
     if review is None or review.status == Review.STATUS_REMOVED:
         return

@@ -7,14 +7,12 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from common.targets import TargetBackfillMixin
 
 
-class Review(TargetBackfillMixin, models.Model):
+class Review(models.Model):
     """审核记录：待审 → 通过 / 驳回，通过后可下架。"""
 
     # B1：双写期把旧列折射到 target（B9 删旧列时一并移除）。
-    TARGET_LEGACY_FIELDS = {"news": "news", "activity": "activity", "tutorial": "tutorial"}
 
     STATUS_PENDING = "pending"
     STATUS_APPROVED = "approved"
@@ -37,19 +35,7 @@ class Review(TargetBackfillMixin, models.Model):
     )
     moderated_at = models.DateTimeField("审核时间", null=True, blank=True)
 
-    news = models.OneToOneField(
-        "news.News", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="review", verbose_name="新闻",
-    )
-    activity = models.OneToOneField(
-        "activities.Activity", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="publication_review", verbose_name="活动",
-    )
-    tutorial = models.OneToOneField(
-        "tutorials.Tutorial", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="review", verbose_name="教程",
-    )
-    # B1：统一宿主锚点（双写期，B9 删上面三个旧列）。
+    # B9：3 个旧列（news / activity / tutorial）已删，target 是唯一锚点。
     target = models.OneToOneField(
         "common.ContentTarget", on_delete=models.CASCADE,
         null=True, blank=True, related_name="review", verbose_name="内容目标",
@@ -66,20 +52,10 @@ class Review(TargetBackfillMixin, models.Model):
             ("force_publish", "可免审发布"),
             ("moderate", "可审核内容"),
         ]
-        constraints = [
-            models.CheckConstraint(
-                condition=(
-                    models.Q(news__isnull=False, activity__isnull=True, tutorial__isnull=True)
-                    | models.Q(news__isnull=True, activity__isnull=False, tutorial__isnull=True)
-                    | models.Q(news__isnull=True, activity__isnull=True, tutorial__isnull=False)
-                ),
-                name="review_exactly_one_parent",
-            ),
-        ]
+        constraints = []
 
     def __str__(self):
-        target = self.news or self.activity or self.tutorial
-        return f"{self.get_status_display()}:{target}"
+        return f"{self.get_status_display()}:{self.target}"
 
 
 class Feedback(models.Model):
@@ -133,16 +109,10 @@ class Feedback(models.Model):
         return f"{self.get_category_display()}: {self.title}"
 
 
-class ReportCase(TargetBackfillMixin, models.Model):
+class ReportCase(models.Model):
     """举报案：有对象的调查票。进行中 → 驳回 / 成立并处置。"""
 
     # B1：双写期把旧内容列折射到 target。reported_user 不在此列——「人」不是内容。
-    TARGET_LEGACY_FIELDS = {
-        "news": "news",
-        "activity": "activity",
-        "tutorial": "tutorial",
-        "comment": "comment",
-    }
 
     STATUS_OPEN = "open"
     STATUS_DISMISSED = "dismissed"
@@ -154,22 +124,11 @@ class ReportCase(TargetBackfillMixin, models.Model):
     ]
 
     status = models.CharField("状态", max_length=12, choices=STATUS_CHOICES, default=STATUS_OPEN)
-    news = models.ForeignKey(
-        "news.News", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="report_cases", verbose_name="新闻",
-    )
-    activity = models.ForeignKey(
-        "activities.Activity", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="report_cases", verbose_name="活动",
-    )
-    tutorial = models.ForeignKey(
-        "tutorials.Tutorial", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="report_cases", verbose_name="教程",
-    )
-    comment = models.ForeignKey(
-        "messaging.Comment", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="report_cases", verbose_name="评论",
-    )
+    # B9：4 个旧内容列（news / activity / tutorial / comment）已删，target 是唯一锚点。
+    #
+    # **reported_user 保留独立列，不进 target**：「人」不是「内容」。ContentTarget
+    # 登记的是 8 张内容表，把用户塞进去会让「内容审核」和「举报某人」共用一套查询
+    # 语义；而且用户删除后举报案还要留档，那是 target 的 CASCADE 表达不了的关系。
     reported_user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
         null=True, blank=True, related_name="report_cases_against", verbose_name="被举报用户",
@@ -197,51 +156,15 @@ class ReportCase(TargetBackfillMixin, models.Model):
         permissions = [
             ("handle_report", "可处理举报案"),
         ]
+        # B9：原 CheckConstraint「恰好一个旧列非空」和 4 个 UniqueConstraint
+        # （每张内容表一个「同一对象只能有一个未结案」）都依赖已删的旧列。
+        # 换成按 target 的一条：ContentTarget 已经表达了「这是哪条内容」，
+        # 按内容类型分四条是同一个规则写四遍。
         constraints = [
-            models.CheckConstraint(
-                condition=(
-                    models.Q(
-                        news__isnull=False, activity__isnull=True, tutorial__isnull=True,
-                        comment__isnull=True, reported_user__isnull=True,
-                    )
-                    | models.Q(
-                        news__isnull=True, activity__isnull=False, tutorial__isnull=True,
-                        comment__isnull=True, reported_user__isnull=True,
-                    )
-                    | models.Q(
-                        news__isnull=True, activity__isnull=True, tutorial__isnull=False,
-                        comment__isnull=True, reported_user__isnull=True,
-                    )
-                    | models.Q(
-                        news__isnull=True, activity__isnull=True, tutorial__isnull=True,
-                        comment__isnull=False, reported_user__isnull=True,
-                    )
-                    | models.Q(
-                        news__isnull=True, activity__isnull=True, tutorial__isnull=True,
-                        comment__isnull=True, reported_user__isnull=False,
-                    )
-                ),
-                name="reportcase_exactly_one_target",
-            ),
             models.UniqueConstraint(
-                fields=["news"],
-                condition=models.Q(status="open", news__isnull=False),
-                name="one_open_report_per_news",
-            ),
-            models.UniqueConstraint(
-                fields=["activity"],
-                condition=models.Q(status="open", activity__isnull=False),
-                name="one_open_report_per_activity",
-            ),
-            models.UniqueConstraint(
-                fields=["tutorial"],
-                condition=models.Q(status="open", tutorial__isnull=False),
-                name="one_open_report_per_tutorial",
-            ),
-            models.UniqueConstraint(
-                fields=["comment"],
-                condition=models.Q(status="open", comment__isnull=False),
-                name="one_open_report_per_comment",
+                fields=["target"],
+                condition=models.Q(status="open", target__isnull=False),
+                name="one_open_report_per_target",
             ),
             models.UniqueConstraint(
                 fields=["reported_user"],

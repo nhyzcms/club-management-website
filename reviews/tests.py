@@ -149,7 +149,7 @@ class ReviewQueueActionsTest(TestCase):
         writer.force_authenticate(self.author)
         created = writer.post("/news/news/", {"title": "队列稿"}, format="json")
         self.news_id = created.data["id"]
-        self.review_id = Review.objects.get(news_id=self.news_id).pk
+        self.review_id = Review.objects.get(target__kind="news", target__object_id=self.news_id).pk
         self.client = APIClient()
         self.client.force_authenticate(self.mod)
 

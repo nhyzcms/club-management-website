@@ -940,9 +940,7 @@ def sessions_view(request):
     数据按用户裁剪到 ``SESSION_HISTORY_LIMIT`` 条，分页沿用同一上限做单页，
     返回完整信封（count/next/previous/results）供前端统一消费。
     """
-    qs = UserSession.objects.filter(user=request.user).select_related(
-        "account_device"
-    ).order_by("-created_at", "-id")
+    qs = UserSession.objects.filter(user=request.user).select_related("account_device").order_by("-created_at", "-id")
     paginator = PageNumberPagination()
     paginator.page_size = SESSION_HISTORY_LIMIT
     page = paginator.paginate_queryset(qs, Request(request))  # 单页（存储层已裁剪）
@@ -1836,16 +1834,16 @@ def user_content_view(request, id):
     from reviews.visibility import status_of
     if type_ == "news":
         from news.models import News
-        qs = News.objects.filter(author=viewed).filter(visibility.extra_q).select_related("review").order_by("-created_at", "-id")
+        qs = News.objects.filter(author=viewed).filter(visibility.extra_q).select_related().order_by("-created_at", "-id")
     elif type_ == "feedback":
         from reviews.models import Feedback
         qs = Feedback.objects.filter(creator=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
     elif type_ == "activities":
         from activities.models import Activity
-        qs = Activity.objects.filter(creator=viewed).filter(visibility.extra_q).select_related("publication_review").order_by("-created_at", "-id")
+        qs = Activity.objects.filter(creator=viewed).filter(visibility.extra_q).select_related().order_by("-created_at", "-id")
     elif type_ == "tutorials":
         from tutorials.models import Tutorial
-        qs = Tutorial.objects.filter(uploader=viewed).filter(visibility.extra_q).select_related("review").order_by("-created_at", "-id")
+        qs = Tutorial.objects.filter(uploader=viewed).filter(visibility.extra_q).select_related().order_by("-created_at", "-id")
     else:  # tasks（visibility.denied 已保证仅本人到此）
         from tasks.models import Task
         qs = Task.objects.filter(assignee=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")

@@ -2,7 +2,7 @@
 from django.utils import timezone
 
 from common.policy import get_policy
-from common.targets import content_host, kind_of
+from common.targets import content_host, kind_of, target_of
 from messaging.services import notify, notify_all, notify_perm
 
 from .models import Review
@@ -42,17 +42,22 @@ def open_review(*, news=None, activity=None, tutorial=None, actor, force_publish
     """
     if force_publish is None:
         force_publish = bool(actor and actor.has_perm("reviews.force_publish"))
-    kwargs = {"news": news, "activity": activity, "tutorial": tutorial}
+    host = news or activity or tutorial
+    if host is None:
+        raise ValueError("open_review 需要 news / activity / tutorial 之一")
+    # 参数保持「对象」语义（调用方想说的是「给这条新闻开审核」），内部落到
+    # ContentTarget——B9 之后 Review 上已经没有 news/activity/tutorial 三列。
+    target = target_of(host)
     if force_publish or not get_policy().content_review_enabled:
         review = Review.objects.create(
-            **kwargs,
+            target=target,
             status=Review.STATUS_APPROVED,
             moderated_by=actor,
             moderated_at=timezone.now(),
         )
         _notify_activity_published_if(review, actor)
         return review
-    review = Review.objects.create(**kwargs, status=Review.STATUS_PENDING)
+    review = Review.objects.create(target=target, status=Review.STATUS_PENDING)
     _notify_reviewers(review, actor)
     return review
 

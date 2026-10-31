@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from attachments.queries import attachments_of
 from attachments.serializers import AttachmentSerializer
 from common.targets import content_host, host_ref
 from tasks.serializers import SimpleUserSerializer
@@ -71,7 +72,7 @@ class FeedbackListSerializer(serializers.ModelSerializer):
         return _creator_repr(obj)
 
     def get_attachment_count(self, obj):
-        return obj.attachments.count()
+        return attachments_of(obj).count()
 
 
 class FeedbackDetailSerializer(serializers.ModelSerializer):
@@ -79,7 +80,13 @@ class FeedbackDetailSerializer(serializers.ModelSerializer):
     closed_by = SimpleUserSerializer(read_only=True, source="moderated_by")
     closed_at = serializers.DateTimeField(source="moderated_at", read_only=True)
     close_note = serializers.CharField(source="moderation_note", read_only=True)
-    attachments = AttachmentSerializer(many=True, read_only=True)
+    attachments = serializers.SerializerMethodField()
+
+    def get_attachments(self, obj):
+        """B9：附件通过 ContentTarget 锚定，反向访问器已不存在。"""
+        return AttachmentSerializer(
+            attachments_of(obj), many=True, context=self.context,
+        ).data
 
     class Meta:
         model = Feedback

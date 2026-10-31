@@ -23,6 +23,7 @@ import json
 import os
 import struct
 import zlib
+from common.targets import target_of
 from datetime import time as dtime
 from pathlib import Path
 
@@ -178,7 +179,7 @@ class Command(BaseCommand):
         if news.published_at is None:
             news.published_at = timezone.now()
             news.save(update_fields=["published_at"])
-        Review.objects.update_or_create(news=news, defaults={"status": Review.STATUS_APPROVED})
+        Review.objects.update_or_create(target=target_of(news), defaults={"status": Review.STATUS_APPROVED})
 
         for suffix in ("甲", "乙"):
             pending, _ = News.objects.get_or_create(
@@ -191,7 +192,7 @@ class Command(BaseCommand):
                     "published_at": timezone.now(),
                 },
             )
-            Review.objects.update_or_create(news=pending, defaults={"status": Review.STATUS_PENDING})
+            Review.objects.update_or_create(target=target_of(pending), defaults={"status": Review.STATUS_PENDING})
 
         # ── 活动：公开众议（投票） + 公开调研（问卷） ──────────────────
         vote_act, _ = Activity.objects.get_or_create(
@@ -207,7 +208,7 @@ class Command(BaseCommand):
         )
         for order, text in enumerate(("选项甲", "选项乙")):
             VoteOption.objects.get_or_create(activity=vote_act, text=text, defaults={"order": order})
-        Review.objects.update_or_create(activity=vote_act, defaults={"status": Review.STATUS_APPROVED})
+        Review.objects.update_or_create(target=target_of(vote_act), defaults={"status": Review.STATUS_APPROVED})
 
         # 第二场众议：不被任何用例投票，专供「待办」收件箱断言（投票后条目会消失）
         todo_act, _ = Activity.objects.get_or_create(
@@ -223,7 +224,7 @@ class Command(BaseCommand):
         )
         for order, text in enumerate(("待办选项一", "待办选项二")):
             VoteOption.objects.get_or_create(activity=todo_act, text=text, defaults={"order": order})
-        Review.objects.update_or_create(activity=todo_act, defaults={"status": Review.STATUS_APPROVED})
+        Review.objects.update_or_create(target=target_of(todo_act), defaults={"status": Review.STATUS_APPROVED})
 
         survey_schema = {
             "title": "E2E 调研问卷",
@@ -255,7 +256,7 @@ class Command(BaseCommand):
                 "questionnaire": survey_q,
             },
         )
-        Review.objects.update_or_create(activity=survey_act, defaults={"status": Review.STATUS_APPROVED})
+        Review.objects.update_or_create(target=target_of(survey_act), defaults={"status": Review.STATUS_APPROVED})
 
         # ── 教程（文档型） ─────────────────────────────────────────────
         tut, _ = Tutorial.objects.get_or_create(
@@ -273,7 +274,7 @@ class Command(BaseCommand):
             tut.file.save("e2e-guide.md", ContentFile(body), save=False)
             tut.file_size = len(body)
             tut.save(update_fields=["file", "file_size"])
-        Review.objects.update_or_create(tutorial=tut, defaults={"status": Review.STATUS_APPROVED})
+        Review.objects.update_or_create(target=target_of(tut), defaults={"status": Review.STATUS_APPROVED})
 
         # ── 任务 ───────────────────────────────────────────────────────
         task, _ = Task.objects.get_or_create(
@@ -298,7 +299,7 @@ class Command(BaseCommand):
                 "contact": "",
             },
         )
-        report_case, _ = ReportCase.objects.get_or_create(news=news, defaults={})
+        report_case, _ = ReportCase.objects.get_or_create(target=target_of(news), defaults={})
         ReportFiling.objects.get_or_create(
             case=report_case, reporter=plain,
             defaults={"reason": "E2E 举报理由：内容存疑。"},
