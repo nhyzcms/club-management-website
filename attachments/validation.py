@@ -18,6 +18,8 @@ FEEDBACK_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 FORBIDDEN_EXTENSIONS = frozenset({
     ".exe", ".bat", ".cmd", ".sh", ".php", ".asp", ".jsp",
     ".py", ".rb", ".pl", ".cgi", ".com", ".scr", ".pif", ".msi",
+    # 可被浏览器按同源 HTML / 脚本执行的扩展名（审计 S-3 / M-1）
+    ".html", ".htm", ".xhtml", ".svg", ".xml", ".js", ".mjs",
 })
 
 _DOCUMENT_CONTENT_TYPES = frozenset({
@@ -53,9 +55,12 @@ def classify_file_type(content_type):
     return "other"
 
 
-def upload_error(file):
-    """返回上传文件的错误消息（若合法则返回 None）。"""
-    cap = get_policy().sync_upload_max_bytes
+def upload_error(file, *, max_bytes=None):
+    """返回上传文件的错误消息（若合法则返回 None）。
+
+    ``max_bytes`` 缺省用站点同步上限；tus 完成钩子按自己的上限传入（审计 M-1）。
+    """
+    cap = get_policy().sync_upload_max_bytes if max_bytes is None else max_bytes
     if file.size > cap:
         return f"文件大小不能超过 {format_byte_cap(cap)}"
     ext = os.path.splitext(file.name)[1].lower()

@@ -29,7 +29,7 @@ from common.policy import format_byte_cap, get_policy
 from .create import PARENTS, create_attachment
 from .models import TusUpload
 from .permissions import can_upload_to_parent
-from .validation import classify_file_type, feedback_quota_error
+from .validation import classify_file_type, feedback_quota_error, upload_error
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,14 @@ class TusUploadViewSet(UploadViewSet):
 
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        """对象级授权：HEAD / PATCH / DELETE 只允许会话创建者访问（审计 M-1）。
+
+        drf-tus 默认返回全部 ``TusUpload``，拿到 GUID 即可读元数据 / 续写 / 终止
+        他人的上传。GUID 虽难猜，但泄漏（日志、截图、错误上报）后就是 IDOR。
+        """
+        return TusUpload.objects.filter(user=self.request.user)
+
     @property
     def max_file_size(self):
         # Admin edits apply without restart (drf-tus reads getattr(self, 'max_file_size')).
@@ -113,6 +121,13 @@ class TusUploadViewSet(UploadViewSet):
             return Response({"detail": "无权为此父级上传附件"}, status=status.HTTP_403_FORBIDDEN)
 
         upload_length = _request_upload_length(request)
+        # 拒绝 Upload-Defer-Length：长度未知时尺寸上限、反馈配额都无法在创建时校验，
+        # 后续 PATCH 可无限追加直到写满磁盘（审计 M-1）。
+        if upload_length is None or upload_length < 0:
+            return Response(
+                {"detail": "必须提供 Upload-Length（不支持延迟长度）"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         file_type = classify_file_type((meta.get("filetype") or "").strip())
         sync_cap = get_policy().sync_upload_max_bytes
         # 超过同步上限必须是图/视频（其余类型只能走同步通路）
@@ -160,6 +175,13 @@ def create_attachment_from_tus(sender, instance, **kwargs):
     with instance.uploaded_file.open("rb") as content:
         wrapped = File(content, name=filename)
         wrapped.content_type = meta.get("filetype") or ""
+        # 完成钩子复用同步通路的扩展名 / 尺寸校验（上限换成 tus 上限）。
+        # drf-tus 不校验文件名，`.html` 伪装成 image/png 会直接落 attachments/（M-1）。
+        err = upload_error(wrapped, max_bytes=get_policy().tus_media_max_bytes)
+        if err:
+            logger.info("tus 完成但文件校验失败（%s），丢弃 %s", err, instance.guid)
+            _cleanup_tus_files(instance)
+            return
         create_attachment(user=user, parent=parent, file=wrapped)
     _cleanup_tus_files(instance)  # 搬运完成：回收落地副本 + 临时分片（会话行由 sweep 惰性回收）
 

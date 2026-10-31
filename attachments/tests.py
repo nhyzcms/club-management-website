@@ -811,3 +811,40 @@ class SubmissionParentTest(_AttachmentTestCase):
         self.assertEqual(self.client.delete(f"/attachments/{self.att.pk}/").status_code, 403)
 
 
+
+
+class TusUploadHardeningTest(TusUploadTest):
+    """M-1 回归：对象级授权 / 拒绝延迟长度 / 完成钩子扩展名校验。"""
+
+    def test_other_user_cannot_head_or_patch(self):
+        chunk = b"12345678"
+        resp = self._create(self.creator, length=len(chunk))
+        self.assertEqual(resp.status_code, 201)
+        location = resp.get("Location") or resp["Location"]  # type: ignore[attr-defined]
+
+        self.client.force_authenticate(self.outsider)  # pyright: ignore[reportAttributeAccessIssue]
+        self.assertNotEqual(self.client.head(location).status_code, 200)
+        self.assertNotEqual(self._patch(location, chunk).status_code, 204)
+
+    def test_defer_length_rejected(self):
+        self.client.force_authenticate(self.creator)  # pyright: ignore[reportAttributeAccessIssue]
+        resp = self.client.post(
+            "/uploads/files/", content_type="application/octet-stream",
+            HTTP_TUS_RESUMABLE="1.0.0", HTTP_UPLOAD_DEFER_LENGTH="1",
+            HTTP_UPLOAD_METADATA=tus_meta(
+                filename="t.png", filetype="image/png",
+                parent_type="feedback", parent_id=self.feedback.pk,
+            ),
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Upload-Length", resp.json()["detail"])
+
+    def test_completion_rejects_forbidden_extension(self):
+        chunk = b"<script>x</script>"
+        resp = self._create(
+            self.creator, length=len(chunk), filetype="image/png", filename="payload.html",
+        )
+        self.assertEqual(resp.status_code, 201)
+        location = resp.get("Location") or resp["Location"]  # type: ignore[attr-defined]
+        self.assertEqual(self._patch(location, chunk).status_code, 204)
+        self.assertFalse(Attachment.objects.filter(feedback=self.feedback).exists())
