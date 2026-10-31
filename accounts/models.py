@@ -95,6 +95,16 @@ class Profile(models.Model):
     # 用户自行改密成功或完成强制改密后清零。
     must_change_password = models.BooleanField("需强制修改密码", default=False)
 
+    def save(self, *args, **kwargs):
+        """保存后同步到 B4 拆出的新表（双写，见 ``accounts/sync.py``）。
+
+        PR 2a 阶段 ``Profile`` 仍是权威，新表是镜像；PR 3 删旧列后才反过来。
+        """
+        super().save(*args, **kwargs)
+        from .sync import sync_from_profile
+
+        sync_from_profile(self)
+
     def __str__(self):
         return f"{self.user.username}'s profile"
 
