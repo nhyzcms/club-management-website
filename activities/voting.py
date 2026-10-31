@@ -56,14 +56,15 @@ def maybe_close_deliberation_on_full_vote(activity):
     """
     if activity.type != "deliberation" or calc_state(activity) != OPEN:
         return False
-    from accounts.models import verified_member_count
+    from accounts.models import verified_member_count, verified_members
 
     total = verified_member_count()
     if total <= 0:
         return False
-    # 绕开预取缓存：用 Ballot 模型直接计票（仅已认证成员的票，按人去重）。
+    # 绕开预取缓存：用 Ballot 模型直接计票（仅已认证成员且认证未过期的票，按人去重）。
+    # 分子与分母必须同口径，否则认证过期后仍留着旧票会让分子虚高（审计 L-6）。
     if Ballot.objects.filter(
-        activity_id=activity.pk, voter__verifications__status="approved",
+        activity_id=activity.pk, voter__in=verified_members().values("pk"),
     ).values("voter_id").distinct().count() >= total:
         changed = Activity.objects.filter(
             pk=activity.pk, status=OPEN,
