@@ -56,15 +56,24 @@ def classify_file_type(content_type):
     return "other"
 
 
+def extension_error(filename: str) -> str | None:
+    """只看扩展名：命中 ``FORBIDDEN_EXTENSIONS`` 则返回错误文案，否则 None。
+
+    与 ``upload_error`` 拆开是为了给 tus 通路复用——tus 走的是大文件分档，
+    不能套用「同步上限」那条尺寸检查（否则合法的大视频会被拒）。
+    """
+    ext = extension_of(filename or "")
+    if ext in FORBIDDEN_EXTENSIONS:
+        return "禁止上传此类型的文件"
+    return None
+
+
 def upload_error(file):
     """返回上传文件的错误消息（若合法则返回 None）。"""
     cap = get_policy().sync_upload_max_bytes
     if file.size > cap:
         return f"文件大小不能超过 {format_byte_cap(cap)}"
-    ext = extension_of(file.name)
-    if ext in FORBIDDEN_EXTENSIONS:
-        return "禁止上传此类型的文件"
-    return None
+    return extension_error(getattr(file, "name", ""))
 
 
 def feedback_quota_error(parent, incoming_size):

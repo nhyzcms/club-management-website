@@ -33,6 +33,16 @@ def _publisher():
 def _mp4():
     return SimpleUploadedFile("demo.mp4", b"\x00\x00fake-mp4", content_type="video/mp4")
 
+# 有效 1x1 PNG：封面自 2026-10 起按真实内容校验（Pillow），假字节会被拒。
+_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489000000"
+    "0d49444154789c6360606060000000050001a5f645400000000049454e44ae426082"
+)
+
+
+def _png(name="cover.png", content_type="image/png"):
+    return SimpleUploadedFile(name, _PNG, content_type=content_type)
+
 
 def _ids(resp):
     return [row["id"] for row in resp.data["results"]]
@@ -75,6 +85,33 @@ class TutorialUploadTest(TestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, 400)
+
+    def test_rejects_html_disguised_as_cover(self):
+        """S-3 回归：封面原先完全不校验，HTML 声称 image/jpeg 能落进公开 media。
+
+        反证：把 views.create 里的封面嗅探去掉，本条变红（201）。
+        """
+        bad = SimpleUploadedFile(
+            "xss.html", b"<html><script>alert(document.domain)</script></html>",
+            content_type="image/jpeg",
+        )
+        resp = self.client.post(
+            "/tutorials/tutorials/",
+            {"title": "x", "file": _mp4(), "cover": bad},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("封面", str(resp.data))
+
+    def test_real_image_cover_gets_server_side_extension(self):
+        """真 PNG 但文件名写 .html → 落盘仍是 .png（服务端定扩展名）。"""
+        resp = self.client.post(
+            "/tutorials/tutorials/",
+            {"title": "x", "file": _mp4(), "cover": _png(name="looks-like.html")},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertFalse(resp.data["cover_url"].endswith(".html"), resp.data["cover_url"])
 
 
 class TutorialReviewVisibilityTest(TestCase):
