@@ -246,7 +246,9 @@ class CardNoSyncTest(TestCase):
             content_type="application/json",
         )
         user.profile.refresh_from_db()
-        self.assertEqual(user.profile.card_no, "A001")  # 名册是学校档案，为准
+        # B4：名册是唯一权威，账号侧的「待绑定暂存」在绑定后清空
+        self.assertEqual(user.profile.card_no, "")
+        self.assertEqual(MemberIdentity.objects.get(pk=row.pk).card_no, "A001")
 
     def test_import_writes_profile_card_no_back_to_row(self):
         user = make_user()  # 张三，注册时填了校牌号但名册还没导入

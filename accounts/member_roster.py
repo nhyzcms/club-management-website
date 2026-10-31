@@ -385,21 +385,32 @@ def auto_match_identities(rows: list[MemberIdentity] | None = None) -> int:
 
 
 def _align_card_no(row: MemberIdentity, profile: Profile) -> str:
-    """让名册行与账号资料的校牌号对齐（同一个值）：名册有值以名册为准，否则用资料补。
+    """让名册行与账号侧暂存对齐。**名册是权威**，账号侧只是「还没进名册」的暂存。
 
-    返回 ``"row"``（写了名册）/ ``"profile"``（写了资料）/ ``""``（无需变更）。
+    B4 之前这里是「双向镜像」：名册有值就抄到 Profile，Profile 有值就抄到名册。
+    问题是 Profile.card_no 因此永远持有校牌号，看起来像第二个权威来源。
+
+    B4 把 Profile.card_no 改名为 ``AccountIdentity.pending_card_no``，语义随之变成
+    「待绑定」——写进名册之后就该清空。这样权威唯一：``MemberIdentity.card_no``。
+
+    返回 ``"row"``（写了名册）/ ``"cleared"``（清空了暂存）/ ``""``（无需变更）。
     """
     row_card = (row.card_no or "").strip()
-    prof_card = (profile.card_no or "").strip()
+    pending = (profile.card_no or "").strip()
+
     if row_card:
-        if prof_card != row_card:
-            profile.card_no = row_card
+        # 名册已有值 → 账号侧的暂存没有存在意义了
+        if pending:
+            profile.card_no = ""
             profile.save(update_fields=["card_no"])
-            return "profile"
+            return "cleared"
         return ""
-    if prof_card:
-        row.card_no = prof_card
+    if pending:
+        # 名册空、账号有暂存 → 补进名册，然后清空暂存
+        row.card_no = pending
         row.save(update_fields=["card_no", "updated_at"])
+        profile.card_no = ""
+        profile.save(update_fields=["card_no"])
         return "row"
     return ""
 
@@ -455,21 +466,21 @@ def sync_card_numbers() -> dict:
         MemberIdentity.objects.exclude(user__isnull=True).values_list("user_id", flat=True)
     )
 
-    filled = mirrored = 0
+    filled = cleared = 0
     for row in MemberIdentity.objects.all():
         if row.user_id:
             profile = by_user.get(row.user_id)
             if profile is None:
                 continue
-            if _align_card_no(row, profile) == "profile":
-                mirrored += 1
+            if _align_card_no(row, profile) == "cleared":
+                cleared += 1
         elif not (row.card_no or "").strip():
             pool = [p for p in by_name.get(normalize_name(row.name), []) if p.user_id not in bound_user_ids]
             if len(pool) == 1:
                 row.card_no = pool[0].card_no.strip()
                 row.save(update_fields=["card_no", "updated_at"])
                 filled += 1
-    return {"filled_rows": filled, "mirrored_profiles": mirrored}
+    return {"filled_rows": filled, "cleared_profiles": cleared}
 
 
 def claim_candidates(user) -> list[MemberIdentity]:
