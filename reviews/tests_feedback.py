@@ -187,3 +187,31 @@ class FeedbackDiscloseIdentityParsingTest(TestCase):
         resp = self._submit("maybe")
         self.assertEqual(resp.status_code, 400)
         self.assertIn("disclose_identity", resp.data["detail"])
+
+
+class FeedbackUserThrottleTest(TestCase):
+    """M-3 回归：已登录用户反馈也限流（此前只限匿名）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.member = User.objects.create_user(username="fb_throttle", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.member)
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_user_hourly_cap(self):
+        for i in range(10):
+            resp = self.client.post(
+                "/reviews/feedbacks/submit/",
+                {"title": f"t{i}", "description": "x", "category": "other"},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 201, resp.data)
+        resp = self.client.post(
+            "/reviews/feedbacks/submit/",
+            {"title": "overflow", "description": "x", "category": "other"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 429)

@@ -15,6 +15,17 @@ class FeedbackAnonThrottle(AnonRateThrottle):
         return f"{get_policy().feedback_anon_per_ip_per_day}/day"
 
 
+class FeedbackUserThrottle(UserRateThrottle):
+    """已登录意见反馈节流：每用户每小时 10 条（审计 M-3）。
+
+    ``FeedbackAnonThrottle`` 只对匿名计数，登录用户此前完全不受限；
+    每条反馈还会通知所有 ``read_feedback`` 持有者。
+    """
+
+    scope = "feedback_user"
+    rate = "10/hour"
+
+
 class ReportDailyThrottle(UserRateThrottle):
     """已认证成员举报节流：每用户每天 N 条（N 来自 get_policy()）。"""
 

@@ -15,6 +15,7 @@ from .serializers import (
     JoinResponseSerializer,
     RecruitmentNoticeSerializer,
 )
+from .throttles import JoinAnswerThrottle
 
 
 class IsAboutEditor(BasePermission):
@@ -82,6 +83,12 @@ class JoinQuestionnaireView(RetrieveUpdateAPIView):
 
 class JoinResponseView(ListCreateAPIView):
     serializer_class = JoinResponseSerializer
+
+    def get_throttles(self):
+        # 只限提交，不限编辑查看列表（审计 M-3）。
+        if self.request.method == "POST":
+            return [JoinAnswerThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
         return Questionnaire.get_join().responses.all()
