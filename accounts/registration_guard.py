@@ -29,7 +29,7 @@ from django.db.models import Q
 
 from .member_roster import normalize_card_no
 from .models import MemberIdentity, Profile, Verification
-from .queries import deleted_q
+from .queries import deleted_q, identity_q
 
 _WHITESPACE = re.compile(r"\s+")
 
@@ -123,7 +123,7 @@ def find_duplicate(
     if name_variants and card_key:
         name_filter = Q()
         for variant in name_variants:
-            name_filter |= Q(real_name__iexact=variant)
+            name_filter |= identity_q("real_name", iexact=variant)
         profiles = (
             Profile.objects.filter(name_filter)
             .select_related("user")
