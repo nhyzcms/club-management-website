@@ -243,3 +243,43 @@ class IdentityReviewCapabilityTest(TestCase):
         client.force_authenticate(user)
         self.assertEqual(client.get(LIST).status_code, 200)
         self.assertTrue(user.has_perm("accounts.can_review_identity"))
+
+
+class IdentityReviewSelfApprovalTest(TestCase):
+    """M-8 回归：审核员不能自批；不能停用超级管理员。"""
+
+    def setUp(self):
+        cache.clear()
+        self.reviewer = grant_review(User.objects.create_user(username="selfrev", password="p"))
+        self.client = APIClient()
+        self.client.force_authenticate(self.reviewer)
+
+    def tearDown(self):
+        cache.clear()
+
+    def _manual(self, user, status=Verification.STATUS_PENDING):
+        return Verification.objects.create(
+            user=user, channel=Verification.CHANNEL_MANUAL, status=status,
+        )
+
+    def test_cannot_approve_own_identity(self):
+        own = self._manual(self.reviewer)
+        resp = self.client.post(f"{LIST}{own.pk}/approve/")
+        self.assertEqual(resp.status_code, 403)
+        own.refresh_from_db()
+        self.assertEqual(own.status, Verification.STATUS_PENDING)
+
+    def test_cannot_reject_own_identity(self):
+        own = self._manual(self.reviewer)
+        resp = self.client.post(f"{LIST}{own.pk}/reject/")
+        self.assertEqual(resp.status_code, 403)
+        own.refresh_from_db()
+        self.assertEqual(own.status, Verification.STATUS_PENDING)
+
+    def test_cannot_disable_superuser(self):
+        su = User.objects.create_superuser(username="rootuser", password="p")
+        row = self._manual(su, status=Verification.STATUS_APPROVED)
+        resp = self.client.post(f"{LIST}{row.pk}/disable/")
+        self.assertEqual(resp.status_code, 403)
+        su.refresh_from_db()
+        self.assertTrue(su.is_active)
