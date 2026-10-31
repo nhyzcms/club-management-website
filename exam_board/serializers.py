@@ -1,9 +1,11 @@
+from django.core.exceptions import ValidationError
 from rest_framework import serializers
+
+from common.uploads import rename_upload, sniff_image_extension
 
 from .models import Exam, ExamBatch, ExamErrata, ExamSubject
 
 _ERRATA_MAX_SIZE = 5 * 1024 * 1024
-_ERRATA_ALLOWED_TYPES = ("image/jpeg", "image/png", "image/gif", "image/webp")
 
 
 def _absolute_image_url(obj, request):
@@ -147,11 +149,13 @@ class ExamErrataSerializer(serializers.ModelSerializer):
     def validate_image(self, value):
         if value is None:
             return value
-        content_type = getattr(value, "content_type", "") or ""
-        if content_type and content_type not in _ERRATA_ALLOWED_TYPES:
-            raise serializers.ValidationError("图片仅支持 jpeg / png / gif / webp")
         if getattr(value, "size", 0) > _ERRATA_MAX_SIZE:
             raise serializers.ValidationError("图片不能超过 5MB")
+        # content_type 是客户端声明、可伪造；用 Pillow 真实解码并让服务端决定扩展名。
+        try:
+            rename_upload(value, sniff_image_extension(value))
+        except ValidationError as exc:
+            raise serializers.ValidationError(exc.messages[0]) from exc
         return value
 
     def validate(self, attrs):

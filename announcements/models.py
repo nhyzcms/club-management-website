@@ -19,6 +19,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from common.uploads import safe_extension
+
 # 文档上限：与关于页文档保真导入一致（20MB）。再大就不适合塞进弹窗（3M 带宽）。
 MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 
@@ -48,7 +50,7 @@ def document_kind_of(name: str, content_type: str = "") -> str:
 
 def announcement_document_path(instance, filename):
     """扁平存储 + 随机名：announcements/<uuid>.<ext>（原件名另存 document_name）。"""
-    ext = os.path.splitext(filename or "")[1].lower() or ".bin"
+    ext = safe_extension(filename or "")
     return f"announcements/{uuid.uuid4().hex}{ext}"
 
 
