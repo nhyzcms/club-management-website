@@ -1814,3 +1814,50 @@ class PublicExhibitionGuestVoteTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["my_selections"], [oid])
+
+
+class ExpiredVerificationBallotQuorumTest(TestCase):
+    """L-6 回归：认证已过期的旧票不计入「全员投完」分子。"""
+
+    def setUp(self):
+        from accounts.models import Verification
+        from django.utils import timezone
+        from datetime import timedelta
+
+        self.author = grant_verification(User.objects.create_user(username="q_author", password="x"))
+        self.m1 = grant_verification(User.objects.create_user(username="q_m1", password="x"))
+        self.expired = User.objects.create_user(username="q_expired", password="x")
+        Verification.objects.create(
+            user=self.expired, channel=Verification.CHANNEL_MANUAL,
+            status=Verification.STATUS_APPROVED,
+            expires_at=timezone.now() - timedelta(days=1),
+        )
+        self.client = APIClient()
+        created = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "q", "body": "<p>x</p>",
+            "option_texts": ["A", "B"], "max_choices_per_voter": 1,
+        })
+        self.aid = created.data["id"]
+        self.oa = created.data["options"][0]["id"]
+
+    def test_expired_ballot_does_not_close(self):
+        from .models import Ballot
+        from .voting import maybe_close_deliberation_on_full_vote
+
+        Ballot.objects.create(activity_id=self.aid, voter=self.expired)
+        activity = Activity.objects.get(pk=self.aid)
+        self.assertFalse(maybe_close_deliberation_on_full_vote(activity))
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, "open")
+
+        # 两名有效成员都投票后才结算（分母 2，分子 2）。
+        self._vote(self.m1)
+        self._vote(self.author)
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, "closed")
+
+    def _vote(self, user):
+        return _json(
+            self.client, "post", f"/activities/activities/{self.aid}/vote/",
+            user, {"option_ids": [self.oa]},
+        )

@@ -445,12 +445,8 @@ def sync_appointment_channel(user):
         row.save(update_fields=fields)
 
 
-def verified_member_count():
-    """已认证成员数（任一未过期 approved 通道的活跃用户）——众议「全员投完即结算」的分母。
-
-    distinct：一个用户可能有多条 approved 通道，按用户去重。后台委任会使管理员/超管计入
-    （他们有 appointment 行）；本函数不另读 ``is_staff`` / ``is_superuser``。
-    """
+def verified_members():
+    """已认证成员 queryset（任一未过期 approved 通道的活跃用户）——分母与分子共用。"""
     return (
         User.objects.filter(is_active=True, verifications__status=Verification.STATUS_APPROVED)
         .filter(
@@ -458,8 +454,16 @@ def verified_member_count():
             | models.Q(verifications__expires_at__gt=timezone.now())
         )
         .distinct()
-        .count()
     )
+
+
+def verified_member_count():
+    """已认证成员数（任一未过期 approved 通道的活跃用户）——众议「全员投完即结算」的分母。
+
+    distinct：一个用户可能有多条 approved 通道，按用户去重。后台委任会使管理员/超管计入
+    （他们有 appointment 行）；本函数不另读 ``is_staff`` / ``is_superuser``。
+    """
+    return verified_members().count()
 
 
 class ValidityNotice(models.Model):
