@@ -1,3 +1,5 @@
+import hashlib
+
 from django.http import HttpResponse, JsonResponse
 from rest_framework.throttling import SimpleRateThrottle
 
@@ -52,6 +54,32 @@ class PasswordResetRequestThrottle(_IPLimitThrottle):
 
     def get_rate(self):
         return "5/day"
+
+
+class PasswordResetEmailThrottle(_IPLimitThrottle):
+    """自助找回密码：每 IP 每小时 5 封（审计 M-3）。
+
+    每次请求都会同步发 SMTP；不限流可做邮件轰炸 / 占满单 worker。
+    """
+
+    scope = "password_reset_email"
+
+    def get_rate(self):
+        return "5/hour"
+
+
+class PasswordResetTargetThrottle(SimpleRateThrottle):
+    """自助找回密码：同一邮箱每小时 3 封，防换 IP 轰炸单个受害者。"""
+
+    scope = "password_reset_target"
+    rate = "3/hour"
+
+    def get_cache_key(self, request, view=None):
+        email = (getattr(request, "_password_reset_email", "") or "").strip().lower()
+        if not email:
+            return None
+        digest = hashlib.sha256(email.encode("utf-8")).hexdigest()[:32]
+        return self.cache_format % {"scope": self.scope, "ident": digest}
 
 
 class ResendVerificationThrottle(_IPLimitThrottle):

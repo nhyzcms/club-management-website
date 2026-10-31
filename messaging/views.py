@@ -41,6 +41,7 @@ from .serializers import (
     NotificationSerializer,
     UserMuteSerializer,
 )
+from .throttles import CommentCreateThrottle, MessageSendThrottle, StartPrivateThrottle
 from reviews.discipline import current_mute, lift_mute, mute_user
 
 from .services import (
@@ -158,6 +159,12 @@ class CommentViewSet(viewsets.GenericViewSet):
             return [IsAuthenticated(), CanManageThread()]
         return [IsAuthenticated()]
 
+    def get_throttles(self):
+        # 评论发表按用户限流（审计 M-3）；读取不受影响。
+        if self.action == "create":
+            return [CommentCreateThrottle()]
+        return super().get_throttles()
+
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())
         lookup = self.lookup_url_kwarg or self.lookup_field
@@ -261,6 +268,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
         if self.action in self._MUTE_GATED:
             perms.append(IsNotMuted())
         return perms
+
+    def get_throttles(self):
+        # 私信 / 发起私信按用户限流（审计 M-3），避免通知轰炸。
+        if self.action == "send_message":
+            return [MessageSendThrottle()]
+        if self.action == "start_private":
+            return [StartPrivateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):  # pyright: ignore[reportIncompatibleMethodOverride]
         return (
