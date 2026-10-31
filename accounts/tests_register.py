@@ -296,7 +296,8 @@ class RegisterCardNoTest(TestCase):
         user = User.objects.get(username="newbie")
         self.assertEqual(row.user_id, user.id)
         self.assertEqual(row.bind_method, MemberIdentity.BIND_REGISTER)
-        self.assertEqual(user.profile.card_no, "A001")
+        # B4：绑定成功 → 暂存清空，权威在名册行
+        self.assertEqual(user.profile.card_no, "")
 
     def test_no_bind_when_card_differs(self):
         row = self.make_row(card_no="A001")
