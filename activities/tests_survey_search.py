@@ -16,6 +16,7 @@ from reviews.test_helpers import approve_activity
 
 from . import survey_search
 from .models import Activity, Questionnaire
+from .testing import make_survey_activity
 
 SCHEMA = {
     "title": "检索测试问卷",
@@ -128,8 +129,8 @@ class SurveyResponsesSearchViewTest(TestCase):
         self.m1 = grant_verification(User.objects.create_user(username="sm1", password="x"))
         self.m2 = grant_verification(User.objects.create_user(username="sm2", password="x"))
         self.q = Questionnaire.objects.create(kind=Questionnaire.KIND_SURVEY, schema=SCHEMA)
-        self.act = Activity.objects.create(
-            type="survey", status="open", audience="public",
+        self.act = make_survey_activity(
+            status="open", audience="public",
             title="检索调研", body="<p>x</p>", creator=self.author,
             questionnaire=self.q,
         )
