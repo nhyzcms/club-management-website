@@ -225,7 +225,9 @@
 
 **认证**：公开（`AllowAny`）；**权限**：—。`audience=public` 任何人可答，`audience=members` 仅登录成员；活动须 `open`，审核轴须为 `approved` 或无审核行（否则 400「调研尚未公开」）。已登录用户每份调研一次；访客按 `X-Device-Id` 头（UUID）一次，未带合法标识返回 400。
 
-**请求体**：`{"answers": {"grade": "高一", "intro": "你好"}}`——`answers` 须为 JSON 对象（问卷题目的 `name` → 作答值）。
+**请求体**：`{"answers": {"grade": "高一", "intro": "你好"}}`——`answers` 须为 JSON 对象（问卷题目的 `name` → 作答值）。服务端按 `Questionnaire.schema` 校验：必填题、题型（单值 / 多值 / 布尔 / 评分）、选项归属、未知题名与总体积（64KB）；空 Schema 的历史问卷保持原行为。
+
+**判重**：已登录用户每份调研一次；访客按 `X-Device-Id` 头（UUID）一次，未带合法标识返回 400。DB 级 `QuestionnaireResponse.dedupe_key` 唯一约束兜底并发窗口（加入问卷允许 5 次，不写该键）。
 
 **响应 `201 Created`**：活动详情（`my_response` 为本次作答）。
 
