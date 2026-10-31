@@ -157,7 +157,8 @@ class LoginEventTests(TestCase):
         self.assertEqual(AccountDevice.objects.count(), 0)
 
     def test_forwarded_for_trusted_only_from_loopback(self):
-        self._login(new_device_id(), REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR="203.0.113.9, 10.0.0.1")
+        # 最左可伪造；只取 nginx 追加的末段（审计 M-4）
+        self._login(new_device_id(), REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR="1.2.3.4, 203.0.113.9")
         self.assertEqual(LoginEvent.objects.get().ip, "203.0.113.9")
 
         self._logout()
@@ -203,14 +204,21 @@ class ClientIpTests(TestCase):
     原实现只认回环 IP，判断不成立就返回 None，导致所有登录事件的 ip / 城市为空。
     """
 
-    def test_unix_socket_trusts_xff(self):
+    def test_unix_socket_trusts_xff_last_hop(self):
         req = RequestFactory().get(
-            "/", REMOTE_ADDR="", HTTP_X_FORWARDED_FOR="203.0.113.9, 10.0.0.1"
+            "/", REMOTE_ADDR="", HTTP_X_FORWARDED_FOR="1.2.3.4, 203.0.113.9"
         )
         self.assertEqual(req.META.get("REMOTE_ADDR"), "")  # unix socket 的确没有对端地址
+        # 最左可被客户端伪造；nginx 追加的真实 IP 在末段（审计 M-4）
         self.assertEqual(get_client_ip(req), "203.0.113.9")
 
-    def test_loopback_tcp_trusts_xff(self):
+    def test_loopback_tcp_trusts_xff_last_hop(self):
+        req = RequestFactory().get(
+            "/", REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR="1.2.3.4, 203.0.113.7"
+        )
+        self.assertEqual(get_client_ip(req), "203.0.113.7")
+
+    def test_single_hop_xff_still_works(self):
         req = RequestFactory().get(
             "/", REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR="203.0.113.7"
         )
