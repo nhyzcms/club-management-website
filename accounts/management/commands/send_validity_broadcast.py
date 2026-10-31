@@ -31,6 +31,7 @@ from django.utils import timezone
 
 from accounts.validity_summary import account_validity, format_dm_message
 from accounts.models import profile_of
+from accounts.status import DELETED, account_state
 from messaging.models import Conversation, Message
 from messaging.services import notify
 
@@ -60,7 +61,7 @@ class Command(BaseCommand):
 
         recipients = (
             User.objects
-            .filter(is_active=True, profile__deleted_at__isnull=True)
+            .filter(is_active=True, lifecycle__deleted_at__isnull=True)
             .exclude(pk=sender.pk)
             .order_by("pk")
         )
@@ -139,7 +140,6 @@ class Command(BaseCommand):
             )
         if sender is None:
             raise CommandError("找不到可用的超级管理员，请用 --from 指定发送者。")
-        profile = profile_of(sender)
-        if profile is not None and profile.deleted_at is not None:
+        if account_state(sender)[0] == DELETED:
             raise CommandError("发送者账号已注销。")
         return sender

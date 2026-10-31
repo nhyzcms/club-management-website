@@ -394,7 +394,7 @@ def send_dm(conversation: Conversation, sender, content: str) -> Message:
         raise MessagingError("消息内容不能为空")
     if not conversation.participants.filter(pk=sender.pk).exists():
         raise MessagingForbidden("不是该会话的参与者")
-    if conversation.participants.filter(profile__deleted_at__isnull=False).exclude(pk=sender.pk).exists():
+    if conversation.participants.filter(lifecycle__deleted_at__isnull=False).exclude(pk=sender.pk).exists():
         # 对方已注销：历史消息可读，但不能继续发（ADR-0025）。
         raise MessagingForbidden("该用户已注销，无法继续发送私信")
     if is_muted(sender):

@@ -7,7 +7,7 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.db.models import F, OuterRef, Q, Subquery
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -167,11 +167,56 @@ class ManualChannelStatusFilter(admin.SimpleListFilter):
         )
 
 
+def _identity_field(profile, name):
+    """读 ``AccountIdentity`` 的字段；缺行返回空串（与 CharField 的空值一致）。"""
+    try:
+        return getattr(profile.user.identity_record, name)
+    except ObjectDoesNotExist:
+        return ""
+
+
+def _lifecycle_field(profile, name):
+    """读 ``AccountLifecycle`` 的字段；缺行返回 ``None``（与时间/布尔字段的空值一致）。"""
+    try:
+        return getattr(profile.user.lifecycle, name)
+    except ObjectDoesNotExist:
+        return None
+
+
 class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
-    list_display = ("user", "real_name", "identity", "card_no", "verified", "deleted", "registration_deadline")
-    list_filter = (VerifiedFilter, "identity", "deleted_at")
-    search_fields = ("user__username", "user__email", "real_name", "card_no")
+    list_display = (
+        "user", "real_name_of", "identity_of", "card_no_of",
+        "verified", "deleted", "registration_deadline_of",
+    )
+    list_filter = (VerifiedFilter, "user__identity_record__identity", "user__lifecycle__deleted_at")
+    search_fields = (
+        "user__username", "user__email",
+        "user__identity_record__real_name", "user__identity_record__pending_card_no",
+    )
     actions = list(_IDENTITY_ACTIONS)
+
+    def get_queryset(self, request):
+        # list_display 用的是 callable（``user__`` 双下划线在 list_display 不生效），
+        # 必须一次性 join 好，否则每行多两次查询。
+        return super().get_queryset(request).select_related(
+            "user__identity_record", "user__lifecycle",
+        )
+
+    @admin.display(description="真实姓名")
+    def real_name_of(self, obj):
+        return _identity_field(obj, "real_name")
+
+    @admin.display(description="身份")
+    def identity_of(self, obj):
+        return _identity_field(obj, "identity")
+
+    @admin.display(description="校牌号")
+    def card_no_of(self, obj):
+        return _identity_field(obj, "pending_card_no")
+
+    @admin.display(description="注册认证截止")
+    def registration_deadline_of(self, obj):
+        return _lifecycle_field(obj, "registration_deadline")
 
     @admin.display(boolean=True, description="已认证")
     def verified(self, obj):
@@ -179,15 +224,12 @@ class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
 
     @admin.display(boolean=True, description="已注销")
     def deleted(self, obj):
-        return obj.deleted_at is not None
+        return _lifecycle_field(obj, "deleted_at") is not None
 
     def get_readonly_fields(self, request, obj=None):
-        # expiry_disabled_at / deleted_at / validity_notice_ack 系统维护；registration_deadline
-        # 仅持 manage_validity 且改下位可改。
-        ro = ["expiry_disabled_at", "deleted_at", "validity_notice_ack"]
-        if obj is not None and not can_manage_validity_for(request.user, obj.user):
-            ro.append("registration_deadline")
-        return ro
+        # B4 之后这 8 个字段已不在 Profile 上，改由 AccountIdentity / AccountLifecycle
+        # 承载；本页只浏览展示资料，生命周期字段的编辑走各自的 admin 或业务路径。
+        return ()
 
 
 class IdentityProofAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
@@ -297,7 +339,7 @@ class VerificationInline(admin.TabularInline):
 
 class CustomUserAdmin(UserAdmin):
     list_display = ("username", "email", "first_name", "last_name", "is_staff", "is_active", "deleted")
-    list_filter = ("is_staff", "is_active", "profile__deleted_at")
+    list_filter = ("is_staff", "is_active", "lifecycle__deleted_at")
     search_fields = ("username", "email", "first_name", "last_name")
     ordering = ("username",)
     inlines = [ProfileInline, VerificationInline]

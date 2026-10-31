@@ -20,7 +20,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from .identity_review import revoke_user_sessions
+from .status import DELETED, account_state, lifecycle_of
 from .models import (
+    AccountLifecycle,
     IdentityProof,
     PasswordResetRequest,
     Profile,
@@ -50,7 +52,9 @@ def delete_account(user: User) -> Profile:
     否则并发 / 重放无法区分）。
     """
     profile, _created = Profile.objects.get_or_create(user=user)
-    if profile.deleted_at is not None:
+    # 直接查库，不用 account_state()——调用方可能刚改过 lifecycle，而 user.lifecycle
+    # 的反向访问器缓存的是旧对象。
+    if AccountLifecycle.objects.filter(user=user, deleted_at__isnull=False).exists():
         raise AccountDeletionError(
             "该账号已注销。", status=409, reason="account_already_deleted",
         )
@@ -118,15 +122,19 @@ def delete_account(user: User) -> Profile:
     profile.birthday = None
     profile.gender = ""
     profile.bio = ""
-    profile.registration_deadline = None
-    profile.expiry_disabled_at = None
-    profile.must_change_password = False
-    profile.deleted_at = now
-    profile.save(
-        update_fields=[
-            "avatar", "birthday", "gender", "bio",
-            "registration_deadline", "expiry_disabled_at",
-            "must_change_password", "deleted_at",
-        ]
-    )
+    profile.save(update_fields=["avatar", "birthday", "gender", "bio"])
+
+    # 生命周期字段在 AccountLifecycle（B4 PR 3b2 删掉了 Profile 上的旧列）
+    lifecycle = lifecycle_of(profile.user)
+    if lifecycle is not None:
+        lifecycle.registration_deadline = None
+        lifecycle.expiry_disabled_at = None
+        lifecycle.must_change_password = False
+        lifecycle.deleted_at = now
+        lifecycle.save(
+            update_fields=[
+                "registration_deadline", "expiry_disabled_at",
+                "must_change_password", "deleted_at",
+            ]
+        )
     return profile

@@ -15,7 +15,9 @@ from datetime import timedelta
 from django.utils import timezone
 
 from .identity_review import revoke_user_sessions
+from .status import lifecycle_of
 from .models import (
+    AccountLifecycle,
     Profile,
     Verification,
     has_ever_verified,
@@ -24,10 +26,11 @@ from .models import (
 )
 
 
-def _registration_deadline(user, profile):
-    """未认证账号的认证宽限截止：Profile 显式覆盖 > date_joined + 站点配置。"""
-    if profile is not None and profile.registration_deadline is not None:
-        return profile.registration_deadline
+def _registration_deadline(user):
+    """未认证账号的认证宽限截止：AccountLifecycle 显式覆盖 > date_joined + 站点配置。"""
+    lifecycle = lifecycle_of(user)
+    if lifecycle is not None and lifecycle.registration_deadline is not None:
+        return lifecycle.registration_deadline
     return user.date_joined + timedelta(days=registration_verify_days())
 
 
@@ -38,10 +41,11 @@ def disable_user_for_expiry(user):
         user.is_active = False
         user.save(update_fields=["is_active"])
         revoke_user_sessions(user)
-    profile, _ = Profile.objects.get_or_create(user=user, defaults={"expiry_disabled_at": now})
-    if profile.expiry_disabled_at is None:
-        profile.expiry_disabled_at = now
-        profile.save(update_fields=["expiry_disabled_at"])
+    Profile.objects.get_or_create(user=user)
+    lifecycle, _ = AccountLifecycle.objects.get_or_create(user=user)
+    if lifecycle.expiry_disabled_at is None:
+        lifecycle.expiry_disabled_at = now
+        lifecycle.save(update_fields=["expiry_disabled_at"])
     return user
 
 
@@ -76,7 +80,7 @@ def enforce_account_validity(user, dry_run=False):
     # 2) 从未认证、注册超期 → 停用
     if not has_ever_verified(user):
         profile = profile_of(user)
-        if _registration_deadline(user, profile) <= now:
+        if _registration_deadline(user) <= now:
             if not dry_run:
                 disable_user_for_expiry(user)
             return "unverified_expired"

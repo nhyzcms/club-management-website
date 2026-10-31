@@ -10,6 +10,8 @@ from django.contrib.auth.models import Permission, User
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+
+from .testing import make_profile
 from django.urls import reverse
 
 from accounts.member_codes import (
@@ -372,7 +374,7 @@ class ImportPlanTest(TestCase):
 class AutoMatchTest(TestCase):
     def _user_with_name(self, username, real_name):
         user = User.objects.create_user(username=username, password="x")
-        Profile.objects.create(user=user, real_name=real_name)
+        make_profile(user=user, real_name=real_name)
         return user
 
     def _row(self, name, code):

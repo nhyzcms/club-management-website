@@ -22,6 +22,7 @@ from django.utils import timezone
 from common.policy import get_policy
 
 from .models import (
+    AccountLifecycle,
     Profile,
     Verification,
     admin_identity_valid,
@@ -31,6 +32,7 @@ from .models import (
     registration_verify_days,
 )
 from .validity_notices import channel_label
+from .status import lifecycle_of
 
 STATUS_PERMANENT = "permanent"
 STATUS_ADMIN = "admin"
@@ -48,10 +50,14 @@ STATUS_LABELS = {
 
 
 def registration_deadline(user, profile=None) -> datetime:
-    """未认证账号的认证截止：``Profile.registration_deadline`` 覆盖 > 注册日 + 宽限天数。"""
-    profile = profile if profile is not None else profile_of(user)
-    if profile is not None and profile.registration_deadline is not None:
-        return profile.registration_deadline
+    """未认证账号的认证截止：``AccountLifecycle.registration_deadline`` 覆盖 > 注册日 + 宽限天数。
+
+    ``profile`` 参数保留只为兼容既有调用方，B4 PR 3b2 之后不再使用——数据在
+    ``AccountLifecycle`` 上，不在 ``Profile``。
+    """
+    lifecycle = lifecycle_of(user)
+    if lifecycle is not None and lifecycle.registration_deadline is not None:
+        return lifecycle.registration_deadline
     return user.date_joined + timedelta(days=registration_verify_days())
 
 
@@ -141,7 +147,8 @@ def account_validity(user, now=None) -> dict:
         expires_at = deadline
 
     key = _notice_key(status, expires_at)
-    ack = getattr(profile, "validity_notice_ack", "") if profile is not None else ""
+    lifecycle = lifecycle_of(user)
+    ack = (lifecycle.validity_notice_ack if lifecycle is not None else "") or ""
     return {
         "status": status,
         "status_label": STATUS_LABELS[status],
@@ -171,10 +178,16 @@ def ack_notice(user, key: str) -> bool:
     current = account_validity(user)["key"]
     if key != current:
         return False
-    profile, _ = Profile.objects.get_or_create(user=user)
-    if profile.validity_notice_ack != key:
-        profile.validity_notice_ack = key
-        profile.save(update_fields=["validity_notice_ack"])
+    Profile.objects.get_or_create(user=user)
+    lifecycle, _ = AccountLifecycle.objects.get_or_create(user=user)
+    if lifecycle.validity_notice_ack != key:
+        lifecycle.validity_notice_ack = key
+        lifecycle.save(update_fields=["validity_notice_ack"])
+    # 清掉 user.lifecycle 的反向访问器缓存：调用方紧接着会调 account_validity()，
+    # 那里走 lifecycle_of(user)，不清就会读到 ack 之前的旧对象。
+    cache = getattr(getattr(user, "_state", None), "fields_cache", None)
+    if cache is not None:
+        cache.pop("lifecycle", None)
     return True
 
 

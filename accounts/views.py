@@ -39,9 +39,17 @@ from .email_domains import (
 )
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .queries import deleted_q, expiry_disabled_q, must_change_password_q
+from .status import (
+    DELETED,
+    account_state,
+    lifecycle_of,
+    needs_password_change,
+    set_needs_password_change,
+)
 from .member_codes import verify_signature
 from .member_roster import ClaimError, auto_bind_on_register, claim_candidates, claim_identity
 from .models import (
+    AccountIdentity,
     MemberIdentity,
     PasswordResetRequest,
     Profile,
@@ -525,10 +533,11 @@ def verification_manual_submit_view(request):
         )
         for f in proof_files:
             IdentityProof.objects.create(user=user, file=f)
-        profile = _get_or_create_profile(user)
-        profile.real_name = real_name
-        profile.identity = identity
-        profile.save(update_fields=["real_name", "identity"])
+        _get_or_create_profile(user)  # 确保 Profile 与新表行存在
+        AccountIdentity.objects.filter(user=user).update(
+            real_name=real_name or "",
+            identity=identity or "",
+        )
 
     from messaging.services import notify_perm  # 局部导入：避免潜在循环依赖
 
@@ -1270,7 +1279,14 @@ def register_view(request):
             user = User.objects.create_user(
                 username=username, email="", password=password, is_active=True
             )
-            Profile.objects.create(user=user, real_name=real_name, identity=identity, card_no=card_no)
+            profile = Profile.objects.create(user=user)
+            # 实名资料在 AccountIdentity（B4 PR 3b2 删掉了 Profile 上的旧列）。
+            # Profile.save() 已经补出新表行，这里只写值。
+            AccountIdentity.objects.filter(user=user).update(
+                real_name=real_name or "",
+                identity=identity or "",
+                pending_card_no=card_no or "",
+            )
             if email and get_policy().verification_enabled:
                 Verification.objects.create(
                     user=user, channel=Verification.CHANNEL_EMAIL,
@@ -1510,7 +1526,7 @@ def _profile_response(user, profile):
             "permissions": _capabilities(user),
         },
         # 管理员重置后的强制改密标记（前端启动 / 登录后据此跳转改密页）。
-        "must_change_password": bool(profile.must_change_password),
+        "must_change_password": needs_password_change(user),
         # 身份徽章（ADR-0005 决策 7）：前端据此（而非单看 is_verified）决定是否提示去认证——
         # 超管 / 管理员 / 已认证用户均不提示，仅访客（未认证普通成员）提示。
         "role": _role_for(user),
@@ -1583,7 +1599,7 @@ def force_change_password_view(request):
     只允许在 ``Profile.must_change_password=True`` 时调用；成功后清标记并保持当前会话。
     """
     profile = _get_or_create_profile(request.user)
-    if not profile.must_change_password:
+    if not needs_password_change(request.user):
         return JsonResponse(
             {"error": "当前账号无需强制改密。", "reason": "not_required"},
             status=400,
@@ -1614,8 +1630,7 @@ def force_change_password_view(request):
 
     request.user.set_password(new_password)
     request.user.save(update_fields=["password"])
-    profile.must_change_password = False
-    profile.save(update_fields=["must_change_password"])
+    set_needs_password_change(request.user, False)
     _rotate_session_record(request, request.user)
     request.session["pwd_change_required"] = False
     return JsonResponse({"message": "密码已修改，请使用新密码继续使用。"})
@@ -1647,9 +1662,8 @@ def change_password_view(request):
     _rotate_session_record(request, request.user)
     # 自行改密同样解除强制改密（管理员重置后用户若从个人中心改密，也视为已完成）。
     profile = _get_or_create_profile(request.user)
-    if profile.must_change_password:
-        profile.must_change_password = False
-        profile.save(update_fields=["must_change_password"])
+    if needs_password_change(request.user):
+        set_needs_password_change(request.user, False)
     request.session["pwd_change_required"] = False
     return JsonResponse({"message": "密码修改成功"})
 
@@ -1744,7 +1758,7 @@ def user_profile_view(request, id):
         return JsonResponse({"error": "用户不存在"}, status=404)
 
     profile = _get_or_create_profile(viewed)
-    if profile.deleted_at is not None:
+    if account_state(viewed)[0] == DELETED:
         return JsonResponse({
             "deleted": True,
             "user": {

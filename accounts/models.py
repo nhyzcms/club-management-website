@@ -5,6 +5,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models import prefetch_related_objects
 from django.utils import timezone
@@ -57,53 +58,22 @@ class Profile(models.Model):
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES, blank=True)
     bio = models.TextField(blank=True)
 
-    # 可选资料（ADR-0006 决策 3）：real_name 不公开（仅本人 / 审核员可见），在提交身份证明
-    # 时收集；identity 是纯元数据，不影响权限。认证态不在 Profile 上——见 Verification。
-    real_name = models.CharField("真实姓名", max_length=100, blank=True)
-    identity = models.CharField("身份", max_length=10, choices=IDENTITY_CHOICES, blank=True)
-
-    # 校牌号（2026-10-23）：与名册行 MemberIdentity.card_no 是**同一个值**。
-    # 在校生 / 毕业生可在注册时选填；名册里已导入时按「姓名 + 校牌号」唯一命中即自动绑定，
-    # 否则先存这里，等名册导入后按姓名写回名册行（accounts.member_roster.sync_card_numbers）。
-    # 名册有值时以名册为准（学校档案），两份始终对齐；绝不对外公开（校验页不下发）。
-    card_no = models.CharField("校牌号", max_length=20, blank=True, default="")
-
-    # 身份有效期（ADR-0041）：注册认证宽限覆盖 + 因超期停用标记。
-    # registration_deadline 为 null = 按 date_joined + 站点「注册后认证宽限」起算；
-    # 持 manage_validity 者可对下位用户显式延/缩。
-    registration_deadline = models.DateTimeField("注册认证截止", null=True, blank=True)
-    # expiry_disabled_at 标记「因注册超期未认证被系统停用」，用于登录时给专属提示；
-    # 系统维护，不可手改。
-    expiry_disabled_at = models.DateTimeField("因超期停用时间", null=True, blank=True)
-
-    # 账号注销（自服务，ADR-0027）：非空 = 用户已主动注销。
-    # 这是**软删除标记**——User / Profile 行本身永不删除：主键、用户名（账号唯一编码）、
-    # 真实姓名、注册时间等留作后台审计与历史内容归属；敏感字段另行清除，
-    # 见 accounts/deletion.py 与 messaging.serializers.SimpleUserSerializer（展示为「该用户已注销」）。
-    deleted_at = models.DateTimeField("注销时间", null=True, blank=True)
-
-    # 账号有效期一次性提示「已读」标记：存 ``accounts.validity_summary.account_validity()``
-    # 生成的状态快照键（如 ``verified:2027-10-18T12:00:00+08:00``）。注册后 / 认证通过后
-    # 前端弹窗展示到期时间与规则，点「我知道了」写回；键随状态或到期时间变化而失效，
-    # 因而续期 / 重新认证后会再提示一次。
-    validity_notice_ack = models.CharField(
-        "有效期提示已读标记", max_length=80, blank=True, default="",
-    )
-
-    # 强制修改密码（管理员手动重置密码后置 True）：登录后除「改密 / 退出 / 读取会话」
-    # 外的请求由 accounts.middleware.PasswordChangeRequiredMiddleware 拦下。
-    # 用户自行改密成功或完成强制改密后清零。
-    must_change_password = models.BooleanField("需强制修改密码", default=False)
+    # ── B4（2026-10-30）：实名与生命周期已拆到独立表 ──────────────────────
+    # 这里原有 8 个字段：real_name / identity / card_no / registration_deadline /
+    # expiry_disabled_at / deleted_at / validity_notice_ack / must_change_password。
+    # 现在分别住在：
+    #   AccountIdentity  → real_name / identity / pending_card_no（原 card_no）
+    #   AccountLifecycle → registration_deadline / expiry_disabled_at / deleted_at /
+    #                      validity_notice_ack / must_change_password
+    # 读取走 ``profile.user.identity_record`` / ``profile.user.lifecycle``；
+    # 查询走 ``accounts/queries.py`` 的 ``identity_q()`` / ``lifecycle_q()``。
 
     def save(self, *args, **kwargs):
-        """保存后同步到 B4 拆出的新表（双写，见 ``accounts/sync.py``）。
-
-        PR 2a 阶段 ``Profile`` 仍是权威，新表是镜像；PR 3 删旧列后才反过来。
-        """
+        """保存后确保新表有对应行（B4 PR 3b2：新表是权威，这里只补行不覆盖值）。"""
         super().save(*args, **kwargs)
-        from .sync import sync_from_profile
+        from .sync import ensure_split_rows
 
-        sync_from_profile(self)
+        ensure_split_rows(self)
 
     def __str__(self):
         return f"{self.user.username}'s profile"
@@ -261,9 +231,11 @@ DELETED_ACCOUNT_LABEL = "该用户已注销"
 
 
 def is_deleted_user(user):
-    """账号是否已注销：唯一真源是 ``Profile.deleted_at``。"""
-    profile = profile_of(user)
-    return bool(profile is not None and profile.deleted_at is not None)
+    """账号是否已注销：唯一真源是 ``AccountLifecycle.deleted_at``。"""
+    try:
+        return user.lifecycle.deleted_at is not None
+    except ObjectDoesNotExist:
+        return False
 
 
 def _policy_attr(attr):
