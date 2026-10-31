@@ -50,7 +50,7 @@
 | POST | `/auth/password-reset/confirm/` | 公开 | — | 邮箱链接自助重置（确认新密码） |
 | POST | `/auth/password-reset/request/` | 公开 | — | 向管理员申请手动重置（multipart：账号 + 身份证明） |
 | GET | `/auth/password-reset-requests/` | 登录 | `accounts.review_password_reset` | 密码重置申请队列（`?status=`） |
-| POST | `/auth/password-reset-requests/{pk}/approve/` | 登录 | `accounts.review_password_reset` | 批准：重置为 `123456` + 强制改密 + 吊销会话 |
+| POST | `/auth/password-reset-requests/{pk}/approve/` | 登录 | `accounts.review_password_reset` | 批准：重置为**一次性随机临时密码**（响应回显）+ 强制改密 + 吊销会话 |
 | POST | `/auth/password-reset-requests/{pk}/reject/` | 登录 | `accounts.review_password_reset` | 驳回申请（不动密码） |
 | GET | `/auth/password-reset-requests/{pk}/proof/` | 登录 | 本人或 `accounts.review_password_reset` | 身份证明文件（私有存储鉴权下载） |
 | POST | `/auth/password/force-change/` | 登录 | — | 管理员重置后的首次登录强制改密（不要求原密码） |
@@ -411,17 +411,20 @@
 
 **批准** `POST /auth/password-reset-requests/{pk}/approve/`（body 可带 `note`）
 
-- 密码重置为 **`123456`**；`Profile.must_change_password=true`；
+- 密码重置为 **一次性随机临时密码**（14 位，`secrets` 生成，塞在批准响应的 `temp_password`
+  字段里只出现一次；目标有已认证邮箱时同时发信）；`Profile.must_change_password=true`；
 - **吊销该账号全部会话**（Django Session + `UserSession.revoked_at` / `revoked_reason=security`），旧设备立即下线；
 - 申请转 `approved`、记录处理人 / 时间 / 说明；站内通知当事人（可选补邮件）；
-- 幂等：仅 `pending` 可处理，重复批准 `409 already_reviewed`；**不能审批自己的申请**（`403 cannot_review_self`）。
+- 幂等：仅 `pending` 可处理，重复批准 `409 already_reviewed`；**不能审批自己的申请**（`403 cannot_review_self`）；
+- **审批人不得重置权限高于自己的账号**：目标是 `is_superuser` 而审批人不是、
+  或目标是 `is_staff` 而审批人不是 → `403 target_outranks_reviewer`。
 
 **驳回** `POST /auth/password-reset-requests/{pk}/reject/`（body 可带 `note`）：只改申请状态，不动密码与会话。
 
 **强制改密** `POST /auth/password/force-change/`（登录；body `new_password` / `new_password2`）
 
-仅当 `Profile.must_change_password=true` 时可调用（否则 `400 not_required`）；不要求原密码（默认密码是公开的），
-但拒绝与默认密码相同 / 与原密码相同，并走 Django 密码校验器。成功后清零标记、保持当前会话。
+仅当 `Profile.must_change_password=true` 时可调用（否则 `400 not_required`）；不要求原密码（用户刚用管理员给的一次性临时密码登录，可能已经忘掉），
+但拒绝与原密码相同，并走 Django 密码校验器。成功后清零标记、保持当前会话。
 
 **请求闸门**：`Profile.must_change_password=true` 期间，`accounts.middleware.PasswordChangeRequiredMiddleware`
 只放行 `/auth/me/`、`/auth/password/force-change/`、`/auth/logout/`、`/auth/csrf/`、`/auth/login/`、静态资源与

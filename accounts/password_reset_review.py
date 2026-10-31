@@ -83,7 +83,12 @@ class PasswordResetRequestViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(
                 {"error": exc.message, "reason": exc.reason}, status=exc.status,
             )
-        return Response(self.get_serializer(obj).data)
+        data = dict(self.get_serializer(obj).data)
+        # 一次性临时密码只在这里出现一次（目标邮箱有的话同时发信），不落库、不再可查。
+        temp = getattr(obj, "temp_password", "")
+        if temp:
+            data["temp_password"] = temp
+        return Response(data)
 
     @action(detail=True, methods=["post"])
     def reject(self, request, pk=None):
