@@ -13,6 +13,14 @@ export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const uid = searchParams.get("uid") || "";
   const token = searchParams.get("token") || "";
+
+  // 认证 token 只用于本次请求；立刻从地址栏与历史记录抹掉（审计 L-1）。
+  useEffect(() => {
+    if (window.location.hash.includes("token=")) {
+      const clean = window.location.hash.split("?")[0];
+      window.history.replaceState(null, "", `${window.location.pathname}${clean}`);
+    }
+  }, []);
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
