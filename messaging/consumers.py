@@ -13,10 +13,27 @@ from .models import CommentThread
 from .services import MessagingError, can_see_thread
 
 
+@database_sync_to_async
+def _session_revoked(session_key):
+    """``UserSession.revoked_at`` 非空 → 该会话已被手动下线 / 安全吊销（M-6）。"""
+    if not session_key:
+        return False
+    from accounts.models import UserSession
+
+    return UserSession.objects.filter(
+        session_key=session_key, revoked_at__isnull=False,
+    ).exists()
+
+
 class MessagingConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         user = self.scope.get("user")
         if user is None or not user.is_authenticated:
+            await self.close()
+            return
+        # HTTP 侧 MultiDeviceSessionMiddleware 只作用于 HTTP；WebSocket 必须自己查。
+        session = self.scope.get("session")
+        if session is not None and await _session_revoked(session.session_key):
             await self.close()
             return
         self.user_id = user.pk

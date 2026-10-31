@@ -964,10 +964,16 @@ def _active_sessions(user):
 def session_revoke_view(request, session_id):
     """在个人中心下线一台设备（只限本人的记录）。
 
+    需要 ``manage_devices`` 安全验证（审计 M-6）：会话被盗时，攻击者不能仅凭
+    session cookie 把受害者的其他设备踢下线。
+
     只写 ``revoked_at``、不删 Django Session：被下线设备的下一次请求会拿到
     401 ``session_superseded`` + ``revoked_reason=manual``，前端弹「该设备已被下线」。
     下线本机等价于退出登录。
     """
+    if not stepup.grant_from_request(request, "manage_devices"):
+        return stepup.stepup_required_response("manage_devices")
+
     row = UserSession.objects.filter(id=session_id, user=request.user).first()
     if row is None:
         return JsonResponse({"error": "登录记录不存在"}, status=404)
@@ -993,7 +999,9 @@ def session_revoke_view(request, session_id):
 @require_POST
 @login_required
 def sessions_revoke_others_view(request):
-    """下线其他所有设备（保留本机）。"""
+    """下线其他所有设备（保留本机）。需要 ``manage_devices`` 安全验证。"""
+    if not stepup.grant_from_request(request, "manage_devices"):
+        return stepup.stepup_required_response("manage_devices")
     updated = (
         _active_sessions(request.user)
         .exclude(session_key=request.session.session_key)
