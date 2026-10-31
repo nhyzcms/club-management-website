@@ -211,9 +211,9 @@
 
 **认证**：`audience=public` 公开（`AllowAny`——游客与任何登录态均可投）；`audience=members` 须登录 + 已认证（未登录 401、未认证 403）。众议在 `open` 期间可投；展示只在 `voting_enabled=true` 且 `open` 时开放投票（`option_ids` 填展品对应的 `vote_option_id`）。
 
-**请求体**：`{"option_ids": [31, 32]}`——选项 id 数组：至少 1 项、不得重复、不得超过 `max_choices_per_voter`，且都须属于本活动。一人一张选票，投出后不可更改；全部已认证成员投完时众议自动结算（转 `closed`；公开受众下游客票不参与结算）。
+**请求体**：`{"option_ids": [31, 32], "turnstile_token": "..."}`——选项 id 数组：至少 1 项、不得重复、不得超过 `max_choices_per_voter`，且都须属于本活动。一人一张选票，投出后不可更改；全部已认证成员投完时众议自动结算（转 `closed`；公开受众下游客票不参与结算）。`turnstile_token` 仅在站点启用了 Turnstile 且请求来自未登录游客时必填（每次投票一个、单次有效）；成员投票不需要。
 
-**判重与留痕**：登录用户按账号一人一张；`audience=public` 的游客按 `X-Device-Id` 头（UUID）一设备一张，未带合法标识返回 400；游客票记录 IP（取 `X-Forwarded-For` 末段，即 Nginx 追加的真实来源）与设备标识备查。
+**判重与留痕**：登录用户按账号一人一张；`audience=public` 的游客按 `X-Device-Id` 头（UUID）一设备一张，未带合法标识返回 400；游客票记录 IP（取 `X-Forwarded-For` 末段，即 Nginx 追加的真实来源）与设备标识备查。设备号由客户端生成、可轮换，因此游客票另按 **（IP + 活动）每小时 N 票**限流兜底（`SiteSettings.public_vote_per_ip_per_hour`，默认 120）；超出返回 `429`。
 
 **响应 `200 OK`**：活动详情（`options[].vote_count`、`ballots`、`my_selections`、`total_ballots` 随票数更新；游客的 `my_selections` 按设备标识回显）。
 

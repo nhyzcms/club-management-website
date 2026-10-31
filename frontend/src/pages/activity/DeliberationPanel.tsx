@@ -2,15 +2,22 @@ import { useEffect, useState } from "react";
 import { activityApi } from "../../api/activities";
 import type { ActivityDetail } from "../../types/activities";
 import Avatar from "../../components/Avatar";
+import { useTurnstile } from "../../turnstile";
 import type { ActivityPanelProps } from "./types";
 
 export default function DeliberationPanel({
-  a, setActivity, busy, setBusy, setError,
+  a, setActivity, user, busy, setBusy, setError,
 }: ActivityPanelProps) {
   const [selected, setSelected] = useState<number[]>(a.my_selections ?? []);
   const total = a.total_ballots ?? 0;
   const canVote = a.status === "open" && a.my_selections === null;
   const options = a.options ?? [];
+  // 游客投票在启用 Turnstile 时逐票校验；成员按账号判重，不需要。
+  const {
+    containerRef: turnstileRef, token: turnstileToken, reset: resetTurnstile,
+    enabled: turnstileEnabled,
+  } = useTurnstile(!user);
+  const needTurnstile = canVote && turnstileEnabled && !turnstileToken;
 
   useEffect(() => {
     setSelected(a.my_selections ?? []);
@@ -26,10 +33,13 @@ export default function DeliberationPanel({
   };
 
   const doVote = async () => {
-    if (selected.length < 1) return;
+    if (selected.length < 1 || needTurnstile) return;
     setBusy(true); setError("");
-    try { setActivity(await activityApi.vote(a.id, selected)); }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : String(e)); }
+    try { setActivity(await activityApi.vote(a.id, selected, turnstileToken || undefined)); }
+    catch (e: unknown) {
+      if (turnstileEnabled) resetTurnstile();
+      setError(e instanceof Error ? e.message : String(e));
+    }
     finally { setBusy(false); }
   };
 
@@ -55,7 +65,8 @@ export default function DeliberationPanel({
               </label>
             );
           })}
-          <button className="btn btn-primary btn-sm" onClick={doVote} disabled={busy || selected.length < 1}>投票</button>
+          {turnstileEnabled && <div ref={turnstileRef} style={{ margin: "8px 0" }} />}
+          <button className="btn btn-primary btn-sm" onClick={doVote} disabled={busy || selected.length < 1 || needTurnstile}>投票</button>
         </>
       ) : (
         <>
