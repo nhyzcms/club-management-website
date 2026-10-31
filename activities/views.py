@@ -381,14 +381,31 @@ class ActivityViewSet(viewsets.ModelViewSet):
             if err:
                 return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
 
-        with transaction.atomic():
-            submission = Submission.objects.create(activity=activity, submitter=request.user)
-            for f in files:
-                create_attachment(
-                    user=request.user, parent=submission, file=f,
-                    extra_validate=extra_validate,
-                )
-            maybe_close_collection_on_cap(activity)  # 满额自动 collecting→reviewing
+        try:
+            with transaction.atomic():
+                # 行锁：并发投稿时串行化「名额检查 + 创建」，避免先 count 后 update
+                # 的超额窗口（审计 L-5）。同时重查状态，防止等待锁期间征集已关闭。
+                locked = Activity.objects.select_for_update().get(pk=activity.pk)
+                if not accepting_submissions(locked):
+                    return Response({"detail": "征集已结束收件"}, status=status.HTTP_400_BAD_REQUEST)
+                if locked.max_submissions and (
+                    locked.submissions.count() >= locked.max_submissions
+                ):
+                    return Response(
+                        {"detail": "征集名额已满"}, status=status.HTTP_400_BAD_REQUEST,
+                    )
+                submission = Submission.objects.create(activity=locked, submitter=request.user)
+                for f in files:
+                    create_attachment(
+                        user=request.user, parent=submission, file=f,
+                        extra_validate=extra_validate,
+                    )
+                maybe_close_collection_on_cap(locked)  # 满额自动 collecting→reviewing
+        except IntegrityError:
+            return Response(
+                {"detail": "你已经提交过作品了（一人一作品）"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return self._serialized(activity, request, status.HTTP_201_CREATED)
 
