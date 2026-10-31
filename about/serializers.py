@@ -1,14 +1,11 @@
 from rest_framework import serializers
 
 from common.rich_text import sanitize_html
+from common.uploads import extension_of, sniff_pdf, sniff_zip
 
 from .models import AboutBlock, AboutPage
 
 _DOC_MAX_BYTES = 20 * 1024 * 1024
-_DOC_TYPES = {
-    "application/pdf": ".pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-}
 
 
 class AboutBlockSerializer(serializers.ModelSerializer):
@@ -80,13 +77,19 @@ class AboutPageSerializer(serializers.Serializer):
 
 
 def validate_about_document(file):
-    """PDF / .docx 文档附件：类型 + 大小。返回清洗后的文件名后缀。"""
+    """PDF / .docx 文档附件：大小 + **真实内容**（PDF 验 %PDF-、docx 验 ZIP 容器）。
+
+    不再信任客户端声明的 content_type —— 任何一个可伪造的字段都不该决定文件去向。
+    """
     if file.size > _DOC_MAX_BYTES:
         raise serializers.ValidationError({"document": "文档不能超过 20MB"})
-    name = (file.name or "").lower()
-    content_type = getattr(file, "content_type", "") or ""
-    if content_type in _DOC_TYPES:
+    ext = extension_of(file.name)
+    if ext == ".pdf":
+        if not sniff_pdf(file):
+            raise serializers.ValidationError({"document": "文件不是有效的 PDF"})
         return
-    if name.endswith(".pdf") or name.endswith(".docx"):
+    if ext == ".docx":
+        if not sniff_zip(file):
+            raise serializers.ValidationError({"document": "文件不是有效的 .docx"})
         return
     raise serializers.ValidationError({"document": "仅支持 PDF 或 .docx"})

@@ -1,12 +1,13 @@
-import os
 import uuid
 
 from django.conf import settings
 from django.db import models
 
+from common.uploads import safe_extension
+
 
 def errata_upload_path(instance, filename):
-    ext = os.path.splitext(filename)[1]
+    ext = safe_extension(filename)
     return f"exam_errata/{uuid.uuid4().hex}{ext}"
 
 

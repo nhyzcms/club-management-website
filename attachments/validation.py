@@ -5,20 +5,23 @@
 - 禁止上传可执行 / 脚本类扩展名；
 - 按 content-type 把文件分类为 图片 / 视频 / 文档 / 压缩包 / 其他。
 """
-import os
 
 from django.db.models import Count, Sum
 
 from common.policy import format_byte_cap, get_policy
+from common.uploads import RESTRICTED_EXTENSIONS, extension_of
 
 # 反馈附件配额（同步 / tus 通路共用）：每条 ≤9 个 / 总 ≤2GB。
 FEEDBACK_MAX_ATTACHMENTS = 9
 FEEDBACK_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 
+# 禁止上传的扩展名 = 站点自己的可执行清单 ∪ 浏览器会当文档执行的清单。
+# 后者（html / svg / xml / js / php 系 …）尤其关键：公开媒体目录由 nginx 按扩展名
+# 直出，落一个 .html 进去就是站点同源托管任意脚本（存储型 XSS）。
 FORBIDDEN_EXTENSIONS = frozenset({
     ".exe", ".bat", ".cmd", ".sh", ".php", ".asp", ".jsp",
     ".py", ".rb", ".pl", ".cgi", ".com", ".scr", ".pif", ".msi",
-})
+}) | RESTRICTED_EXTENSIONS
 
 _DOCUMENT_CONTENT_TYPES = frozenset({
     "application/pdf",
@@ -58,7 +61,7 @@ def upload_error(file):
     cap = get_policy().sync_upload_max_bytes
     if file.size > cap:
         return f"文件大小不能超过 {format_byte_cap(cap)}"
-    ext = os.path.splitext(file.name)[1].lower()
+    ext = extension_of(file.name)
     if ext in FORBIDDEN_EXTENSIONS:
         return "禁止上传此类型的文件"
     return None

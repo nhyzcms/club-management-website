@@ -17,8 +17,8 @@ from django.utils import timezone
 from .models import MemberIdentity, PasswordResetRequest, Profile, UserSession, Verification
 
 PNG_BYTES = bytes.fromhex(
-    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
-    "890000000d49444154789c63f8cf00000003000100184bbb6e0000000049454e44ae426082"
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489000000"
+    "0d49444154789c6360606060000000050001a5f645400000000049454e44ae426082"
 )
 
 
@@ -189,8 +189,11 @@ class PasswordResetRequestTest(TestCase):
         self.assertIn("身份证明", resp.json()["error"])
 
     def test_submit_rejects_wrong_file_type(self):
-        resp = self.submit(proof=proof("proof.txt", "text/plain"))
+        """类型判定看**真实内容**：不是图片的文件即使声称 image/png 也要拒。"""
+        fake = SimpleUploadedFile("proof.png", b"<html><script>alert(1)</script></html>", content_type="image/png")
+        resp = self.submit(proof=fake)
         self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("身份证明仅支持 JPG / PNG / WebP 格式", resp.json()["error"])
 
     def test_submit_rejects_duplicate_pending(self):
         self.assertEqual(self.submit().status_code, 201)

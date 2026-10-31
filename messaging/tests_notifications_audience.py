@@ -16,6 +16,12 @@ from messaging.notifications.dispatch import users_with_perm
 from messaging.services import notify_perm, send_dm
 from messaging.models import Conversation
 
+# 有效 1x1 PNG（身份证明上传自 2026-10 起按真实内容校验，假字节会被拒）
+PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489000000"
+    "0d49444154789c6360606060000000050001a5f645400000000049454e44ae426082"
+)
+
 
 def grant(user, app_label, codename):
     """给用户直接授予某权限。"""
@@ -179,7 +185,7 @@ class WiringTest(TestCase):
             {
                 "real_name": "张三",
                 "identity": "student",
-                "proof_files": SimpleUploadedFile("a.png", b"fake", content_type="image/png"),
+                "proof_files": SimpleUploadedFile("a.png", PNG_BYTES, content_type="image/png"),
             },
             format="multipart",
         )

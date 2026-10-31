@@ -17,6 +17,13 @@ from reviews.test_helpers import approve_activity
 
 from .models import Activity, QuestionnaireResponse, default_survey_schema
 
+# 有效 1x1 PNG：上传端点自 2026-10 起按**真实内容**校验图片（Pillow），
+# 测试夹具必须给真图片，不能再拿 b"\x89PNG\r\n" 之类的假头糊弄。
+PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489000000"
+    "0d49444154789c6360606060000000050001a5f645400000000049454e44ae426082"
+)
+
 
 def _publish_created(resp):
     """既有活动测试默认走「已过审」夹具；待审可见性由 reviews/tests_activity.py 覆盖。"""
@@ -225,8 +232,8 @@ class ActivityUploadImageTest(TestCase):
         self.visitor = User.objects.create_user(username="visitor", password="x")
         self.client = APIClient()
 
-    def _img(self, name="a.png", content_type="image/png", data=b"\x89PNG\r\n"):
-        return SimpleUploadedFile(name, data, content_type=content_type)
+    def _img(self, name="a.png", content_type="image/png", data=None):
+        return SimpleUploadedFile(name, data or PNG_BYTES, content_type=content_type)
 
     def test_verified_member_uploads_image(self):
         self.client.force_authenticate(self.author)
@@ -247,12 +254,23 @@ class ActivityUploadImageTest(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_rejects_html_disguised_as_image(self):
+        """HTML 声称 image/png → 400（否则 .html 落进 /media/ 同源执行脚本）。"""
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            "/activities/activities/upload_image/",
+            {"image": SimpleUploadedFile(
+                "xss.html", b"<html><script>alert(1)</script></html>", content_type="image/png",
+            )},
+        )
+        self.assertEqual(resp.status_code, 400)
+
 
 class SurveyUploadTest(TestCase):
     """问卷文件题上传端点：填答者（含游客）可传；类型限制。"""
 
-    def _file(self, name="a.png", content_type="image/png", data=b"\x89PNG\r\n"):
-        return SimpleUploadedFile(name, data, content_type=content_type)
+    def _file(self, name="a.png", content_type="image/png", data=None):
+        return SimpleUploadedFile(name, data or PNG_BYTES, content_type=content_type)
 
     def test_guest_can_upload_image(self):
         resp = APIClient().post("/activities/activities/survey_upload/", {"file": self._file()})
@@ -275,6 +293,38 @@ class SurveyUploadTest(TestCase):
 
     def test_rejects_missing_file(self):
         resp = APIClient().post("/activities/activities/survey_upload/", {})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_guest_html_disguised_as_image_rejected(self):
+        """游客可上传，因此这条最危险：HTML 声称 image/png 必须被拒。
+
+        反证：把 survey_upload 的 Pillow 校验换成旧的 content_type 白名单，本条变红。
+        """
+        resp = APIClient().post(
+            "/activities/activities/survey_upload/",
+            {"file": self._file("xss.html", "image/png", b"<html><script>alert(1)</script></html>")},
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_guest_upload_stores_server_side_extension(self):
+        """真图片、文件名写 .png 但声明 text/plain → 仍按 PNG 落盘（扩展名服务端说了算）。
+
+        文件名直接叫 .html 的情况在更前一层（upload_error 的扩展名黑名单）就被拒，
+        见 attachments/tests.py::test_browser_executable_extensions_rejected。
+        """
+        resp = APIClient().post(
+            "/activities/activities/survey_upload/",
+            {"file": self._file("looks-like.png", "text/plain")},
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(resp.data["url"].endswith(".html"), resp.data["url"])
+
+    def test_guest_html_filename_rejected(self):
+        """文件名本身就是 .html：即使内容是真图片也直接拒（扩展名黑名单）。"""
+        resp = APIClient().post(
+            "/activities/activities/survey_upload/",
+            {"file": self._file("xss.html", "image/png")},
+        )
         self.assertEqual(resp.status_code, 400)
 
 

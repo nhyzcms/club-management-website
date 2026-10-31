@@ -1,6 +1,5 @@
 import json
 import logging
-import mimetypes
 from datetime import timedelta
 
 from django.conf import settings
@@ -27,6 +26,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.request import Request
 
 from common.policy import get_policy
+from common.uploads import extension_of, rename_upload, sniff_image_extension
 
 from . import factors, member_lookup, stepup
 from .authcode import AuthCodeError, redeem_authcode
@@ -107,7 +107,23 @@ IDENTITY_CHOICE_KEYS = {key for key, _label in Profile.IDENTITY_CHOICES}
 PROOF_MIN_COUNT = 1
 PROOF_MAX_COUNT = 3
 PROOF_MAX_BYTES = 5 * 1024 * 1024  # 单张 ≤ 5MB
-PROOF_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+# 头像允许的真实格式（由 Pillow 判定，不看客户端声明的 content_type）
+AVATAR_EXTENSIONS = frozenset({".jpg", ".png", ".gif", ".webp"})
+# 身份证明 / 密码重置证明：只收真实解码成功的图片（不含 GIF，避免动图绕过）
+PROOF_EXTENSIONS = frozenset({".jpg", ".png", ".webp"})
+# 证明文件直出时的 Content-Type：只认这几种扩展名，其余一律当二进制附件下载，
+# 防止历史遗留的 .html/.svg 之类被浏览器当文档执行（存储型 XSS）。
+_PROOF_CONTENT_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+
+def _proof_content_type(name: str) -> str:
+    return _PROOF_CONTENT_TYPES.get(extension_of(name), "application/octet-stream")
 
 
 def _json_body(request):
@@ -494,7 +510,11 @@ def verification_manual_submit_view(request):
     for f in proof_files:
         if f.size > PROOF_MAX_BYTES:
             errors.append(f"证明材料「{f.name}」超过 5MB 上限")
-        if f.content_type not in PROOF_ALLOWED_TYPES:
+            continue
+        # 只认真实解码成功的图片；落盘扩展名由服务端按识别结果改写。
+        try:
+            rename_upload(f, sniff_image_extension(f, allowed=PROOF_EXTENSIONS))
+        except ValidationError:
             errors.append(f"证明材料「{f.name}」格式不支持（仅 JPG / PNG / WebP）")
     if errors:
         return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
@@ -1089,8 +1109,11 @@ def password_reset_request_view(request):
     else:
         if proof.size > PROOF_MAX_BYTES:
             errors.append("身份证明不能超过 5MB")
-        if proof.content_type not in PROOF_ALLOWED_TYPES:
-            errors.append("身份证明仅支持 JPG / PNG / WebP 格式")
+        else:
+            try:
+                rename_upload(proof, sniff_image_extension(proof, allowed=PROOF_EXTENSIONS))
+            except ValidationError:
+                errors.append("身份证明仅支持 JPG / PNG / WebP 格式")
     if errors:
         return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
 
@@ -1162,11 +1185,12 @@ def password_reset_proof_file_view(request, pk):
     if not reset_request.proof or not reset_request.proof.storage.exists(reset_request.proof.name):
         raise Http404("证明文件不存在")
 
-    content_type, _ = mimetypes.guess_type(reset_request.proof.name)
-    return FileResponse(
-        reset_request.proof.open("rb"),
-        content_type=content_type or "image/jpeg",
-    )
+    content_type = _proof_content_type(reset_request.proof.name)
+    response = FileResponse(reset_request.proof.open("rb"), content_type=content_type)
+    response["X-Content-Type-Options"] = "nosniff"
+    if content_type == "application/octet-stream":
+        response["Content-Disposition"] = "attachment"
+    return response
 
 
 @require_POST
@@ -1393,11 +1417,14 @@ def identity_proof_file_view(request, pk):
     if not proof.file.storage.exists(proof.file.name):
         raise Http404("证明文件不存在")
 
-    content_type, _ = mimetypes.guess_type(proof.file.name)
-    return FileResponse(
-        proof.file.open("rb"),
-        content_type=content_type or "image/jpeg",
-    )
+    # Content-Type 只按服务端白名单（.jpg/.png/.webp/.gif）给出；任何其它扩展名
+    # 一律 application/octet-stream + 附件下载，杜绝历史遗留的 .html/.svg 被当文档执行。
+    content_type = _proof_content_type(proof.file.name)
+    response = FileResponse(proof.file.open("rb"), content_type=content_type)
+    response["X-Content-Type-Options"] = "nosniff"
+    if content_type == "application/octet-stream":
+        response["Content-Disposition"] = "attachment"
+    return response
 
 
 def _get_or_create_profile(user):
@@ -1541,9 +1568,14 @@ def profile_update_view(request):
     if avatar:
         if avatar.size > 2 * 1024 * 1024:
             return JsonResponse({"error": "头像文件不能超过 2MB"}, status=400)
-        if avatar.content_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
-            return JsonResponse({"error": "仅支持 JPG、PNG、GIF、WebP 格式"}, status=400)
-        profile.avatar = avatar
+        # 客户端声明的 content_type / 文件名都不可信：用 Pillow 真实解码，并按识别出的
+        # 格式改写文件名扩展名。否则「abc.html 声称 image/png」会在 /media/avatars/
+        # 留下浏览器当文档执行的 .html（同源存储型 XSS）。
+        try:
+            ext = sniff_image_extension(avatar, allowed=AVATAR_EXTENSIONS)
+        except ValidationError as exc:
+            return JsonResponse({"error": exc.messages[0]}, status=400)
+        profile.avatar = rename_upload(avatar, ext)
 
     form = ProfileForm(request.POST)
     if not form.is_valid():

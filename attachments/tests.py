@@ -262,6 +262,16 @@ class FileValidationTest(_AttachmentTestCase):
         resp = self._post(upload("evil.py", b"x", "text/x-python"))
         self.assertEqual(resp.status_code, 400)
 
+    def test_browser_executable_extensions_rejected(self):
+        """html / svg / xml 这类会被浏览器当文档执行的扩展名一律拒。
+
+        公开媒体目录由 nginx 按扩展名直出，落一个 .html 进去 = 站点同源任意脚本
+        （存储型 XSS）。反证：从 RESTRICTED_EXTENSIONS 删掉 .html，本条变红。
+        """
+        for name in ("xss.html", "xss.htm", "xss.xhtml", "xss.svg", "xss.xml", "xss.js"):
+            resp = self._post(upload(name, b"<script>alert(1)</script>", "image/png"))
+            self.assertEqual(resp.status_code, 400, name)
+
     def test_classifies_image(self):  # 故事 #19
         resp = self._post(upload("a.png", b"x", "image/png"))
         self.assertEqual(resp.status_code, 201)

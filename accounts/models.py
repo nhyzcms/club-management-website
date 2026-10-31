@@ -1,4 +1,3 @@
-import os
 import uuid
 from datetime import timedelta
 
@@ -9,9 +8,13 @@ from django.db import models
 from django.db.models import prefetch_related_objects
 from django.utils import timezone
 
+from common.uploads import safe_extension
+
 
 def avatar_upload_path(instance, filename):
-    ext = os.path.splitext(filename)[1]
+    # 扩展名由服务端兜底（common.uploads.safe_extension）：绝不让 .html/.svg
+    # 这类会被浏览器当文档执行的后缀落进公开媒体目录。
+    ext = safe_extension(filename)
     return f"avatars/user_{instance.user_id}{ext}"
 
 
@@ -23,13 +26,13 @@ def private_media_storage():
 
 
 def identity_proof_upload_path(instance, filename):
-    ext = os.path.splitext(filename)[1].lower()
+    ext = safe_extension(filename)
     return f"identity_proofs/user_{instance.user_id}_{uuid.uuid4().hex}{ext}"
 
 
 def password_reset_proof_upload_path(instance, filename):
     """密码重置申请的身份证明：同样落私有存储（仅申请人 / 审批人可读）。"""
-    ext = os.path.splitext(filename)[1].lower()
+    ext = safe_extension(filename)
     return f"password_reset_proofs/user_{instance.user_id}_{uuid.uuid4().hex}{ext}"
 
 

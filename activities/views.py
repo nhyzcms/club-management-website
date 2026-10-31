@@ -6,6 +6,7 @@
 import os
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -20,6 +21,7 @@ from accounts.permissions import IsVerified
 
 from attachments.create import create_attachment
 from attachments.validation import upload_error
+from common.uploads import rename_upload, sniff_image_extension, sniff_pdf
 from messaging.services import thread_for
 from reviews.lifecycle import open_review
 from reviews.models import Review
@@ -60,7 +62,6 @@ from .serializers import ActivityDetailSerializer, ActivityListSerializer
 
 # 正文内嵌图片上限（与新闻一致）
 _CONTENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024
-_CONTENT_IMAGE_TYPES = ("image/jpeg", "image/png", "image/gif", "image/webp")
 
 
 def _content_image_path(filename):
@@ -68,10 +69,7 @@ def _content_image_path(filename):
     return f"activity_content_images/{uuid.uuid4().hex}{ext}"
 
 
-# 问卷文件题：允许的 content-type（图片 + PDF）
-_SURVEY_UPLOAD_TYPES = (
-    "image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf",
-)
+# 问卷文件题：上传类型按**真实内容**判定（见 common.uploads），这里不再白名单 content_type。
 
 
 def _survey_upload_path(filename):
@@ -528,12 +526,13 @@ class ActivityViewSet(viewsets.ModelViewSet):
             return Response({"detail": "请选择图片。"}, status=status.HTTP_400_BAD_REQUEST)
         if file.size > _CONTENT_IMAGE_MAX_SIZE:
             return Response({"detail": "图片不能超过 5MB。"}, status=status.HTTP_400_BAD_REQUEST)
-        if file.content_type not in _CONTENT_IMAGE_TYPES:
-            return Response(
-                {"detail": "仅支持 JPG、PNG、GIF、WebP 格式。"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        path = default_storage.save(_content_image_path(file.name), file)
+        # 只认真实解码成功的图片，并由服务端按识别结果改写扩展名（客户端声称的
+        # content_type 与 .html 后缀组合能在 /media/ 下留一个可执行文档）。
+        try:
+            ext = sniff_image_extension(file)
+        except ValidationError as exc:
+            return Response({"detail": exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
+        path = default_storage.save(_content_image_path(rename_upload(file, ext).name), file)
         return Response({"url": request.build_absolute_uri(default_storage.url(path))})
 
     @action(detail=False, methods=["post"], url_path="survey_upload")
@@ -545,10 +544,17 @@ class ActivityViewSet(viewsets.ModelViewSet):
         err = upload_error(file)  # 站点同步上限 + 禁止扩展名
         if err:
             return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
-        if file.content_type not in _SURVEY_UPLOAD_TYPES:
-            return Response(
-                {"detail": "仅支持图片（JPG / PNG / GIF / WebP）或 PDF。"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        path = default_storage.save(_survey_upload_path(file.name), file)
+        # 按真实内容判定类型：图片走 Pillow 解码，PDF 校验 %PDF- magic；
+        # 落盘扩展名一律由服务端给出（游客也能上传，绝不能留下 .html/.svg）。
+        try:
+            ext = sniff_image_extension(file)
+        except ValidationError:
+            if sniff_pdf(file):
+                ext = ".pdf"
+            else:
+                return Response(
+                    {"detail": "仅支持图片（JPG / PNG / GIF / WebP）或 PDF。"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        path = default_storage.save(_survey_upload_path(rename_upload(file, ext).name), file)
         return Response({"url": request.build_absolute_uri(default_storage.url(path))})

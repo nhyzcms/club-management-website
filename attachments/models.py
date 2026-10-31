@@ -8,13 +8,13 @@
 （用户侧）：T3 移除旧的内嵌附件模型后，统一模型成为唯一来源，故不再需要
 T1 时期的临时前缀 ``unified_*``。
 """
-import os
 import uuid
 
 from django.conf import settings
 from django.db import models
 
 from common.targets import TargetBackfillMixin
+from common.uploads import safe_extension
 
 from rest_framework_tus import states as tus_states
 from rest_framework_tus.models import AbstractUpload, custom_upload_path
@@ -22,7 +22,7 @@ from rest_framework_tus.models import AbstractUpload, custom_upload_path
 
 def attachment_upload_path(instance, filename):
     """扁平存储：attachments/<uuid>.<ext>（不再按父级分目录）。"""
-    ext = os.path.splitext(filename)[1]
+    ext = safe_extension(filename)
     return f"attachments/{uuid.uuid4().hex}{ext}"
 
 
