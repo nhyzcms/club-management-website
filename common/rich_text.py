@@ -14,6 +14,8 @@ import bleach
 import re
 import urllib.parse
 
+from django.conf import settings
+
 # 正文 HTML 白名单
 _ALLOWED_TAGS = [
     "p", "br", "hr",
@@ -45,21 +47,53 @@ _IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-popups allow-presentati
 _IFRAME_ALLOW = "autoplay; fullscreen; picture-in-picture"
 
 
+def _is_site_host(host: str) -> bool:
+    """host 是否属于本站（``ALLOWED_HOSTS``）——用于拒绝**同源 iframe**。
+
+    为什么必须拒同源：iframe 的 sandbox 同时给了 ``allow-scripts`` 与
+    ``allow-same-origin``，对**同源**文档而言这等于没有沙箱——iframe 内的脚本
+    可以直接读写父页面、发同源请求、读 ``csrftoken``。攻击者只要能让一段 HTML
+    落在本站同源（上传、遗留文件、其它漏检入口），再在正文里引用它，就能在
+    「审核台预览 / 新闻详情 / 关于页」这些自动渲染的地方执行任意脚本
+    （2026-10-31 审计 S-3 的攻击路径 A/B/C）。
+
+    跨源 iframe 不受影响：浏览器同源策略本来就不让它读我们的 DOM，
+    ``allow-same-origin`` 只是让它能访问**自己的** storage（B 站 / YouTube 播放器需要）。
+    """
+    host = (host or "").split(":")[0].strip().lower()
+    if not host:
+        return False
+    for allowed in getattr(settings, "ALLOWED_HOSTS", None) or []:
+        allowed = str(allowed).strip().lower()
+        if not allowed or allowed == "*":
+            continue
+        if allowed.startswith("."):
+            if host == allowed[1:] or host.endswith(allowed):
+                return True
+        elif host == allowed:
+            return True
+    return False
+
+
 def _iframe_attr_filter(tag, name, value):
     """bleach 属性回调：iframe 的 src 仅放行 https 或协议相对 //host（后者在 https 站点即 https，
     是常见 embed 惯例，如网易云外链播放器）；http / 相对路径 / javascript: 一律剥，剥后空壳 iframe
     由 _IFRAME_WITHOUT_SRC_RE 清除。其余属性须在安全白名单内（srcdoc / sandbox / allow / onload 等
-    不在内 → 剥离；sandbox 与 allow 由 _stamp_iframe_attrs 统一盖戳）。"""
+    不在内 → 剥离；sandbox 与 allow 由 _stamp_iframe_attrs 统一盖戳）。
+
+    另：指向**本站域名**的 iframe 一律剥（见 ``_is_site_host`` 的说明）——同源 + 允许脚本
+    = 等价于父页面内联脚本。"""
     if name == "src":
         try:
             parsed = urllib.parse.urlparse(value)
         except (ValueError, TypeError):
             return False
         if parsed.scheme == "https":
-            return True
+            # 同源 embed 等于把任意落盘 HTML 当脚本执行，直接拒
+            return not _is_site_host(parsed.netloc)
         # 协议相对（//host）：scheme 空、netloc 非空 → 在 https 站点即 https
         if parsed.scheme == "" and parsed.netloc:
-            return True
+            return not _is_site_host(parsed.netloc)
         return False
     return name in _IFRAME_SAFE_ATTRS
 
