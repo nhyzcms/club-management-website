@@ -311,16 +311,34 @@ def _stats_rows(stats):
     return rows
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_cell(value):
+    """CSV 公式注入防护（审计 M-5）。
+
+    以 ``= + - @ \\t \\r`` 开头的单元格会被 Excel 当公式执行；前置单引号强制按文本。
+    导出内容含匿名作答，不可信。
+    """
+    text = "" if value is None else str(value)
+    if text.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + text
+    return text
+
+
 def _stats_csv(sections):
     """统计 CSV。sections: [{title, stats}]；多份时加「问卷」列实现聚合。"""
     buf = io.StringIO()
     buf.write("\ufeff")  # BOM：Excel 打开中文不乱码
     w = csv.writer(buf)
     multi = len(sections) > 1
-    w.writerow(["问卷", "题目", "类型", "项目", "计数"] if multi else ["题目", "类型", "项目", "计数"])
+    w.writerow([_csv_cell(c) for c in (
+        ["问卷", "题目", "类型", "项目", "计数"] if multi else ["题目", "类型", "项目", "计数"]
+    )])
     for sec in sections:
         for row in _stats_rows(sec["stats"]):
-            w.writerow(([sec["title"]] + row) if multi else row)
+            row = ([sec["title"]] + row) if multi else row
+            w.writerow([_csv_cell(c) for c in row])
     return buf.getvalue()
 
 
@@ -334,14 +352,15 @@ def _responses_csv(sections):
         if multi:
             if i:
                 w.writerow([])
-            w.writerow([f"问卷：{sec['title']}"])
-        w.writerow(["用户", "提交时间"] + [q["title"] for q in sec["questions"]])
+            w.writerow([_csv_cell(f"问卷：{sec['title']}")])
+        w.writerow([_csv_cell(c) for c in ["用户", "提交时间"] + [q["title"] for q in sec["questions"]]])
         for label, submitted, answers in sec["data"]:
             answers = answers or {}
-            w.writerow(
+            row = (
                 [label, _local(submitted).strftime("%Y-%m-%d %H:%M:%S")]
                 + [_answer_display(q, answers.get(q["name"])) for q in sec["questions"]]
             )
+            w.writerow([_csv_cell(c) for c in row])
     return buf.getvalue()
 
 
