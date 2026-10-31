@@ -515,9 +515,11 @@ configure_env() {
   fi
 
   current_debug="$(env_get DJANGO_DEBUG || true)"
-  if [ -z "$current_debug" ] || [ "$current_debug" = "1" ] || [ "$current_debug" = "true" ]; then
-    env_set DJANGO_DEBUG 0
-  fi
+  # 归一化：空 / 1 / true / yes / on 一律写 0。旧逻辑只覆盖 1/true，
+  # `DJANGO_DEBUG=yes` 会原样留在生产（审计 H-6）。
+  case "$(printf '%s' "$current_debug" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+    ""|1|true|yes|on) env_set DJANGO_DEBUG 0 ;;
+  esac
 
   current_hosts="$(env_get ALLOWED_HOSTS || true)"
   if [ -z "$current_hosts" ]; then
