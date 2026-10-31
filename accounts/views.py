@@ -1834,16 +1834,16 @@ def user_content_view(request, id):
     from reviews.visibility import status_of
     if type_ == "news":
         from news.models import News
-        qs = News.objects.filter(author=viewed).filter(visibility.extra_q).select_related().order_by("-created_at", "-id")
+        qs = News.objects.filter(author=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
     elif type_ == "feedback":
         from reviews.models import Feedback
         qs = Feedback.objects.filter(creator=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
     elif type_ == "activities":
         from activities.models import Activity
-        qs = Activity.objects.filter(creator=viewed).filter(visibility.extra_q).select_related().order_by("-created_at", "-id")
+        qs = Activity.objects.filter(creator=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
     elif type_ == "tutorials":
         from tutorials.models import Tutorial
-        qs = Tutorial.objects.filter(uploader=viewed).filter(visibility.extra_q).select_related().order_by("-created_at", "-id")
+        qs = Tutorial.objects.filter(uploader=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
     else:  # tasks（visibility.denied 已保证仅本人到此）
         from tasks.models import Task
         qs = Task.objects.filter(assignee=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")

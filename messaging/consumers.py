@@ -81,7 +81,7 @@ def _thread_id(content) -> int | None:
 @database_sync_to_async
 def _can_see_thread(user, thread_id: int) -> bool:
     try:
-        thread = CommentThread.objects.select_related().get(pk=thread_id)
+        thread = CommentThread.objects.get(pk=thread_id)
     except CommentThread.DoesNotExist:
         return False
     try:
