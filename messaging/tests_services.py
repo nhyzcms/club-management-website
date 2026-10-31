@@ -9,8 +9,8 @@ from django.utils import timezone
 
 from accounts.models import Profile
 from accounts.test_helpers import grant_verification
-from common.models import SiteSettings
 from common.policy import invalidate_policy_cache
+from common.testing import set_policy
 from activities.models import Activity
 from news.models import News
 from reviews.models import UserMute
@@ -57,7 +57,7 @@ class ThreadAndCommentRulesTest(TestCase):
         self.assertEqual(self.thread.status, CommentThread.STATUS_OPEN)
 
     def test_depth_cap_rejects_and_does_not_reparent(self):
-        SiteSettings(comment_max_depth=1).save()
+        set_policy(comment_max_depth=1)
         invalidate_policy_cache()
         root = post_comment(self.thread, self.author, "root")
         with self.assertRaises(MessagingError) as ctx:
@@ -66,7 +66,7 @@ class ThreadAndCommentRulesTest(TestCase):
         self.assertEqual(Comment.objects.filter(thread=self.thread).count(), 1)
 
     def test_depth_cap_follows_get_policy(self):
-        SiteSettings(comment_max_depth=2).save()
+        set_policy(comment_max_depth=2)
         invalidate_policy_cache()
         root = post_comment(self.thread, self.author, "root")
         child = post_comment(self.thread, self.author, "child", parent=root)

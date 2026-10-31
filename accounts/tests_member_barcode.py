@@ -16,8 +16,8 @@ from accounts.member_codes import (
 )
 from accounts.member_lookup import is_signed_payload, resolve_signed_payload
 from accounts.models import MemberIdentity
-from common.models import SiteSettings
 from common.policy import CACHE_KEY
+from common.testing import set_policy
 
 CODE = compose_code("260205")  # 26020542
 
@@ -133,8 +133,7 @@ class SignedPayloadEndpointTest(TestCase):
         self.assertFalse(lookup(self.client, payload).json()["found"])
 
     def test_signed_path_throttled_by_ip(self):
-        SiteSettings.objects.get_or_create(pk=1)
-        SiteSettings.objects.filter(pk=1).update(member_lookup_per_ip_per_hour=2)
+        set_policy(member_lookup_per_ip_per_hour=2)
         cache.delete(CACHE_KEY)
         make_row()
         payload = barcode_payload(CODE)

@@ -15,9 +15,9 @@ from accounts.models import IdentityProof, Profile, Verification, is_verified
 from accounts.permissions import IsVerified
 from accounts.test_helpers import grant_verification
 from accounts.tokens import email_verification_token
-from common.models import SiteSettings
 from common.policy import get_policy
 from rest_framework.test import APIRequestFactory
+from common.testing import set_policy
 
 
 PNG_BYTES = bytes.fromhex(
@@ -26,12 +26,6 @@ PNG_BYTES = bytes.fromhex(
 )
 
 
-def set_policy(**kwargs):
-    obj, _ = SiteSettings.objects.get_or_create(pk=1)
-    for key, value in kwargs.items():
-        setattr(obj, key, value)
-    obj.save()
-    return obj
 
 
 class _PolicyTestCase(TestCase):

@@ -11,8 +11,8 @@ from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from common.models import SiteSettings
 from reviews.models import Review
+from common.testing import set_policy
 
 
 def _grant(user, app_label, *codenames):
@@ -72,9 +72,7 @@ class ContentReviewDisabledSkipsQueueTest(TestCase):
     def setUp(self):
         super().setUp()
         cache.clear()
-        obj, _ = SiteSettings.objects.get_or_create(pk=1)
-        obj.content_review_enabled = False
-        obj.save()
+        set_policy(content_review_enabled=False)
 
     def tearDown(self):
         cache.clear()

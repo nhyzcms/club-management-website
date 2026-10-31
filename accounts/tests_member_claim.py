@@ -14,7 +14,7 @@ from accounts.member_codes import make_signature
 from accounts.member_roster import claim_candidates, claim_identity, commit_import, parse_roster
 from accounts.models import AccountIdentity, MemberIdentity, Profile, UserSession
 from accounts.tests_register import valid_payload
-from common.models import SiteSettings
+from common.testing import set_policy
 
 
 def make_row(name="张三", cohort=2, phone="11451419198", code="26020001", card_no=""):
@@ -134,7 +134,7 @@ class MemberIdentityApiTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_claim_disabled_by_policy(self):
-        SiteSettings(pk=1, member_claim_enabled=False).save()
+        set_policy(member_claim_enabled=False)
         row = make_row()
         resp = self.client.post(
             "/auth/member/claim/",
