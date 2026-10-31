@@ -29,6 +29,15 @@ class VerificationClosed(Exception):
     """认证通道已关闭，无法通过或驳回身份审核。"""
 
 
+class IdentityReviewDenied(Exception):
+    """审核动作被权限边界拒绝（自审 / 停用超管）。"""
+
+
+def _require_not_self(user, reviewer):
+    if reviewer is not None and user.pk == reviewer.pk:
+        raise IdentityReviewDenied("不能审核自己的身份材料")
+
+
 def _require_verification_open():
     if not get_policy().verification_enabled:
         raise VerificationClosed("认证通道已关闭")
@@ -66,6 +75,7 @@ def approve_manual(user, reviewer):
     expires_at = 通过日 + 认证有效期（ADR-0041）。
     """
     _require_verification_open()
+    _require_not_self(user, reviewer)
     now = timezone.now()
     expires_at = now + timedelta(days=verification_valid_days())
     verification, _ = Verification.objects.get_or_create(
@@ -101,6 +111,7 @@ def reject_manual(user, reviewer):
     reviewer 保留与 approve 对称的签名，驳回不写入 verified_by。
     """
     _require_verification_open()
+    _require_not_self(user, reviewer)
     verification, _ = Verification.objects.get_or_create(
         user=user, channel=Verification.CHANNEL_MANUAL,
         defaults={"status": Verification.STATUS_REJECTED},
@@ -131,7 +142,12 @@ def disable_user(user):
 
     账号级动作，与认证通道无关——被停用账号既不能登录、既有会话也被立即吊销。
     认证通道关闭时仍可执行。
+
+    超级管理员不走该路径（审计 M-8）：审核动作是「社务管理」，不能把平台所有者
+    一键停用；需要停用超管时由超管本人在 admin / shell 处理。
     """
+    if user.is_superuser:
+        raise IdentityReviewDenied("不能停用超级管理员")
     if user.is_active:
         user.is_active = False
         user.save(update_fields=["is_active"])
@@ -203,6 +219,13 @@ def _verification_closed_payload():
     )
 
 
+def _identity_denied_payload(exc):
+    return Response(
+        {"detail": str(exc), "reason": "identity_review_denied"},
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 class IdentityReviewViewSet(viewsets.ReadOnlyModelViewSet):
     """人工通道审核队列：一用户一行（其 manual Verification），通过 / 驳回 / 停用。"""
 
@@ -232,6 +255,8 @@ class IdentityReviewViewSet(viewsets.ReadOnlyModelViewSet):
             approve_manual(verification.user, reviewer=request.user)
         except VerificationClosed:
             return _verification_closed_payload()
+        except IdentityReviewDenied as exc:
+            return _identity_denied_payload(exc)
         verification.refresh_from_db()
         return Response(self.get_serializer(verification).data)
 
@@ -242,12 +267,17 @@ class IdentityReviewViewSet(viewsets.ReadOnlyModelViewSet):
             reject_manual(verification.user, reviewer=request.user)
         except VerificationClosed:
             return _verification_closed_payload()
+        except IdentityReviewDenied as exc:
+            return _identity_denied_payload(exc)
         verification.refresh_from_db()
         return Response(self.get_serializer(verification).data)
 
     @action(detail=True, methods=["post"])
     def disable(self, request, pk=None):
         verification = self.get_object()
-        disable_user(verification.user)
+        try:
+            disable_user(verification.user)
+        except IdentityReviewDenied as exc:
+            return _identity_denied_payload(exc)
         verification.refresh_from_db()
         return Response(self.get_serializer(verification).data)
