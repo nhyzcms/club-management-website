@@ -34,16 +34,17 @@ def get_client_ip(request):
     * **unix socket 反代**：``REMOTE_ADDR`` 整个缺失（unix socket 没有对端地址）；
     * TCP 反代：``REMOTE_ADDR`` 是 127.0.0.1 / ::1。
 
-    这两种情况都只信任 ``X-Forwarded-For`` **第一跳**（nginx 用
-    ``$proxy_add_x_forwarded_for`` 写入），避免外部直连伪造请求头把登录记录写歪。
+    这两种情况都只信任 ``X-Forwarded-For`` **末段**：nginx 用
+    ``$proxy_add_x_forwarded_for`` 把真实客户端 IP **追加**在末尾，最左段是
+    客户端自带、可伪造的值（审计 M-4）。``X-Real-IP`` 作为只设该头的反代回退。
     """
     remote = (request.META.get("REMOTE_ADDR") or "").strip()
     if remote in ("", "127.0.0.1", "::1"):
         forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
         if forwarded:
-            first = forwarded.split(",")[0].strip()
-            if first:
-                return first
+            parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+            if parts:
+                return parts[-1]
         # 只设了 X-Real-IP 的反代（部分配置）也接受
         real_ip = (request.META.get("HTTP_X_REAL_IP") or "").strip()
         if real_ip:
