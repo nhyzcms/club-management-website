@@ -15,7 +15,7 @@
 | 样式 | 手写 CSS | 全站设计层 `src/styles/cobalt.css`（钴蓝校徽主题，token 来源 DESIGN.md）+ 组件/页面就近 CSS |
 | 富文本 | Tiptap 3 | starter-kit、table、mention、image、link、code-block-lowlight、highlight、text-style、text-align、character-count、bubble/floating menu 等；自定义节点见 `components/rte/` |
 | 问卷 | SurveyJS 3（survey-core / react-ui / creator-* / analytics） | 调研填写、问卷编辑器、答复与统计 |
-| 其他依赖 | chart.js、frappe-gantt、docx-preview、mammoth、lowlight、tus-js-client、l2d | 见「静态资源与第三方库」 |
+| 其他依赖 | chart.js、frappe-gantt、docx-preview、mammoth、lowlight、tus-js-client、l2d、barcode-detector | 见「静态资源与第三方库」 |
 | 包管理 | npm（`package-lock.json`） | 后端为 uv，前端独立 |
 
 运行形态：无 SSR、无服务端模板变量（唯一的模板层交互是 Django 渲染 `index.html` 下发 Cookie），环境差异全部通过相对路径 + `/static/`、`/media/` 前缀与 dev server 代理抹平。设计约定：页面组件默认套 `AppShell`（顶栏 + 用户菜单 + 页脚），社区视觉走 `.cs` 作用域与 `--brand-*` 等 token；不引入 UI 组件库。
@@ -164,6 +164,7 @@ frontend/
 | `/register` | `RegisterPage` |  | 自助注册（用户名 + 双密码 + 真实姓名 / 身份 + Turnstile；成功即登录、进入社员认领阶段） |
 | `/verify-email` | `VerifyEmailPage` |  | 邮箱认证落地页（邮件链接带 `?uid=&token=`） |
 | `/verify-email-pending` | `VerifyEmailPendingPage` |  | 重发认证邮件（`?email=` 可预填） |
+| `/v` | `MemberLookupPage` |  | 编号查询入口（摄像头扫工牌 Code128 条码 / 手动输入；12 位载荷免额度，8 位编号 / 真实姓名按身份额度） |
 | `/v/:code` | `MemberVerifyPage` |  | 社员识别码公开校验页（`?s=` 签名；只出最小公开字段） |
 | `/verify` | `StepUpPage` | ✅ | 安全验证（Step-up）：`?action=&next=`，完成回跳原操作 |
 | `/security` | `SecurityCenterPage` | ✅ | 账号与安全中心：登录方式、设备、登录记录、滚动密钥、恢复代码；旧 `?tab=security/password/sessions` 会 `replace` 到这里 |
@@ -339,8 +340,9 @@ Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?emb
 - **看板娘（Live2D）**：`vendor/live2d/`（runtime + widget + 模型 + `catalog.json`）构建时拷到 `/static/live2d/`，运行时经 `l2d` npm 包渲染 Cubism 2/6 模型。`MascotHost` 分三态：`widget`（完整挂件，独立懒加载 chunk `mascot/loadWidget`）/ `chip`（「看板娘」小按钮）/ `none`（窄屏 ≤1024px、系统 `prefers-reduced-motion`、考试看板且关闭偏好）。开关存 localStorage（`mascot.enabled`）；考试看板经 `examBoard/prefs.ts` 与 `mascot/speak.ts` 让看板娘播报考试提示与倒计时语音。
 - **Marzipano（校园全景）**：**不是 npm 依赖**——它是服务端多级分层方案（[ADR-0022](../adr/0022-campus-panorama-library.md)）的渲染端，运行时由 `utils/marzipano.ts::loadMarzipano()` 从自托管静态资源 `/static/panorama/marzipano.js` 注入脚本（幂等、失败可重试、不发任何第三方请求）。该文件与旧静态全景页共用，并已被 `scripts/pack-release.sh` 与 `scripts/check_panorama_static.py` 纳入发布完整性校验；**退役 `static/panorama/` 前必须先把 `marzipano.js` 迁到新位置并同步 `constants.ts::PANORAMA_RENDERER_URL`**。
 - **Cloudflare Turnstile**：`turnstile.ts` 在注册/找回密码/重发认证邮件/匿名反馈处按需注入脚本（未启用时零请求）；`turnstile_enabled` 与 sitekey 由 `/site-policy/` 下发，`useTurnstile` 负责渲染、重置与卸载组件。
-- **富文本**：Tiptap 3 编辑器（`RichTextEditor.tsx`），自定义原子节点 `rte/VideoNode.ts`（本地上传视频）与 `rte/IframeNode.ts`（仅 https iframe 嵌入，sandbox 属性与后端 `common/rich_text.py` 保持一致）；`utils/iframeEmbed.ts` 解析用户粘贴的 embed HTML（仅取首个 iframe 的 src/title，安全边界仍在服务端 sanitize）。工具栏扩展高亮 / 文字颜色 / 对齐 / 上下标 / 字数统计与选区气泡菜单、空行浮动菜单；新闻编辑页（`NewsFormPage`）为文档式布局，编辑内容自动保存至服务端草稿区（已发布稿存 `draft_*`，未发布稿直写正文；读写弃均须 `news.manage_news`），详情页提供「编辑 / 继续编辑」入口。
+- **富文本**：Tiptap 3 编辑器（`RichTextEditor.tsx`），自定义原子节点 `rte/VideoNode.ts`（本地上传视频）与 `rte/IframeNode.ts`（仅 https iframe 嵌入，sandbox 属性与后端 `common/rich_text.py` 保持一致）；`utils/iframeEmbed.ts` 解析用户粘贴的 embed HTML（仅取首个 iframe 的 src/title，安全边界仍在服务端 sanitize）。工具栏扩展高亮 / 文字颜色 / 对齐 / 上下标 / 字数统计与选区气泡菜单、空行浮动菜单；新闻编辑页（`NewsFormPage`）为文档式布局，编辑内容自动保存至服务端草稿区（已发布稿存独立草稿表 `NewsDraft`、模型上保留 `draft_*` 只读属性，未发布稿直写正文；读写弃均须 `news.manage_news`），详情页提供「编辑 / 继续编辑」入口。
 - **文档处理**：`DocxPreview`（docx-preview 保真渲染 Word 原件）与 mammoth（Word 导入转富文本）；全站弹窗公告的 PDF 原件用内置 **pdf.js**（`vendor/pdfjs/`：解析器 + worker + CJK CMap，构建时直拷到 `/static/pdfjs/`，不进 bundle——`PdfPreview` 按页懒渲染，页数封顶）。
+- **条码解码（`barcode-detector`）**：`MemberLookupPage`（`/#/v`）的摄像头扫码按需动态加载 `barcode-detector`（zxing wasm 兜底；iOS 没有原生 `BarcodeDetector`），只解 Code128。wasm 文件来自其依赖 `zxing-wasm`，由 webpack 的 `asset/resource` 规则发射成带 contenthash 的静态资源，运行时用 `prepareZXingModule({ overrides: { locateFile } })` 指回自托管副本——默认实现会去 jsdelivr 取 wasm，国内基本取不到；wasm 约 950KB，只在点「扫码」时下载，不进首屏。
 - **其他**：`frappe-gantt`（任务甘特，`TaskGantt`，配色映射 cobalt token）；`tus-js-client`（超过同步上限的大文件走 tus 可续传上传，端点 `/uploads/files/`，完成后后端自动挂为统一附件）；字体 Sora / Noto Sans SC 由 `cobalt.css` 以 Google Fonts `@import` 引入。
 
 ## 开发惯例

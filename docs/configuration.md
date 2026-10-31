@@ -198,6 +198,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `member_claim_per_user_per_hour` | `5` | 每账号每小时认领**失败**次数（只计失败） |
 | `member_claim_per_ip_per_day` | `20` | 每 IP 每日认领**失败**次数 |
 | `member_check_per_ip_per_hour` | `60` | 每 IP 每小时扫码校验次数（公开端点，计全部请求） |
+| `member_lookup_per_ip_per_hour` | `300` | 每 IP 每小时 12 位条码载荷查询次数（`/#/v` 摄像头扫码 / 扫码枪；计全部请求，不占按身份的 24 小时额度） |
 | `stepup_email_per_user_per_hour` | `5` | 安全验证邮箱验证码每小时上限（按账号） |
 | `stepup_email_per_ip_per_hour` | `10` | 安全验证邮箱验证码每小时上限（按 IP） |
 | `sync_upload_max_bytes` | `52428800`（50MB） | 同步上传单文件上限 |

@@ -44,13 +44,13 @@
 | POST | `/tasks/tasks/{id}/assign/` | 登录 | `tasks.assign_task` | 指派 / 清空负责人 |
 | GET | `/tasks/tasks/my_tasks/` | 登录 | — | 我的任务（分页）|
 | GET | `/tasks/tags/` | 登录 | — | 标签全量裸数组（不分页）|
-| POST | `/tasks/tags/` | 登录 | `tasks.manage_tags` | 新建标签 |
+| POST | `/tasks/tags/` | 登录 | `common.manage_tags` | 新建标签 |
 | GET | `/tasks/tags/{id}/` | 登录 | — | 标签详情 |
-| PUT / PATCH | `/tasks/tags/{id}/` | 登录 | `tasks.manage_tags` | 编辑标签 |
-| DELETE | `/tasks/tags/{id}/` | 登录 | `tasks.manage_tags` | 删除标签 |
+| PUT / PATCH | `/tasks/tags/{id}/` | 登录 | `common.manage_tags` | 编辑标签 |
+| DELETE | `/tasks/tags/{id}/` | 登录 | `common.manage_tags` | 删除标签 |
 | GET | `/tasks/` | 登录 | — | DRF 路由根（索引，自动生成）|
 
-「已认证」指 `IsVerified`（任一认证通道 approved，ADR-0006）；`tasks.manage_tasks` / `tasks.manage_tags` / `tasks.assign_task` 是模型权限代号，社长默认组持有。
+「已认证」指 `IsVerified`（任一认证通道 approved，ADR-0006）；`tasks.manage_tasks` / `common.manage_tags` / `tasks.assign_task` 是模型权限代号，社长默认组持有。标签模型 2026-10 移入 `common`（表名 `tasks_tag` 与 `/tasks/tags/` 路径不变，权限代号变 `common.manage_tags`；既有授权已随迁移复制）。
 
 列表 / 详情中的用户引用统一为 `{id, username, nickname, avatar}`；仅当查看者即本人时额外带 `email`。时间字段为 UTC ISO 8601（如 `2026-09-19T04:30:00Z`）。
 
@@ -361,7 +361,7 @@
 ### 新建标签
 `POST /tasks/tags/`
 
-**认证**：登录；**权限**：`tasks.manage_tags`
+**认证**：登录；**权限**：`common.manage_tags`
 
 **请求体**
 
@@ -372,12 +372,12 @@
 
 **响应 `201 Created`**：`{ "id": 6, "name": "招新", "color": "#007bff", "task_count": 0 }`（`task_count` 只读）。
 
-**错误**：400 字段校验（重名等）；403 无 `tasks.manage_tags`。
+**错误**：400 字段校验（重名等）；403 无 `common.manage_tags`。
 
 ### 标签详情与维护
 `GET / PUT / PATCH / DELETE /tasks/tags/{id}/`
 
-**认证**：登录；**权限**：读 —；写（PUT / PATCH / DELETE）需 `tasks.manage_tags`
+**认证**：登录；**权限**：读 —；写（PUT / PATCH / DELETE）需 `common.manage_tags`
 
 - **GET**：响应 `200 OK` 单个标签对象；404 不存在。
 - **PUT / PATCH**：请求体 `name` / `color`（PUT 需给全，PATCH 可局部）；响应 `200 OK` 标签对象；400 校验失败；403 无权限；404 不存在。

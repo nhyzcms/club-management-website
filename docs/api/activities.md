@@ -7,11 +7,12 @@
 ## 模块约定
 
 - **路径前缀**：`config/urls.py` 把本 app 挂在 `/activities/`，router 内又注册了 `activities` → 全部端点形如 `/activities/activities/…`；`GET /activities/` 只是 DRF 路由根（罗列路由名），无业务语义。
-- **类型与状态机**（`activities/lifecycle.py`，惰性流转，无定时任务）：
+- **类型与状态机**（判定真源 `activities/state.py::calc_state`，守卫在 `activities/lifecycle.py`；惰性流转，无定时任务）。
+  - 落库的 `status` 是**最近一次结算的快照**：读入口（列表 / 详情）会先跑惰性流转再返回，但任何时刻都应以 `calc_state` 的判定为准（如「已过截止但快照仍是 open」在判定层已按已结束处理）。
   - 众议 `deliberation`：`scheduled`（待开始）→ `open`（投票中）→ `closed`（已截止）
   - 征集 `collection`：`scheduled` → `collecting`（收件中）→ `reviewing`（复审中）→ `archived`；`review_enabled=false` 时跳过复审，收件结束直接 `archived`
   - 展示 `exhibition`：`scheduled` → `open`（展示中）→ `closed`；调研 `survey`：`scheduled` → `open`（征答中）→ `closed`
-  - 设未来的 `start_at` 即进入 `scheduled`，到点自动开放（征集→`collecting`，其余→`open`）；到 `end_at` 自动结算众议 / 展示 / 调研。征集无 `end_at` 惰性结算，由「提前关闭」或满 `max_submissions` 收口。
+  - 设未来的 `start_at` 即进入 `scheduled`，到点自动开放（征集→`collecting`，其余→`open`）；到 `end_at` 自动结算众议 / 展示 / 调研。**征集到 `end_at` 立即停止收件**（判定层即时生效），落库状态由读入口惰性推进到 `reviewing` / `archived`（按 `review_enabled`）；`max_submissions` 满额同样收口。
   - **长期活动**（`is_permanent=true`）：不设截止，`end_at` 恒为 `null`，永不被时间自动结算；只能由发起人或持 `activities.manage_activity` 者调用 `close` 手动终结。`is_permanent` 与 `end_at` 二选一（勾选长期时传 `end_at` 会 400）。征集的 `max_submissions` 满额自动收口仍然生效（数量上限是显式配置，与时间无关）。
 - **审核轴**（`reviews` app，[ADR-0017](../adr/0017-unified-moderation-system.md)）：`review_status` ∈ `pending` / `approved` / `rejected` / `removed` / `null`（尚无审核行），只门控「公开展示」，不阻断活动自身状态机。列表 / 详情只出已过审（或无审核行）的活动；自己发起的全部活动（含待审 / 驳回 / 下架）走 `mine` 预览。
 - **`owed`**（列表 / 详情字段）：`vote` / `submit` / `null`——已认证成员在「投票中且未投」「收件中且未投」「展示中启用投票且未投」时欠的行动；仅对已认证成员计算。
@@ -192,7 +193,7 @@
 
 **认证**：登录；**权限**：发起人或 `activities.manage_activity`（对象级）。无状态门禁，任意状态可删。
 
-**响应 `204 No Content`**（无响应体）。删除调研活动会连带回收其关联问卷（`post_delete` 信号；加入单例问卷不挂活动，不受影响）。
+**响应 `204 No Content`**（无响应体）。**删除调研活动不会删除其问卷与作答**（`Activity.questionnaire` 为 `SET_NULL`）：问卷变成无活动引用的孤儿行、历史作答完整保留，可在后台按「调研活动」为空识别并人工处置；加入单例问卷不挂活动，不受影响。
 
 ### 我发起的活动
 

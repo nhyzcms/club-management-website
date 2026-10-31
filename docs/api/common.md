@@ -45,6 +45,7 @@
   "member_claim_per_user_per_hour": 5,
   "member_claim_per_ip_per_day": 20,
   "member_check_per_ip_per_hour": 60,
+  "member_lookup_per_ip_per_hour": 300,
   "stepup_email_per_user_per_hour": 5,
   "stepup_email_per_ip_per_hour": 10,
   "sync_upload_max_bytes": 52428800,
@@ -88,6 +89,7 @@
 | member_claim_per_user_per_hour | int | `5` | 每账号每小时认领**失败**次数（只计失败） |
 | member_claim_per_ip_per_day | int | `20` | 每 IP 每日认领**失败**次数 |
 | member_check_per_ip_per_hour | int | `60` | 每 IP 每小时扫码校验次数（公开端点；计全部请求） |
+| member_lookup_per_ip_per_hour | int | `300` | 每 IP 每小时 12 位条码载荷查询次数（`/auth/member/lookup/` 的签名载荷通路；计全部请求，不占按身份的 24 小时额度）。消费方：`accounts.throttles.MemberLookupThrottle` |
 | stepup_email_per_user_per_hour | int | `5` | 安全验证邮箱验证码每小时上限（按账号） |
 | stepup_email_per_ip_per_hour | int | `10` | 安全验证邮箱验证码每小时上限（按 IP） |
 | sync_upload_max_bytes | int | `52428800`（50MB） | 同步上传单文件上限（任意类型）；超过则仅图片 / 视频可走 tus。消费方：`attachments` |

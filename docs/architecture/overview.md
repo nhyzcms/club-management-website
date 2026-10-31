@@ -58,10 +58,10 @@
 | App | 职责 | 关键概念 | 参考 |
 |---|---|---|---|
 | `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、账号安全中心、资料与头像 | 多端登录（3 台）、登录保护、陌生设备挑战、滚动密钥、登录事件、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) · [账号与安全](../guides/account-security.md) |
-| `common` | 站点策略、维护模式 | `SiteSettings` 运行时策略 | [API](../api/common.md) |
+| `common` | 站点策略、维护模式、跨模块公共模型 | `SiteSettings` 运行时策略；`Tag`（表名沿用 `tasks_tag`）；`ContentTarget` 内容锚点（评论 / 审核 / 举报 / 附件的宿主定位） | [API](../api/common.md) |
 | `news` | 社团新闻 | 发布审核门控 | [API](../api/news.md) |
-| `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
-| `tasks` | 任务与标签 | 状态机（`lifecycle.py`） | [API](../api/tasks.md) |
+| `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期（`state.calc_state` 判定）、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
+| `tasks` | 任务 | 状态机（`lifecycle.py`） | [API](../api/tasks.md) |
 | `tutorials` | 教程文章 | 收藏 | [API](../api/tutorials.md) |
 | `messaging` | 评论、私信、通知、横幅、禁言 | 评论区三态、WebSocket 推送 | [API](../api/messaging.md) |
 | `reviews` | 审核系统 | 发布审核 / 意见反馈 / 举报案 | [API](../api/reviews.md) · [审核指南](../guides/moderation.md) |

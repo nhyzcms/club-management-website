@@ -15,7 +15,7 @@
 | `survey` | 调研 | 每场调研一份 | 调研活动 `OneToOne` 指向 |
 | `join` | 自我介绍 | **全站单例** | 加入流程（`Questionnaire.get_join()`） |
 
-- **`kind=survey`**：一场调研活动创建时自动生成一份，删除活动时随之回收（`post_delete` 信号，只删 `kind=survey`）。
+- **`kind=survey`**：一场调研活动创建时自动生成一份，活动与问卷为 `SET_NULL` 关联——**删除活动不会删除问卷，也不会删除任何作答**（问卷变无活动引用的孤儿行，可在后台问卷列表按「调研活动」为空识别、人工处置；历史作答按提交时的 schema 快照解释）。
 - **`kind=join`**：自我介绍问卷，全站唯一，由数据库部分唯一约束 `unique_join_questionnaire` 兜底；后台**不允许删除**（`QuestionnaireAdmin.has_delete_permission` 对 join 恒假）。
 
 Schema 形状与校验：必须是含 `pages` 的 JSON 对象（`common/survey_schema.py:validate_schema_dict`），否则写入被拒（`Schema 须包含 pages`）。默认调研 Schema 是一页空问卷；默认加入 Schema 含 `grade` / `skills` / `source` / `other_source` / `intro` 五个元素与一条跳题 trigger。
@@ -43,7 +43,7 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 
 ### 状态机与受众
 
-调研的状态机与众议相同（`activities/lifecycle.py`，惰性流转、无定时任务）：
+调研的状态机与众议相同（判定真源 `activities/state.py::calc_state`，惰性流转、无定时任务）：
 
 - `scheduled`（待开始）→ 到 `start_at` 自动 `open`（征答中）→ 到 `end_at` 自动 `closed`（已结束）。
 - 不填 `start_at` 则创建即 `open`；发起人或持 `activities.manage_activity` 者可**提前结束征答**（`POST /activities/activities/{id}/close/`，仅 `open` 可关）。
@@ -104,6 +104,8 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 4. `audience === "public"` 或已登录。
 
 `answers` 的键名与 SurveyJS 元素 `name` 一一对应，按原样 JSON 落库（`QuestionnaireResponse.answers`）。**服务端不校验必填/跳题**——`isRequired`、`visibleIf`、`triggers` 都是前端 SurveyJS 的行为，后端只存 JSON。需要强约束时，应在 Schema 之外另设校验或人工核查。
+
+**历史作答按提交时的 Schema 解释**：新建作答时自动快照当时的问卷 Schema（`QuestionnaireResponse.schema_snapshot`），之后改题 / 删题不会让旧作答错位——统计、只读查看与导出都按提交时的题目结构读取（快照为空的历史行回退当前 Schema）。
 
 ## 五、结果与统计入口
 

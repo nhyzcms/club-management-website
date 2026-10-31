@@ -63,7 +63,7 @@
 | GET | `/auth/member/` | 登录 | — | 本人社员身份 + 可认领候选（[ADR-0025](../adr/0025-member-identity.md)） |
 | POST | `/auth/member/claim/` | 登录 | — | 自助认领（身份 + 手机号后四位） |
 | GET | `/auth/member/check/` | 公开 | — | 扫码校验（签名；最小公开字段） |
-| GET/POST | `/auth/member/lookup/` | 公开 | — | 社员查询（真实姓名 / 社员编号；GET 只读额度，POST 计次） |
+| GET/POST | `/auth/member/lookup/` | 公开 | — | 社员查询（真实姓名 / 8 位编号 / 12 位条码载荷；GET 只读额度，POST 计次） |
 | GET | `/auth/stepup/` | 登录 | — | 安全验证方式总览（[ADR-0026](../adr/0026-stepup-verification.md)） |
 | POST | `/auth/stepup/email/send/` | 登录 | — | 发送邮箱验证码（60s 冷却 / 小时限） |
 | POST | `/auth/stepup/verify/` | 登录 | — | 验证并签发 grant（10 分钟） |
@@ -228,7 +228,7 @@
 | 字段 | 源权限代号 | 字段 | 源权限代号 |
 |---|---|---|---|
 | can_manage_news | `news.manage_news` | can_manage_tasks | `tasks.manage_tasks` |
-| can_assign_task | `tasks.assign_task` | can_manage_tags | `tasks.manage_tags` |
+| can_assign_task | `tasks.assign_task` | can_manage_tags | `common.manage_tags` |
 | can_change_activity | `activities.manage_activity` | can_view_feedback | `reviews.read_feedback` |
 | can_handle_reports | `reviews.handle_report` | can_review_collections | `activities.review_collection` |
 | can_edit_about | `about.manage_aboutpage` | can_manage_panoramas | `panorama.manage_panoramas` |
@@ -701,6 +701,7 @@
 |---|---|
 | 400 | 空查询：`{"error": "请输入真实姓名或社员编号。"}` |
 | 429 | 额度用尽：`{"error": "查询次数已达上限（每 24 小时最多 N 次），请稍后再试。", "quota": {…}, "retry_after": 3600}` |
+| 429 | 12 位条码载荷频控超限：`{"error": "请求过于频繁，请稍后再试。"}`（`member_lookup_per_ip_per_hour`，计全部载荷查询） |
 
 
 ### 安全验证（Step-up，[ADR-0026](../adr/0026-stepup-verification.md) · [ADR-0043](../adr/0043-stepup-factor-registry.md)）

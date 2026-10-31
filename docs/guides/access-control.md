@@ -29,7 +29,7 @@
 | `activities.review_collection` | 可复审征集作品 |
 | `tasks.manage_tasks` | 管理任务 |
 | `tasks.assign_task` | 指派任务 |
-| `tasks.manage_tags` | 管理任务标签 |
+| `common.manage_tags` | 管理标签（新闻与任务共用） |
 | `tutorials.manage_tutorials` | 可管理教程 |
 | `about.manage_aboutpage` | 可编辑关于页 |
 | `panorama.manage_panoramas` | 可管理校园全景图 |
@@ -70,7 +70,7 @@
 | `can_manage_news` | `news.manage_news` |
 | `can_manage_tasks` | `tasks.manage_tasks` |
 | `can_assign_task` | `tasks.assign_task` |
-| `can_manage_tags` | `tasks.manage_tags` |
+| `can_manage_tags` | `common.manage_tags` |
 | `can_change_activity` | `activities.manage_activity` |
 | `can_review_collections` | `activities.review_collection` |
 | `can_edit_about` | `about.manage_aboutpage` |
