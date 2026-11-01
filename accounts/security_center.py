@@ -39,6 +39,32 @@ def _body(request):
         return {}
 
 
+def _guard_factor_change(request, body):
+    """新增二次验证因子前的身份确认；返回 None 表示放行，否则返回错误响应。
+
+    威胁模型（生产实测链路）：会话被 XSS / 窃取后，攻击者若能**无验证地**给自己
+    加一个掌握在手里的 TOTP，就能用它通过 ``change_password`` 的 step-up 改密码，
+    最终接管账号（对管理员 = 提权）。所以「添加因子」本身必须验人。
+
+    两条放行通道：
+    1. 已有 ``manage_totp`` 的 step-up grant（刚在验证页通过）；
+    2. 重输**登录密码**——首次绑定没有任何因子可用时的引导通道，与
+       ``stepup_questions_view`` 首设安全问题的口径一致（偷到会话但没密码的人过不去）。
+    """
+    if stepup.grant_from_request(request, "manage_totp"):
+        return None
+    password = str((body or {}).get("password") or "")
+    if password and request.user.check_password(password):
+        return None
+    return JsonResponse(
+        {
+            "error": "请重新输入登录密码以确认身份。",
+            "reason": "password_required",
+        },
+        status=400,
+    )
+
+
 def _mask_email(address: str) -> str:
     address = (address or "").strip()
     if "@" not in address:
@@ -228,7 +254,14 @@ def totp_list_view(request):
 @require_POST
 @login_required
 def totp_setup_view(request):
-    """新建一条未确认的 TOTP：返回 secret、otpauth URI 与二维码（data URI）。"""
+    """新建一条未确认的 TOTP：返回 secret、otpauth URI 与二维码（data URI）。
+
+    需先验人（step-up 或重输密码）——否则拿到会话的人可以塞一个自控因子。
+    """
+    body = _body(request)
+    denied = _guard_factor_change(request, body)
+    if denied is not None:
+        return denied
     confirmed = TotpDevice.objects.filter(user=request.user, confirmed_at__isnull=False).count()
     pending = TotpDevice.objects.filter(user=request.user, confirmed_at__isnull=True).count()
     if confirmed >= MAX_TOTP:
@@ -274,8 +307,15 @@ def totp_setup_view(request):
 @require_POST
 @login_required
 def totp_confirm_view(request):
-    """用 6 位码确认一条 TOTP；首次确认时顺带生成一组恢复代码。"""
+    """用 6 位码确认一条 TOTP；首次确认时顺带生成一组恢复代码。
+
+    与 setup 同样需要验人：否则攻击者可以先 setup（拿到 secret）再 confirm，
+    绕过 setup 处的闸门。
+    """
     body = _body(request)
+    denied = _guard_factor_change(request, body)
+    if denied is not None:
+        return denied
     device = get_object_or_404(
         TotpDevice,
         pk=body.get("id"),

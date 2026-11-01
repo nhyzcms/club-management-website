@@ -87,8 +87,11 @@ class TotpApiTests(TestCase):
         self.user = User.objects.create_user(username="totp_u", password="Passw0rd!2026")
         self.client.force_login(self.user)
 
+    PASSWORD = "Passw0rd!2026"
+
     def _setup(self, label="iPhone"):
-        resp = _post(self.client, "/auth/totp/setup/", {"label": label})
+        # 2026-10 起「添加因子」必须验人：step-up grant 或重输密码（此处走密码通道）
+        resp = _post(self.client, "/auth/totp/setup/", {"label": label, "password": self.PASSWORD})
         self.assertEqual(resp.status_code, 200, resp.content)
         return resp.json()
 
@@ -98,7 +101,7 @@ class TotpApiTests(TestCase):
         self.assertIn("otpauth://totp/", created["otpauth"])
 
         code = totp.code_at(created["secret"])
-        resp = _post(self.client, "/auth/totp/confirm/", {"id": created["id"], "code": code})
+        resp = _post(self.client, "/auth/totp/confirm/", {"id": created["id"], "code": code, "password": self.PASSWORD})
         self.assertEqual(resp.status_code, 200, resp.content)
         codes = resp.json()["recovery_codes"]
         self.assertEqual(len(codes), 10)
@@ -118,7 +121,7 @@ class TotpApiTests(TestCase):
 
     def test_confirm_rejects_wrong_code(self):
         created = self._setup()
-        resp = _post(self.client, "/auth/totp/confirm/", {"id": created["id"], "code": "000000"})
+        resp = _post(self.client, "/auth/totp/confirm/", {"id": created["id"], "code": "000000", "password": self.PASSWORD})
         self.assertEqual(resp.status_code, 400)
 
     def test_pending_overflow_keeps_newest_setup(self):
@@ -163,7 +166,7 @@ class TotpApiTests(TestCase):
                 user=self.user, label=f"t{i}", secret_enc=totp.encrypt_secret(totp.generate_secret()),
                 confirmed_at=timezone.now(),
             )
-        resp = _post(self.client, "/auth/totp/setup/", {"label": "one-too-many"})
+        resp = _post(self.client, "/auth/totp/setup/", {"label": "one-too-many", "password": self.PASSWORD})
         self.assertEqual(resp.status_code, 400)
 
     def test_recovery_regenerate_requires_stepup(self):
@@ -172,3 +175,58 @@ class TotpApiTests(TestCase):
         resp = _post(self.client, "/auth/recovery-codes/", {}, HTTP_X_STEPUP_GRANT=grant)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["count"], 10)
+
+
+class TotpFactorGuardTests(TestCase):
+    """添加二次验证因子必须验人 —— 生产 XSS 链的关键一环。
+
+    攻击链（2026-10 实测）：XSS 拿到会话 → 无验证地给自己加一个 TOTP
+    （setup + confirm）→ 用它通过 change_password 的 step-up → 爆破旧密码改密
+    → 接管账号（管理员即提权）。加因子这道闸就是切断它。
+
+    反证：把 ``_guard_factor_change`` 的调用删掉，本类 4 条用例立即变红。
+    """
+
+    PASSWORD = "Passw0rd!2026"
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="totp_guard", password=self.PASSWORD)
+        self.client.force_login(self.user)
+
+    def test_setup_requires_identity_when_no_grant(self):
+        """只有会话、没有密码 → 拿不到 secret（这就是 XSS 攻击者的处境）。"""
+        resp = _post(self.client, "/auth/totp/setup/", {"label": "x"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["reason"], "password_required")
+
+    def test_setup_rejects_wrong_password(self):
+        resp = _post(self.client, "/auth/totp/setup/", {"label": "x", "password": "not-the-password"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["reason"], "password_required")
+
+    def test_setup_accepts_correct_password(self):
+        resp = _post(self.client, "/auth/totp/setup/", {"label": "x", "password": self.PASSWORD})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertIn("secret", resp.json())
+
+    def test_setup_accepts_stepup_grant(self):
+        grant = stepup.issue_grant(self.user, "manage_totp")
+        resp = _post(self.client, "/auth/totp/setup/", {"label": "x"}, HTTP_X_STEPUP_GRANT=grant)
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_confirm_also_guarded(self):
+        """setup 通过后，裸 confirm（不带密码 / grant）仍要被拦。"""
+        created = _post(
+            self.client, "/auth/totp/setup/", {"label": "x", "password": self.PASSWORD},
+        ).json()
+        code = totp.code_at(created["secret"])
+        resp = _post(self.client, "/auth/totp/confirm/", {"id": created["id"], "code": code})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["reason"], "password_required")
+
+    def test_grant_from_other_scope_is_not_enough(self):
+        """别的 scope 的 grant 不能用来加因子（防越权复用令牌）。"""
+        grant = stepup.issue_grant(self.user, "change_password")
+        resp = _post(self.client, "/auth/totp/setup/", {"label": "x"}, HTTP_X_STEPUP_GRANT=grant)
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["reason"], "password_required")
