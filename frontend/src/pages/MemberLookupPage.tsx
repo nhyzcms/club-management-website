@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import AppShell from "../components/AppShell";
 import MemberResultCard, { type MemberPublicResult } from "../components/member/MemberResultCard";
@@ -15,8 +16,17 @@ import "../styles/member.css";
  *
  * 摄像头解码走 `barcode-detector`（iOS 没有原生 BarcodeDetector，必须 wasm 兜底）。
  * 它默认去 jsdelivr 取 wasm，国内基本取不到，所以这里用打包产物 URL 覆盖 locateFile。
+ *
+ * 深链接 `/#/v?q=<扫到的内容>`：Android 壳原生扫完条码/二维码后落到这里，
+ * 自动填进输入框并查一次（`q` 变化才查，不重复消耗额度）。网页端不依赖它，
+ * 手动粘贴这一串同样可用。
  */
 export default function MemberLookupPage() {
+  const [search] = useSearchParams();
+  const preset = (search.get("q") || "").trim();
+  /** 已经自动查过的 `q`：WebView 重新挂载 / 重渲染都不该重复查一次（会白扣额度）。 */
+  const autoRef = useRef("");
+
   const [value, setValue] = useState("");
   const [results, setResults] = useState<MemberPublicResult[] | null>(null);
   const [notice, setNotice] = useState("");
@@ -71,6 +81,15 @@ export default function MemberLookupPage() {
     },
     [busy, value],
   );
+
+  // 深链接落地：App 原生扫码后把内容放进 `?q=`，这里替用户按一次「查询」。
+  // 只认第一次出现的值（autoRef 去重）；用户随后改输入框手动查，不受影响。
+  useEffect(() => {
+    if (!preset || autoRef.current === preset) return;
+    autoRef.current = preset;
+    setValue(preset);
+    void submit(preset);
+  }, [preset, submit]);
 
   const startScan = useCallback(async () => {
     setScanError("");
