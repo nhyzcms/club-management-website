@@ -2,7 +2,7 @@ import os
 from datetime import timedelta
 from io import BytesIO
 
-from django.contrib.auth.models import AnonymousUser, Group, User
+from django.contrib.auth.models import AnonymousUser, Group, Permission, User
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, RequestFactory
@@ -14,6 +14,7 @@ from accounts.models import MemberIdentity
 from activities.models import Activity
 from tasks.models import Task
 
+from reviews.models import Review
 from reviews.test_helpers import approve_news
 from .models import News
 from .feed import build_feed
@@ -625,3 +626,42 @@ class NewsCoverPreuploadTest(TestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, 400)
+
+
+class NewsReviewReopenTest(TestCase):
+    """H-5 回归：过审后改实质内容 → 审核复位为待审；改头条位不复位。"""
+
+    def setUp(self):
+        self.author = _info(User.objects.create_user(username="reopen_info", password="x"))
+        self.client = APIClient()
+        self.client.force_authenticate(self.author)
+        self.news = approve_news(
+            News.objects.create(title="原标题", author=self.author, is_published=True, content="<p>原正文</p>")
+        )
+
+    def _review_status(self):
+        return Review.objects.get(news=self.news).status
+
+    def test_content_edit_reopens_review(self):
+        resp = self.client.patch(f"/news/news/{self.news.pk}/", {"content": "<p>新正文</p>"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["review_status"], "pending")
+        self.assertEqual(self._review_status(), Review.STATUS_PENDING)
+
+    def test_title_edit_reopens_review(self):
+        resp = self.client.patch(f"/news/news/{self.news.pk}/", {"title": "新标题"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._review_status(), Review.STATUS_PENDING)
+
+    def test_featured_toggle_does_not_reopen(self):
+        resp = self.client.patch(f"/news/news/{self.news.pk}/", {"featured": True}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._review_status(), Review.STATUS_APPROVED)
+
+    def test_force_publisher_edit_keeps_approved(self):
+        self.author.user_permissions.add(
+            Permission.objects.get(content_type__app_label="reviews", codename="force_publish")
+        )
+        resp = self.client.patch(f"/news/news/{self.news.pk}/", {"content": "<p>免审改</p>"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._review_status(), Review.STATUS_APPROVED)

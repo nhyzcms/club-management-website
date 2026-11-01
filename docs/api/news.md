@@ -25,7 +25,7 @@
 | GET | /news/news/overview/ | 公开 | — | 社团概览：成员数 / 作品数 |
 | GET | /news/news/feed/ | 公开 | — | 首页「社团动态」聚合（新闻 + 活动，登录另含任务） |
 
-审核轴说明：`review_status` 取值 `pending` / `approved` / `rejected` / `removed`，无审核行时为 `null`；列表只出 `approved`，`mine` 与作者预览不受限。站点策略 `content_review_enabled` 关闭时新建即 `approved`。
+审核轴说明：`review_status` 取值 `pending` / `approved` / `rejected` / `removed`，无审核行时为 `null`；列表只出 `approved`，`mine` 与作者预览不受限。站点策略 `content_review_enabled` 关闭时新建即 `approved`。**已过审新闻再改标题 / 摘要 / 正文 / 封面 / 标签会退回 `pending` 重新入审**（免审发布者与关闭审核的站点除外）；只改 `featured` / `is_published` 不触发。
 
 ## 端点详情
 

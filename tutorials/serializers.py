@@ -29,6 +29,8 @@ class TutorialListSerializer(serializers.ModelSerializer):
             "cover_url", "uploader", "views", "favorite_count",
             "favorited", "review_status", "created_at",
         ]
+        # file_* 与 views 由服务端在校验 / 播报时写入，不接受客户端回填。
+        read_only_fields = ["file_type", "file_name", "file_size", "views"]
 
     def get_cover_url(self, obj):
         if not obj.cover:
