@@ -118,3 +118,32 @@ class MessagingWebsocketTests(TransactionTestCase):
     def _published_thread(self, user):
         news = News.objects.create(title="n", author=user, is_published=True)
         return thread_for(news)
+
+
+class MessagingRevokedSessionTests(TransactionTestCase):
+    """M-6 回归：已手动下线 / 安全吊销的会话不能再建 WebSocket。"""
+
+    def test_revoked_session_cannot_connect(self):
+        from django.utils import timezone
+        from accounts.models import UserSession
+
+        user = User.objects.create_user("ws_revoked", password="secret123")
+        client = Client()
+        client.force_login(user)
+        self.assertEqual(client.get("/auth/me/").status_code, 200)
+        UserSession.objects.filter(user=user).update(revoked_at=timezone.now())
+        cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
+
+        async def inner():
+            communicator = WebsocketCommunicator(
+                application,
+                "/ws/messaging/",
+                headers=_ws_headers(
+                    (b"cookie", f"{settings.SESSION_COOKIE_NAME}={cookie}".encode()),
+                ),
+            )
+            connected, _ = await communicator.connect()
+            self.assertFalse(connected)
+            await communicator.disconnect()
+
+        async_to_sync(inner)()

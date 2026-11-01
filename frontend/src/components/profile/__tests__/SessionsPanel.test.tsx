@@ -99,7 +99,7 @@ describe("SessionsPanel（登录设备 / 多端登录）", () => {
     fireEvent.click(await screen.findByRole("button", { name: "下线" }));
     fireEvent.click(await screen.findByRole("button", { name: "确认下线" }));
 
-    await waitFor(() => expect(revokeSessionMock).toHaveBeenCalledWith(12));
+    await waitFor(() => expect(revokeSessionMock).toHaveBeenCalledWith(12, expect.anything()));
     await waitFor(() => expect(listSessionsMock).toHaveBeenCalledTimes(2));
   });
 });

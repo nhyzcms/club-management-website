@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
+import { redirectToStepUp, stepupHeaders } from "../../api/stepup";
 import ConfirmModal from "../ConfirmModal";
 import "../../styles/form.css";
 
@@ -86,18 +87,25 @@ export default function SessionsPanel() {
     setError("");
     try {
       if (pending.kind === "one") {
-        const res: any = await api.revokeSession(pending.row.id);
+        const res: any = await api.revokeSession(pending.row.id, stepupHeaders("manage_devices"));
         if (res?.was_current) {
           // 下线的是本机 → 等价于退出登录，直接回首页（登录态已失效）。
           window.location.replace("/");
           return;
         }
       } else {
-        await api.revokeOtherSessions();
+        await api.revokeOtherSessions(stepupHeaders("manage_devices"));
       }
       setPending(null);
       load();
-    } catch {
+    } catch (err: any) {
+      if (err?.status === 403) {
+        // 需要安全验证：完成 manage_devices 后回本面板重试。
+        setBusy(false);
+        setPending(null);
+        redirectToStepUp("manage_devices", "/profile?tab=sessions");
+        return;
+      }
       setError("操作失败，请稍后重试。");
     } finally {
       setBusy(false);
