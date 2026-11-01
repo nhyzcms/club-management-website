@@ -82,6 +82,13 @@ describe("MemberLookupPage（编号查询入口）", () => {
     expect((screen.getByLabelText("或手动输入编号") as HTMLInputElement).value).toBe("260901667878");
   });
 
+  it("?q= 里不是 12 位条码时只预填、不自动查（构造链接不能替人烧额度）", async () => {
+    renderPage("/v?q=26090188");
+    // 预填但没发起请求：8 位识别码 / 姓名按额度计，自动查等于送人头
+    await screen.findByDisplayValue("26090188");
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+
   it("输入为空时查询按钮禁用", () => {
     renderPage();
     expect(screen.getByRole("button", { name: "查询" })).toBeDisabled();

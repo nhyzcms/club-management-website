@@ -79,6 +79,11 @@ export default function MobileHomePage() {
       )}
 
       <div className="m-grid">
+        {/* 活动（events app）：与「互动」是两件事——活动有时间窗，到点自动关闭。 */}
+        <Link to="/m/events" className="m-grid-item">
+          <svg viewBox="0 0 24 24" {...stroke}><path d="M4 6h16v14H4z" /><path d="M8 3v4M16 3v4M4 11h16" /><path d="M9 15h6" /></svg>
+          <span>活动</span>
+        </Link>
         <Link to="/m/activity" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>
           <span>互动</span>
@@ -94,6 +99,11 @@ export default function MobileHomePage() {
         <Link to="/m/join" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><circle cx="9" cy="8" r="4" /><path d="M2 21c0-4 3.1-6 7-6s7 2 7 6" /><path d="M19 8v6M16 11h6" /></svg>
           <span>加入</span>
+        </Link>
+        {/* 社员查询 / 扫码核验（/v）：无需登录也能用，额度按身份分档（服务端判定）。 */}
+        <Link to="/v" className="m-grid-item">
+          <svg viewBox="0 0 24 24" {...stroke}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <span>查询</span>
         </Link>
         {/* 工作入口（2026-10-18）：登录后直达任务与待办；未登录不显示，避免点了弹登录 */}
         {counts.signedIn && (

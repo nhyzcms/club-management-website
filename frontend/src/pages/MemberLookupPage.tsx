@@ -2,8 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import AppShell from "../components/AppShell";
+import MobilePage from "../components/MobilePage";
 import MemberResultCard, { type MemberPublicResult } from "../components/member/MemberResultCard";
+import { isAppShell, isMobileDevice } from "../utils/device";
 import "../styles/member.css";
+import "../styles/mobile.css";
 
 /**
  * 编号查询入口（`/#/v`）：摄像头扫工牌条码 + 手动输入，两条路进同一个端点
@@ -84,11 +87,15 @@ export default function MemberLookupPage() {
 
   // 深链接落地：App 原生扫码后把内容放进 `?q=`，这里替用户按一次「查询」。
   // 只认第一次出现的值（autoRef 去重）；用户随后改输入框手动查，不受影响。
+  //
+  // **只有 12 位条码载荷才自动查**：那条路签名即证明、不扣 24 小时额度。
+  // 其它内容（8 位识别码 / 姓名）只预填输入框——否则一条 `/#/v?q=<别人的名字>`
+  // 的链接就能替访问者把额度烧光（构造链接者不需要登录）。
   useEffect(() => {
     if (!preset || autoRef.current === preset) return;
     autoRef.current = preset;
     setValue(preset);
-    void submit(preset);
+    if (/^\d{12}$/.test(preset)) void submit(preset);
   }, [preset, submit]);
 
   const startScan = useCallback(async () => {
@@ -143,7 +150,11 @@ export default function MemberLookupPage() {
       stopCamera();
       const name = e?.name || "";
       if (name === "NotAllowedError") {
-        setScanError("摄像头权限被拒绝——请在浏览器里允许本站使用摄像头，或手动输入编号。");
+        setScanError(
+          isAppShell()
+            ? "App 内没有拿到摄像头权限——请用右下角的「扫码」按钮，或手动输入编号。"
+            : "摄像头权限被拒绝——请在浏览器里允许本站使用摄像头，或手动输入编号。",
+        );
       } else if (name === "NotFoundError") {
         setScanError("没有找到可用摄像头，请手动输入编号。");
       } else if (name === "NotReadableError") {
@@ -154,101 +165,122 @@ export default function MemberLookupPage() {
     }
   }, [stopCamera, submit]);
 
+  const isMobile = isMobileDevice();
+  // 一套内容，两套外壳：桌面版挂在 AppShell 的卡片里，手机版挂在 /m 那套样式里。
+  // 只换外壳不换逻辑，避免扫码/额度这套口径出现两份实现。
+  const primaryBtn = isMobile ? "m-btn-primary" : "btn btn-primary btn-block";
+  const ghostBtn = isMobile ? "m-btn-ghost" : "btn btn-ghost btn-block";
+  const secondaryBtn = isMobile ? "m-btn-primary" : "btn btn-secondary btn-block";
+
+  const body = (
+    <>
+      {!isMobile && (
+        <h2 style={{ marginBottom: "var(--s-2)" }}>社员身份查询</h2>
+      )}
+      <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
+        拿工牌对准摄像头扫描条码，也可以手动输入编号。
+      </p>
+
+      {scanning ? (
+        <div style={{ marginBottom: "var(--s-5)" }}>
+          <div className="member-scan-frame">
+            <video ref={videoRef} playsInline muted className="member-scan-video" />
+            <div className="member-scan-hint">把工牌条形码放进取景框，横向铺满</div>
+          </div>
+          <button type="button" className={ghostBtn} onClick={stopCamera}>
+            取消扫码
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={primaryBtn}
+          onClick={() => void startScan()}
+          style={{ marginBottom: "var(--s-4)" }}
+        >
+          用摄像头扫工牌条码
+        </button>
+      )}
+
+      {scanError && (
+        <p className="muted" style={{ marginBottom: "var(--s-4)", color: "var(--danger, #c0392b)" }}>
+          {scanError}
+        </p>
+      )}
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <label className="label" htmlFor="member-lookup-input">
+          或手动输入编号
+        </label>
+        <input
+          id="member-lookup-input"
+          className="input"
+          inputMode="text"
+          autoComplete="off"
+          maxLength={40}
+          placeholder="8 位识别码 / 12 位条码内容 / 真实姓名"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <p className="muted" style={{ fontSize: 12, marginTop: "var(--s-2)" }}>
+          扫工牌条码不计次数；手输识别码或姓名按每日额度计算。
+        </p>
+        <button
+          type="submit"
+          className={secondaryBtn}
+          disabled={busy || !value.trim()}
+          style={{ marginTop: "var(--s-3)" }}
+        >
+          {busy ? "查询中…" : "查询"}
+        </button>
+      </form>
+
+      {notice && (
+        <p className="muted" style={{ marginTop: "var(--s-4)" }}>
+          {notice}
+        </p>
+      )}
+
+      {results && (
+        <div className="center" style={{ marginTop: "var(--s-6)" }}>
+          {results.length > 0 ? (
+            <div>
+              {results.map((r) => (
+                <div key={r.code} className="member-lookup-result">
+                  <MemberResultCard
+                    result={r}
+                    note="仅展示公开信息——电话、学号、邮箱不在查询范围内。"
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">未找到匹配的社员身份——编号无效或不属于本社。</p>
+          )}
+        </div>
+      )}
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <MobilePage title="社员查询" back="/m">
+        <section className="m-detail-sec" style={{ marginTop: 0 }}>{body}</section>
+      </MobilePage>
+    );
+  }
+
   return (
     <AppShell>
       <div className="page">
         <div className="container" style={{ maxWidth: 460 }}>
           <div style={{ paddingTop: "var(--s-10)", paddingBottom: "var(--s-12)" }}>
-            <div className="card card-pad">
-              <h2 style={{ marginBottom: "var(--s-2)" }}>社员身份查询</h2>
-              <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
-                拿工牌对准摄像头扫描条码，也可以手动输入编号。
-              </p>
-
-              {scanning ? (
-                <div style={{ marginBottom: "var(--s-5)" }}>
-                  <div className="member-scan-frame">
-                    <video ref={videoRef} playsInline muted className="member-scan-video" />
-                    <div className="member-scan-hint">把工牌条形码放进取景框，横向铺满</div>
-                  </div>
-                  <button type="button" className="btn btn-ghost btn-block" onClick={stopCamera}>
-                    取消扫码
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-primary btn-block"
-                  onClick={() => void startScan()}
-                  style={{ marginBottom: "var(--s-4)" }}
-                >
-                  用摄像头扫工牌条码
-                </button>
-              )}
-
-              {scanError && (
-                <p className="muted" style={{ marginBottom: "var(--s-4)", color: "var(--danger, #c0392b)" }}>
-                  {scanError}
-                </p>
-              )}
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void submit();
-                }}
-              >
-                <label className="label" htmlFor="member-lookup-input">
-                  或手动输入编号
-                </label>
-                <input
-                  id="member-lookup-input"
-                  className="input"
-                  inputMode="text"
-                  autoComplete="off"
-                  maxLength={40}
-                  placeholder="8 位识别码 / 12 位条码内容 / 真实姓名"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                />
-                <p className="muted" style={{ fontSize: 12, marginTop: "var(--s-2)" }}>
-                  扫工牌条码不计次数；手输识别码或姓名按每日额度计算。
-                </p>
-                <button
-                  type="submit"
-                  className="btn btn-secondary btn-block"
-                  disabled={busy || !value.trim()}
-                  style={{ marginTop: "var(--s-3)" }}
-                >
-                  {busy ? "查询中…" : "查询"}
-                </button>
-              </form>
-
-              {notice && (
-                <p className="muted" style={{ marginTop: "var(--s-4)" }}>
-                  {notice}
-                </p>
-              )}
-
-              {results && (
-                <div className="center" style={{ marginTop: "var(--s-6)" }}>
-                  {results.length > 0 ? (
-                    <div>
-                      {results.map((r) => (
-                        <div key={r.code} className="member-lookup-result">
-                          <MemberResultCard
-                            result={r}
-                            note="仅展示公开信息——电话、学号、邮箱不在查询范围内。"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="muted">未找到匹配的社员身份——编号无效或不属于本社。</p>
-                  )}
-                </div>
-              )}
-            </div>
+            <div className="card card-pad">{body}</div>
           </div>
         </div>
       </div>

@@ -9,8 +9,11 @@ import {
   FEEDBACK_CATEGORY_LABELS,
 } from "../types/feedback";
 import AppShell from "../components/AppShell";
+import MobilePage from "../components/MobilePage";
+import { isMobileDevice } from "../utils/device";
 import { useTurnstile } from "../turnstile";
 import "../styles/list.css";
+import "../styles/mobile.css";
 
 export default function FeedbackPage() {
   const navigate = useNavigate();
@@ -90,28 +93,18 @@ export default function FeedbackPage() {
     }
   };
 
-  return (
-    <AppShell>
-      <div className="page-head">
-        <div className="container">
-          <nav className="breadcrumb">
-            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
-            <span className="sep">/</span>
-            <span>意见反馈</span>
-          </nav>
-          <h1>意见反馈</h1>
-          <p className="section-sub">匿名或署名提交建议 / 投诉。举报对象请走内容页上的举报按钮。</p>
-        </div>
-      </div>
+  const isMobile = isMobileDevice();
+  const submitBtn = isMobile ? "m-btn-primary" : "btn btn-primary";
 
-      <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
+  const content = (
+    <>
         {error && (
           <div className="alert alert-danger" role="alert" style={{ margin: "var(--s-6) 0 var(--s-4)" }}>
             <span>{error}</span>
           </div>
         )}
 
-        <section className={"fb-section" + (showForm ? " is-open" : "")}>
+        <section className={"fb-section" + (showForm ? " is-open" : "") + (isMobile ? " m-fb" : "")}>
           <button className="fb-head" type="button" aria-expanded={showForm} onClick={() => setShowForm((v) => !v)}>
             <div>
               <div className="fb-title">
@@ -170,7 +163,7 @@ export default function FeedbackPage() {
                 <div ref={containerRef} />
                 <div>
                   <button
-                    className="btn btn-primary"
+                    className={submitBtn}
                     type="submit"
                     disabled={fbSubmitting || fbUploading || user === undefined || !policyReady}
                   >
@@ -186,6 +179,34 @@ export default function FeedbackPage() {
             </div>
           )}
         </section>
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <MobilePage title="意见反馈" back="/m">
+        <p className="m-hint">匿名或署名提交建议 / 投诉。举报对象请走内容页上的举报按钮。</p>
+        {content}
+      </MobilePage>
+    );
+  }
+
+  return (
+    <AppShell>
+      <div className="page-head">
+        <div className="container">
+          <nav className="breadcrumb">
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
+            <span className="sep">/</span>
+            <span>意见反馈</span>
+          </nav>
+          <h1>意见反馈</h1>
+          <p className="section-sub">匿名或署名提交建议 / 投诉。举报对象请走内容页上的举报按钮。</p>
+        </div>
+      </div>
+
+      <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
+        {content}
       </div>
     </AppShell>
   );
