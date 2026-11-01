@@ -18,7 +18,7 @@ from django.utils.html import format_html, format_html_join
 from common.policy import get_policy
 
 from .authcode import generate_authcode_value, normalize_authcode
-from .identity_review import approve_manual, disable_user, reject_manual
+from .identity_review import IdentityReviewDenied, approve_manual, disable_user, reject_manual
 from .member_barcode import export_svg_zip as export_barcode_svg_zip
 from .member_barcode import export_zip as export_barcode_zip
 from .member_qr import export_zip
@@ -64,12 +64,20 @@ def approve_identity(modeladmin, request, queryset):
         )
         return
     count = 0
+    skipped = 0
     for obj in queryset.select_related("user"):
         if not request.user.has_perm("accounts.can_review_identity"):
             continue  # 防御：get_actions 已收口，此处双保险
-        approve_manual(obj.user, reviewer=request.user)
+        try:
+            approve_manual(obj.user, reviewer=request.user)
+        except IdentityReviewDenied:
+            skipped += 1
+            continue
         count += 1
-    modeladmin.message_user(request, f"已通过 {count} 个账号的身份审核。")
+    msg = f"已通过 {count} 个账号的身份审核。"
+    if skipped:
+        msg += f" 跳过 {skipped} 个（不能审核自己）。"
+    modeladmin.message_user(request, msg)
 
 
 approve_identity.short_description = "通过身份审核"
@@ -83,12 +91,20 @@ def reject_identity(modeladmin, request, queryset):
         )
         return
     count = 0
+    skipped = 0
     for obj in queryset.select_related("user"):
         if not request.user.has_perm("accounts.can_review_identity"):
             continue
-        reject_manual(obj.user, reviewer=request.user)
+        try:
+            reject_manual(obj.user, reviewer=request.user)
+        except IdentityReviewDenied:
+            skipped += 1
+            continue
         count += 1
-    modeladmin.message_user(request, f"已驳回 {count} 个账号的身份审核。")
+    msg = f"已驳回 {count} 个账号的身份审核。"
+    if skipped:
+        msg += f" 跳过 {skipped} 个（不能审核自己）。"
+    modeladmin.message_user(request, msg)
 
 
 reject_identity.short_description = "驳回身份审核"
@@ -97,12 +113,20 @@ reject_identity.short_description = "驳回身份审核"
 def disable_account(modeladmin, request, queryset):
     """停用账号：置 is_active=False，并发邮件通知当事人联系信息组。"""
     count = 0
+    skipped = 0
     for obj in queryset.select_related("user"):
         if not request.user.has_perm("accounts.can_review_identity"):
             continue
-        disable_user(obj.user)
+        try:
+            disable_user(obj.user)
+        except IdentityReviewDenied:
+            skipped += 1
+            continue
         count += 1
-    modeladmin.message_user(request, f"已停用 {count} 个账号。")
+    msg = f"已停用 {count} 个账号。"
+    if skipped:
+        msg += f" 跳过 {skipped} 个（超级管理员不可停用）。"
+    modeladmin.message_user(request, msg)
 
 
 disable_account.short_description = "停用账号"
