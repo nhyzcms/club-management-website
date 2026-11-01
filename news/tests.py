@@ -640,7 +640,7 @@ class NewsReviewReopenTest(TestCase):
         )
 
     def _review_status(self):
-        return Review.objects.get(news=self.news).status
+        return Review.objects.get(target__kind="news", target__object_id=self.news.pk).status
 
     def test_content_edit_reopens_review(self):
         resp = self.client.patch(f"/news/news/{self.news.pk}/", {"content": "<p>新正文</p>"}, format="json")

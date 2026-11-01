@@ -1868,7 +1868,7 @@ class SurveySchemaReopenTest(TestCase):
         from reviews.models import Review
 
         self.activity.refresh_from_db()
-        review = Review.objects.get(activity=self.activity)
+        review = Review.objects.get(target__kind="activity", target__object_id=self.activity.pk)
         self.assertEqual(review.status, "pending")
 
     def test_html_question_rejected_by_api(self):
@@ -1889,5 +1889,5 @@ class SurveySchemaReopenTest(TestCase):
         from reviews.models import Review
 
         self.assertEqual(resp.status_code, 200, resp.content)
-        review = Review.objects.get(activity=self.activity)
+        review = Review.objects.get(target__kind="activity", target__object_id=self.activity.pk)
         self.assertEqual(review.status, "approved")

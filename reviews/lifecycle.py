@@ -34,6 +34,21 @@ class TransitionDenied(Exception):
     """当前状态不允许该审核动作。"""
 
 
+def _review_of(*, news=None, activity=None, tutorial=None):
+    """宿主对象 → 它的 Review 行。
+
+    B9 删掉 Review 上的 news / activity / tutorial 三列后，唯一锚点是
+    ``target``（ContentTarget 的 ``(kind, object_id)``）。这里用等值条件读，
+    不建 target 行——B9 之后旧代码里的 ``filter(news=obj)`` 会直接抛 FieldError。
+    """
+    host = news or activity or tutorial
+    if host is None:
+        return None
+    return Review.objects.filter(
+        target__kind=kind_of(host), target__object_id=host.pk,
+    ).first()
+
+
 def reopen(*, activity=None, news=None, tutorial=None, actor=None):
     """把已过审的对象**退回待审**（内容被实质性修改后调用）。
 
@@ -46,7 +61,9 @@ def reopen(*, activity=None, news=None, tutorial=None, actor=None):
     """
     kwargs = {"news": news, "activity": activity, "tutorial": tutorial}
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
-    existing = Review.objects.filter(**kwargs).first()
+    if not kwargs:
+        return None
+    existing = _review_of(**kwargs)
     if existing is None:
         return open_review(actor=actor, **kwargs)
     if existing.status == Review.STATUS_PENDING:
@@ -108,7 +125,7 @@ def reopen_on_edit(*, news=None, activity=None, tutorial=None, actor):
     }
     if not lookup:
         return None
-    review = Review.objects.filter(**lookup).first()
+    review = _review_of(**lookup)
     if review is None or review.status not in (Review.STATUS_APPROVED, Review.STATUS_REJECTED):
         return review
 
