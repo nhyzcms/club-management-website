@@ -10,7 +10,7 @@
 import base64
 import shutil
 import tempfile
-from common.targets import target_of
+from common.targets import related_to, target_of
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -846,3 +846,38 @@ class FeedbackEvidenceAfterCloseTest(_AttachmentTestCase):
     def test_president_can_delete_evidence_after_close(self):
         self.client.force_authenticate(self.president)
         self.assertEqual(self.client.delete(f"/attachments/{self.attachment_id}/").status_code, 204)
+class TusUploadHardeningTest(TusUploadTest):
+    """M-1 回归：对象级授权 / 拒绝延迟长度 / 完成钩子扩展名校验。"""
+
+    def test_other_user_cannot_head_or_patch(self):
+        chunk = b"12345678"
+        resp = self._create(self.creator, length=len(chunk))
+        self.assertEqual(resp.status_code, 201)
+        location = resp.get("Location") or resp["Location"]  # type: ignore[attr-defined]
+
+        self.client.force_authenticate(self.outsider)  # pyright: ignore[reportAttributeAccessIssue]
+        self.assertNotEqual(self.client.head(location).status_code, 200)
+        self.assertNotEqual(self._patch(location, chunk).status_code, 204)
+
+    def test_defer_length_rejected(self):
+        self.client.force_authenticate(self.creator)  # pyright: ignore[reportAttributeAccessIssue]
+        resp = self.client.post(
+            "/uploads/files/", content_type="application/octet-stream",
+            HTTP_TUS_RESUMABLE="1.0.0", HTTP_UPLOAD_DEFER_LENGTH="1",
+            HTTP_UPLOAD_METADATA=tus_meta(
+                filename="t.png", filetype="image/png",
+                parent_type="feedback", parent_id=self.feedback.pk,
+            ),
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Upload-Length", resp.json()["detail"])
+
+    def test_completion_rejects_forbidden_extension(self):
+        chunk = b"<script>x</script>"
+        resp = self._create(
+            self.creator, length=len(chunk), filetype="image/png", filename="payload.html",
+        )
+        self.assertEqual(resp.status_code, 201)
+        location = resp.get("Location") or resp["Location"]  # type: ignore[attr-defined]
+        self.assertEqual(self._patch(location, chunk).status_code, 204)
+        self.assertFalse(related_to(Attachment, self.feedback).exists())
