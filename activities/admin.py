@@ -94,7 +94,7 @@ class QuestionnaireAdmin(SurveyJSAdminMixin, admin.ModelAdmin):
     def response_count(self, obj):
         return getattr(obj, "_response_count", 0)
 
-    @admin.display(description="调研活动")
+    @admin.display(description="所属调研")
     def activity_link(self, obj):
         activity = getattr(obj, "survey_activity", None)
         if activity is None:

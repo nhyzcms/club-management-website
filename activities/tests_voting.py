@@ -78,7 +78,7 @@ class CastBallotTest(TestCase):
         foreign = VoteOption.objects.create(activity=other, text="X", order=0)
         with self.assertRaises(BallotError) as ctx:
             cast_ballot(activity=self.activity, user=self.member, option_ids=[foreign.pk])
-        self.assertEqual(ctx.exception.detail, "存在不属于本活动的选项")
+        self.assertEqual(ctx.exception.detail, "存在不属于本互动的选项")
 
     def test_cast_ballot_rejects_collection(self):
         collection = Activity.objects.create(

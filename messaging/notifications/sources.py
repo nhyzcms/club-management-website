@@ -50,13 +50,13 @@ class ReviewSource(NotificationSource):
 @register_source
 class ActivitySource(NotificationSource):
     key = "activity"
-    name = "活动生命周期"
-    description = "活动发布、到点开放"
+    name = "互动生命周期"
+    description = "互动发布、到点开放"
     color = "#e8833a"
     emoji = "📅"
     events = (
-        Event("published", "活动发布"),
-        Event("opened", "活动开始"),
+        Event("published", "互动发布"),
+        Event("opened", "互动开始"),
     )
     default_channels = ("site",)
 

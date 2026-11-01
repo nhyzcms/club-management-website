@@ -228,15 +228,15 @@ class ActivityViewSet(viewsets.ModelViewSet):
         incoming = serializer.validated_data
         general_keys = [k for k in incoming if k not in ("schema", "audience")]
         if general_keys and not can_edit(instance):
-            raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+            raise PermissionDenied("互动开放后不可修改，仅待开始期间可改")
         if "schema" in incoming:
             if instance.type == "survey":
                 if not can_edit_schema(instance):
                     raise PermissionDenied("当前不可修改问卷")
             elif not can_edit(instance):
-                raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+                raise PermissionDenied("互动开放后不可修改，仅待开始期间可改")
         elif not incoming and not can_edit(instance) and not getattr(serializer, "_comment_thread_status", None):
-            raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+            raise PermissionDenied("互动开放后不可修改，仅待开始期间可改")
         super().perform_update(serializer)
         # 已过审的调研改了 schema → 退回待审（审计 S-4）。
         # 不加这一步就是「先交正常问卷骗过审核，开放且零作答时再换成恶意 schema」，

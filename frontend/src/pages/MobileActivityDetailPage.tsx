@@ -96,7 +96,7 @@ export default function MobileActivityDetailPage() {
           <div className="m-detail-sec">
             <h3>需要登录</h3>
             <p className="m-hint" style={{ marginBottom: 12 }}>
-              该活动仅登录成员可见。众议、征集、展示及仅成员调研需登录后查看。
+              该互动仅登录成员可见。众议、征集、展示及仅成员调研需登录后查看。
             </p>
             <button className="m-btn-primary" onClick={() => openLogin(location.pathname + location.search)}>登录</button>
           </div>
@@ -225,7 +225,7 @@ export default function MobileActivityDetailPage() {
             {a.my_submission ? (
               <p className="m-hint" style={{ marginBottom: 0 }}>你已提交（{a.my_submission.files.length} 个文件）。</p>
             ) : a.status === "open" || a.status === "collecting" ? (
-              <p className="m-hint" style={{ marginBottom: 0 }}>本活动为作品征集；投稿请在电脑端打开完整页面进行。</p>
+              <p className="m-hint" style={{ marginBottom: 0 }}>本互动为作品征集；投稿请在电脑端打开完整页面进行。</p>
             ) : (
               <p className="m-hint" style={{ marginBottom: 0 }}>征件未开放。</p>
             )}

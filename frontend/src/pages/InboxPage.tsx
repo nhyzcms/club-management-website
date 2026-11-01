@@ -79,7 +79,7 @@ export default function InboxPage() {
             <span>待办</span>
           </nav>
           <h1>待办</h1>
-          <p className="section-sub">当前你仍欠的行动：活动、任务。</p>
+          <p className="section-sub">当前你仍欠的行动：互动、任务。</p>
         </div>
       </div>
       <div className="container" style={{ paddingTop: "var(--s-6)", paddingBottom: "var(--s-16)" }}>
@@ -92,9 +92,9 @@ export default function InboxPage() {
           <p className="muted" style={{ padding: "var(--s-8) 0" }}>加载中…</p>
         ) : visibleItems.length === 0 ? (
           <div className="prop-empty">
-            <p>没有待办。去看看活动或任务。</p>
+            <p>没有待办。去看看互动或任务。</p>
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-              <button className="btn btn-primary" onClick={() => navigate("/activity")}>活动</button>
+              <button className="btn btn-primary" onClick={() => navigate("/activity")}>互动</button>
               <button className="btn btn-ghost" onClick={() => navigate("/tasks")}>任务</button>
             </div>
           </div>

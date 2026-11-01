@@ -81,7 +81,7 @@ export default function MobileHomePage() {
       <div className="m-grid">
         <Link to="/m/activity" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>
-          <span>活动</span>
+          <span>互动</span>
         </Link>
         <Link to="/m/news" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><path d="M4 5h13v14H4z" /><path d="M17 8h3v9a2 2 0 0 1-2 2H4" /><path d="M7 9h7M7 12h7M7 15h4" /></svg>
