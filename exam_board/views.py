@@ -119,6 +119,12 @@ class ExamErrataViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
     @action(detail=False, methods=["get"])
     def current(self, request):
         exam_id = _parse_exam_id(request.query_params.get("exam"))
+        # 必须显式指定考试：否则会把其他场次的误刊混进当前看板（审计 L-4）。
+        if exam_id is None:
+            return Response(
+                {"status": "error", "message": "缺少 exam 参数"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         _expire_due(exam_id)
         rows = _live_errata_qs(exam_id)
         return Response({"status": "success", "data": self.get_serializer(rows, many=True).data})
@@ -143,6 +149,12 @@ class ExamErrataViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
     @action(detail=False, methods=["post"])
     def dismiss(self, request):
         exam_id = _parse_exam_id(request.data.get("exam") or request.query_params.get("exam"))
+        # 必须显式指定考试：缺省不能作用于全部考试（审计 L-4）。
+        if exam_id is None:
+            return Response(
+                {"status": "error", "message": "缺少 exam 参数"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         qs = _live_errata_qs(exam_id)
         ids = list(qs.values_list("id", flat=True))
         updated = qs.update(dismissed_at=timezone.now()) if ids else 0
