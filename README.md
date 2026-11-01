@@ -55,6 +55,11 @@
   待办 `/#/m/inbox`、通知 `/#/m/notifications`、任务列表与详情 `/#/m/tasks`；
   「我的」按权限分「工作 / 常用」两组，首页九宫格对登录用户追加「任务」「待办」；
   手机 UA 打开桌面路径（如 `/#/reviews`）会自动改道到对应手机版页面
+- 手机版已补齐「活动 / 社员查询 / 意见反馈」（2026-11-01，App 壳内同样可达）：
+  活动列表与详情 `/#/m/events`、`/#/m/events/:id`（`events` app 的活动，与「互动」是两件事，
+  到点自动关闭；列表是「筛选 chips + 加载更多」，不做无限滚动）; 社员查询 `/#/v` 在手机 UA 下
+  直接渲染手机版版式（结果卡与扫码校验同源）; 意见反馈 `/#/feedback` 同样按 UA 切换版式。
+  `/#/m/join` 之外，「我的」新增「社员查询」入口，首页九宫格新增「活动」「查询」两格
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA。前端入口（桌面顶栏头像菜单「后台管理」、
   手机版「我的 → 进入后台管理」）**只对 `is_staff` 账号显示**（对应身份徽章 `admin` / `superadmin`，
   判定在 `frontend/src/utils/roles.ts` 的 `canAccessAdmin`）；普通用户与访客不再看到该入口，
@@ -167,8 +172,10 @@ club-management-website/
 - 手机版（移动端站点）：`/#/m`
   - 工作台：`/#/m/review`（审核台）、`/#/m/inbox`（待办）、`/#/m/notifications`（通知）、
     `/#/m/tasks` 与 `/#/m/tasks/:id`（任务）
-  - 手机 UA 访问 `/reviews`、`/inbox`、`/notifications`、`/tasks`、`/tasks/:id` 会自动 `replace`
-    到对应的 `/#/m/...`（桌面 UA 不受影响）
+  - 活动（`events`）：`/#/m/events`、`/#/m/events/:id`
+  - 手机 UA 访问 `/reviews`、`/inbox`、`/notifications`、`/tasks`、`/tasks/:id`、`/events`、
+    `/events/:id` 会自动 `replace` 到对应的 `/#/m/...`（桌面 UA 不受影响）
+  - `/v`（社员查询）与 `/feedback`（意见反馈）不跳转，页面内部按 UA 切换桌面 / 手机版式
 
 注意：本项目使用 Django + React 的单页架构，前端路由需要由 Django 回落到 `index.html`，非 API 路径都会进入 SPA 入口。
 

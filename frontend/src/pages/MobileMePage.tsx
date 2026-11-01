@@ -80,6 +80,7 @@ export default function MobileMePage() {
     ...(isVerified ? [{ to: "/m/inbox", label: "待办", hint: "待投票 / 待交稿 / 待验收" }] : []),
     { to: "/m/notifications", label: "通知", badge: "notif" },
     { to: "/messages", label: "私信", badge: "dm" },
+    { to: "/v", label: "社员查询", hint: "扫工牌条码 / 按编号查（手输按每日额度计）" },
     { to: "/feedback", label: "意见反馈" },
     { to: "/profile", label: "个人资料" },
     { to: "/profile?tab=sessions", label: "登录设备", hint: "最多 3 台同时在线，可下线其他设备" },

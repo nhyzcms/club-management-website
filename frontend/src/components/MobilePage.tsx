@@ -2,6 +2,9 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import MobileTabBar from "./MobileTabBar";
 import "../styles/mobile.css";
+// 二级页框架自己带上版式（.m-page-back / .m-page-body 都在 mobile-work.css）：
+// 否则用它的页面只要忘了 import，返回按钮和左右留白会一起消失。
+import "../styles/mobile-work.css";
 
 interface Props {
   /** 顶栏标题。 */

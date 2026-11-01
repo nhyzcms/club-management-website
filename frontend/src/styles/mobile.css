@@ -311,3 +311,21 @@
   font-weight: 400;
   color: var(--faint);
 }
+
+/* ---------- 手机版反馈 / 社员查询（2026-11-01） ---------- */
+/* 桌面版靠 .container 的左右留白，手机版已经在 .m-detail 里，去掉卡片自带的外边距。 */
+.m-app .m-fb { margin: 12px 0; border-radius: 16px; }
+.m-app .m-fb .fb-head { padding: 14px; }
+.m-app .m-fb .fb-body { padding: 0 14px 14px; }
+
+/* ---------- 手机版活动列表的筛选 chips（2026-11-01） ---------- */
+.m-chips {
+  display: flex; gap: 8px; overflow-x: auto; padding: 12px 16px 2px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.m-chips::-webkit-scrollbar { display: none; }
+.m-chip {
+  flex: none; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--muted); font-size: 13px; line-height: 1.2;
+}
+.m-chip.is-on { background: var(--brand-600); border-color: var(--brand-600); color: #fff; font-weight: 600; }
