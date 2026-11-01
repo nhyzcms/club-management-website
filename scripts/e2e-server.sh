@@ -10,6 +10,9 @@ if [ ! -f frontend/dist/index.html ]; then
   exit 1
 fi
 
+# 审计 H-6 起 DJANGO_DEBUG 缺省为 0（生产安全），但 E2E 是本地测试服务器：
+# 显式开 DEBUG，才有静态文件 / media 直出与 seed_e2e 的既有行为。
+export DJANGO_DEBUG=1
 export DJANGO_DB_FILE="${DJANGO_DB_FILE:-run/e2e.sqlite3}"
 # E2E 关闭「陌生设备二次验证」：seed 账号带安全问题，否则 API 登录只拿到 202 挑战、
 # storageState 无会话，全部登录态用例会级联失败。挑战流程本身由单测覆盖。
