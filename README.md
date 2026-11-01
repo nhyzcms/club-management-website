@@ -183,6 +183,9 @@ club-management-website/
     低于 `frontend/src/utils/shellVersion.ts` 的 `MIN_SHELL_VERSION_CODE` 时，
     `components/ShellVersionGate.tsx` 会全屏提示更新（可「暂时继续」，不写 localStorage，刷新即恢复）。
     浏览器、以及解析不出版本码的请求一律放行 —— 闸门不猜、不锁死。
+  - **SPA 入口不可缓存（L0 热更新的前提）**：`/` 与兜底路由都用 `never_cache` 包了一层
+    （`config/urls.py`）。dist 的 JS/CSS 文件名带 contenthash，HTML 一旦被 WebView 缓存，
+    就会拿着旧哈希去要已删除的 chunk → 白屏，且"改完网站重开 App 就生效"会失效。
 
 注意：本项目使用 Django + React 的单页架构，前端路由需要由 Django 回落到 `index.html`，非 API 路径都会进入 SPA 入口。
 
