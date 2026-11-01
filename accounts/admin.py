@@ -34,6 +34,8 @@ from .member_roster import (
 )
 from .models import (
     AccountDevice,
+    AccountIdentity,
+    AccountLifecycle,
     AdminAccessLog,
     AuthCode,
     AuthCodeRedemption,
@@ -325,13 +327,68 @@ class IdentityProofAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
 
 
 class ProfileInline(admin.StackedInline):
+    """用户详情页内嵌展示资料（头像 / 昵称 / 生日 / 性别 / 简介）。
+
+    B4（2026-10-30）把实名与生命周期字段拆到 ``AccountIdentity`` /
+    ``AccountLifecycle`` 之后，本 inline 只剩展示资料。**不要再往
+    ``get_readonly_fields()`` 里写生命周期字段名**——Profile 上没有这些列，
+    ``label_for_field`` 会抛 ``AttributeError``，整页 500（2026-11-01 事故）。
+    """
+
     model = Profile
     fk_name = "user"  # Profile 仅 user 一个 FK→User；显式绑定，防后续新增 FK 时歧义
 
+
+class AccountIdentityInline(admin.StackedInline):
+    """实名资料（B4 拆表）：只读浏览。
+
+    实名 / 身份的变更走认证与审核流程（``identity_review`` / 验证面板），
+    不在用户页直接改——这里只给运维一个「这人是哪位」的视角。
+    """
+
+    model = AccountIdentity
+    fk_name = "user"
+    extra = 0
+    max_num = 1
+    can_delete = False
+    fields = ("real_name", "identity", "pending_card_no")
+    readonly_fields = ("real_name", "identity", "pending_card_no")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+class AccountLifecycleInline(admin.StackedInline):
+    """账号生命周期（B4 拆表）：系统字段只读；注册认证截止沿用原权限口径。
+
+    ``registration_deadline`` 仅持 ``accounts.manage_validity`` 且目标是下位权限
+    用户时可改，其余（超期停用 / 注销 / 提示已读 / 强制改密）一律系统维护。
+    """
+
+    model = AccountLifecycle
+    fk_name = "user"
+    extra = 0
+    max_num = 1
+    can_delete = False
+    fields = (
+        "registration_deadline",
+        "expiry_disabled_at",
+        "deleted_at",
+        "validity_notice_ack",
+        "must_change_password",
+    )
+    readonly_fields = (
+        "expiry_disabled_at",
+        "deleted_at",
+        "validity_notice_ack",
+        "must_change_password",
+    )
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
     def get_readonly_fields(self, request, obj=None):
-        # expiry_disabled_at / deleted_at / validity_notice_ack 系统维护；registration_deadline
-        # 仅持 manage_validity 且改下位可改。
-        ro = ["expiry_disabled_at", "deleted_at", "validity_notice_ack"]
+        ro: list[str] = list(self.readonly_fields)
         if not can_manage_validity_for(request.user, obj):
             ro.append("registration_deadline")
         return ro
@@ -366,7 +423,7 @@ class CustomUserAdmin(UserAdmin):
     list_filter = ("is_staff", "is_active", "lifecycle__deleted_at")
     search_fields = ("username", "email", "first_name", "last_name")
     ordering = ("username",)
-    inlines = [ProfileInline, VerificationInline]
+    inlines = [ProfileInline, AccountIdentityInline, AccountLifecycleInline, VerificationInline]
     actions = ["ban_users", "mute_users"]
 
     def get_queryset(self, request):
