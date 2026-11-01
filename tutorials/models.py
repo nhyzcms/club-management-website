@@ -1,17 +1,18 @@
-import os
 import uuid
 
 from django.conf import settings
 from django.db import models
 
+from common.uploads import safe_extension
+
 
 def tutorial_file_path(instance, filename):
-    ext = os.path.splitext(filename)[1]
+    ext = safe_extension(filename)
     return f"tutorials/{uuid.uuid4().hex}{ext}"
 
 
 def tutorial_cover_path(instance, filename):
-    ext = os.path.splitext(filename)[1]
+    ext = safe_extension(filename)
     return f"tutorial_covers/{uuid.uuid4().hex}{ext}"
 
 
