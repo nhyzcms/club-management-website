@@ -176,6 +176,13 @@ club-management-website/
   - 手机 UA 访问 `/reviews`、`/inbox`、`/notifications`、`/tasks`、`/tasks/:id`、`/events`、
     `/events/:id` 会自动 `replace` 到对应的 `/#/m/...`（桌面 UA 不受影响）
   - `/v`（社员查询）与 `/feedback`（意见反馈）不跳转，页面内部按 UA 切换桌面 / 手机版式
+  - **降级入口（区块 8）**：「我的」页的「更多」分组挂着仍是桌面版式的页面 ——
+    `/exam`（考试看板）、`/schedule`（课表）、`/panorama`（全景图）、`/about`（关于我们）。
+    这些页面手机上**有入口、能操作**，但没有专门版式；后续按使用频率再逐页补 `/m` 版本。
+  - **App 壳最低版本闸门（区块 8）**：壳在 UA 里注入 `NhyzClubApp/<versionName> (Android; <versionCode>)`，
+    低于 `frontend/src/utils/shellVersion.ts` 的 `MIN_SHELL_VERSION_CODE` 时，
+    `components/ShellVersionGate.tsx` 会全屏提示更新（可「暂时继续」，不写 localStorage，刷新即恢复）。
+    浏览器、以及解析不出版本码的请求一律放行 —— 闸门不猜、不锁死。
 
 注意：本项目使用 Django + React 的单页架构，前端路由需要由 Django 回落到 `index.html`，非 API 路径都会进入 SPA 入口。
 
@@ -219,6 +226,11 @@ sudo ./scripts/install.sh                # 一键部署生产环境
 - App 壳与网站的契约：UA 标记 `NhyzClubApp/<versionName> (Android; <versionCode>)`。
   修改壳的 UA 必须同步 `frontend/src/utils/device.ts`，否则「App 内默认跟随系统深色」等
   App 专属行为会静默失效。
+- **手机端「全部功能可达」的验收口径（区块 8）**：任何页面都不能"只有桌面能进"。
+  能做成移动版式的补 `/m` 页面并在 `App.tsx` 的 `MobileAware` 里登记改道；
+  暂时做不了的（考试看板 / 课表 / 全景图 / 关于）也要在 `MobileMePage` 的「更多」里留入口。
+  提高 `MIN_SHELL_VERSION_CODE` 等于把老壳用户挡在门外（只留「暂时继续」），
+  只有在老壳真的会让网站出错时才动它；改完记得同步 app 仓库的 `docs/FEATURE-MATRIX.md`。
 - **账号注销是软删除**（[ADR-0027](docs/adr/0027-account-deletion.md)）：`Profile.deleted_at` 标记，
   只清邮箱 / 头像 / 身份证明材料 / 会话等敏感信息；`User`、`Profile`、`MemberIdentity`（社员编号）
   行永不删除。新增「删除用户」类功能时先读该 ADR，不要物理删账号。

@@ -94,6 +94,17 @@ export default function MobileMePage() {
     ...(isAdmin ? [{ to: "/admin/", label: "进入后台管理" }] : []),
   ];
 
+  /** 桌面版页面，手机上暂时没有专门版式（区块 8 的"允许降级但必须有入口"）。
+   * 这些页面本身是响应式的，只是顶栏仍是桌面布局；先保证能到达、能操作，
+   * 后续按实际使用频率再逐页做 /m 版本。
+   */
+  const more: Entry[] = [
+    { to: "/exam", label: "考试看板", hint: "考场安排与倒计时" },
+    { to: "/schedule", label: "课表", hint: "本周课程一览" },
+    { to: "/panorama", label: "全景图", hint: "校园 360° 漫游（较费流量）" },
+    { to: "/about", label: "关于我们", hint: "社团简介与联系方式" },
+  ];
+
   const badgeOf = (kind?: "dm" | "notif") => {
     if (!kind || !counts.signedIn) return 0;
     return kind === "dm" ? counts.dm : counts.notif;
@@ -195,6 +206,7 @@ export default function MobileMePage() {
 
       {user && renderGroup("工作", work)}
       {renderGroup("常用", common)}
+      {renderGroup("更多", more)}
 
       {user && (
         <div className="m-list">
