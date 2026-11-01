@@ -45,6 +45,7 @@ POLICY_MODEL_OF = {
     "login_per_username_per_hour": RateLimitPolicy,
     "feedback_anon_per_ip_per_day": RateLimitPolicy,
     "reports_per_user_per_day": RateLimitPolicy,
+    "public_vote_per_ip_per_hour": RateLimitPolicy,
     "authcode_redeem_per_user_per_hour": RateLimitPolicy,
     "member_claim_per_user_per_hour": RateLimitPolicy,
     "member_claim_per_ip_per_day": RateLimitPolicy,

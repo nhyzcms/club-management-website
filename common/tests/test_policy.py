@@ -196,6 +196,7 @@ class PolicyFieldOwnershipTest(TestCase):
         names = self._names(RateLimitPolicy)
         self.assertIn("login_per_ip_per_hour", names)
         self.assertIn("member_lookup_per_ip_per_hour", names)
+        self.assertIn("public_vote_per_ip_per_hour", names)
         self.assertNotIn("verification_enabled", names)
         self.assertNotIn("sync_upload_max_bytes", names)
 
@@ -220,15 +221,15 @@ class PolicyFieldOwnershipTest(TestCase):
             self.assertIn(f, names)
         self.assertNotIn("registration_enabled", names)
 
-    def test_all_thirty_three_fields_are_covered_once(self):
-        """33 个字段一个不落、也不重复。漏一个会让它悄悄回到默认值。"""
+    def test_all_thirty_four_fields_are_covered_once(self):
+        """34 个字段一个不落、也不重复。漏一个会让它悄悄回到默认值。"""
         seen = []
         for model in POLICY_MODELS:
             for f in model._meta.get_fields():
                 if f.concrete and not f.auto_created and f.name != "id":
                     seen.append(f.name)
-        self.assertEqual(len(seen), 33, f"实际 {len(seen)} 个：{sorted(seen)}")
-        self.assertEqual(len(set(seen)), 33, "有字段被放进了两张表")
+        self.assertEqual(len(seen), 34, f"实际 {len(seen)} 个：{sorted(seen)}")
+        self.assertEqual(len(set(seen)), 34, "有字段被放进了两张表")
 
 
 class PolicyAdminTest(TestCase):
