@@ -119,3 +119,15 @@ class SettingsHygieneTest(TestCase):
             "CLUB_DATA_DIR",
         ):
             self.assertIn(key, text, f".env.example 缺少 {key}")
+
+
+class OpsHardeningTest(TestCase):
+    """M-10 结构不变量：备份目录 / sudoers 健康检查 / nginx 上传上限。"""
+
+    def test_install_script_defaults(self):
+        text = (Path(settings.BASE_DIR) / "scripts" / "install.sh").read_text(encoding="utf-8")
+        self.assertIn('-m 700 "$DIR/run" "$DIR/backups"', text)
+        self.assertIn("-m 700 \"$DIR/backups/releases\"", text)
+        self.assertIn("$SYSTEMCTL is-active --quiet $SERVICE_NAME", text)
+        self.assertIn("client_max_body_size 600M", text)
+        self.assertNotIn("client_max_body_size 20M", text)

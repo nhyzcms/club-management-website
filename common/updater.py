@@ -1683,6 +1683,11 @@ def apply_release(
                 backup_postgres(db_bak, run)
             else:
                 backup_sqlite(paths.db, db_bak)
+            # 备份含密码哈希 / 邮箱 / 业务数据：只给属主读写（审计 M-10）。
+            try:
+                os.chmod(db_bak, 0o600)
+            except OSError:
+                log.warning("chmod 0600 failed for %s", db_bak)
             try:
                 prune_db_backups(paths, policy.update_db_backup_keep)
             except OSError:
