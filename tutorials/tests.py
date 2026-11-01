@@ -265,7 +265,7 @@ class TutorialEditReopenTest(TestCase):
         self.tutorial = approve_tutorial(Tutorial.objects.get(pk=self.tid))
 
     def _review_status(self):
-        return Review.objects.get(tutorial_id=self.tid).status
+        return Review.objects.get(target__kind="tutorial", target__object_id=self.tid).status
 
     def test_title_edit_reopens_review(self):
         resp = self.client.patch(f"/tutorials/tutorials/{self.tid}/", {"title": "新教程"}, format="json")

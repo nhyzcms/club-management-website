@@ -279,7 +279,7 @@ class SelfReviewDeniedTest(TestCase):
         client = APIClient()
         client.force_authenticate(self.author)
         created = client.post("/news/news/", {"title": "自审稿"}, format="json")
-        self.review_id = Review.objects.get(news_id=created.data["id"]).pk
+        self.review_id = Review.objects.get(target__kind="news", target__object_id=created.data["id"]).pk
         self.client = APIClient()
         self.client.force_authenticate(self.author)
 
