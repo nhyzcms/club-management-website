@@ -1,4 +1,4 @@
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import AppShell from "../components/AppShell";
@@ -14,6 +14,14 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
+
+  // 链接里的 uid/token 只用于本页提交；立刻从地址栏与历史记录抹掉（审计 L-1）。
+  useEffect(() => {
+    if (window.location.hash.includes("token=")) {
+      const clean = window.location.hash.split("?")[0];
+      window.history.replaceState(null, "", `${window.location.pathname}${clean}`);
+    }
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
