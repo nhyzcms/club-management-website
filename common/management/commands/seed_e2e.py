@@ -237,7 +237,7 @@ class Command(BaseCommand):
                             "name": "fav",
                             "title": "你最喜欢的栏目？",
                             "isRequired": True,
-                            "choices": ["新闻", "活动", "教程"],
+                            "choices": ["新闻", "互动", "教程"],
                         },
                         {"type": "text", "name": "comment", "title": "留言（选填）"},
                     ],
