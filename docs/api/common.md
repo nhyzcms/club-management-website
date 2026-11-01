@@ -7,10 +7,10 @@
 ## 模块约定
 
 - **挂载位置**：`GET /site-policy/`（`SitePolicyView`，name=`site-policy`，无 app 前缀）；`GET /file/{path}`（`re_path` + `django.views.static.serve`，`document_root = BASE_DIR/media/file`）。
-- **策略快照（`common/policy.py`）**：运营旋钮住 `SiteSettings` 单例（pk 恒 1），调用方一律经 `get_policy()` 读，**不查模型**；快照按缓存键 `common.site_policy` 缓存（`timeout=None`，`SiteSettings.save()` 时失效），`SiteSettings` 无行 / DB 不可用时回退到代码内默认值（与字段默认值一致，行为中立）。加旋钮 = 新字段 + 迁移 + 快照字段，不做通用 KV 袋。
+- **策略快照（`common/policy.py`）**：运营旋钮住五张单例领域表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`，各 `pk` 恒 1，[ADR-0046](../adr/0046-site-settings-split.md)），调用方一律经 `get_policy()` 读，**不查模型**；快照按缓存键 `common.site_policy` 缓存（`timeout=None`，任一策略表 `save()` 时失效），五张表无行 / DB 不可用时回退到代码内默认值（与字段默认值一致，行为中立）。加旋钮 = 对应领域表的新字段 + 迁移 + 快照字段，不做通用 KV 袋。
 - **密钥与基础设施**（`SECRET_KEY`、SMTP、Turnstile secret、`FRONTEND_URL`、MEDIA 路径）仍在 `config/settings.py` + `.env`，改完需重启；**secret 永不下发**。
 - **认证**：`/site-policy/` 为 `AllowAny` 且 `authentication_classes = []`——匿名 GET，不碰 session / CSRF；`/file/{path}` 亦无鉴权。
-- **写入路径**：旋钮只走 Django admin（`is_staff` + `change_sitesettings`，单例、禁增删、changelist 直接跳表单）；无产品侧写接口。维护旗标走 `manage.py maintenance on|off` 与自动更新守护进程。
+- **写入路径**：旋钮只走 Django admin（`is_staff` + 对应领域表的 `change_*` 权限，五张单例、禁增删、changelist 直接跳表单）；无产品侧写接口。维护旗标走 `manage.py maintenance on|off` 与自动更新守护进程。
 
 ## 端点一览
 
@@ -69,7 +69,7 @@
 }
 ```
 
-`turnstile_enabled` / `turnstile_site_key` 来自 `.env`（`TURNSTILE_SITE_KEY` 与 `TURNSTILE_SECRET_KEY` **都非空**才启用；只配一半视为关闭），叠加在快照之上返回，**不在** `SiteSettings` 表内。未启用时 sitekey 为空串。
+`turnstile_enabled` / `turnstile_site_key` 来自 `.env`（`TURNSTILE_SITE_KEY` 与 `TURNSTILE_SECRET_KEY` **都非空**才启用；只配一半视为关闭），叠加在快照之上返回，**不在**任何策略表内。未启用时 sitekey 为空串。
 
 ### 字段语义与消费者
 
@@ -107,7 +107,7 @@
 | dms_enabled | bool | `true` | 私信开关；关闭后不显示入口且无法发起 / 发送，已有会话保留。消费方：`messaging` |
 | verification_valid_days | int | `365` | 认证有效期（天）：邮箱 / 人工 / 认证码通道通过后的有效期；到期后不再算已认证，需重新认证。消费方：`accounts`（通道通过时写 `expires_at`、`is_verified` 判定） |
 | admin_valid_days | int | `730` | 管理员身份有效期（天）：后台委任通道的有效期；到期后系统撤销 `is_staff`。超级管理员不受限（永久）。消费方：`accounts`（委任通道、有效期执行） |
-| registration_verify_days | int | `60` | 注册后认证宽限（天）：注册后从未认证、超期将停用账号；可被 `Profile.registration_deadline` 显式覆盖。消费方：`accounts`（有效期执行） |
+| registration_verify_days | int | `60` | 注册后认证宽限（天）：注册后从未认证、超期将停用账号；可被 `AccountLifecycle.registration_deadline` 显式覆盖。消费方：`accounts`（有效期执行） |
 | turnstile_enabled | bool | `false` | Turnstile 是否启用；前端据此挂载挂件。校验点：注册、找回密码、重发认证信（登录不校验）、未登录匿名反馈 |
 | turnstile_site_key | string | `""` | 公开 sitekey（未启用时为空串；secret 永不下发） |
 
@@ -140,7 +140,7 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 
 - 渲染不传 request（不碰 DB / session / CSRF / context processor），只用内联 CSS，不依赖 `frontend/dist`；响应带 `Cache-Control: no-store`。
 - `Retry-After`：更新进行中（`reason=update`）为 `5`，运维拦截（`reason=ops`）为 `120`。
-- 旗标文件即事实源（JSON，含 `reason` / `message` / `step` / `step_index` / `step_total` / `sha` / `resume_ops` / `ops_message`），中间件只读文件、不读 `SiteSettings`——避免 migrate 期间 SQLite 死锁。
+- 旗标文件即事实源（JSON，含 `reason` / `message` / `step` / `step_index` / `step_total` / `sha` / `resume_ops` / `ops_message`），中间件只读文件、不读策略表——避免 migrate 期间 SQLite 死锁。
 - 更新时页面按 8 步展示进度（`drain` 拦截访问 → `backup` 备份数据库 → `unpack` 解包 → `sync` 替换文件 → `deps` 同步依赖 → `migrate` 迁移 → `collectstatic` 收集静态 → `reload` 重载服务；回滚另显示「正在回滚到上一版本」，进度百分比按 `step_index / step_total` 计算）。
 - 运维入口：`manage.py maintenance on|off|status`。`on` 可带 `--message`（显示在维护页）；更新进行中执行 `on` 会记下 `resume_ops`，更新结束后自动恢复运维拦截；`off` 不会中止进行中的更新（只取消「结束后的运维拦截」）。
 - 影响面：维护页对**全站**（含 `/admin/`）生效，API 客户端同样收到 503 HTML（非 JSON）。
@@ -173,7 +173,7 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 | 关注点 | 位置 |
 |---|---|
 | 快照读取与默认值 | `common/policy.py`（`get_policy` / `SitePolicy` / `invalidate_policy_cache` / `format_byte_cap`） |
-| 单例模型与 admin 编辑 | `common/models.py`（`SiteSettings`）、`common/admin.py` |
+| 五张单例策略表与 admin 编辑 | `common/models.py`（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`）、`common/admin.py` |
 | 公开视图 | `common/views.py`（`SitePolicyView`） |
 | 维护拦截与旗标 | `common/middleware.py`、`common/maintenance.py`、`common/management/commands/maintenance.py` |
 | 自动更新 | `common/updater.py` |

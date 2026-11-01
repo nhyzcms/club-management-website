@@ -6,7 +6,7 @@
 |---|---|---|---|
 | 进程环境变量 | `.env`（模板 `.env.example`，`.env` 已 gitignore） | 进程启动时读取，**改完必须重启** | 密钥、SMTP 授权码、Turnstile secret、域名、自动更新 token |
 | Django settings | `config/settings.py` | 代码内，含从环境变量派生的默认值 | 数据库、静态文件、CORS/CSRF、中间件、DRF 全局配置 |
-| 运行时站点策略 | `SiteSettings` 单例（Django admin 编辑），经 `GET /site-policy/` 下发 | 存 DB，改完即时生效（`save()` 失效缓存） | 限流额度、上传上限、评论/私信开关、自动更新窗口 |
+| 运行时站点策略 | 五张单例领域表 `AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`（Django admin 编辑），经 `GET /site-policy/` 下发 | 存 DB，改完即时生效（`save()` 失效缓存） | 限流额度、上传上限、评论/私信开关、自动更新窗口 |
 
 第三层**不**是环境变量：运营旋钮走 DB，密钥与基础设施走 `.env`（设计记录 `docs/adr/0010-runtime-site-policy.md`）。下文按层展开。
 
@@ -100,7 +100,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `django.middleware.common.CommonMiddleware` | |
 | `django.middleware.csrf.CsrfViewMiddleware` | |
 | `django.contrib.auth.middleware.AuthenticationMiddleware` | |
-| `accounts.middleware.PasswordChangeRequiredMiddleware` | 管理员手动重置密码后（`Profile.must_change_password`）只放行改密 / 读自身状态 / 登出 / 静态资源，其余 API 返回 403 `password_change_required`；须在 AuthenticationMiddleware 之后 |
+| `accounts.middleware.PasswordChangeRequiredMiddleware` | 管理员手动重置密码后（`AccountLifecycle.must_change_password`）只放行改密 / 读自身状态 / 登出 / 静态资源，其余 API 返回 403 `password_change_required`；须在 AuthenticationMiddleware 之后 |
 | `accounts.middleware.ValidityEnforcementMiddleware` | 身份有效期惰性执行（响应后、按会话节流 300 秒；须在 AuthenticationMiddleware 之后） |
 | `django.contrib.messages.middleware.MessageMiddleware` | |
 | `django.middleware.clickjacking.XFrameOptionsMiddleware` | |
@@ -151,7 +151,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `DEFAULT_FROM_EMAIL` | 配了 SMTP 时为 `EMAIL_HOST_USER` |
 | `NOTIFICATIONS_DELIVERY_ASYNC` | 环境变量；默认开。异步 = 进程内队列 + 守护线程消费（`messaging/notifications/queue.py`，失败退避重试，见 [ADR-0024](adr/0024-async-notification-delivery.md)）；`=0` 回退旧同步投递。测试期默认同步（用例可 `override_settings` 开启） |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 环境变量，默认空。两项都非空才启用（`accounts/turnstile.py::is_turnstile_enabled()`）；启用后 sitekey 经 `GET /site-policy/` 下发，secret 只留进程内 |
-| `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` | 环境变量；repo 默认 `nhyzcms/club-management-website`（空串也回退）。窗口 / 轮询等旋钮在 `SiteSettings` |
+| `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` | 环境变量；repo 默认 `nhyzcms/club-management-website`（空串也回退）。窗口 / 轮询等旋钮在 `UpdaterPolicy` |
 
 ### 2.7 DRF 与 tus
 
@@ -160,7 +160,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `DEFAULT_AUTHENTICATION_CLASSES` | `rest_framework.authentication.SessionAuthentication`（无 JWT） |
 | `DEFAULT_PERMISSION_CLASSES` | `rest_framework.permissions.IsAuthenticated` |
 | `NUM_PROXIES` | `1` —— 一层 nginx，取 `X-Forwarded-For` 最右（真实客户端），忽略客户端伪造的前缀 |
-| `DEFAULT_THROTTLE_RATES` | `{}` —— 运营限流额度住在 `SiteSettings`（`get_policy()`），各限流类覆写 `get_rate()` 直接读快照，**不读**这个 map。限流类：`accounts/throttles.py` 的 `RegisterThrottle` / `ResendVerificationThrottle` / `LoginIpThrottle` / `LoginUsernameThrottle`，`reviews/throttles.py` 的 `FeedbackAnonThrottle` / `ReportDailyThrottle` |
+| `DEFAULT_THROTTLE_RATES` | `{}` —— 运营限流额度住在 `RateLimitPolicy`（`get_policy()`），各限流类覆写 `get_rate()` 直接读快照，**不读**这个 map。限流类：`accounts/throttles.py` 的 `RegisterThrottle` / `ResendVerificationThrottle` / `LoginIpThrottle` / `LoginUsernameThrottle`，`reviews/throttles.py` 的 `FeedbackAnonThrottle` / `ReportDailyThrottle` |
 | `DEFAULT_PAGINATION_CLASS` / `PAGE_SIZE` | `PageNumberPagination` / `20` |
 | `DEFAULT_FILTER_BACKENDS` | `DjangoFilterBackend` + `SearchFilter` + `OrderingFilter` |
 | `REST_FRAMEWORK_TUS["MAX_FILE_SIZE"]` | `500 * 1024 * 1024`（库级兜底；实际上限读 `get_policy().tus_media_max_bytes`） |
@@ -175,9 +175,9 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `PASSWORD_HASHERS` | `["django.contrib.auth.hashers.MD5PasswordHasher"]` | 默认 PBKDF2 约 374ms/次；测试库每次清空、绝不进生产 |
 | `EMAIL_BACKEND` | `django.core.mail.backends.locmem.EmailBackend` | 注册 / 认证 / 重置路径发信不触网、不阻塞，可断言 `mail.outbox`（防御性：本地 `.env` 若配了 SMTP 也会被切回内存后端） |
 
-## 三、运行时站点策略（`SiteSettings`）
+## 三、运行时站点策略（五张领域表）
 
-`common/models.py::SiteSettings` 是 pk 恒为 1 的单例，只在 Django admin 编辑（`verbose_name = "站点策略"`）；`save()` 会失效缓存键 `common.site_policy`。调用方一律经 `common/policy.py::get_policy()` 读快照，**不查模型**；无行 / DB 不可用时回退代码内默认值。`GET /site-policy/` 把快照 + Turnstile 公开字段一并下发给 SPA。
+B5 起 `common/models.py` 里是五张 pk 恒为 1 的单例表——`AuthPolicy`（认证策略）/ `RateLimitPolicy`（频控策略）/ `UploadPolicy`（上传策略）/ `UpdaterPolicy`（更新策略）/ `ContentPolicy`（内容策略），各自在 Django admin 有独立页面（[ADR-0046](adr/0046-site-settings-split.md)）；任一表 `save()` 都会失效缓存键 `common.site_policy`。调用方一律经 `common/policy.py::get_policy()` 读同一个快照（字段与拆分前一一对应），**不查模型**；无行 / DB 不可用时回退代码内默认值。`GET /site-policy/` 把快照 + Turnstile 公开字段一并下发给 SPA。
 
 | 字段 | 默认值 | 作用 |
 |---|---|---|
@@ -212,7 +212,9 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `comments_enabled` / `comment_max_depth` | `True` / `8` | 评论区开关与最大嵌套深度（1 = 仅根评论） |
 | `dms_enabled` | `True` | 私信开关 |
 
-维护拦截是**文件旗标**而非 DB：`run/MAINTENANCE`（由 `manage.py maintenance on|off|status` 或更新守护进程写），中间件只读文件、绝不读 `SiteSettings`，避免 `migrate` 时死锁 SQLite。
+字段归属：认证开关 / 有效期 / 注册宽限 / 自助注册与认领 → `AuthPolicy`；各类额度 → `RateLimitPolicy`；上传上限 → `UploadPolicy`；自动更新窗口与保留份数 → `UpdaterPolicy`；内容审核 / 评论 / 私信 → `ContentPolicy`。
+
+维护拦截是**文件旗标**而非 DB：`run/MAINTENANCE`（由 `manage.py maintenance on|off|status` 或更新守护进程写），中间件只读文件、绝不读策略表，避免 `migrate` 时死锁 SQLite。
 
 ## 四、前端构建配置
 
@@ -266,7 +268,7 @@ CI 另外断言 `frontend/dist/surveyjs/survey.core.min.js` 存在（`.github/wo
 |---|---|---|
 | 密钥 / 域名 / SMTP / Turnstile / 更新 token | `.env` | 重启进程（生产 `sudo systemctl restart club`） |
 | 数据库 / Redis / worker 数 | `.env`（`DB_*` / `REDIS_URL` / `GUNICORN_WORKERS`） | 重启进程；数据迁移与回滚见 deployment.md |
-| 限流额度、上传上限、评论 / 私信开关、认证有效期、更新窗口 | Django admin「站点策略」 | 即时（`save()` 失效缓存） |
+| 限流额度、上传上限、评论 / 私信开关、认证有效期、更新窗口 | Django admin「认证策略 / 频控策略 / 上传策略 / 更新策略 / 内容策略」 | 即时（`save()` 失效缓存） |
 | 全站维护拦截 | `uv run python manage.py maintenance on --message "..."` | 即时（文件旗标，无需重启） |
 | CORS 来源、DRF 全局配置、中间件、分页大小 | `config/settings.py` | 改代码 + 重启 |
 | 前端构建行为 | `frontend/webpack.config.js` / `package.json` / `tsconfig.json` | 重新 `npm run build` |

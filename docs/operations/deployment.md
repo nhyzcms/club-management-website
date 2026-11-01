@@ -310,6 +310,17 @@ uv run python manage.py flush_notifications              # 排空内存队列 + 
 uv run python manage.py flush_notifications --limit 500  # 限量（默认 200）
 ```
 
+数据一致性与清理（B4 / B9 起）：
+
+```bash
+uv run python manage.py check_profile_sync           # 体检：Profile 与 AccountIdentity / AccountLifecycle 行是否齐全（退出码 1 = 有缺口）
+uv run python manage.py check_profile_sync --fix     # 以新表补齐缺行
+uv run python manage.py prune_orphan_targets         # 默认预演：列出宿主已删的孤儿 ContentTarget
+uv run python manage.py prune_orphan_targets --apply # 确认后删除（可加 --kind=news 只处理一类）
+```
+
+B4 删掉 `Profile` 的旧列后，`check_profile_sync` 退化为「新表缺行体检」；`prune_orphan_targets` 处理裸 SQL、数据库级 CASCADE 与迁移删数据绕过 `post_delete` 留下的孤儿锚点（正常删除会自动清理）。
+
 Nginx 侧：
 
 ```bash

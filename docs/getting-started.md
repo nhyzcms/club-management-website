@@ -211,7 +211,7 @@ club-management-website/
 | 新增 Django app | `uv run python manage.py startapp <name>` → 注册进 `config/settings.py` 的 `INSTALLED_APPS` → 在 `config/urls.py` 挂载前缀，并把该前缀加进 catch-all 的排除清单 |
 | 新增前端可访问的 API 前缀 | 同步两处：`config/urls.py` 的排除清单 + `frontend/webpack.config.js` 的 `devServer.proxy`（漏一处，开发态请求会被 SPA 或 dev server 吞掉） |
 | 新增前端页面 | 在 `frontend/src/App.tsx` 声明路由并 `React.lazy` 懒加载；需登录的包 `ProtectedRoute`；随后 `npm run build` 验证 |
-| 新增后端配置项 | 密钥 / 基础设施 → `.env` + `.env.example` + `config/settings.py`；运营旋钮 → `common/models.py::SiteSettings` + 迁移 + `common/policy.py` 快照 + admin `fieldsets` |
+| 新增后端配置项 | 密钥 / 基础设施 → `.env` + `.env.example` + `config/settings.py`；运营旋钮 → `common/models.py` 的对应领域策略表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`）+ 迁移 + `common/policy.py` 快照 + 该表 admin |
 | 改模型字段 | `uv run python manage.py makemigrations <app>` → `uv run python manage.py migrate` |
 | 改接口 | 保持 DRF API 与前端能力一致：后端改字段名时同步 `frontend/src/api/` 与 `frontend/src/types/` |
 

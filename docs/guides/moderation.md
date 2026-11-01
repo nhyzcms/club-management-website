@@ -92,7 +92,7 @@
 
 忘记密码的**人工通道**（`accounts.password_reset_review`）：邮箱失效 / 未绑定的成员在 `/#/forgot-password` 的「联系管理员」页签提交申请（账号 + 身份证明（**学生证/校牌**，页面明确提示**不要提交身份证照片**），附件落私有存储），持 `accounts.review_password_reset` 的人在 `/reviews` 的「密码重置」桌处理。
 
-- **批准**：密码重置为 `123456`、`Profile.must_change_password=true`、**吊销该账号全部会话**（`revoked_reason=security`），写处理人 / 时间 / 说明并通知当事人；对方首次登录必须改密。
+- **批准**：密码重置为 `123456`、`AccountLifecycle.must_change_password=true`、**吊销该账号全部会话**（`revoked_reason=security`），写处理人 / 时间 / 说明并通知当事人；对方首次登录必须改密。
 - **驳回**：只改申请状态，不动密码与会话。
 - 只能处理 `pending`；重复处理 409 `already_reviewed`；**不能审批自己的申请**（403 `cannot_review_self`）。
 - 申请与队列的接口细节见[账号 API](../api/accounts.md)「手动重置密码」。

@@ -147,9 +147,9 @@
 | username | string | 是 | 站点内唯一（大小写不敏感） |
 | password / password2 | string | 是 | 密码（走 Django 密码校验器）与确认密码，须一致 |
 | email | string | 否 | 提供则建 `email` 通道 `pending`（`identifier`=待认证地址，归一化小写）并发认证信；**后缀须在白名单内**（[ADR-0023](../adr/0023-email-domain-allowlist.md)） |
-| real_name | string | 是 | 真实姓名，写入 `Profile.real_name`（不公开展示） |
-| identity | string | 是 | 身份，写入 `Profile.identity`；∈ `student` / `external` / `graduate` / `parent` / `teacher` |
-| card_no | string | 否 | **校牌号**（≤20 字符）。仅 `student` / `graduate` 登记，其余身份传了也忽略；写入 `Profile.card_no`（与名册行 `MemberIdentity.card_no` 是同一个值）。见下方「校牌号与自动绑定」 |
+| real_name | string | 是 | 真实姓名，写入 `AccountIdentity.real_name`（不公开展示） |
+| identity | string | 是 | 身份，写入 `AccountIdentity.identity`；∈ `student` / `external` / `graduate` / `parent` / `teacher` |
+| card_no | string | 否 | **校牌号**（≤20 字符）。仅 `student` / `graduate` 登记，其余身份传了也忽略；先存 `AccountIdentity.pending_card_no`（待绑定暂存；绑定后以名册行 `MemberIdentity.card_no` 为准）。见下方「校牌号与自动绑定」 |
 | turnstile_token | string | 条件 | Turnstile 启用时必填 |
 
 **响应 `201 Created`**
@@ -160,7 +160,7 @@
 
 `User.email` 保持空（待认证邮箱住通道 `identifier`，认证通过才晋升）；未提供邮箱或认证通道关闭时 `message` 为 `"注册成功。"` 且不建通道。**注册成功即建立登录会话（自动登录）**；若名册存在姓名匹配的未绑定行，前端随后进入社员身份认领阶段（可跳过，见 `/auth/member/`）。
 
-**校牌号与自动绑定**（2026-10-23）：带 `card_no` 注册时，若名册中存在**姓名（归一）+ 校牌号（归一：去空白、大小写不敏感）都一致**且未绑定的**唯一**一行 → 直接绑定（`bind_method=register`），前端无需再走手机号后四位。没命中（名册未导入 / 校牌号不同 / 同名多行）**不报错**：`Profile.card_no` 先保存，名册导入或「重新运行自动匹配」时按姓名写回名册行（`sync_card_numbers`）；名册有值时以名册为准，两边始终对齐。
+**校牌号与自动绑定**（2026-10-23）：带 `card_no` 注册时，若名册中存在**姓名（归一）+ 校牌号（归一：去空白、大小写不敏感）都一致**且未绑定的**唯一**一行 → 直接绑定（`bind_method=register`），前端无需再走手机号后四位。没命中（名册未导入 / 校牌号不同 / 同名多行）**不报错**：校牌号先存 `AccountIdentity.pending_card_no`（待绑定暂存），名册导入或「重新运行自动匹配」时按姓名写回名册行（`sync_card_numbers`）；**名册是唯一权威**——写进名册后暂存即清空，名册已有值时以名册为准。
 
 **注册查重（2026-10，2026-10-24 调整）**：以下任一命中即视为同一账号，返回 `409`：
 
@@ -168,7 +168,7 @@
 - **邮箱**（`User.email` 或他人 email 通道 identifier，含 pending）；
 - **姓名 + 校牌号同时一致**：姓名做 NFKC + 忽略空白比较，校牌号去空白、转大写比较。
   校牌号选填；**没填校牌号时不做姓名判重**——校内同名同姓很常见，只按姓名拦会误伤真实的新成员。
-  除 `Profile.card_no` 外也查已绑定名册行 `MemberIdentity.card_no`（覆盖历史账号尚未回写资料的情况）。
+  除 `AccountIdentity.pending_card_no` 外也查已绑定名册行 `MemberIdentity.card_no`（覆盖历史账号尚未回写资料的情况）。
 
 ```json
 {"error": "该用户名已注册，请登录原账户。", "reason": "account_exists", "field": "username"}
@@ -269,7 +269,7 @@
 - 403 `account_deletion_protected`（管理员 / 超管账号不允许自助注销）；
 - 409 `account_already_deleted`（重复注销）。
 
-注销语义见 [ADR-0027](../adr/0027-account-deletion.md)：`User` / `Profile` 行保留（`Profile.deleted_at` 标记），邮箱、头像、身份证明材料、验证通道、登录设备、通知与安全验证残留删除；真实姓名、账号唯一编码与社员编号（`MemberIdentity`）保留。
+注销语义见 [ADR-0027](../adr/0027-account-deletion.md)：`User` / `Profile` 行保留（`AccountLifecycle.deleted_at` 标记），邮箱、头像、身份证明材料、验证通道、登录设备、通知与安全验证残留删除；真实姓名、账号唯一编码与社员编号（`MemberIdentity`）保留。
 
 > 前端（`AccountDeletionPanel`）在表单填对后**不会直接调本端点**：先弹一次二次确认弹窗，点「确认注销」才发请求；取消 / Esc / 点遮罩都不发。这是纯前端防误触，后端的三重校验不变。
 
@@ -411,7 +411,7 @@
 
 **批准** `POST /auth/password-reset-requests/{pk}/approve/`（body 可带 `note`）
 
-- 密码重置为 **`123456`**；`Profile.must_change_password=true`；
+- 密码重置为 **`123456`**；`AccountLifecycle.must_change_password=true`；
 - **吊销该账号全部会话**（Django Session + `UserSession.revoked_at` / `revoked_reason=security`），旧设备立即下线；
 - 申请转 `approved`、记录处理人 / 时间 / 说明；站内通知当事人（可选补邮件）；
 - 幂等：仅 `pending` 可处理，重复批准 `409 already_reviewed`；**不能审批自己的申请**（`403 cannot_review_self`）。
@@ -420,10 +420,10 @@
 
 **强制改密** `POST /auth/password/force-change/`（登录；body `new_password` / `new_password2`）
 
-仅当 `Profile.must_change_password=true` 时可调用（否则 `400 not_required`）；不要求原密码（默认密码是公开的），
+仅当 `AccountLifecycle.must_change_password=true` 时可调用（否则 `400 not_required`）；不要求原密码（默认密码是公开的），
 但拒绝与默认密码相同 / 与原密码相同，并走 Django 密码校验器。成功后清零标记、保持当前会话。
 
-**请求闸门**：`Profile.must_change_password=true` 期间，`accounts.middleware.PasswordChangeRequiredMiddleware`
+**请求闸门**：`AccountLifecycle.must_change_password=true` 期间，`accounts.middleware.PasswordChangeRequiredMiddleware`
 只放行 `/auth/me/`、`/auth/password/force-change/`、`/auth/logout/`、`/auth/csrf/`、`/auth/login/`、静态资源与
 后台改密页；其余 API 返回 `403 {"error": "管理员已重置你的密码，请先修改密码后再继续使用。", "reason": "password_change_required", "url": "/change-password-required"}`，
 浏览器访问 `/admin/` 则重定向到 `/admin/password_change/`。
@@ -480,7 +480,7 @@
 
 - `status`：`permanent`（超级管理员） / `admin`（委任管理员，取委任到期） / `verified`（取仍在有效期内、到期最晚的通道；任一通道永久则 `expires_at=null`） / `expired`（曾认证但已全部到期，需重新认证） / `unverified`（从未认证，取注册宽限截止）。
 - `expires_at` / `remaining_days`：`null` = 永久；`remaining_days` 向下取整，`0` = 不足 24 小时，负数 = 已到期。
-- `key`：状态快照键（`<status>:<到期时间>`），状态或到期时间变化即换键；`notice_pending` = 该键 ≠ `Profile.validity_notice_ack`。
+- `key`：状态快照键（`<status>:<到期时间>`），状态或到期时间变化即换键；`notice_pending` = 该键 ≠ `AccountLifecycle.validity_notice_ack`。
 - `channels`：未过期的 approved 通道（含通道短名与各自到期），供多通道并列展示。
 
 `POST /auth/validity/ack/`
@@ -503,7 +503,7 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| real_name | string | 是 | 写入 `Profile.real_name` |
+| real_name | string | 是 | 写入 `AccountIdentity.real_name` |
 | identity | string | 是 | `student` / `external` / `graduate` / `parent` / `teacher` |
 | proof_files | file[] | 是 | 1–3 张；单张 ≤5MB；仅 `image/jpeg` / `image/png` / `image/webp` |
 
@@ -542,7 +542,7 @@
 }
 ```
 
-`verified_by` 为 `{"id", "username"}` 或 `null`；`real_name` / `identity` 取自该用户 `Profile`（缺 profile 时为空串）；`proofs` 为该用户全部证明材料（倒序）。
+`verified_by` 为 `{"id", "username"}` 或 `null`；`real_name` / `identity` 取自该用户 `AccountIdentity`（缺行时为空串）；`proofs` 为该用户全部证明材料（倒序）。
 
 `POST /auth/identity-reviews/{pk}/approve/`、`POST …/reject/`、`POST …/disable/`
 
@@ -604,7 +604,7 @@
 
 **认证**：登录；**权限**：—（按查看者身份裁剪字段）。`id` 不存在或账号停用 → 404 `{"error": "用户不存在"}`。
 
-已注销账号（`Profile.deleted_at` 非空）例外返回**墓碑响应**：`{"deleted": true, "user": {"id", "username": ""}, "profile": {"avatar": null, "nickname": "", "bio": ""}, "role": {"label": "已注销"}, "viewer": {...}}`，不含权限 / 组 / 私密字段（[ADR-0027](../adr/0027-account-deletion.md)）。
+已注销账号（`AccountLifecycle.deleted_at` 非空）例外返回**墓碑响应**：`{"deleted": true, "user": {"id", "username": ""}, "profile": {"avatar": null, "nickname": "", "bio": ""}, "role": {"label": "已注销"}, "viewer": {...}}`，不含权限 / 组 / 私密字段（[ADR-0027](../adr/0027-account-deletion.md)）。
 
 **响应 `200 OK`**（本人查看自己的示例；他人查看时省略 ★ 字段）
 

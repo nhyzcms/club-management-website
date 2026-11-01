@@ -58,7 +58,7 @@
 | App | 职责 | 关键概念 | 参考 |
 |---|---|---|---|
 | `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、账号安全中心、资料与头像 | 多端登录（3 台）、登录保护、陌生设备挑战、滚动密钥、登录事件、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) · [账号与安全](../guides/account-security.md) |
-| `common` | 站点策略、维护模式、跨模块公共模型 | `SiteSettings` 运行时策略；`Tag`（表名沿用 `tasks_tag`）；`ContentTarget` 内容锚点（评论 / 审核 / 举报 / 附件的宿主定位） | [API](../api/common.md) |
+| `common` | 站点策略、维护模式、跨模块公共模型 | 五张领域策略表（认证 / 频控 / 上传 / 更新 / 内容）；`Tag`（表名沿用 `tasks_tag`）；`ContentTarget` 内容锚点（评论 / 审核 / 举报 / 附件的宿主定位） | [API](../api/common.md) |
 | `news` | 社团新闻 | 发布审核门控 | [API](../api/news.md) |
 | `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期（`state.calc_state` 判定）、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
 | `tasks` | 任务 | 状态机（`lifecycle.py`） | [API](../api/tasks.md) |
@@ -179,7 +179,7 @@ ContentTarget(kind="news", object_id=42)   # 新闻 #42 的锚点
 
 ### 站点策略
 
-- 注册开关、上传上限、节流速率等运行时可调策略存于 `common.SiteSettings`，经 `get_policy()` 快照供各视图读取（见 [ADR-0010](../adr/0010-runtime-site-policy.md)）；公开投影为 `/site-policy/`。
+- 注册开关、上传上限、节流速率等运行时可调策略拆在五张领域表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`，见 [ADR-0046](../adr/0046-site-settings-split.md)；运行机制见 [ADR-0010](../adr/0010-runtime-site-policy.md)），经 `get_policy()` 快照供各视图读取；公开投影为 `/site-policy/`。
 
 ### 附件与文件存储
 
