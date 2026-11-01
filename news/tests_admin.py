@@ -54,3 +54,30 @@ class NewsAdminArchiveTest(TestCase):
         resp = c.get("/admin/news/news/")
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "归档")
+
+
+class NewsAdminSanitizeTest(TestCase):
+    """L-9 回归：admin 写路径也过 sanitize_html。"""
+
+    def setUp(self):
+        self.author = User.objects.create_user(username="admin_author", password="x")
+        self.staff = User.objects.create_user(username="admin_staff", password="x")
+        self.staff.user_permissions.add(
+            Permission.objects.get(content_type__app_label="news", codename="manage_news"),
+        )
+        self.staff = User.objects.get(pk=self.staff.pk)
+        self.factory = RequestFactory()
+        self.ma = NewsAdmin(News, admin.site)
+
+    def test_admin_save_sanitizes_content(self):
+        obj = News(
+            title="x", author=self.author,
+            content='<p>ok</p><script>alert(1)</script><img src=x onerror="alert(2)">',
+        )
+        req = self.factory.post("/")
+        req.user = self.staff
+        self.ma.save_model(req, obj, form=None, change=False)
+        obj.refresh_from_db()
+        self.assertIn("ok", obj.content)
+        self.assertNotIn("<script", obj.content)
+        self.assertNotIn("onerror", obj.content)
