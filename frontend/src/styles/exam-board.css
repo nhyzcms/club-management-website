@@ -901,3 +901,156 @@
         overflow: auto;
     }
 }
+/* ── 手机版考试日程编辑（2026-11-02） ─────────────────────────────
+   手机不再渲染看板本体，只保留管理员用的编辑面板；
+   抽屉改为文档流内页面，科目表横向可滚，避免 390px 屏把表单挤没。 */
+.exam-mobile-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px;
+    text-align: center;
+    background: var(--exam-bg);
+    color: var(--exam-text);
+}
+
+.exam-mobile-gate h1 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.exam-mobile-gate p {
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.6;
+    color: var(--exam-hint-text);
+}
+
+.exam-board-wrapper.is-mobile-edit {
+    display: block;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.exam-board-wrapper .exam-mobile-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--exam-panel-bg);
+    border-bottom: 1px solid var(--exam-border);
+}
+
+.exam-board-wrapper .exam-mobile-back {
+    min-width: 56px;
+    font-size: 15px;
+    color: var(--exam-text);
+    text-decoration: none;
+}
+
+.exam-board-wrapper .exam-mobile-title {
+    flex: 1;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.exam-board-wrapper .exam-mobile-spacer {
+    min-width: 56px;
+}
+
+.exam-board-wrapper .exam-mobile-tip {
+    margin: 12px 16px 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--exam-hint-text);
+}
+
+.exam-board-wrapper.is-mobile-edit .exam-settings-panel {
+    position: static;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    padding: 12px 16px 32px;
+    border-radius: 0;
+    box-shadow: none;
+    animation: none;
+}
+
+/* 顶栏已经写着「考试日程编辑」，面板里不再重复一遍 */
+.exam-board-wrapper.is-mobile-edit .exam-settings-panel > h3 {
+    display: none;
+}
+
+/* 科目表：390px 屏放不下 5 列，改成每条科目一张两列小卡（日期/科目、开始/结束 + 删） */
+.exam-board-wrapper.is-mobile-edit .schedule-table,
+.exam-board-wrapper.is-mobile-edit .schedule-table tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    table-layout: auto;
+    margin: 8px 0;
+}
+
+.exam-board-wrapper.is-mobile-edit .schedule-table thead {
+    display: none;
+}
+
+.exam-board-wrapper.is-mobile-edit .schedule-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--exam-border);
+}
+
+.exam-board-wrapper.is-mobile-edit .schedule-table tr:last-child {
+    border-bottom: none;
+}
+
+.exam-board-wrapper.is-mobile-edit .schedule-table td {
+    display: block;
+    padding: 0;
+    border: none;
+    text-align: left;
+}
+
+.exam-board-wrapper.is-mobile-edit .schedule-table td::before {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 11px;
+    color: var(--exam-hint-text);
+}
+
+.exam-board-wrapper.is-mobile-edit .schedule-table td:nth-child(1)::before { content: "日期"; }
+.exam-board-wrapper.is-mobile-edit .schedule-table td:nth-child(2)::before { content: "科目"; }
+.exam-board-wrapper.is-mobile-edit .schedule-table td:nth-child(3)::before { content: "开始"; }
+.exam-board-wrapper.is-mobile-edit .schedule-table td:nth-child(4)::before { content: "结束"; }
+
+.exam-board-wrapper.is-mobile-edit .schedule-table td:nth-child(5) {
+    grid-column: 1 / -1;
+    text-align: right;
+}
+
+.exam-board-wrapper.is-mobile-edit .schedule-table td:nth-child(5)::before {
+    content: none;
+}
+
+.exam-board-wrapper.is-mobile-edit .settings-tabs {
+    margin: 8px 0 12px;
+}
+
+.exam-board-wrapper.is-mobile-edit .exam-settings-actions {
+    padding: 10px 0 0;
+}
