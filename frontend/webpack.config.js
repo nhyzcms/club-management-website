@@ -71,6 +71,12 @@ module.exports = {
     new CopyWebpackPlugin({
       patterns: [
         {
+          // 「关于 APP」页的 App 图标（frontend/public/app-icon.svg → /static/app-icon.svg）。
+          // public/ 目录不会被自动整体拷贝，只拷 favicon（HtmlWebpackPlugin）与本处显式声明的那一个。
+          from: path.resolve(__dirname, "public/app-icon.svg"),
+          to: "app-icon.svg",
+        },
+        {
           // 看板娘（Live2D）运行期懒加载：模型与 widget 按需从 /static/live2d/ 取，
           // 体积大但不在首屏路径上，故整目录直拷而不进 bundle。
           from: path.resolve(__dirname, "vendor/live2d"),

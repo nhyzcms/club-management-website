@@ -60,6 +60,11 @@
   到点自动关闭；列表是「筛选 chips + 加载更多」，不做无限滚动）; 社员查询 `/#/v` 在手机 UA 下
   直接渲染手机版版式（结果卡与扫码校验同源）; 意见反馈 `/#/feedback` 同样按 UA 切换版式。
   `/#/m/join` 之外，「我的」新增「社员查询」入口，首页九宫格新增「活动」「查询」两格
+- 「关于 APP」页（2026-11-02）：`/#/m/about-app`，展示 App 图标、名称、版本号（从壳 UA 的
+  `NhyzClubApp/<versionName> (Android; <versionCode>)` 实时解析，不在网页里写死）、开源协议
+  （BSD 3-Clause）、著作权人与官网 / 开源地址超链接。**只在 App 壳内可达**：「我的 → 更多」
+  的入口按 `isAppShell()` 出现，浏览器手输地址会被送回 `/#/m/me`，手机版网站上不存在这一页
+  （`frontend/src/pages/MobileAboutAppPage.tsx`、`frontend/src/utils/aboutApp.ts`）
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA。前端入口（桌面顶栏头像菜单「后台管理」、
   手机版「我的 → 进入后台管理」）**只对 `is_staff` 账号显示**（对应身份徽章 `admin` / `superadmin`，
   判定在 `frontend/src/utils/roles.ts` 的 `canAccessAdmin`）；普通用户与访客不再看到该入口，

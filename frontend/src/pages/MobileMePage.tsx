@@ -7,6 +7,7 @@ import { formatUnreadCount, useUnreadCounts } from "../api/unreadBadges";
 import { THEME_OPTIONS, useTheme } from "../theme";
 import type { RoleVariant } from "../types/profile";
 import { canAccessAdmin } from "../utils/roles";
+import { isAppShell } from "../utils/device";
 import "../styles/mobile.css";
 import "../styles/mobile-work.css";
 
@@ -103,6 +104,10 @@ export default function MobileMePage() {
     { to: "/schedule", label: "课表", hint: "本周课程一览" },
     { to: "/panorama", label: "全景图", hint: "校园 360° 漫游（较费流量）" },
     { to: "/about", label: "关于我们", hint: "社团简介与联系方式" },
+    // App 专属：只在壳里出现（手机浏览器 / 桌面都看不到这一项，路由侧还有一道门禁）
+    ...(isAppShell()
+      ? [{ to: "/m/about-app", label: "关于 APP", hint: "版本、开源协议与官网" }]
+      : []),
   ];
 
   const badgeOf = (kind?: "dm" | "notif") => {

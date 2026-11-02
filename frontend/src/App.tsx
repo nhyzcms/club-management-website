@@ -10,7 +10,7 @@ import MascotHost from "./components/mascot/MascotHost";
 import { useEmbedMode } from "./embed";
 import { api } from "./api/client";
 import { fetchSitePolicy } from "./api/sitePolicy";
-import { isMobileDevice } from "./utils/device";
+import { isAppShell, isMobileDevice } from "./utils/device";
 
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const ForcePasswordChangePage = lazy(() => import("./pages/ForcePasswordChangePage"));
@@ -64,6 +64,7 @@ const MobileHomePage = lazy(() => import("./pages/MobileHomePage"));
 const MobileNewsPage = lazy(() => import("./pages/MobileNewsPage"));
 const MobileActivityPage = lazy(() => import("./pages/MobileActivityPage"));
 const MobileMePage = lazy(() => import("./pages/MobileMePage"));
+const MobileAboutAppPage = lazy(() => import("./pages/MobileAboutAppPage"));
 const MobileNewsDetailPage = lazy(() => import("./pages/MobileNewsDetailPage"));
 const MobileActivityDetailPage = lazy(() => import("./pages/MobileActivityDetailPage"));
 const MobileTutorialsPage = lazy(() => import("./pages/MobileTutorialsPage"));
@@ -198,6 +199,12 @@ export default function App() {
           <Route path="/m/join" element={<MobileJoinPage />} />
           <Route path="/m/join/form" element={<MobileJoinFormPage />} />
           <Route path="/m/me" element={<MobileMePage />} />
+          {/* 「关于 APP」：只对自家壳开放。浏览器（含手机浏览器）手输地址会被送回「我的」， */}
+          {/* 保证手机版网站上不存在这一页。 */}
+          <Route
+            path="/m/about-app"
+            element={isAppShell() ? <MobileAboutAppPage /> : <Navigate to="/m/me" replace />}
+          />
           <Route path="/m/review" element={<ProtectedRoute><MobileReviewPage /></ProtectedRoute>} />
           <Route path="/m/inbox" element={<ProtectedRoute><MobileInboxPage /></ProtectedRoute>} />
           <Route path="/m/notifications" element={<ProtectedRoute><MobileNotificationsPage /></ProtectedRoute>} />
