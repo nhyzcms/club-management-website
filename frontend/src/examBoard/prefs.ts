@@ -1,5 +1,5 @@
 const KEY = "examBoardPrefs";
-const VERSION = 2;
+const VERSION = 3;
 
 export type ExamBoardPrefs = {
   mascot: boolean;
@@ -7,18 +7,20 @@ export type ExamBoardPrefs = {
   voice: boolean;
 };
 
-const DEFAULTS: ExamBoardPrefs = { mascot: true, sound: true, voice: false };
+const DEFAULTS: ExamBoardPrefs = { mascot: false, sound: false, voice: false };
 
 export function loadExamBoardPrefs(): ExamBoardPrefs {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw);
-    const migrated = parsed.v === VERSION;
+    // v2 及更早的记录里 mascot / sound 的默认值就是开的，分不清「用户主动开启」
+    // 和「默认值」，所以 v3 起把旧记录统一按「未选择」处理，一次性落成关闭。
+    if (parsed?.v !== VERSION) return { ...DEFAULTS };
     return {
-      mascot: parsed.mascot !== false,
-      sound: parsed.sound !== false,
-      voice: migrated ? parsed.voice === true : false,
+      mascot: parsed.mascot === true,
+      sound: parsed.sound === true,
+      voice: parsed.voice === true,
     };
   } catch {
     return { ...DEFAULTS };
