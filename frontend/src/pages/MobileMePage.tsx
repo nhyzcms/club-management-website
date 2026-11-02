@@ -24,6 +24,7 @@ interface MeResponse {
       can_view_feedback?: boolean;
       can_handle_reports?: boolean;
       can_review_password_reset?: boolean;
+      can_manage_exam?: boolean;
     };
   };
   role: { label: string; variant: RoleVariant };
@@ -75,22 +76,28 @@ export default function MobileMePage() {
   );
   // 「进入后台管理」指向 Django admin（其门禁只认 is_staff），与桌面顶栏菜单同一判定
   const isAdmin = canAccessAdmin(me?.role?.variant);
+  // 手机版考试看板只提供编辑面板，入口按真实权限出现（与 /exam 页面内的判定一致）
+  const canManageExam = !!permissions.can_manage_exam;
 
+  /**
+   * 2026-11-02：精简「我的」——别处能到达的入口不在这里重复列：
+   * - 任务 / 待办 / 社员查询：首页九宫格已有；
+   * - 全景图：关于我们 →「校园全景图」已有；
+   * - 登录设备 / 注销账号：个人资料页内已有。
+   */
   const common: Entry[] = [
-    { to: "/m/tasks", label: "任务" },
-    ...(isVerified ? [{ to: "/m/inbox", label: "待办", hint: "待投票 / 待交稿 / 待验收" }] : []),
     { to: "/m/notifications", label: "通知", badge: "notif" },
     { to: "/messages", label: "私信", badge: "dm" },
-    { to: "/v", label: "社员查询", hint: "扫工牌条码 / 按编号查（手输按每日额度计）" },
+    { to: "/profile", label: "个人资料", hint: "资料 / 认证 / 登录设备 / 注销账号" },
     { to: "/feedback", label: "意见反馈" },
-    { to: "/profile", label: "个人资料" },
-    { to: "/profile?tab=sessions", label: "登录设备", hint: "最多 3 台同时在线，可下线其他设备" },
-    { to: "/profile?tab=delete", label: "注销账号", hint: "删除邮箱与验证材料，不可恢复" },
   ];
 
   const work: Entry[] = [
     ...(showReview
       ? [{ to: "/m/review", label: "审核台", hint: "身份 / 内容 / 反馈 / 举报 / 密码重置" }]
+      : []),
+    ...(canManageExam
+      ? [{ to: "/exam", label: "考试日程编辑", hint: "批次、科目与考试时间" }]
       : []),
     ...(isAdmin ? [{ to: "/admin/", label: "进入后台管理" }] : []),
   ];
@@ -100,10 +107,8 @@ export default function MobileMePage() {
    * 后续按实际使用频率再逐页做 /m 版本。
    */
   const more: Entry[] = [
-    { to: "/exam", label: "考试看板", hint: "考场安排与倒计时" },
     { to: "/schedule", label: "课表", hint: "本周课程一览" },
-    { to: "/panorama", label: "全景图", hint: "校园 360° 漫游（较费流量）" },
-    { to: "/about", label: "关于我们", hint: "社团简介与联系方式" },
+    { to: "/about", label: "关于我们", hint: "社团简介、校园全景与联系方式" },
     // App 专属：只在壳里出现（手机浏览器 / 桌面都看不到这一项，路由侧还有一道门禁）
     ...(isAppShell()
       ? [{ to: "/m/about-app", label: "关于 APP", hint: "版本、开源协议与官网" }]

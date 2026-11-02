@@ -24,6 +24,7 @@ import {
 } from "../examBoard/validate";
 import { useLoginModal } from "../components/LoginModalProvider";
 import { speakMascot } from "../components/mascot/speak";
+import { isMobileDevice } from "../utils/device";
 import "../styles/exam-board.css";
 
 const SYNC_INTERVAL = 5 * 60 * 1000;
@@ -458,6 +459,8 @@ function ScheduleRail({
 export default function ExamBoardPage() {
   const { openLogin, authNonce } = useLoginModal();
   const [canManage, setCanManage] = useState(false);
+  // 权限还没回来时先不决定「看板 / 编辑」——否则手机上会先闪一下「仅大屏可用」
+  const [permLoaded, setPermLoaded] = useState(false);
   const [exams, setExams] = useState<ExamListItem[]>([]);
   const [exam, setExam] = useState<Exam | null>(null);
   const [batchId, setBatchId] = useState<number | null>(null);
@@ -582,13 +585,40 @@ export default function ExamBoardPage() {
     }
   }, []);
 
+  const mobile = isMobileDevice();
+
   useEffect(() => {
     api.me()
       .then((d) => setCanManage(!!d.user?.permissions?.can_manage_exam))
-      .catch(() => setCanManage(false));
+      .catch(() => setCanManage(false))
+      .finally(() => setPermLoaded(true));
   }, [authNonce]);
 
+  /**
+   * 手机版不渲染看板本体（2026-11-02）。
+   * 看板是按教室大屏设计的，手机上又会把右侧编辑抽屉挤到屏幕外；
+   * 所以手机只保留管理员需要的「考试日程编辑」，直接打开编辑面板。
+   */
+  const mobileEditor = mobile && canManage;
+  const currentExamId = exam?.id ?? null;
+
+  useEffect(() => {
+    if (!mobileEditor || !exam) return;
+    document.title = "考试日程编辑";
+    setTab("edit");
+    setSaveError("");
+    const d = examToDraft(exam);
+    setEditingId(exam.id);
+    setDraftTitle(d.title);
+    setDraftBatches(d.batches);
+    setIsModalOpen(true);
+    // 只在切换考试时重填草稿，避免刷新定时器覆盖正在编辑的内容
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileEditor, currentExamId]);
+
   useLayoutEffect(() => {
+    // 手机版没有看板本体（管理员只有编辑面板），不进入看板模式
+    if (isMobileDevice()) return;
     document.body.classList.add("exam-board-on");
     applyExamBoardMascotClass(loadExamBoardPrefs().mascot);
     return () => {
@@ -971,8 +1001,40 @@ export default function ExamBoardPage() {
     prevKindRef.current = status.kind;
   }, [liveErrata, popupId, cue?.kind, status.kind, prefs.mascot, prefs.sound, prefs.voice]);
 
+    if (mobile && !permLoaded) {
+      return (
+        <div className="exam-mobile-gate">
+          <p>加载中…</p>
+        </div>
+      );
+    }
+
+    // 手机版不看看板：按教室大屏设计的版面在手机上无法使用，也会把编辑功能挤出屏幕。
+    // 管理员走上面的 mobileEditor 分支（只渲染编辑面板），其他人给一条引导。
+    if (mobile && !canManage) {
+      return (
+        <div className="exam-mobile-gate">
+          <h1>考试看板</h1>
+          <p>考试看板按教室大屏设计，手机上不展示。请用教室电脑或投屏设备打开。</p>
+          <a className="btn btn-secondary" href="#/m">返回首页</a>
+        </div>
+      );
+    }
+
     return (
-    <div className={`exam-board-wrapper${isFullscreen ? " is-fullscreen" : ""}`} onClick={unlockExamBoardAudio}>
+    <div className={`exam-board-wrapper${isFullscreen ? " is-fullscreen" : ""}${mobileEditor ? " is-mobile-edit" : ""}`} onClick={unlockExamBoardAudio}>
+      {mobileEditor && (
+        <header className="exam-mobile-head">
+          <a className="exam-mobile-back" href="#/m/me">‹ 我的</a>
+          <span className="exam-mobile-title">考试日程编辑</span>
+          <span className="exam-mobile-spacer" aria-hidden="true" />
+        </header>
+      )}
+      {mobileEditor && (
+        <p className="exam-mobile-tip">手机只用于修改考试日程；看板请在教室大屏打开。</p>
+      )}
+
+      {!mobileEditor && (
       <div className="board-tools">
         <button
           type="button"
@@ -992,21 +1054,29 @@ export default function ExamBoardPage() {
           设置
         </button>
       </div>
+      )}
 
-      {showGuide && !isFullscreen && (
+      {!mobileEditor && showGuide && !isFullscreen && (
         <div className="board-guide" role="note">
           <p>教室投屏请点右上角「全屏」。有题目误刊时，点左侧卡片上的「放大」。多张会每分钟自动轮播。</p>
           <button type="button" className="board-guide-ok" onClick={closeGuide}>知道了</button>
         </div>
       )}
 
-      {isModalOpen && (
-        <div className="exam-settings-overlay" onClick={() => setIsModalOpen(false)}>
+      {(isModalOpen || mobileEditor) && (
+        <div
+          className={mobileEditor ? "exam-settings-inline" : "exam-settings-overlay"}
+          onClick={mobileEditor ? undefined : () => setIsModalOpen(false)}
+        >
           <div className="exam-settings-panel" onClick={(e) => e.stopPropagation()}>
-            <span className="close-btn" onClick={() => setIsModalOpen(false)}>&times;</span>
-            <h3>考试看板设置</h3>
+            {!mobileEditor && (
+              <span className="close-btn" onClick={() => setIsModalOpen(false)}>&times;</span>
+            )}
+            <h3>{mobileEditor ? "考试日程编辑" : "考试看板设置"}</h3>
             <div className="settings-tabs">
-              <button type="button" className={tab === "display" ? "active" : ""} onClick={() => setTab("display")}>显示批次</button>
+              {!mobileEditor && (
+                <button type="button" className={tab === "display" ? "active" : ""} onClick={() => setTab("display")}>显示批次</button>
+              )}
               {canManage && (
                 <>
                   <button type="button" className={tab === "edit" ? "active" : ""} onClick={() => setTab("edit")}>编辑考试</button>
@@ -1294,6 +1364,8 @@ export default function ExamBoardPage() {
         </div>
       )}
 
+      {!mobileEditor && (
+        <>
       {cue && (
         <div className={`time-cue time-cue-${cue.kind}`} role="status">
           {cue.kind === "ending"
@@ -1360,6 +1432,8 @@ export default function ExamBoardPage() {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
