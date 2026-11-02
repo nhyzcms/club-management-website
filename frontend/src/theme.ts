@@ -7,11 +7,11 @@ export type ThemePreference = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
 // 浏览器地址栏 / 系统 UI 主题色（meta[name=theme-color]）。
-// dark 值 = oklch(0.165 0.02 255)（--bg）的 sRGB 近似；
+// dark 值 = --bg 纯黑（2026-11-03 起深色模式用 OLED 纯黑 #000）；
 // template.html 内联脚本有一份同步副本（无法 import），改动需两处一致。
 export const THEME_COLORS: Record<ResolvedTheme, string> = {
   light: "#ffffff",
-  dark: "#080f17",
+  dark: "#000000",
 };
 
 export const STORAGE_KEY = "cobalt:theme";
