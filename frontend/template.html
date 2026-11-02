@@ -34,7 +34,7 @@
         r.style.colorScheme = resolved;
         // 地址栏主题色跟随页面底色（深色值 = theme.ts THEME_COLORS.dark，两处需同步）
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute("content", resolved === "dark" ? "#080f17" : "#ffffff");
+        if (m) m.setAttribute("content", resolved === "dark" ? "#000000" : "#ffffff");
         try { localStorage.setItem("theme", pref === "system" ? "auto" : pref); } catch (e) {}
       })();
     </script>

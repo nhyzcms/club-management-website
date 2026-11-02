@@ -7,9 +7,13 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  /* html 也落纯黑：移动端 overscroll / 地址栏上方的留白不露白 */
+  background: #000;
 
   /* 中性墨：深底浅字，保持钴蓝冷调 */
-  --bg: oklch(0.165 0.02 255);
+  /* 页面基底用 OLED 纯黑（2026-11-03）：手机/平板深色下不发光，更省电；
+     层次交给 --bg-soft / --surface-2，卡片与表单仍有可辨的面。 */
+  --bg: #000;
   --bg-soft: oklch(0.205 0.022 255);
   --surface-2: oklch(0.245 0.022 255);
   --line: oklch(0.30 0.02 252);
@@ -39,17 +43,17 @@
 
 /* ── 硬编码浅色修正 ── */
 
-/* 顶栏：半透明白 → 半透明深 */
+/* 顶栏：半透明白 → 半透明纯黑（与 --bg 同色，避免在纯黑上浮出一层灰） */
 :root[data-theme="dark"] .topnav {
-  background: oklch(0.16 0.02 255 / .86);
+  background: oklch(0 0 0 / .86);
 }
 
-/* 手机版外壳（/m）：顶栏 / 底部 tab 半透明白 → 半透明深 */
+/* 手机版外壳（/m）：顶栏 / 底部 tab 半透明白 → 半透明纯黑 */
 :root[data-theme="dark"] .m-topbar {
-  background: oklch(0.16 0.02 255 / .92);
+  background: oklch(0 0 0 / .92);
 }
 :root[data-theme="dark"] .m-tabbar {
-  background: oklch(0.16 0.02 255 / .95);
+  background: oklch(0 0 0 / .95);
 }
 
 /* 首页 feed：暖/冷浅色渐变卡片 → 深色 */
