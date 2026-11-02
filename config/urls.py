@@ -19,6 +19,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include, re_path
+from django.views.decorators.cache import never_cache
 from django.views.generic import TemplateView
 from django.views.static import serve
 
@@ -44,8 +45,12 @@ urlpatterns = [
     path('uploads/', include('attachments.tus_urls')),
     re_path(r'^file/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'media', 'file')}),
     
-    path('', TemplateView.as_view(template_name='index.html'), name='home'),
-    re_path(r'^(?!file/|static/|admin/|auth/|tasks/|media/|messaging/|activities/|events/|news/|reviews/|site-policy/|exam_board/|tutorials/|recruitment/|attachments/|uploads/|about/|panorama/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
+    # SPA 入口**必须**不可缓存：L0 热更新（网站改完重开 App 就生效）全靠这一步。
+    # index.html 只有 2.5 KB，而它引用的静态资源文件名带 contenthash，
+    # 一旦 HTML 被 WebView 缓存，就会拿着旧哈希去请求已被删除的 chunk → 白屏。
+    path('', never_cache(TemplateView.as_view(template_name='index.html')), name='home'),
+    re_path(r'^(?!file/|static/|admin/|auth/|tasks/|media/|messaging/|activities/|events/|news/|reviews/|site-policy/|exam_board/|tutorials/|recruitment/|attachments/|uploads/|about/|panorama/).*$',
+            never_cache(TemplateView.as_view(template_name='index.html')), name='index'),
 ]
 
 if settings.DEBUG:

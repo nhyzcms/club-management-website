@@ -4,6 +4,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
 import ValidityNoticeHost from "./components/ValidityNoticeHost";
 import AnnouncementHost from "./components/AnnouncementHost";
+import ShellVersionGate from "./components/ShellVersionGate";
 import LoginModalProvider from "./components/LoginModalProvider";
 import MascotHost from "./components/mascot/MascotHost";
 import { useEmbedMode } from "./embed";
@@ -211,6 +212,8 @@ export default function App() {
       <ValidityNoticeHost />
       {/* 全站弹窗公告（ADR-0042）：等其它弹窗关掉后再弹，关闭即已读。 */}
       <AnnouncementHost />
+      {/* App 壳最低版本闸门（区块 8）：只在壳里、且 UA 版本码低于要求时出现，浏览器不受影响。 */}
+      <ShellVersionGate />
       </LoginModalProvider>
       <MaybeMascot />
     </HashRouter>
