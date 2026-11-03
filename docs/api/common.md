@@ -39,6 +39,7 @@
   "login_per_ip_per_hour": 30,
   "login_per_username_per_hour": 10,
   "feedback_anon_per_ip_per_day": 10,
+  "public_vote_per_ip_per_hour": 120,
   "reports_per_user_per_day": 10,
   "authcode_redeem_per_user_per_hour": 10,
   "member_claim_enabled": true,
@@ -76,13 +77,14 @@
 | 字段 | 类型 | 默认 | 含义 / 消费方 |
 |---|---|---|---|
 | verification_enabled | bool | `true` | 认证通道总开关；关闭后不可新开 / 完成任何通道，已通过者仍算已认证。消费方：`accounts`（注册建通道、绑邮 / 换邮、人工提交、认证链接落地、身份审核通过 / 驳回） |
-| content_review_enabled | bool | `true` | 内容审核总开关；关闭后新建新闻 / 活动 / 教程直接通过、不进待审队列（已有待审条目不批量通过）。消费方：`reviews.lifecycle` |
+| content_review_enabled | bool | `true` | 内容审核总开关；关闭后新建新闻 / 互动 / 教程直接通过、不进待审队列（已有待审条目不批量通过）。消费方：`reviews.lifecycle` |
 | registration_enabled | bool | `true` | 自助注册开关；关闭后注册返回 403。消费方：`accounts` 注册视图 |
 | register_per_ip_per_day | int | `5` | 每 IP 每日注册次数上限（`accounts.throttles.RegisterThrottle`，校验前先限流） |
 | resend_verification_per_ip_per_hour | int | `5` | 每 IP 每小时重发认证邮件次数（`ResendVerificationThrottle`；绑定邮箱与重发两条路径共用） |
 | login_per_ip_per_hour | int | `30` | 每 IP 每小时**登录失败**次数（门户与 Django admin 共用；成功登录不占额度） |
 | login_per_username_per_hour | int | `10` | 每用户名 / 邮箱每小时登录失败次数（防针对单一账号撞库） |
 | feedback_anon_per_ip_per_day | int | `10` | 每 IP 每日匿名反馈次数（`reviews` 限流） |
+| public_vote_per_ip_per_hour | int | `120` | 公开受众投票：每 IP 每互动每小时游客票上限（只计未登录请求；NAT 出口共用 IP 时调高）。消费方：`activities.throttles.PublicVoteThrottle` |
 | reports_per_user_per_day | int | `10` | 每用户每日举报次数（`reviews` 限流） |
 | authcode_redeem_per_user_per_hour | int | `10` | 每账号每小时认证码兑换**失败**次数（`accounts.throttles.AuthCodeRedeemThrottle`；只计失败，成功不占额度） |
 | member_claim_enabled | bool | `true` | 社员身份自助认领开关；关闭后认领接口 403、注册后认领阶段不展示（已绑定不受影响）。消费方：`accounts` |

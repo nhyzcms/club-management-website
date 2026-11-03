@@ -44,7 +44,7 @@
 | `/admin/` | Django Admin 管理后台 | [管理后台指南](../operations/admin-guide.md) |
 | `/site-policy/` | 站点策略公开投影 | [common](../api/common.md) |
 | `/auth/` | 账号、登录、认证、资料 | [accounts](../api/accounts.md) |
-| `/tasks/` `/messaging/` `/activities/` `/exam_board/` `/news/` `/reviews/` `/about/` `/tutorials/` `/recruitment/` `/attachments/` | 各业务模块 API | 各模块文档 |
+| `/tasks/` `/messaging/` `/activities/` `/events/` `/exam_board/` `/news/` `/reviews/` `/about/` `/tutorials/` `/recruitment/` `/attachments/` | 各业务模块 API | 各模块文档 |
 | `/uploads/` | TUS 断点续传端点 | [attachments](../api/attachments.md) |
 | `/file/…` | 公开媒体文件服务 | — |
 | 未匹配路径（除已知前缀） | 回落 SPA 入口 `index.html` | [frontend](frontend.md) |
@@ -60,7 +60,8 @@
 | `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、账号安全中心、资料与头像 | 多端登录（3 台）、登录保护、陌生设备挑战、滚动密钥、登录事件、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) · [账号与安全](../guides/account-security.md) |
 | `common` | 站点策略、维护模式、跨模块公共模型 | 五张领域策略表（认证 / 频控 / 上传 / 更新 / 内容）；`Tag`（表名沿用 `tasks_tag`）；`ContentTarget` 内容锚点（评论 / 审核 / 举报 / 附件的宿主定位） | [API](../api/common.md) |
 | `news` | 社团新闻 | 发布审核门控 | [API](../api/news.md) |
-| `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期（`state.calc_state` 判定）、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
+| `activities` | 互动（众议 / 征集 / 展示 / 调研） | 生命周期（`state.calc_state` 判定）、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
+| `events` | 活动（有时间窗、参与者之间可发生关系） | 惰性流转（`lifecycle.touch`）、到点自动关闭、形态模块 `module_key`（壳阶段） | [API](../api/events.md) |
 | `tasks` | 任务 | 状态机（`lifecycle.py`） | [API](../api/tasks.md) |
 | `tutorials` | 教程文章 | 收藏 | [API](../api/tutorials.md) |
 | `messaging` | 评论、私信、通知、横幅、禁言 | 评论区三态、WebSocket 推送 | [API](../api/messaging.md) |

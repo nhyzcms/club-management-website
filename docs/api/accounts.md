@@ -35,15 +35,15 @@
 | POST | `/auth/profile/change-password/` | 登录 | — | 修改密码（需 Step-up） |
 | POST | `/auth/account/delete/` | 登录 | — | 注销账号（软删除 + 敏感信息清除，[ADR-0027](../adr/0027-account-deletion.md)） |
 | GET | `/auth/sessions/` | 登录 | — | 登录设备与名额（在线 + 历史） |
-| POST | `/auth/sessions/<id>/revoke/` | 登录 | — | 下线指定设备（仅本人记录） |
-| POST | `/auth/sessions/revoke-others/` | 登录 | — | 下线其他所有设备 |
+| POST | `/auth/sessions/<id>/revoke/` | 登录 | Step-up `manage_devices` | 下线指定设备（仅本人记录） |
+| POST | `/auth/sessions/revoke-others/` | 登录 | Step-up `manage_devices` | 下线其他所有设备 |
 | GET | `/auth/security/overview/` | 登录 | — | 安全中心总览（各登录方式状态） |
 | GET | `/auth/devices/` | 登录 | — | 设备列表 + 在线会话名额 |
 | DELETE | `/auth/devices/<id>/` | 登录 | Step-up `manage_devices` | 撤销设备并吊销其全部会话 |
 | GET | `/auth/login-events/` | 登录 | — | 本人登录记录（20 条/页） |
 | GET | `/auth/totp/` | 登录 | — | 已确认的滚动密钥列表 |
-| POST | `/auth/totp/setup/` | 登录 | — | 新建一条未确认的 TOTP（secret / otpauth / 二维码） |
-| POST | `/auth/totp/confirm/` | 登录 | — | 用 6 位码确认；首次生成恢复代码 |
+| POST | `/auth/totp/setup/` | 登录 | Step-up `manage_totp` 或重输登录密码 | 新建一条未确认的 TOTP（secret / otpauth / 二维码） |
+| POST | `/auth/totp/confirm/` | 登录 | Step-up `manage_totp` 或重输登录密码 | 用 6 位码确认；首次生成恢复代码 |
 | DELETE | `/auth/totp/<id>/` | 登录 | Step-up `manage_totp` | 解绑一条滚动密钥 |
 | POST | `/auth/recovery-codes/` | 登录 | Step-up `manage_totp` | 重新生成恢复代码（作废旧码） |
 | POST | `/auth/password-reset/` | 公开 | — | 邮箱链接自助重置（发起） |
@@ -75,7 +75,7 @@
 | POST | `/auth/identity-reviews/{pk}/approve/` | 登录 | `accounts.can_review_identity` | 通过身份审核 |
 | POST | `/auth/identity-reviews/{pk}/reject/` | 登录 | `accounts.can_review_identity` | 驳回身份审核 |
 | POST | `/auth/identity-reviews/{pk}/disable/` | 登录 | `accounts.can_review_identity` | 停用账号 |
-| GET | `/auth/inbox/` | 已认证 | — | 待办收件箱（活动债 + 任务债） |
+| GET | `/auth/inbox/` | 已认证 | — | 待办收件箱（互动债 + 任务债） |
 | GET | `/auth/users/` | 登录 | — | 用户列表（`?search=` 搜人） |
 | GET | `/auth/users/{id}/profile/` | 登录 | — | 他人主页资料（按查看者身份裁剪） |
 | GET | `/auth/users/{id}/content/` | 登录 | — | 用户内容 tab（按查看者身份裁剪） |
@@ -103,7 +103,7 @@
 改密 / 退出」外的请求（403 `{"reason": "password_change_required", "url": "/change-password-required"}`）。
 未认证账号照常登录（登录与认证解耦）；停用账号被拒，普通停用与「超期未认证被系统停用」返回不同的错误提示（见下表）。
 
-**陌生设备挑战 `202 Accepted`**（`settings.LOGIN_CHALLENGE_ENABLED` 开启时；设备未验证且账号有可用二次验证方式）
+**陌生设备挑战 `202 Accepted`**（`settings.LOGIN_CHALLENGE_ENABLED` 开启时；设备未验证且账号有可用二次验证方式）。**客户端未带 `club_device` Cookie 视同「设备未验证」**——不能因为拿不到设备号就跳过挑战。
 
 ```json
 {
@@ -210,7 +210,8 @@
       "can_change_activity": false, "can_view_feedback": false, "can_handle_reports": false, "can_review_collections": false,
       "can_edit_about": false, "can_manage_panoramas": false, "can_manage_exam": false, "can_review_content": false,
       "can_review_identity": false, "can_force_publish": false, "can_manage_comment_thread": false, "can_mute_user": false,
-      "can_manage_announcement": false, "can_manage_announcements": false, "can_review_password_reset": false
+      "can_manage_announcement": false, "can_manage_announcements": false, "can_review_password_reset": false,
+      "can_manage_events": false
     }},
   "must_change_password": false,
   "role": {"label": "用户", "variant": "user"},
@@ -234,9 +235,9 @@
 | can_edit_about | `about.manage_aboutpage` | can_manage_panoramas | `panorama.manage_panoramas` |
 | can_manage_exam | `exam_board.manage_exams` | can_review_content | `reviews.moderate` |
 | can_review_identity | `accounts.can_review_identity` | can_force_publish | `reviews.force_publish` |
-| can_manage_comment_thread | `messaging.manage_comment_thread` | can_mute_user | `messaging.mute_user` |
+| can_manage_comment_thread | `messaging.manage_comment_thread` | can_mute_user | `reviews.mute_user` |
 | can_manage_announcement | `messaging.manage_announcement` | can_manage_announcements | `announcements.manage_announcements` |
-| can_review_password_reset | `accounts.review_password_reset` | — | — |
+| can_review_password_reset | `accounts.review_password_reset` | can_manage_events | `events.manage_events` |
 
 ### 更新资料 / 修改密码
 
@@ -303,14 +304,14 @@
 
 `POST /auth/sessions/<id>/revoke/`
 
-**认证**：登录；**权限**：仅本人记录（他人记录 404）。只写 `revoked_at` / `revoked_reason=manual`，
+**认证**：登录；**权限**：仅本人记录（他人记录 404）。**需 Step-up grant `manage_devices`**（缺 → `403 {"error": "需要先完成安全验证。", "reason": "step_up_required", "scope": "manage_devices"}`）——会话被盗时攻击者不能仅凭会话把受害者其他设备踢下线。只写 `revoked_at` / `revoked_reason=manual`，
 **不删 Django Session**：被下线设备的下一次请求会收到 401 `session_superseded`
 （`revoked_reason=manual`），从而看到「该设备已被下线」。下线本机等价于退出登录。
 响应 `200`：`{"revoked": true, "was_current": false, "active_count": 2, "max_active": 3}`。
 
 `POST /auth/sessions/revoke-others/`
 
-**认证**：登录；**权限**：—。下线其他所有设备、保留本机。
+**认证**：登录；**权限**：—。同样**需 Step-up grant `manage_devices`**。下线其他所有设备、保留本机。
 响应 `200`：`{"revoked": 2, "active_count": 1, "max_active": 3}`。
 
 ### 陌生设备登录挑战（[ADR-0029](../adr/0029-account-security-center.md)）
@@ -371,8 +372,8 @@
 **滚动密钥（TOTP）**
 
 - `GET /auth/totp/`：`{"max": 5, "results": [{"id", "label", "created_at"}]}`，只列已确认的。
-- `POST /auth/totp/setup/`：`{"label"?}` → `{"id", "secret", "otpauth", "qr", "label"}`；`qr` 是 `data:` URI。未确认记录最多 3 条：超过时先清创建超过 10 分钟的陈旧记录，仍超则删最旧的，**刚返回给前端的二维码始终有效**；已确认满 5 条 → `400`。
-- `POST /auth/totp/confirm/`：`{"id", "code"}` → `{"message": "滚动密钥已启用。", "recovery_codes": ["…"]}`。恢复代码只在「账号当前没有未使用的恢复代码」时返回；否则为 `null`。
+- `POST /auth/totp/setup/`：`{"label"?, "password"?}` → `{"id", "secret", "otpauth", "qr", "label"}`；`qr` 是 `data:` URI。**新增因子必须验人**：已有 `manage_totp` 的 Step-up grant，或重输登录密码（首次绑定无因子可验的引导出口）；两者都没有 → `400 {"error": "请重新输入登录密码以确认身份。", "reason": "password_required"}`。未确认记录最多 3 条：超过时先清创建超过 10 分钟的陈旧记录，仍超则删最旧的，**刚返回给前端的二维码始终有效**；已确认满 5 条 → `400`。
+- `POST /auth/totp/confirm/`：`{"id", "code", "password"?}` → `{"message": "滚动密钥已启用。", "recovery_codes": ["…"]}`。**与 setup 同样过验人闸**（只拦 setup 会被 confirm 绕过）。恢复代码只在「账号当前没有未使用的恢复代码」时返回；否则为 `null`。
 - `DELETE /auth/totp/<id>/`：解绑，**需 Step-up grant `manage_totp`**（验证方式不能用动态口令本身）；响应 `{"message": "已解绑。", "remaining": N}`。
 - `POST /auth/recovery-codes/`：重新生成一组 10 个，**需 Step-up grant `manage_totp`**（同上，不能只用动态口令验证）；旧码全部作废；明文只返回这一次。
 
@@ -384,7 +385,7 @@
 
 `POST /auth/password-reset/confirm/`
 
-**认证**：公开；**权限**：—。请求体 JSON：`uid`（string，是）、`token`（string，是）、`new_password`（string，是）。校验 `default_token_generator.check_token`；`new_password` 仅必填校验（不走密码强度校验器）。响应 `200`：`{"message": "Password has been reset successfully."}`；错误：400 `{"error": "Invalid reset link"}`（`uid` 无法解出用户）或 `{"error": "Invalid or expired token"}`。
+**认证**：公开；**权限**：—。请求体 JSON：`uid`（string，是）、`token`（string，是）、`new_password`（string，是）。校验 `default_token_generator.check_token`；`new_password` 走与注册 / 改密相同的 `validate_password` 强度校验（含 `set_password` 后的常规规则），不通过返回 400。响应 `200`：`{"message": "Password has been reset successfully."}`；错误：400 `{"error": "Invalid reset link"}`（`uid` 无法解出用户）或 `{"error": "Invalid or expired token"}`。
 
 ### 手动重置密码（申请 / 审核 / 强制改密，2026-10）
 
@@ -563,7 +564,7 @@
 
 `GET /auth/inbox/`
 
-**认证**：已认证（DRF `IsVerified`，未登录 / 未认证 403）；**权限**：—。混合时间线：48 小时内截止的活动债置顶（`end_at` 升序），其余按 `updated_at` 降序；不分页（直接返回全量信封）。私信未读不进待办。
+**认证**：已认证（DRF `IsVerified`，未登录 / 未认证 403）；**权限**：—。混合时间线：48 小时内截止的互动债置顶（`end_at` 升序），其余按 `updated_at` 降序；不分页（直接返回全量信封）。私信未读不进待办。
 
 **响应 `200 OK`**
 
@@ -579,7 +580,7 @@
 }
 ```
 
-`kind` ∈ `activity` / `task`；`reason` ∈ `vote`（待投票）/ `submit`（待投稿）/ `complete`（待完成）/ `approve_completion`（待验收）/ `approve_claim`（待批认领），判定见 `activities/debt.py` 与 `tasks/debt.py`。`activity` / `task` 为对应模块列表序列化器的完整对象（此处摘录关键字段）：见[活动 API](activities.md)、[任务 API](tasks.md)；`conversation` 恒为 `null`（预留形状）。
+`kind` ∈ `activity` / `task`；`reason` ∈ `vote`（待投票）/ `submit`（待投稿）/ `complete`（待完成）/ `approve_completion`（待验收）/ `approve_claim`（待批认领），判定见 `activities/debt.py` 与 `tasks/debt.py`。`activity` / `task` 为对应模块列表序列化器的完整对象（此处摘录关键字段）：见[互动 API](activities.md)、[任务 API](tasks.md)；`conversation` 恒为 `null`（预留形状）。
 
 ### 用户列表
 

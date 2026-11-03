@@ -51,7 +51,7 @@ server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name club.example.com;
-    client_max_body_size 20M;
+    client_max_body_size 600M;   # ≥ 大文件（图 / 视频）500MB 上限 + 余量；同步上传上限由站点策略另控
     server_tokens off;
 
     # 静态文件缓存：哈希构建产物 → 1 年 immutable；其余与 /media/ → 7 天（详见「静态文件缓存」小节）
@@ -102,7 +102,7 @@ server {
     server_name club.example.com;
     ssl_certificate     /etc/letsencrypt/live/club.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/club.example.com/privkey.pem;
-    client_max_body_size 20M;
+    client_max_body_size 600M;   # ≥ 大文件（图 / 视频）500MB 上限 + 余量；同步上传上限由站点策略另控
     server_tokens off;
     add_header Strict-Transport-Security "max-age=31536000" always;
     # location /static/、/media/、error_page 与 location / 与 80 的块相同
@@ -219,7 +219,7 @@ sudo ./scripts/install.sh
 7. 创建第一个超级用户（已存在超管则跳过；`createsuperuser --noinput`）。
 8. 写 `/etc/systemd/system/club.service`（`Type=notify`、`ExecStart=$DIR/start.sh`、`ExecReload=/bin/kill -s HUP $MAINPID`、`Restart=on-failure`）。
 9. 写 Nginx 站点（Debian 布局建软链并删 `default`；RHEL 布局把 `default.conf` 改名 `.disabled`），`nginx -t` 后 reload。
-10. 写 `/etc/sudoers.d/club`：服务用户免密执行 `systemctl start|stop|restart|reload|is-active club`（更新器重载服务用）。
+10. 写 `/etc/sudoers.d/club`：服务用户免密执行 `systemctl start|stop|restart|reload|is-active club`（含 `is-active --quiet`，更新器健康检查用）。
 11. `systemctl daemon-reload && systemctl enable --now club`。
 12. SELinux 处于 Enforcing / Permissive 时给 `staticfiles` / `static` / `media` / `run` 打标签并放行 `httpd_can_network_connect`；有 firewalld 则放行 `http`。
 
@@ -410,7 +410,7 @@ cat /opt/club/run/applied-release
 |---|---|---|
 | 数据库（SQLite） | `<安装目录>/db.sqlite3` | 缺省部署的全部业务数据 |
 | 数据库（PostgreSQL） | 本机 `club` 库（与站点同机） | `DB_ENGINE=postgresql` 时的全部业务数据 |
-| 公开媒体 | `<数据根>/media/` | 头像、新闻封面、活动图片、教程、附件、考试误刊等 |
+| 公开媒体 | `<数据根>/media/` | 头像、新闻封面、互动图片、教程、附件、考试误刊等 |
 | 私有媒体 | `<数据根>/private_media/` | 身份证明（`IdentityProof`），**不在** `MEDIA_ROOT` 内，由鉴权视图服务 |
 | 离线 IP 库 | `<安装目录>/data/ip2region_v4.xdb`（或 `IP2REGION_DB` 指向） | 约 11 MB，**不入 git**；不参与更新器同步，换机时需单独放回。缺失时登录事件只记 IP、不解析城市 |
 | App 分发 | `<数据根>/app-update/` | App 更新产物（manifest.json / latest.apk），nginx `/app-update/` 只读服务 |
@@ -418,6 +418,8 @@ cat /opt/club/run/applied-release
 | DB 快照 | `<安装目录>/backups/db-*.sqlite3`（或 `db-*.pg.sql`） | 更新器每次应用前自动生成（按引擎分派） |
 
 > 数据根（`<数据根>`）：缺省 = 安装目录本身；启用统一数据根后为 `<安装目录>/data`（见[统一数据根](data-root.md)）。
+>
+> **备份权限**：`install.sh` 把 `run/`、`backups/`、`backups/releases/` 以 `700` 创建（属主服务用户）；更新器生成的数据库快照落盘后 `chmod 0600`。备份含密码哈希、邮箱与业务数据，不要放宽这些权限。
 
 更新器**不会**碰 `data` / `media` / `private_media` / `backups`（在同步排除清单里，见[统一数据根](data-root.md)），因此这些数据需要自行备份。
 

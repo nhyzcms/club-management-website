@@ -7,7 +7,7 @@
 ## 模块约定
 
 - **挂载前缀**：`config/urls.py` 把 `attachments/urls.py` 挂在 `/attachments/`（`SimpleRouter`，资源前缀为空 → `/attachments/` 与 `/attachments/{id}/`）；`attachments/tus_urls.py` 挂在 `/uploads/`（`TusAPIRouter`，注册 `files` → `/uploads/files/` 与 `/uploads/files/{guid}/`）。
-- **父级注册表**（`attachments/create.py` 的 `PARENTS`）：`task` / `feedback` / `news` 是**增量父级**（`endpoint=True`，HTTP 与 tus 可用）；`submission`（作品）/ `exhibit`（展品）**不是** HTTP 父级——投稿 / 布展是原子批量，由活动侧适配器调用同一创建接缝（[ADR-0012](../adr/0012-attachment-create-seam.md)）。
+- **父级注册表**（`attachments/create.py` 的 `PARENTS`）：`task` / `feedback` / `news` 是**增量父级**（`endpoint=True`，HTTP 与 tus 可用）；`submission`（作品）/ `exhibit`（展品）**不是** HTTP 父级——投稿 / 布展是原子批量，由互动侧适配器调用同一创建接缝（[ADR-0012](../adr/0012-attachment-create-seam.md)）。
 - **权限单一抽象规则**（[ADR-0002](../adr/0002-unified-attachment-endpoint-and-permission.md)）：操作者须为该父级的**创建者**、或**活跃参与者**、或持该父级**管理权限**者。父级差异：
 
   | 父级 | 创建者 | 活跃参与者 | 管理权限 |
@@ -15,21 +15,21 @@
   | 任务 | `creator` | 进行中（`in_progress`）时的负责人 / 协作者（`tasks.lifecycle.is_active_participant`） | `tasks.manage_tasks` |
   | 意见反馈 | `creator`（署名反馈） | 无 | `reviews.read_feedback` |
   | 新闻 | `author` | 无 | `news.manage_news` |
-  | 作品 | —（注册表无创建者字段） | 无 | 活动发起人，或 `activities.manage_activity`，或 `activities.review_collection` |
-  | 展品 | —（同上） | 无 | 活动发起人（策展人），或 `activities.manage_activity` |
+  | 作品 | —（注册表无创建者字段） | 无 | 互动发起人，或 `activities.manage_activity`，或 `activities.review_collection` |
+  | 展品 | —（同上） | 无 | 互动发起人（策展人），或 `activities.manage_activity` |
 
-- **反馈 carve-out**（[ADR-0004](../adr/0004-feedback-media-tus-resumable-upload.md)）：**上传**仅**署名创建者**且反馈仍 `pending`（持 `read_feedback` 的社长被排除）；**删除**沿用通用规则——故社长对反馈附件「能删不能传」。审结（`closed`）即锁死上传。
+- **反馈 carve-out**（[ADR-0004](../adr/0004-feedback-media-tus-resumable-upload.md)）：**上传**仅**署名创建者**且反馈仍 `pending`（持 `read_feedback` 的社长被排除）；**删除**在 `pending` 时沿用通用规则——故社长对反馈附件「能删不能传」。**审结（`closed`）后证据附件仅 `reviews.read_feedback` 持有者可删**（上传者本人也不行，`403 反馈已了结，证据附件仅处理人可删除`），防止审计链断裂；审结同时锁死上传。
 - **回收**：父级删除 → 外键 `CASCADE` 逐行删附件 → `post_delete` 信号同步删磁盘文件（无需定时任务）；删除附件行同路径。举报案不挂附件。
 - **上传分档**（站点策略，见[公共 API](common.md)）：≤`sync_upload_max_bytes`（默认 50MB）任意类型走同步；>50MB 必须图片 / 视频且 ≤`tus_media_max_bytes`（默认 500MB）走 tus。反馈附件配额：每条 ≤9 个、总量 ≤2GB（两条通路共用校验）。
 - **认证口径**：两套端点均为 `IsAuthenticated`（登录；DRF 会话认证下未登录返回 403 `{"detail": …}`，与全局约定一致）。
-- **禁用扩展名**：`.exe` `.bat` `.cmd` `.sh` `.php` `.asp` `.jsp` `.py` `.rb` `.pl` `.cgi` `.com` `.scr` `.pif` `.msi`（仅同步通路校验）。
+- **禁用扩展名**：命中 `common/uploads.RESTRICTED_EXTENSIONS` 一律拒——HTML / SVG / XML / JS / CSS、服务端脚本（php / asp / jsp）、本地可执行（exe / bat / sh / py / dll…）。**同步与 tus 两条通路共用**，且 `upload_to` 落盘前还有兜底（未知扩展名退回 `.bin`）。图片按 Pillow 真实解码判定格式、PDF 按 `%PDF-` 魔数；客户端 `content_type` 不作为判据。
 
 ## 端点一览
 
 | 方法 | 路径 | 认证 | 权限 | 说明 |
 |---|---|---|---|---|
 | POST | `/attachments/` | 登录 | 父级创建者 / 活跃参与者 / 管理权限（反馈另受 carve-out） | 同步上传（multipart，≤50MB） |
-| DELETE | `/attachments/{id}/` | 登录 | 上传者本人，或父级管理规则 | 删除附件（行 + 磁盘文件） |
+| DELETE | `/attachments/{id}/` | 登录 | 上传者本人，或父级管理规则（反馈了结后仅处理人可删） | 删除附件（行 + 磁盘文件） |
 | POST | `/uploads/files/` | 登录 | 同上传（含反馈 carve-out） | 创建 tus 上传会话（校验父级 / 权限 / 尺寸 / 配额） |
 | HEAD | `/uploads/files/{guid}/` | 登录 | — | 查询上传偏移（续传用） |
 | PATCH | `/uploads/files/{guid}/` | 登录 | — | 续传分片（`application/offset+octet-stream`） |
@@ -49,7 +49,7 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| file | file | 是 | 待上传文件；≤`sync_upload_max_bytes`；扩展名不在禁用清单 |
+| file | file | 是 | 待上传文件；≤`sync_upload_max_bytes`；类型 / 扩展名过安全闸门（见上） |
 | task_id | int | 三选一 | 任务父级 id（`endpoint=True`） |
 | feedback_id | int | 三选一 | 意见反馈父级 id |
 | news_id | int | 三选一 | 新闻父级 id |
@@ -160,7 +160,7 @@
 | 任务 | 任务详情 `attachments`（`tasks.serializers`） | 完整 `AttachmentSerializer`（含 `uploaded_by` / `uploaded_at`） |
 | 意见反馈 | 反馈详情 `attachments`（`reviews.serializers`） | 同上 |
 | 新闻 | 新闻详情 `attachments`（`news.serializers.NewsAttachmentSerializer`） | 精简：`id` / `file_url` / `file_type` / `file_name` / `file_size`（详情匿名可读，故不含 `uploaded_by`） |
-| 作品 / 展品 | 活动详情内对应对象的 `files` 字段（`activities.serializers` 的 `SubmissionSerializer` / `ExhibitSerializer`） | 完整 `AttachmentSerializer` |
+| 作品 / 展品 | 互动详情内对应对象的 `files` 字段（`activities.serializers` 的 `SubmissionSerializer` / `ExhibitSerializer`） | 完整 `AttachmentSerializer` |
 
 客户端上传大文件（`attachmentApi.uploadLarge`）完成后接口返回 `void`——须**重新拉取父级详情**才能拿到新附件；同步上传则直接返回新建的 `Attachment`（响应体字段同上传端点）。
 

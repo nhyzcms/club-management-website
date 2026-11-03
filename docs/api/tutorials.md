@@ -77,7 +77,7 @@
 | title | 字符串 | 是 | 非空白；超 200 字符截断 |
 | description | 字符串 | 否 | 超 2000 字符截断 |
 | file | 文件 | 是 | 视频 mp4 / webm / ogv / mov，或文档 pdf / docx / doc（按 content-type 或扩展名判定）；≤ 500MB |
-| cover | 图片文件 | 否 | 封面 |
+| cover | 图片文件 | 否 | 封面：JPG / PNG / WebP，按真实内容判定（Pillow 解码），落盘扩展名由服务端决定 |
 
 服务端按文件类型落 `file_type` = `video` / `document`，并记录 `file_name`、`file_size`；同时创建审核行。
 

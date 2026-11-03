@@ -20,11 +20,12 @@
 |---|---|---|---|
 | 账号与认证 | [accounts](api/accounts.md) | 消息与评论 | [messaging](api/messaging.md) |
 | 新闻 | [news](api/news.md) | 审核系统 | [reviews](api/reviews.md) |
-| 活动 | [activities](api/activities.md) | 招聘与加入 | [recruitment](api/recruitment.md) |
+| 互动 | [activities](api/activities.md) | 招聘与加入 | [recruitment](api/recruitment.md) |
 | 任务 | [tasks](api/tasks.md) | 考试看板 | [exam-board](api/exam-board.md) |
 | 教程 | [tutorials](api/tutorials.md) | 关于页 | [about](api/about.md) |
 | 附件与上传 | [attachments](api/attachments.md) | 公共 | [common](api/common.md) |
 | 校园全景图 | [panorama](api/panorama.md) | 全站弹窗公告 | [announcements](api/announcements.md) |
+| 活动（限时） | [events](api/events.md) | | |
 
 ## 指南
 

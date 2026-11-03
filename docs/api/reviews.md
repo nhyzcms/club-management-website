@@ -1,6 +1,6 @@
 # 审核系统 API
 
-审核系统（`/reviews/`）是职员侧的统一审核入口，台面上三张桌子：**发布审核**（新闻 / 活动 / 教程共用一条审核轴：通过 / 驳回 / 下架）、**意见反馈**（无对象投递箱：匿名 / 署名提交、了结）、**举报案**（有对象调查票：进行中 → 驳回 / 成立并处置）。身份审核不在本模块——身份审核端点在 accounts（`/auth/identity-reviews/`），见 [accounts.md](accounts.md)。
+审核系统（`/reviews/`）是职员侧的统一审核入口，台面上三张桌子：**发布审核**（新闻 / 互动 / 教程共用一条审核轴：通过 / 驳回 / 下架）、**意见反馈**（无对象投递箱：匿名 / 署名提交、了结）、**举报案**（有对象调查票：进行中 → 驳回 / 成立并处置）。身份审核不在本模块——身份审核端点在 accounts（`/auth/identity-reviews/`），见 [accounts.md](accounts.md)。
 
 > 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0017：统一审核系统](../adr/0017-unified-moderation-system.md)、[ADR-0003：不抽共享生命周期基类](../adr/0003-no-shared-task-proposal-lifecycle-base.md)、[ADR-0004：署名反馈媒体上传](../adr/0004-feedback-media-tus-resumable-upload.md)、[ADR-0005：访问控制原则](../adr/0005-access-control-principle.md)
 
@@ -8,9 +8,10 @@
 
 - 三个资源挂载于同一前缀（`reviews/urls.py`，DRF Router）：`/reviews/reviews/` 发布审核、`/reviews/feedbacks/` 意见反馈、`/reviews/reports/` 举报案。`GET /reviews/` 为 Router 根视图，仅列出子资源，不是业务端点。
 - 权限代号（`Meta.permissions`，ADR-0017）：`reviews.moderate`（发布审核）、`reviews.read_feedback`（查看并了结意见反馈）、`reviews.handle_report`（处理举报案）。`reviews.force_publish`（免审发布）作用于内容的创建路径，不经过本模块端点。
-- **审核（Review）**状态机（`reviews/lifecycle.py`）：`pending` 待审 →`approved` 通过 / `rejected` 驳回；`approved` →`removed` 下架；`removed` 可再 `approve` 重新上架。**驳回评语必填**，通过 / 下架评语选填。审核行恰好挂一个父级（新闻 / 活动 / 教程），只门控「公开展示」，不改对象自身生命周期。
+- **审核（Review）**状态机（`reviews/lifecycle.py`）：`pending` 待审 →`approved` 通过 / `rejected` 驳回；`approved` →`removed` 下架；`removed` 可再 `approve` 重新上架。**驳回评语必填**，通过 / 下架评语选填。审核行恰好挂一个父级（新闻 / 互动 / 教程），只门控「公开展示」，不改对象自身生命周期。
 - 免审直通：持 `reviews.force_publish` 或站点策略 `content_review_enabled` 关闭时，新对象创建即 `approved`，不出现在待审队列。
-- 审核动作写**通知**（category=`review`）：`approved` / `rejected` / `removed` 通知宿主主人（新闻作者 / 活动发起人 / 教程上传者）；反馈了结通知署名提交者。前端能力布尔见 [accounts.md](accounts.md)（`can_review_content` / `can_view_feedback` / `can_handle_reports`）。
+- **不能自己批准自己创建的内容**（`403 不能审核自己创建的内容`）：`approve` 动作校验宿主创建者，持 `reviews.force_publish` 者除外（他们本就走免审直通）。否则「创建权 + `reviews.moderate`」就能绕过审核轴；驳回 / 下架不在此限。
+- 审核动作写**通知**（category=`review`）：`approved` / `rejected` / `removed` 通知宿主主人（新闻作者 / 互动发起人 / 教程上传者）；反馈了结通知署名提交者。前端能力布尔见 [accounts.md](accounts.md)（`can_review_content` / `can_view_feedback` / `can_handle_reports`）。
 - 对象侧的审核投影（`review_status` / `review_comment`、作者预览）见 [news.md](news.md)、[activities.md](activities.md)、[tutorials.md](tutorials.md)。征集作品的**复审**（录用 / 退稿）不是本模块的「审核」，见 [activities.md](activities.md)。
 - 列表端点统一走全局分页（`page` 参数，每页 20；响应为 `count` / `next` / `previous` / `results` 信封）。
 
@@ -260,7 +261,7 @@
 
 **认证**：已认证（登录且任一认证通道通过）；**权限**：—
 
-对**作为普通读者可见、且非自己**的新闻 / 活动 / 教程 / 评论 / 用户提交。同一对象同一时刻至多一张**进行中**案：第二人举报会作为新的一份举报附到该案上；同一人重复举报同一对象、或对象不可见 / 属于自己，都会被拒。
+对**作为普通读者可见、且非自己**的新闻 / 互动 / 教程 / 评论 / 用户提交。同一对象同一时刻至多一张**进行中**案：第二人举报会作为新的一份举报附到该案上；同一人重复举报同一对象、或对象不可见 / 属于自己，都会被拒。
 
 **请求体**
 
@@ -336,7 +337,7 @@
 }
 ```
 
-`title` 的取法：新闻 / 活动 / 教程取对象标题；评论取正文前 80 字（超出加 `…`）；用户取 `username`。`filings` 为该案下全部举报（每举报人一份）。
+`title` 的取法：新闻 / 互动 / 教程取对象标题；评论取正文前 80 字（超出加 `…`）；用户取 `username`。`filings` 为该案下全部举报（每举报人一份）。
 
 ### 举报案详情
 
@@ -368,7 +369,7 @@
 
 **认证**：登录；**权限**：`reviews.handle_report`
 
-成立即按对象执行**默认处置**（ADR-0017 决策 4）：新闻 / 活动 / 教程把对应审核行置为**下架**（无审核行或非「通过」时不动该行，只结案；已下架则幂等）；评论执行墓碑处置；用户执行**全站禁言**。处置不要求操作者另持 `reviews.moderate` / `messaging` 权限。
+成立即按对象执行**默认处置**（ADR-0017 决策 4）：新闻 / 互动 / 教程把对应审核行置为**下架**（无审核行或非「通过」时不动该行，只结案；已下架则幂等）；评论执行墓碑处置；用户执行**全站禁言**。处置不要求操作者另持 `reviews.moderate` / `messaging` 权限。
 
 **请求体**
 
