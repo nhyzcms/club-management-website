@@ -177,7 +177,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 
 ## 三、运行时站点策略（五张领域表）
 
-B5 起 `common/models.py` 里是五张 pk 恒为 1 的单例表——`AuthPolicy`（认证策略）/ `RateLimitPolicy`（频控策略）/ `UploadPolicy`（上传策略）/ `UpdaterPolicy`（更新策略）/ `ContentPolicy`（内容策略），各自在 Django admin 有独立页面（[ADR-0046](adr/0046-site-settings-split.md)）；任一表 `save()` 都会失效缓存键 `common.site_policy`。调用方一律经 `common/policy.py::get_policy()` 读同一个快照（字段与拆分前一一对应），**不查模型**；无行 / DB 不可用时回退代码内默认值。`GET /site-policy/` 把快照 + Turnstile 公开字段一并下发给 SPA。
+B5 起 `common/models.py` 里是五张 pk 恒为 1 的单例表——`AuthPolicy`（认证策略）/ `RateLimitPolicy`（频控策略）/ `UploadPolicy`（上传策略）/ `UpdaterPolicy`（更新策略）/ `ContentPolicy`（内容策略），各自在 Django admin 有独立页面（[ADR-0046](adr/0046-site-settings-split.md)）；任一表 `save()` 都会失效缓存键 `common.site_policy`。调用方一律经 `common/policy.py::get_policy()` 读同一个快照（字段与拆分前一一对应），**不查模型**；无行 / DB 不可用时回退代码内默认值。`GET /site-policy/` 只下发**显式 allowlist 的公开子集** + Turnstile 公开字段（审计 #274：不再是 `asdict` 全量导出，运维参数与各条限流阈值不匿名公开）。
 
 | 字段 | 默认值 | 作用 |
 |---|---|---|

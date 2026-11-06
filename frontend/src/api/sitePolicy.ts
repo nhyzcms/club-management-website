@@ -3,58 +3,41 @@ import { createRequest } from "./shared";
 
 const request = createRequest("");
 
+/**
+ * 公开策略快照的字段集合。
+ *
+ * **这是后端 allowlist 的前端镜像**（`common/views.py: PUBLIC_POLICY_FIELDS`
+ * + Turnstile 两字段）。服务器只下发这些键，多出来的字段不会到前端——
+ * 需要新字段时三处同改：后端 allowlist、`common/tests/test_public_policy.py`
+ * 的冻结清单、这里。
+ *
+ * 运维参数（更新窗口、tus 上限、各条 per-IP 限流阈值）不再公开，
+ * 管理员在 Django 后台的「频控策略 / 更新策略」里查看。
+ */
 export interface SitePolicy {
   verification_enabled: boolean;
-  content_review_enabled: boolean;
+  verification_valid_days: number;
+  admin_valid_days: number;
+  registration_verify_days: number;
   registration_enabled: boolean;
-  register_per_ip_per_day: number;
-  resend_verification_per_ip_per_hour: number;
-  login_per_ip_per_hour: number;
-  login_per_username_per_hour: number;
-  feedback_anon_per_ip_per_day: number;
-  reports_per_user_per_day: number;
-  authcode_redeem_per_user_per_hour: number;
-  sync_upload_max_bytes: number;
-  tus_media_max_bytes: number;
-  auto_update_enabled: boolean;
-  update_poll_interval_seconds: number;
-  update_timezone: string;
-  update_window_start_hour: number;
-  update_window_end_hour: number;
-  update_apply_cutoff_minutes_before_end: number;
-  update_release_keep: number;
-  update_db_backup_keep: number;
   comments_enabled: boolean;
   comment_max_depth: number;
   dms_enabled: boolean;
+  sync_upload_max_bytes: number;
   turnstile_enabled: boolean;
   turnstile_site_key: string;
 }
 
 const DEFAULTS: SitePolicy = {
   verification_enabled: true,
-  content_review_enabled: true,
+  verification_valid_days: 365,
+  admin_valid_days: 730,
+  registration_verify_days: 60,
   registration_enabled: true,
-  register_per_ip_per_day: 5,
-  resend_verification_per_ip_per_hour: 5,
-  login_per_ip_per_hour: 30,
-  login_per_username_per_hour: 10,
-  feedback_anon_per_ip_per_day: 10,
-  reports_per_user_per_day: 10,
-  authcode_redeem_per_user_per_hour: 10,
-  sync_upload_max_bytes: 50 * 1024 * 1024,
-  tus_media_max_bytes: 500 * 1024 * 1024,
-  auto_update_enabled: true,
-  update_poll_interval_seconds: 900,
-  update_timezone: "Asia/Shanghai",
-  update_window_start_hour: 1,
-  update_window_end_hour: 3,
-  update_apply_cutoff_minutes_before_end: 30,
-  update_release_keep: 3,
-  update_db_backup_keep: 5,
   comments_enabled: true,
   comment_max_depth: 8,
   dms_enabled: true,
+  sync_upload_max_bytes: 50 * 1024 * 1024,
   turnstile_enabled: false,
   turnstile_site_key: "",
 };
