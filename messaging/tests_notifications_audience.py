@@ -221,6 +221,11 @@ class WiringTest(TestCase):
         from reviews.lifecycle import APPROVE, apply, open_review
 
         moderator = User.objects.create_user(username="mod2", password="x")
+        # 审计 #278 之后 apply() 默认校验 reviews.moderate：夹具必须真的给权限，
+        # 否则测到的是「缺权限」而不是「通过后广播」。
+        moderator.user_permissions.add(
+            Permission.objects.get(content_type__app_label="reviews", codename="moderate")
+        )
         activity = Activity.objects.create(
             title="秋季摄影展", type="deliberation", status="open",
             creator=self.user, start_at=timezone.now() + timedelta(days=1),

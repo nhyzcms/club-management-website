@@ -11,6 +11,14 @@ from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from news.models import News
+from reviews.lifecycle import (
+    APPROVE,
+    REMOVE,
+    TransitionDenied,
+    apply,
+    open_review,
+)
 from reviews.models import Review
 from common.testing import set_policy
 
@@ -296,3 +304,56 @@ class SelfReviewDeniedTest(TestCase):
         resp = self.client.post(f"/reviews/reviews/{self.review_id}/approve/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], Review.STATUS_APPROVED)
+
+
+class ApplyPermissionTest(TestCase):
+    """审计 #278：``apply()`` 是审核状态机唯一写入口，默认必须校验 moderate。
+
+    反证：删掉 ``lifecycle.apply`` 里那句 ``has_perm("reviews.moderate")`` →
+    前两条变红（无权限者能通过；匿名不被拒）。
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.author = User.objects.create_user(username="author2", password="x")
+        self.news = News.objects.create(title="n2", author=self.author)
+        self.review = open_review(news=self.news, actor=self.author)
+
+    def test_apply_without_moderate_denied(self):
+        outsider = User.objects.create_user(username="outsider", password="x")
+        with self.assertRaises(TransitionDenied) as ctx:
+            apply(APPROVE, self.review, outsider)
+        self.assertIn("缺少审核权限", str(ctx.exception))
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.status, Review.STATUS_PENDING)
+
+    def test_apply_rejects_anonymous(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        with self.assertRaises(TransitionDenied):
+            apply(APPROVE, self.review, AnonymousUser())
+
+    def test_apply_with_moderate_allowed(self):
+        apply(APPROVE, self.review, _moderator())
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.status, Review.STATUS_APPROVED)
+
+    def test_superuser_allowed(self):
+        root = User.objects.create_superuser(username="root2", password="x", email="")
+        apply(APPROVE, self.review, root)
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.status, Review.STATUS_APPROVED)
+
+    def test_privileged_skips_moderate_check(self):
+        """显式 ``privileged=True`` 才跳权限——举报成立链用的就是这条。"""
+        outsider = User.objects.create_user(username="outsider2", password="x")
+        apply(APPROVE, self.review, outsider, privileged=True)
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.status, Review.STATUS_APPROVED)
+
+    def test_privileged_does_not_skip_state_machine(self):
+        """``privileged`` 只跳权限，不跳状态转移：非法转移仍拒。"""
+        self.review.status = Review.STATUS_REJECTED
+        self.review.save(update_fields=["status"])
+        with self.assertRaises(TransitionDenied):
+            apply(REMOVE, self.review, _moderator(), privileged=True)

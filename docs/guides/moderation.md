@@ -137,6 +137,8 @@
 
 状态转移与访问控制分离（ADR-0003）：视图只查权限，转移合法性由各 `*_lifecycle.py` 判定，非法转移一律 400。
 
+**例外：`reviews.lifecycle.apply()` 自身也校验 `reviews.moderate`**（审计 #278）。它是审核状态机唯一的写入口，原先只判状态、不判操作者权限，新加调用方就等于凭空多一条越权通道；现在默认鉴权，确有理由跳过时（举报成立链以 `handle_report` 为授权依据）必须**显式**传 `privileged=True`，使 `git grep privileged=True` 成为完整审计面。`privileged` 只跳权限，不跳状态机。
+
 | 实体 | 状态 | 允许的动作 | 备注 |
 |---|---|---|---|
 | `Review` | `pending` | `approve` / `reject` | 驳回评语必填 |
