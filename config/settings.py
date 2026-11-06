@@ -154,6 +154,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'accounts.middleware.MultiDeviceSessionMiddleware',
     'accounts.middleware.LoginThrottleMiddleware',
+    # tus 数字头格式闸门：须早于 TusMiddleware（后者裸 int()，畸形值即 500，审计 #273）。
+    'attachments.middleware.TusHeaderValidationMiddleware',
     # tus 可续传上传：把 Tus-* / Upload-* 请求头解析到 request 属性上。
     'rest_framework_tus.middleware.TusMiddleware',
 ]
