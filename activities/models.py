@@ -187,6 +187,40 @@ class QuestionnaireResponse(models.Model):
         return f"{who} -> {self.questionnaire_id}"  # type: ignore
 
 
+class SurveyUpload(models.Model):
+    """问卷文件题上传台账（审计 #271）。
+
+    该端点是全站唯一「匿名可传、且不建任何归属记录」的写入口。没有台账时，
+    配额无从计算、滥用无从溯源、孤儿文件无从回收——只能靠删目录清空。
+
+    文件仍在 ``MEDIA_ROOT/survey_uploads/``，本表只记元数据：视图每次落盘写一行，
+    配额按 24h 内 ``size`` 求和，清理命令按「是否被某条作答引用」判断孤儿。
+    """
+
+    path = models.CharField("存储路径", max_length=500, unique=True)
+    owner_ip = models.GenericIPAddressField("上传 IP", null=True, blank=True)
+    device_id = models.CharField("设备标识", max_length=64, blank=True, default="")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="survey_uploads", verbose_name="上传者",
+    )
+    size = models.PositiveBigIntegerField("字节数")
+    sha256 = models.CharField("内容摘要", max_length=64, blank=True, default="")
+    created_at = models.DateTimeField("上传时间", auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "问卷附件上传"
+        verbose_name_plural = "问卷附件上传"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["created_at"], name="survey_upload_created_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.path} ({self.size}B)"
+
+
 class Activity(models.Model):
     """活动：发起人对全社团开放的协作事项，四类型之一。"""
 

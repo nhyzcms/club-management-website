@@ -3,13 +3,15 @@
 创建（已认证成员）+ 列表/详情（成员可读；访客仅公开调研）+ 正文图片上传。
 众议投票 / 征集投稿复审 / 展示布展 / 调研作答。
 """
+import hashlib
 import os
 import uuid
+from datetime import timedelta
 
 from django.core.exceptions import ValidationError
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -19,6 +21,7 @@ from rest_framework.response import Response
 from accounts.models import is_verified
 from accounts.permissions import IsVerified
 from common.survey_answers import InvalidSurveyAnswers, validate_answers
+from common.policy import get_policy
 from accounts.turnstile import passes_turnstile, turnstile_error_response
 
 from attachments.create import create_attachment
@@ -53,7 +56,7 @@ from .lifecycle import (
 )
 from .models import (
     Activity, Exhibit, ExhibitRating,
-    QuestionnaireResponse, Submission,
+    QuestionnaireResponse, Submission, SurveyUpload,
 )
 from .permissions import (
     CanCreateActivity,
@@ -61,7 +64,11 @@ from .permissions import (
     CanReviewSubmission,
 )
 from .serializers import ActivityDetailSerializer, ActivityListSerializer
-from .throttles import PublicVoteThrottle
+from .throttles import (
+    PublicVoteThrottle,
+    SurveyUploadDeviceThrottle,
+    SurveyUploadIPThrottle,
+)
 
 # 正文内嵌图片上限（与新闻一致）
 _CONTENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024
@@ -141,6 +148,16 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if self.action == "mine":
             return ActivityListSerializer
         return ActivityDetailSerializer
+
+    def get_throttles(self):
+        """问卷文件题上传：IP + 设备双维限流（审计 #271）。
+
+        其余动作沿用默认（空）——投票的限流挂在 action 自己的
+        ``throttle_classes`` 上。
+        """
+        if self.action == "survey_upload":
+            return [SurveyUploadIPThrottle(), SurveyUploadDeviceThrottle()]
+        return super().get_throttles()
 
     def get_permissions(self):
         if self.action == "create":
@@ -585,7 +602,18 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="survey_upload")
     def survey_upload(self, request):
-        """问卷文件题上传（填答者，含游客）：返回 {url}。仅图片（JPG/PNG/GIF/WebP）或 PDF。"""
+        """问卷文件题上传（填答者，含游客）：返回 {url}。仅图片（JPG/PNG/GIF/WebP）或 PDF。
+
+        审计 #271 之前这里是「匿名 + 无限传 + 不留痕」：任何人都能把生产磁盘写满，
+        并拿到一个官方域名下的永久公开链接。现在四件配套齐了：
+
+        - 限流：``get_throttles`` 挂 IP / 设备号双维（登录用户也计数）；
+        - 配额：24h 内台账字节求和，超每日上限直接 429；
+        - 归属：落盘后写一行 ``SurveyUpload``（IP / 设备 / 用户 / 大小 / sha256）；
+        - 回收：``manage.py sweep_survey_uploads`` 清未被作答引用的孤儿文件。
+
+        类型判定与扩展名仍由服务端按真实内容决定，这一层不变。
+        """
         file = request.FILES.get("file")
         if not file:
             return Response({"detail": "请选择文件。"}, status=status.HTTP_400_BAD_REQUEST)
@@ -604,5 +632,36 @@ class ActivityViewSet(viewsets.ModelViewSet):
                     {"detail": "仅支持图片（JPG / PNG / GIF / WebP）或 PDF。"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
+        # 每日字节配额：必须在落盘**之前**判断——拒绝时文件若已进 MEDIA_ROOT，
+        # 就成了没人记账、也不会被 sweep 认领的孤儿。
+        policy = get_policy()
+        used = (
+            SurveyUpload.objects.filter(
+                created_at__gte=timezone.now() - timedelta(hours=24)
+            ).aggregate(total=Sum("size"))["total"]
+            or 0
+        )
+        size = file.size or 0
+        if used + size > policy.survey_upload_daily_bytes:
+            return Response(
+                {"detail": "今日问卷附件上传总量已达上限，请明天再试或联系管理员。"},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        # 摘要要在 storage 消费文件前算；chunks() 读完把指针拨回起点。
+        digest = hashlib.sha256()
+        for chunk in file.chunks():
+            digest.update(chunk)
+        file.seek(0)
+
         path = default_storage.save(_survey_upload_path(rename_upload(file, ext).name), file)
+        SurveyUpload.objects.create(
+            path=path,
+            owner_ip=client_ip_from_request(request) or None,
+            device_id=device_id_from_request(request),
+            user=request.user if request.user.is_authenticated else None,
+            size=size,
+            sha256=digest.hexdigest(),
+        )
         return Response({"url": request.build_absolute_uri(default_storage.url(path))})

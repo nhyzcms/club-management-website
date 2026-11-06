@@ -406,4 +406,10 @@
 
 **错误**（400 + `{"detail": "…"}`）：`请选择文件。` / `文件大小不能超过 …` / `仅支持图片（JPG / PNG / GIF / WebP）或 PDF。`
 
+**限流与配额**（审计 #271 之后）：
+
+- 按 IP 与 `X-Device-Id` 各计一道，**登录用户也计数**（换账号绕不过）；默认各 20 次/小时，额度由站点策略 `survey_upload_per_ip_per_hour` / `survey_upload_per_device_per_hour` 控制。超限 → `429` + `{"detail": "上传过于频繁，请约 N 分钟后再试。"}`
+- 全局每日字节配额 `survey_upload_daily_bytes`（默认 200MB / 24h）。超限 → `429` + `{"detail": "今日问卷附件上传总量已达上限…"}`，**且不落盘**。
+- 每次成功上传写一行 `SurveyUpload` 台账（IP / 设备 / 用户 / 大小 / sha256）；未被任何作答引用的文件由 `manage.py sweep_survey_uploads` 在 7 天后回收（默认 dry-run，`--apply` 才删）。
+
 > 问卷填写时由 SurveyJS 的 `onUploadFiles` 事件调用（前端 `utils/survey.ts`）；上传成功后 URL 存入作答（`[{name, content}]`），避免 SurveyJS 默认把文件传到海外服务。

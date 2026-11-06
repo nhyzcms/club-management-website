@@ -200,9 +200,12 @@ class PolicyFieldOwnershipTest(TestCase):
         self.assertNotIn("verification_enabled", names)
         self.assertNotIn("sync_upload_max_bytes", names)
 
-    def test_upload_policy_is_only_two_caps(self):
+    def test_upload_policy_owns_only_upload_caps(self):
         names = self._names(UploadPolicy) - {"id"}
-        self.assertEqual(names, {"sync_upload_max_bytes", "tus_media_max_bytes"})
+        self.assertEqual(
+            names,
+            {"sync_upload_max_bytes", "tus_media_max_bytes", "survey_upload_daily_bytes"},
+        )
 
     def test_updater_policy_owns_update_knobs(self):
         names = self._names(UpdaterPolicy)
@@ -221,15 +224,15 @@ class PolicyFieldOwnershipTest(TestCase):
             self.assertIn(f, names)
         self.assertNotIn("registration_enabled", names)
 
-    def test_all_thirty_four_fields_are_covered_once(self):
-        """34 个字段一个不落、也不重复。漏一个会让它悄悄回到默认值。"""
+    def test_all_thirty_seven_fields_are_covered_once(self):
+        """37 个字段一个不落、也不重复。漏一个会让它悄悄回到默认值。"""
         seen = []
         for model in POLICY_MODELS:
             for f in model._meta.get_fields():
                 if f.concrete and not f.auto_created and f.name != "id":
                     seen.append(f.name)
-        self.assertEqual(len(seen), 34, f"实际 {len(seen)} 个：{sorted(seen)}")
-        self.assertEqual(len(set(seen)), 34, "有字段被放进了两张表")
+        self.assertEqual(len(seen), 37, f"实际 {len(seen)} 个：{sorted(seen)}")
+        self.assertEqual(len(set(seen)), 37, "有字段被放进了两张表")
 
 
 class PolicyAdminTest(TestCase):
