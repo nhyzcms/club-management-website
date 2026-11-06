@@ -28,6 +28,11 @@ THUMB_WIDTH = 640
 JPEG_QUALITY = 82
 
 # 像素上限：8192×4096 的两倍余量，放行 DJI 常见规格、挡住「解压炸弹」式巨图。
+#
+# 注意（审计 #279）：这是**全局兜底**，不是业务路径的唯一防线。它靠 import
+# 顺序生效——没 import 过本模块的进程拿到的仍是 Pillow 默认 89MP。任何处理
+# 用户上传图的路径都必须自带局部上限（例：``news/thumbnails.MAX_COVER_PIXELS``），
+# 别把这条当护身符。
 MAX_SOURCE_PIXELS = 200_000_000
 Image.MAX_IMAGE_PIXELS = MAX_SOURCE_PIXELS
 

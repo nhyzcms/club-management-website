@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth.models import AnonymousUser, Group, Permission, User
 from django.core.files.storage import default_storage
@@ -445,6 +446,32 @@ class NewsCoverThumbnailTest(TestCase):
         news = News.objects.get(title="带封面新闻")
         with Image.open(news.cover_thumbnail.path) as img:
             self.assertEqual((img.width, img.height), (400, 300))
+
+    def test_oversized_pixels_skips_thumbnail(self):
+        """审计 #279：超过像素上限不生成缩略图（防解码 OOM），上传本身仍成功。
+
+        反证：删掉 ``thumbnails.make_cover_thumbnail`` 里的
+        ``if img.width * img.height > MAX_COVER_PIXELS`` → 本条变红
+        （缩略图会被生成出来）。
+        """
+        with patch("news.thumbnails.MAX_COVER_PIXELS", 1000):
+            resp = self._post_news(self._image_file(400, 300))  # 120k 像素 > 1000
+        self.assertEqual(resp.status_code, 201, resp.content)
+        news = News.objects.get(title="带封面新闻")
+        self.assertFalse(news.cover_thumbnail)
+
+    def test_pixel_guard_runs_before_full_decode(self):
+        """守卫必须在 ``exif_transpose`` 之前：那一步才强制解码全部像素。
+
+        反证：把判断挪到 ``exif_transpose`` 之后 → 本条变红（exif 被调用了，
+        说明内存已经吃掉）。
+        """
+        with patch("news.thumbnails.MAX_COVER_PIXELS", 1000), patch(
+            "news.thumbnails.ImageOps.exif_transpose"
+        ) as exif:
+            resp = self._post_news(self._image_file(400, 300))
+        self.assertEqual(resp.status_code, 201, resp.content)
+        exif.assert_not_called()
 
     def test_list_exposes_thumbnail_url(self):
         """列表返回 cover_thumbnail_url（缩略图 /thumbs/ 路径）。"""
