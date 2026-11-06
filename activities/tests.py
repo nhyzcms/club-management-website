@@ -4,15 +4,22 @@ T1 范围：创建（已认证成员）+ 列表/详情（成员可读）+ 正文
 投票/投稿/复审在后续切片的测试类里增补。
 """
 import json
+import shutil
+import tempfile
 from datetime import timedelta
+from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from attachments.queries import attachments_of
+from django.conf import settings
 from django.contrib.auth.models import Permission, User
 from django.core.cache import cache
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.core.management import call_command
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient, APIRequestFactory
 
@@ -20,7 +27,13 @@ from accounts.test_helpers import grant_verification
 from common.testing import set_policy
 from reviews.test_helpers import approve_activity
 
-from .models import Activity, QuestionnaireResponse, default_survey_schema
+from .models import (
+    Activity,
+    Questionnaire,
+    QuestionnaireResponse,
+    SurveyUpload,
+    default_survey_schema,
+)
 from .testing import make_survey_activity
 from .throttles import PublicVoteThrottle
 
@@ -273,11 +286,47 @@ class ActivityUploadImageTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
-class SurveyUploadTest(TestCase):
-    """问卷文件题上传端点：填答者（含游客）可传；类型限制。"""
+class _TempMediaMixin:
+    """临时 MEDIA_ROOT，避免问卷上传用例把文件写进真实 media/。
+
+    与 ``attachments/tests.py::_AttachmentTestCase`` 同一套做法：override 之外
+    再兜底清一次真实目录——Django 的默认存储是惰性对象，个别路径下 override
+    不生效，文件会落到真实 ``media/survey_uploads/``。
+    """
+
+    def setUp(self):
+        self._real_media_root = Path(settings.MEDIA_ROOT)
+        self.tmp_media = tempfile.mkdtemp()
+        self._override = override_settings(MEDIA_ROOT=self.tmp_media)
+        self._override.enable()
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+        self._override.disable()
+        real_dir = self._real_media_root / "survey_uploads"
+        if real_dir.exists():
+            for path in real_dir.glob("*"):
+                path.unlink(missing_ok=True)
+        shutil.rmtree(self.tmp_media, ignore_errors=True)
+
+
+class SurveyUploadTest(_TempMediaMixin, TestCase):
+    """问卷文件题上传端点：填答者（含游客）可传；类型限制；限流 / 配额 / 台账 / 回收。"""
+
+    URL = "/activities/activities/survey_upload/"
+
+    def setUp(self):
+        super().setUp()
+        # 节流按 IP / 设备计数，缓存跨用例共享——不清会让前一个用例的额度
+        # 算到后一个头上，症状是「第一条就 429」。
+        cache.clear()
 
     def _file(self, name="a.png", content_type="image/png", data=None):
         return SimpleUploadedFile(name, data or PNG_BYTES, content_type=content_type)
+
+    def _post(self, client=None, **extra):
+        return (client or APIClient()).post(self.URL, {"file": self._file()}, **extra)
 
     def test_guest_can_upload_image(self):
         resp = APIClient().post("/activities/activities/survey_upload/", {"file": self._file()})
@@ -333,6 +382,124 @@ class SurveyUploadTest(TestCase):
             {"file": self._file("xss.html", "image/png")},
         )
         self.assertEqual(resp.status_code, 400)
+
+
+class SurveyUploadHardeningTest(_TempMediaMixin, TestCase):
+    """审计 #271：匿名上传点必须有节流 / 配额 / 台账 / 孤儿回收。
+
+    反证方式（PR 里也写了）：撤掉 `ActivityViewSet.get_throttles` 的
+    ``survey_upload`` 分支 → 两条节流用例变红；撤掉配额判断 → 配额用例变红；
+    撤掉 ``SurveyUpload.objects.create`` → 台账用例变红；撤掉 sweep 命令的
+    ``row.delete()/default_storage.delete()`` → 回收用例变红。
+    """
+
+    URL = "/activities/activities/survey_upload/"
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+
+    def _file(self, name="a.png"):
+        return SimpleUploadedFile(name, PNG_BYTES, content_type="image/png")
+
+    def _post(self, client=None, device=None, ip="127.0.0.1"):
+        extra = {"REMOTE_ADDR": ip}
+        if device:
+            extra["HTTP_X_DEVICE_ID"] = device
+        return (client or APIClient()).post(
+            self.URL, {"file": self._file()}, **extra,
+        )
+
+    def _path_of(self, resp):
+        return resp.data["url"].split("/media/", 1)[1]
+
+    # ---- 台账 ----
+
+    def test_upload_writes_ledger_row(self):
+        """每次落盘都写一行归属记录——配额、审计、回收全靠它。"""
+        resp = self._post(device="11111111-1111-4111-8111-111111111111")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        row = SurveyUpload.objects.get()
+        self.assertEqual(row.path, self._path_of(resp))
+        self.assertEqual(row.size, len(PNG_BYTES))
+        self.assertEqual(len(row.sha256), 64)
+        self.assertIsNone(row.user_id)
+        self.assertEqual(row.device_id, "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(row.owner_ip, "127.0.0.1")
+
+    def test_upload_ledger_records_user_when_logged_in(self):
+        user = User.objects.create_user(username="up", password="x")
+        client = APIClient()
+        client.force_authenticate(user)
+        self.assertEqual(self._post(client).status_code, 200)
+        self.assertEqual(SurveyUpload.objects.get().user_id, user.pk)
+
+    # ---- 节流 ----
+
+    def test_ip_throttle_blocks_after_quota(self):
+        """同一 IP 超过每小时额度 → 429。登录用户也计数（换账号绕不过）。"""
+        set_policy(survey_upload_per_ip_per_hour=2, survey_upload_per_device_per_hour=1000)
+        user = User.objects.create_user(username="spam", password="x")
+        client = APIClient()
+        client.force_authenticate(user)
+        self.assertEqual(self._post(client).status_code, 200)
+        self.assertEqual(self._post(client).status_code, 200)
+        blocked = self._post(client)
+        self.assertEqual(blocked.status_code, 429, blocked.content)
+        self.assertIn("上传过于频繁", str(blocked.data["detail"]))
+
+    def test_device_throttle_blocks_rotating_ips(self):
+        """换 IP 但带同一设备号 → 仍被拦；设备号可伪造，所以这是第二道而非唯一一道。"""
+        set_policy(survey_upload_per_ip_per_hour=1000, survey_upload_per_device_per_hour=2)
+        device = "22222222-2222-4222-8222-222222222222"
+        for ip in ("10.0.0.1", "10.0.0.2"):
+            resp = self._post(device=device, ip=ip)
+            self.assertEqual(resp.status_code, 200, resp.content)
+            # 每个 IP 只来一次，IP 维度不会拦；设备维度累计到 2 后见 429。
+        blocked = self._post(device=device, ip="10.0.0.3")
+        self.assertEqual(blocked.status_code, 429, blocked.content)
+
+    # ---- 配额 ----
+
+    def test_daily_byte_quota_rejects_before_writing(self):
+        """24h 字节配额满了就直接 429，且**不落盘**（否则就是没记账的孤儿）。"""
+        set_policy(survey_upload_daily_bytes=1)
+        before = SurveyUpload.objects.count()
+        resp = self._post()
+        self.assertEqual(resp.status_code, 429, resp.content)
+        self.assertEqual(SurveyUpload.objects.count(), before)
+        # 目录可能压根没建（一次都没写成功）——那也算「没落盘」。
+        upload_dir = Path(self.tmp_media) / "survey_uploads"
+        self.assertFalse(upload_dir.exists() and any(upload_dir.iterdir()))
+
+    # ---- 孤儿回收 ----
+
+    def test_sweep_removes_unreferenced_keeps_referenced(self):
+        client = APIClient()
+        kept_path = self._path_of(self._post(client))
+        orphan_path = self._path_of(self._post(client))
+        questionnaire = Questionnaire.objects.create(kind=Questionnaire.KIND_SURVEY)
+        QuestionnaireResponse.objects.create(
+            questionnaire=questionnaire,
+            answers={"attach": f"http://testserver/media/{kept_path}"},
+        )
+
+        out = StringIO()
+        call_command("sweep_survey_uploads", "--apply", "--days=0", stdout=out)
+
+        self.assertTrue(SurveyUpload.objects.filter(path=kept_path).exists())
+        self.assertFalse(SurveyUpload.objects.filter(path=orphan_path).exists())
+        self.assertTrue(default_storage.exists(kept_path))
+        self.assertFalse(default_storage.exists(orphan_path))
+        self.assertIn("未被作答引用：1 个", out.getvalue())
+
+    def test_sweep_dry_run_deletes_nothing(self):
+        path = self._path_of(self._post())
+        out = StringIO()
+        call_command("sweep_survey_uploads", "--days=0", stdout=out)
+        self.assertTrue(SurveyUpload.objects.filter(path=path).exists())
+        self.assertTrue(default_storage.exists(path))
+        self.assertIn("预演", out.getvalue())
 
 
 class DeliberationVotingTest(TestCase):

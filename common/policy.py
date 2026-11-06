@@ -39,6 +39,12 @@ DEFAULT_MEMBER_LOOKUP_PER_IP_PER_HOUR = 300
 # 安全验证（ADR-0026）：邮箱验证码每小时上限（按账号 / 按 IP）
 DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR = 5
 DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR = 10
+# 问卷文件题上传（匿名可传，审计 #271）：按 IP / 设备号双维限流，
+# 另加每日全局字节配额兜住磁盘。一张问卷正常传 1–2 个附件，20/时
+# 足够一个班在同一 NAT 出口下填完；额度可在站点策略里按现场调。
+DEFAULT_SURVEY_UPLOAD_PER_IP_PER_HOUR = 20
+DEFAULT_SURVEY_UPLOAD_PER_DEVICE_PER_HOUR = 20
+DEFAULT_SURVEY_UPLOAD_DAILY_BYTES = 200 * 1024 * 1024
 DEFAULT_SYNC_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 DEFAULT_TUS_MEDIA_MAX_BYTES = 500 * 1024 * 1024
 DEFAULT_AUTO_UPDATE_ENABLED = True
@@ -78,6 +84,9 @@ class SitePolicy:
     member_lookup_per_ip_per_hour: int
     stepup_email_per_user_per_hour: int
     stepup_email_per_ip_per_hour: int
+    survey_upload_per_ip_per_hour: int
+    survey_upload_per_device_per_hour: int
+    survey_upload_daily_bytes: int
     sync_upload_max_bytes: int
     tus_media_max_bytes: int
     auto_update_enabled: bool
@@ -116,6 +125,9 @@ class SitePolicy:
             member_lookup_per_ip_per_hour=DEFAULT_MEMBER_LOOKUP_PER_IP_PER_HOUR,
             stepup_email_per_user_per_hour=DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
             stepup_email_per_ip_per_hour=DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
+            survey_upload_per_ip_per_hour=DEFAULT_SURVEY_UPLOAD_PER_IP_PER_HOUR,
+            survey_upload_per_device_per_hour=DEFAULT_SURVEY_UPLOAD_PER_DEVICE_PER_HOUR,
+            survey_upload_daily_bytes=DEFAULT_SURVEY_UPLOAD_DAILY_BYTES,
             sync_upload_max_bytes=DEFAULT_SYNC_UPLOAD_MAX_BYTES,
             tus_media_max_bytes=DEFAULT_TUS_MEDIA_MAX_BYTES,
             auto_update_enabled=DEFAULT_AUTO_UPDATE_ENABLED,
@@ -217,6 +229,16 @@ def _snapshot(rows) -> SitePolicy:
         ),
         stepup_email_per_ip_per_hour=pick(
             rate, "stepup_email_per_ip_per_hour", DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
+        ),
+        survey_upload_per_ip_per_hour=pick(
+            rate, "survey_upload_per_ip_per_hour", DEFAULT_SURVEY_UPLOAD_PER_IP_PER_HOUR,
+        ),
+        survey_upload_per_device_per_hour=pick(
+            rate, "survey_upload_per_device_per_hour",
+            DEFAULT_SURVEY_UPLOAD_PER_DEVICE_PER_HOUR,
+        ),
+        survey_upload_daily_bytes=pick(
+            upload, "survey_upload_daily_bytes", DEFAULT_SURVEY_UPLOAD_DAILY_BYTES,
         ),
         sync_upload_max_bytes=pick(
             upload, "sync_upload_max_bytes", DEFAULT_SYNC_UPLOAD_MAX_BYTES,

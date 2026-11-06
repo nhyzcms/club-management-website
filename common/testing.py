@@ -53,9 +53,12 @@ POLICY_MODEL_OF = {
     "member_lookup_per_ip_per_hour": RateLimitPolicy,
     "stepup_email_per_user_per_hour": RateLimitPolicy,
     "stepup_email_per_ip_per_hour": RateLimitPolicy,
+    "survey_upload_per_ip_per_hour": RateLimitPolicy,
+    "survey_upload_per_device_per_hour": RateLimitPolicy,
     # UploadPolicy
     "sync_upload_max_bytes": UploadPolicy,
     "tus_media_max_bytes": UploadPolicy,
+    "survey_upload_daily_bytes": UploadPolicy,
     # UpdaterPolicy
     "auto_update_enabled": UpdaterPolicy,
     "update_poll_interval_seconds": UpdaterPolicy,

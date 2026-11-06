@@ -202,8 +202,11 @@ B5 起 `common/models.py` 里是五张 pk 恒为 1 的单例表——`AuthPolicy
 | `member_lookup_per_ip_per_hour` | `300` | 每 IP 每小时 12 位条码载荷查询次数（`/#/v` 摄像头扫码 / 扫码枪；计全部请求，不占按身份的 24 小时额度） |
 | `stepup_email_per_user_per_hour` | `5` | 安全验证邮箱验证码每小时上限（按账号） |
 | `stepup_email_per_ip_per_hour` | `10` | 安全验证邮箱验证码每小时上限（按 IP） |
+| `survey_upload_per_ip_per_hour` | `20` | 问卷文件题上传：每 IP 每小时次数（匿名端点，登录用户也计数） |
+| `survey_upload_per_device_per_hour` | `20` | 问卷文件题上传：每设备（`X-Device-Id`）每小时次数 |
 | `sync_upload_max_bytes` | `52428800`（50MB） | 同步上传单文件上限 |
 | `tus_media_max_bytes` | `524288000`（500MB） | tus 图 / 视频上限 |
+| `survey_upload_daily_bytes` | `209715200`（200MB） | 问卷文件题上传的全局每日字节配额（24h 内台账求和；防匿名端点写满磁盘） |
 | `auto_update_enabled` | `True` | 自动更新总开关 |
 | `update_poll_interval_seconds` | `900` | 轮询间隔 |
 | `update_timezone` | `Asia/Shanghai` | IANA 时区名，不用 Django `TIME_ZONE` |

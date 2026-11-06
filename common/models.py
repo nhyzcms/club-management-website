@@ -22,6 +22,9 @@ from .policy import (
     DEFAULT_MEMBER_CLAIM_PER_USER_PER_HOUR,
     DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR,
     DEFAULT_STEPUP_EMAIL_PER_USER_PER_HOUR,
+    DEFAULT_SURVEY_UPLOAD_DAILY_BYTES,
+    DEFAULT_SURVEY_UPLOAD_PER_DEVICE_PER_HOUR,
+    DEFAULT_SURVEY_UPLOAD_PER_IP_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_REGISTRATION_ENABLED,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
@@ -479,6 +482,18 @@ class RateLimitPolicy(_SingletonPolicy):
         validators=[MinValueValidator(1)],
         help_text="安全验证邮箱验证码的每小时上限（按 IP）。",
     )
+    survey_upload_per_ip_per_hour = models.PositiveIntegerField(
+        "问卷上传：每 IP 每小时次数",
+        default=DEFAULT_SURVEY_UPLOAD_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="问卷文件题（匿名可传）的每小时上限；学校 NAT 出口多人共用 IP 时需调高。",
+    )
+    survey_upload_per_device_per_hour = models.PositiveIntegerField(
+        "问卷上传：每设备每小时次数",
+        default=DEFAULT_SURVEY_UPLOAD_PER_DEVICE_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="按客户端 X-Device-Id 计数；未带设备号的请求只受 IP 维度约束。",
+    )
 
     class Meta:
         verbose_name = "频控策略"
@@ -496,6 +511,11 @@ class UploadPolicy(_SingletonPolicy):
     tus_media_max_bytes = models.PositiveBigIntegerField(
         "tus 图/视频上限（字节）",
         default=DEFAULT_TUS_MEDIA_MAX_BYTES,
+    )
+    survey_upload_daily_bytes = models.PositiveBigIntegerField(
+        "问卷上传每日字节配额",
+        default=DEFAULT_SURVEY_UPLOAD_DAILY_BYTES,
+        help_text="全局每 24 小时的问卷附件写入上限，防匿名端点把磁盘写满。",
     )
 
     class Meta:
