@@ -122,6 +122,7 @@ def dismiss(case, actor, *, comment):
     """驳回进行中案。理由必填。"""
     if case.status != ReportCase.STATUS_OPEN:
         raise ReportDenied("该举报案已结案")
+    _deny_self_judging(case, actor)
     comment = (comment or "").strip()
     if not comment:
         raise ReportDenied("请填写驳回理由")
@@ -134,6 +135,18 @@ def dismiss(case, actor, *, comment):
     ])
     _notify_reporters(case, actor)
     return case
+
+
+def _deny_self_judging(case, actor):
+    """职责分离：举报人不能处理自己提交的举报（审计 #277）。
+
+    与审核轴 L-10（不能批准自己创建的内容）、身份轴 M-8（不能停用自己）
+    同一条原则：处罚必须有第二个人复核。举报轴原先只挡了「举报自己的内容」
+    ——那挡的是内容归属，不是处置权归属，于是「自己立案 → 自己成立」一条
+    权限就能禁言任意用户、下架任意内容、墓碑化任意评论。
+    """
+    if case.filings.filter(reporter=actor).exists():
+        raise ReportDenied("不能处理自己提交的举报")
 
 
 def _notify_reporters(case, actor):
@@ -158,6 +171,7 @@ def uphold(case, actor, *, comment="", ends_at=None):
     """成立并执行默认处置。``ends_at`` 仅用户对象：省略即永久。"""
     if case.status != ReportCase.STATUS_OPEN:
         raise ReportDenied("该举报案已结案")
+    _deny_self_judging(case, actor)
     note = (comment or "").strip()
     try:
         _dispose(case, actor, note=note, ends_at=ends_at)
@@ -248,6 +262,19 @@ def _host_public_to_reader(actor, host):
 
 
 def _dispose(case, actor, *, note, ends_at):
+    """举报成立后的默认处置。
+
+    **一条 ``handle_report`` 权限覆盖三种处罚能力**（下架内容 / 墓碑化评论 /
+    禁言），这是既有产品语义（「举报成立就执行处置」），审计 #277 复核后保留，
+    没有改成「只标记、另走流程」。补的是两条边界：
+
+    - 举报人不能处理自己提交的举报（``_deny_self_judging``）；
+    - 处罚不能落在超管或同级处理权限持有者身上（``discipline._create_mute``）。
+
+    下面三个入口各自跳过了本该管它的权限（``reviews.moderate`` /
+    ``can_manage_thread`` / ``reviews.mute_user``）——有意为之，新增第四种
+    处置时必须同步补上面两条边界。
+    """
     kind = target_type_of(case)
     if kind in (TARGET_NEWS, TARGET_ACTIVITY, TARGET_TUTORIAL):
         _remove_publication(case, actor, note)
