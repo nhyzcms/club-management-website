@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useSitePolicy } from "../api/sitePolicy";
@@ -60,6 +60,11 @@ export default function LoginModal({
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const policy = useSitePolicy();
+  // 必须和其余 hook 放在同一个「早期 return 之前」的区段：本组件在 `if (!open)`
+  // 时提前 return null，hook 一旦写在那之后，`open` 由 false 变 true 就会改变
+  // hook 数量 → React #310（Rendered more hooks than during the previous render）
+  // → 整个弹窗白屏、登录流程全断（e2e auth.setup 就是这么挂的）。
+  const scrimMouseDown = useRef(false);
 
   // Esc 关闭弹窗（与点遮罩 / 关闭按钮同语义）
   useEffect(() => {
@@ -215,6 +220,21 @@ export default function LoginModal({
     onClose();
   };
 
+  // 遮罩点击关闭，只认「按下与抬起都发生在遮罩上」的那一次（#180）。
+  //
+  // 拖选密码时鼠标移出卡片、在遮罩上松开，浏览器会把 click 派发到按下与抬起
+  // 两个目标的**最近共同祖先**——也就是遮罩。旧写法 `onClick={handleDismiss}`
+  // 直接把弹窗关掉：用户只是想全选/选中密码内容，结果被踢回首页，还得重新打开。
+  // 记一次 mousedown 的目标就能区分「真点遮罩」与「拖选溢出」。
+  const onScrimMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    scrimMouseDown.current = e.target === e.currentTarget;
+  };
+  const onScrimClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const startedOnScrim = scrimMouseDown.current;
+    scrimMouseDown.current = false;
+    if (startedOnScrim && e.target === e.currentTarget) handleDismiss();
+  };
+
   const accountLabel = method === "email" ? "邮箱" : "用户名";
   const accountType = method === "email" ? "email" : "text";
   const accountPlaceholder =
@@ -228,7 +248,8 @@ export default function LoginModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-title"
-        onClick={handleDismiss}
+        onMouseDown={onScrimMouseDown}
+        onClick={onScrimClick}
       >
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-head">
@@ -322,7 +343,8 @@ export default function LoginModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="auth-title"
-      onClick={handleDismiss}
+      onMouseDown={onScrimMouseDown}
+      onClick={onScrimClick}
     >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
