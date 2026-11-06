@@ -6,6 +6,8 @@ from rest_framework.viewsets import GenericViewSet
 from rest_framework.mixins import RetrieveModelMixin, UpdateModelMixin
 
 from .models import AboutBlock, AboutPage
+from common.throttles import PublicReadThrottle
+
 from .permissions import CanEditAbout
 from .serializers import (
     AboutBlockSerializer,
@@ -22,6 +24,8 @@ class AboutPageView(RetrieveUpdateAPIView):
 
     permission_classes = [CanEditAbout]
     http_method_names = ["get", "head", "options"]
+    # 审计 #280：本视图一次吐出完整名册与联系方式（线上约 9KB），此前无任何限流。
+    throttle_classes = [PublicReadThrottle]
 
     def get(self, request, *args, **kwargs):
         page = AboutPage.objects.get_solo()
@@ -39,6 +43,8 @@ class ClubOverviewView(RetrieveUpdateAPIView):
     serializer_class = AboutOverviewSerializer
     permission_classes = [CanEditAbout]
     http_method_names = ["get", "put", "patch", "head", "options"]
+    # 审计 #280：只计 GET/HEAD/OPTIONS，PUT/PATCH 不占读额度（见 PublicReadThrottle）。
+    throttle_classes = [PublicReadThrottle]
 
     def get_object(self):
         return AboutPage.objects.get_solo()
@@ -53,6 +59,8 @@ class AboutBlockViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
     lookup_field = "key"
     queryset = AboutBlock.objects.all()
     http_method_names = ["get", "patch", "head", "options"]
+    # 审计 #280：与 /about/ 同一份数据，不挂限流就等于留了个绕过口。
+    throttle_classes = [PublicReadThrottle]
 
     def partial_update(self, request, *args, **kwargs):
         block = self.get_object()

@@ -4,35 +4,17 @@ from django.http import HttpResponse, JsonResponse
 from rest_framework.throttling import SimpleRateThrottle
 
 from common.policy import get_policy
+from common.throttles import IPLimitThrottle as _IPLimitThrottle
 
-
-class _IPLimitThrottle(SimpleRateThrottle):
-    """按 IP 计数的限流基类（用于函数式视图：手动实例化 + allow_request）。
-
-    SimpleRateThrottle 的 get_cache_key 是抽象的，须覆写；这里固定用 self.scope +
-    请求方 IP 作缓存键（与 DRF 内置 AnonRateThrottle 同形），不依赖 view 实例。
-    """
-
-    def get_cache_key(self, request, view):
-        ident = self.get_ident(request)
-        return self.cache_format % {"scope": self.scope, "ident": ident}
-
-    def is_blocked(self, request, view=None):
-        """Peek: True if the next allow_request would deny. Does not increment."""
-        self.key = self.get_cache_key(request, view)
-        if self.key is None:
-            return False
-        self.history = list(self.cache.get(self.key, []))
-        self.now = self.timer()
-        while self.history and self.history[-1] <= self.now - self.duration:
-            self.history.pop()
-        return len(self.history) >= self.num_requests
-
-    def retry_after(self, request, view=None):
-        if not self.is_blocked(request, view):
-            return 0
-        wait = self.wait()
-        return max(0, int(wait or 0))
+# 基类已搬到 common/throttles.py（公开读接口也要用，见审计 #280）；
+# 这里保留 `_IPLimitThrottle` 这个名字，下面十几个子类无需改动。
+__all__ = [
+    "RegisterThrottle", "PasswordResetRequestThrottle", "PasswordResetEmailThrottle",
+    "ResendVerificationThrottle", "AuthCodeRedeemThrottle", "MemberClaimThrottle",
+    "MemberClaimIpThrottle", "MemberCheckThrottle", "MemberLookupThrottle",
+    "StepUpEmailUserThrottle", "StepUpEmailIpThrottle", "LoginIpThrottle",
+    "LoginUsernameThrottle",
+]
 
 
 class RegisterThrottle(_IPLimitThrottle):

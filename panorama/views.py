@@ -3,6 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from common.throttles import PublicReadThrottle
+
 from .models import Panorama
 from .permissions import CanManagePanorama, CanViewPanorama
 from .serializers import PanoramaDetailSerializer, PanoramaListSerializer
@@ -31,6 +33,9 @@ class PanoramaViewSet(viewsets.ModelViewSet):
     """
 
     parser_classes = [JSONParser, MultiPartParser, FormParser]
+    # 审计 #280：列表 / 详情是公开读，且 search_fields 走 SQLite LIKE，
+    # 此前无任何限流。只计 GET/HEAD/OPTIONS，上传 / 切片等写操作不受影响。
+    throttle_classes = [PublicReadThrottle]
     filterset_fields = ["origin", "status"]
     search_fields = ["title", "description", "device_model"]
     ordering_fields = ["order", "created_at", "updated_at"]

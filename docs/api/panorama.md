@@ -21,6 +21,10 @@
 
 每级落**一整幅**等距柱状图（而不是 512px 网格）：Marzipano `EquirectGeometry` 的取片单位就是「一层一张图」——`EquirectTile` 只携带 `z`，取片模板只认 `{z}` 占位符；网格记法（`{z}/{y}/{x}`）属立方体贴图，套用会让 `{y}`/`{x}` 被替换为空串（请求形态 `…/1//.jpg`）而全量 404。详见 [ADR-0022 修订](../adr/0022-campus-panorama-library.md)。
 
+## 限流
+
+列表与详情是公开读，共用 `PublicReadThrottle` 的按 IP 读桶（`300/min`，审计 #280）——`search_fields` 走 SQLite `LIKE`，此前没有任何兜底。只计 `GET`/`HEAD`/`OPTIONS`：导入、切片、删除等写操作不受影响。超出回 `429`。
+
 ## 端点一览
 
 | 方法 | 路径 | 认证 | 权限 | 说明 |
