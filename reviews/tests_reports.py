@@ -220,3 +220,107 @@ class ReportCommentAndUserTest(TestCase):
         self.client.force_authenticate(self.reporter)
         resp = self.client.get("/reviews/reports/")
         self.assertEqual(resp.status_code, 403)
+
+
+class ReportDutySeparationTest(TestCase):
+    """审计 #277：举报轴的三条边界。
+
+    反证：删掉 ``report_lifecycle._deny_self_judging`` 的两处调用 → 前两条变红；
+    删掉 ``discipline._create_mute`` 的 ``is_superuser`` / ``has_perm`` 判断 →
+    后两条变红。
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.author = _verified("author")
+        self.client = APIClient()
+        self.news = approve_news(News.objects.create(
+            title="n", author=self.author, is_published=True,
+        ))
+        self.target_user = _verified("target")
+
+    def _open_user_case(self, reporter):
+        self.client.force_authenticate(reporter)
+        resp = self.client.post(
+            "/reviews/reports/",
+            {"target_type": "user", "target_id": self.target_user.pk, "reason": "骚扰"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        return resp.data["id"]
+
+    def test_reporter_cannot_uphold_own_filing(self):
+        """自己立案 → 自己成立 是最省事的越权路径，必须挡在处置之前。"""
+        handler = _perm(_verified("handler"), "reviews.handle_report")
+        case_id = self._open_user_case(handler)
+        self.client.force_authenticate(handler)
+        resp = self.client.post(
+            f"/reviews/reports/{case_id}/uphold/", {"comment": "成立"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("不能处理自己提交的举报", str(resp.data["detail"]))
+        self.assertFalse(UserMute.objects.filter(user=self.target_user).exists())
+        case = ReportCase.objects.get(pk=case_id)
+        self.assertEqual(case.status, ReportCase.STATUS_OPEN)
+
+    def test_reporter_cannot_dismiss_own_filing(self):
+        handler = _perm(_verified("handler"), "reviews.handle_report")
+        case_id = self._open_user_case(handler)
+        self.client.force_authenticate(handler)
+        resp = self.client.post(
+            f"/reviews/reports/{case_id}/dismiss/", {"comment": "算了"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(ReportCase.objects.get(pk=case_id).status, ReportCase.STATUS_OPEN)
+
+    def test_cannot_mute_superuser_via_report(self):
+        superuser = User.objects.create_superuser(username="root", password="x", email="")
+        reporter = _verified("reporter")
+        handler = _perm(_verified("handler"), "reviews.handle_report")
+        self.client.force_authenticate(reporter)
+        resp = self.client.post(
+            "/reviews/reports/",
+            {"target_type": "user", "target_id": superuser.pk, "reason": "滥用"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.client.force_authenticate(handler)
+        resp = self.client.post(
+            f"/reviews/reports/{resp.data['id']}/uphold/", {"comment": "禁言"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("超级管理员", str(resp.data["detail"]))
+        self.assertFalse(UserMute.objects.filter(user=superuser).exists())
+
+    def test_cannot_mute_peer_handler(self):
+        """同级处理权限持有者之间不能互相处罚——否则谁先动手谁赢。"""
+        peer = _perm(_verified("peer"), "reviews.handle_report")
+        reporter = _verified("reporter")
+        handler = _perm(_verified("handler"), "reviews.handle_report")
+        self.client.force_authenticate(reporter)
+        resp = self.client.post(
+            "/reviews/reports/",
+            {"target_type": "user", "target_id": peer.pk, "reason": "滥用"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.client.force_authenticate(handler)
+        resp = self.client.post(
+            f"/reviews/reports/{resp.data['id']}/uphold/", {"comment": "禁言"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertFalse(UserMute.objects.filter(user=peer).exists())
+
+    def test_second_handler_can_still_uphold(self):
+        """收口不能过度：第二个人处理普通用户的举报仍然要通。"""
+        reporter = _verified("reporter")
+        case_id = self._open_user_case(reporter)
+        handler = _perm(_verified("handler"), "reviews.handle_report")
+        self.client.force_authenticate(handler)
+        resp = self.client.post(
+            f"/reviews/reports/{case_id}/uphold/", {"comment": "成立"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(
+            UserMute.objects.filter(user=self.target_user, lifted_at__isnull=True).exists()
+        )

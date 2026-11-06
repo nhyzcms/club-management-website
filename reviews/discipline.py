@@ -54,6 +54,13 @@ def lift_mute(actor, user) -> UserMute:
 def _create_mute(actor, user, *, reason: str = "", ends_at=None) -> UserMute:
     if actor.pk == user.pk:
         raise MessagingError("不能禁言自己")
+    # 审计 #277：处罚不能落在「权限不低于操作者」的账号上。原先唯一的防线是
+    # 「不能禁言自己」，于是一个持 handle_report 的账号可以把超管和同级管理员
+    # 全部禁言——举报成立链绕过 reviews.mute_user 之后就再没有别的闸门。
+    if user.is_superuser:
+        raise MessagingError("不能禁言超级管理员")
+    if user.has_perm("reviews.handle_report"):
+        raise MessagingError("不能处置持有举报处理权限的账号")
     if is_muted(user):
         raise MessagingError("该用户已被禁言")
     now = timezone.now()
