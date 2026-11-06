@@ -300,9 +300,28 @@ server {
         expires 7d;
     }
     # 统一数据根（docs/operations/data-root.md）：采用 data/ 布局时改为 alias $DIR/data/media/;
+    #
+    # 安全头是必要的纵深防御（审计 #275）：上传文件由 nginx 直出、不经过
+    # Django，所以 SPA 那套头一个都带不到这里。nosniff 挡住「把 .txt 当 HTML 执行」；
+    # X-Frame-Options 挡住把 PDF 内嵌进第三方页面当钓鱼载体；
+    # CSP sandbox 让直出的 PDF / 图片即便被当成文档打开也没有脚本能力。
+    #
+    # 注意：location 级 add_header 会覆盖 server 级继承——进 443 后必须把
+    # HSTS / Alt-Svc 在本块内重复声明一遍，否则这批响应会丢那几个头。
     location /media/ {
         alias $DIR/media/;
         expires 7d;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox" always;
+    }
+
+    # 413 走站点自己的中文 JSON（审计 #272）：默认是 nginx 英文 HTML 错误页，
+    # 前端拿到的是解析不了的 HTML，用户看不懂发生了什么。
+    error_page 413 = @payload_too_large;
+    location @payload_too_large {
+        default_type application/json;
+        return 413 '{"error":"上传文件过大，已被服务器拒绝。","reason":"payload_too_large"}';
     }
 
     error_page 502 /maintenance.html;
@@ -327,8 +346,9 @@ server {
 }
 
 # --- 有证书后启用 HTTP/2：取消注释，并把上面的 location /static/ /media/、error_page 和 location / 拷进本 server。
-#     注意：/static/ 哈希产物块自带 add_header，会覆盖 server 级 add_header 继承；
-#     在 443 使用时若 server 级配了 HSTS / Alt-Svc，需在该块内重复声明。
+#     注意：/static/ 哈希产物块与 /media/ 都自带 add_header，会覆盖 server 级
+#     add_header 继承；在 443 使用时若 server 级配了 HSTS / Alt-Svc，需在这两个
+#     块内重复声明。@payload_too_large 与 error_page 502 也要一并拷进来。
 #     nginx 1.25.1+ 也可写成 listen 443 ssl; 然后 http2 on;
 #     HSTS 只写在 443（HTTP 响应里的 HSTS 浏览器会忽略）。
 # server {
