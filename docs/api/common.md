@@ -1,6 +1,6 @@
 # 公共 API（站点策略与站点级行为）
 
-`common` app 提供的站点级公共能力：唯一的公开端点 `GET /site-policy/`（运行时运营旋钮快照 + Turnstile 公开字段）、维护模式 503 拦截、`media/file/` 固定目录的公开服务，以及旋钮的 admin 编辑路径。`common` 自身没有 `urls.py`——`site-policy` 与 `file` 均由 `config/urls.py` 直接挂载。
+`common` app 提供的站点级公共能力：唯一的公开端点 `GET /site-policy/`（运行时策略的**公开子集** + Turnstile 公开字段）、维护模式 503 拦截、`media/file/` 固定目录的公开服务，以及旋钮的 admin 编辑路径。`common` 自身没有 `urls.py`——`site-policy` 与 `file` 均由 `config/urls.py` 直接挂载。
 
 > 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0010](../adr/0010-runtime-site-policy.md)
 
@@ -16,7 +16,7 @@
 
 | 方法 | 路径 | 认证 | 权限 | 说明 |
 |---|---|---|---|---|
-| GET | `/site-policy/` | 公开 | — | 站点策略快照 + Turnstile 公开字段 |
+| GET | `/site-policy/` | 公开 | — | 站点策略公开子集（allowlist）+ Turnstile 公开字段 |
 | GET | `/file/{path}` | 公开 | — | `media/file/` 目录静态服务 |
 
 ## 端点详情
@@ -32,85 +32,39 @@
 ```json
 {
   "verification_enabled": true,
-  "content_review_enabled": true,
-  "registration_enabled": true,
-  "register_per_ip_per_day": 5,
-  "resend_verification_per_ip_per_hour": 5,
-  "login_per_ip_per_hour": 30,
-  "login_per_username_per_hour": 10,
-  "feedback_anon_per_ip_per_day": 10,
-  "public_vote_per_ip_per_hour": 120,
-  "reports_per_user_per_day": 10,
-  "authcode_redeem_per_user_per_hour": 10,
-  "member_claim_enabled": true,
-  "member_claim_per_user_per_hour": 5,
-  "member_claim_per_ip_per_day": 20,
-  "member_check_per_ip_per_hour": 60,
-  "member_lookup_per_ip_per_hour": 300,
-  "stepup_email_per_user_per_hour": 5,
-  "stepup_email_per_ip_per_hour": 10,
-  "sync_upload_max_bytes": 52428800,
-  "tus_media_max_bytes": 524288000,
-  "auto_update_enabled": true,
-  "update_poll_interval_seconds": 900,
-  "update_timezone": "Asia/Shanghai",
-  "update_window_start_hour": 1,
-  "update_window_end_hour": 3,
-  "update_apply_cutoff_minutes_before_end": 30,
-  "update_release_keep": 3,
-  "update_db_backup_keep": 5,
-  "comments_enabled": true,
-  "comment_max_depth": 8,
-  "dms_enabled": true,
   "verification_valid_days": 365,
   "admin_valid_days": 730,
   "registration_verify_days": 60,
+  "registration_enabled": true,
+  "comments_enabled": true,
+  "comment_max_depth": 8,
+  "dms_enabled": true,
+  "sync_upload_max_bytes": 52428800,
   "turnstile_enabled": false,
   "turnstile_site_key": ""
 }
 ```
 
+> **这是一个显式 allowlist，不是全量快照**（审计 #274）。`common/views.py: PUBLIC_POLICY_FIELDS` 是唯一真源，`common/tests/test_public_policy.py` 冻结了字段集合——新增公开字段要三处同改。运维参数（自动更新窗口、`tus` 上限、各条 per-IP 限流阈值、内容审核开关）**不再匿名可读**，管理员在 Django 后台「频控策略 / 更新策略」里查看。
+
 `turnstile_enabled` / `turnstile_site_key` 来自 `.env`（`TURNSTILE_SITE_KEY` 与 `TURNSTILE_SECRET_KEY` **都非空**才启用；只配一半视为关闭），叠加在快照之上返回，**不在**任何策略表内。未启用时 sitekey 为空串。
 
-### 字段语义与消费者
+### 公开字段（allowlist）
+
+只列 `/site-policy/` 会下发的字段。**其余运维 / 频控字段不再公开**，在 Django 后台「频控策略 / 更新策略 / 认证策略 / 内容策略」里查看与编辑（完整清单见 `docs/configuration.md`）。
 
 | 字段 | 类型 | 默认 | 含义 / 消费方 |
 |---|---|---|---|
-| verification_enabled | bool | `true` | 认证通道总开关；关闭后不可新开 / 完成任何通道，已通过者仍算已认证。消费方：`accounts`（注册建通道、绑邮 / 换邮、人工提交、认证链接落地、身份审核通过 / 驳回） |
-| content_review_enabled | bool | `true` | 内容审核总开关；关闭后新建新闻 / 互动 / 教程直接通过、不进待审队列（已有待审条目不批量通过）。消费方：`reviews.lifecycle` |
-| registration_enabled | bool | `true` | 自助注册开关；关闭后注册返回 403。消费方：`accounts` 注册视图 |
-| register_per_ip_per_day | int | `5` | 每 IP 每日注册次数上限（`accounts.throttles.RegisterThrottle`，校验前先限流） |
-| resend_verification_per_ip_per_hour | int | `5` | 每 IP 每小时重发认证邮件次数（`ResendVerificationThrottle`；绑定邮箱与重发两条路径共用） |
-| login_per_ip_per_hour | int | `30` | 每 IP 每小时**登录失败**次数（门户与 Django admin 共用；成功登录不占额度） |
-| login_per_username_per_hour | int | `10` | 每用户名 / 邮箱每小时登录失败次数（防针对单一账号撞库） |
-| feedback_anon_per_ip_per_day | int | `10` | 每 IP 每日匿名反馈次数（`reviews` 限流） |
-| public_vote_per_ip_per_hour | int | `120` | 公开受众投票：每 IP 每互动每小时游客票上限（只计未登录请求；NAT 出口共用 IP 时调高）。消费方：`activities.throttles.PublicVoteThrottle` |
-| reports_per_user_per_day | int | `10` | 每用户每日举报次数（`reviews` 限流） |
-| authcode_redeem_per_user_per_hour | int | `10` | 每账号每小时认证码兑换**失败**次数（`accounts.throttles.AuthCodeRedeemThrottle`；只计失败，成功不占额度） |
-| member_claim_enabled | bool | `true` | 社员身份自助认领开关；关闭后认领接口 403、注册后认领阶段不展示（已绑定不受影响）。消费方：`accounts` |
-| member_claim_per_user_per_hour | int | `5` | 每账号每小时认领**失败**次数（只计失败） |
-| member_claim_per_ip_per_day | int | `20` | 每 IP 每日认领**失败**次数 |
-| member_check_per_ip_per_hour | int | `60` | 每 IP 每小时扫码校验次数（公开端点；计全部请求） |
-| member_lookup_per_ip_per_hour | int | `300` | 每 IP 每小时 12 位条码载荷查询次数（`/auth/member/lookup/` 的签名载荷通路；计全部请求，不占按身份的 24 小时额度）。消费方：`accounts.throttles.MemberLookupThrottle` |
-| stepup_email_per_user_per_hour | int | `5` | 安全验证邮箱验证码每小时上限（按账号） |
-| stepup_email_per_ip_per_hour | int | `10` | 安全验证邮箱验证码每小时上限（按 IP） |
-| sync_upload_max_bytes | int | `52428800`（50MB） | 同步上传单文件上限（任意类型）；超过则仅图片 / 视频可走 tus。消费方：`attachments` |
-| tus_media_max_bytes | int | `524288000`（500MB） | tus 通路图 / 视频上限（`TusUploadViewSet.max_file_size`，admin 改后无需重启即生效） |
-| auto_update_enabled | bool | `true` | 自动更新总开关；关闭后守护进程跳过下载与应用。消费方：`common.updater` |
-| update_poll_interval_seconds | int | `900` | 更新轮询间隔（秒） |
-| update_timezone | string | `Asia/Shanghai` | 应用窗口时区（IANA 名；不用 Django `TIME_ZONE`） |
-| update_window_start_hour | int | `1` | 应用窗口开始时刻（整点小时，0–23） |
-| update_window_end_hour | int | `3` | 应用窗口结束时刻（半开区间 `[开始, 结束)`；`开始 == 结束` 视为空窗口，起 > 止按跨夜处理） |
-| update_apply_cutoff_minutes_before_end | int | `30` | 窗口结束前 N 分钟起不再开始应用更新 |
-| update_release_keep | int | `3` | 保留发行包份数（超出按修改时间最旧清理，连同 `.sha256` 旁车） |
-| update_db_backup_keep | int | `5` | 保留数据库快照份数（`backups/db-*.sqlite3` / `db-*.pg.sql`） |
-| comments_enabled | bool | `true` | 评论区开关；关闭后前端不显示评论区且无法发新评论，已有评论保留。消费方：`messaging` |
+| verification_enabled | bool | `true` | 认证通道总开关；关闭后不可新开 / 完成任何通道。消费方：`accounts` |
+| verification_valid_days | int | `365` | 认证有效期（天）；到期后回落未认证，需重新认证。消费方：`accounts` |
+| admin_valid_days | int | `730` | 管理员身份有效期（天）；到期撤销 `is_staff`，超管不受限 |
+| registration_verify_days | int | `60` | 注册后认证宽限（天）；超期未认证自动停用 |
+| registration_enabled | bool | `true` | 自助注册开关；关闭后注册返回 403 |
+| comments_enabled | bool | `true` | 评论区开关；关闭后前端不显示评论区且无法发新评论，已有评论保留 |
 | comment_max_depth | int | `8` | 评论最大嵌套深度（1–32；超深拒绝，不改挂） |
-| dms_enabled | bool | `true` | 私信开关；关闭后不显示入口且无法发起 / 发送，已有会话保留。消费方：`messaging` |
-| verification_valid_days | int | `365` | 认证有效期（天）：邮箱 / 人工 / 认证码通道通过后的有效期；到期后不再算已认证，需重新认证。消费方：`accounts`（通道通过时写 `expires_at`、`is_verified` 判定） |
-| admin_valid_days | int | `730` | 管理员身份有效期（天）：后台委任通道的有效期；到期后系统撤销 `is_staff`。超级管理员不受限（永久）。消费方：`accounts`（委任通道、有效期执行） |
-| registration_verify_days | int | `60` | 注册后认证宽限（天）：注册后从未认证、超期将停用账号；可被 `AccountLifecycle.registration_deadline` 显式覆盖。消费方：`accounts`（有效期执行） |
-| turnstile_enabled | bool | `false` | Turnstile 是否启用；前端据此挂载挂件。校验点：注册、找回密码、重发认证信（登录不校验）、未登录匿名反馈 |
+| dms_enabled | bool | `true` | 私信开关；关闭后不显示入口且无法发起 / 发送，已有会话保留 |
+| sync_upload_max_bytes | int | `52428800`（50MB） | 同步上传单文件上限；前端据此选同步 / tus 通路 |
+| turnstile_enabled | bool | `false` | Turnstile 是否启用；前端据此挂载挂件 |
 | turnstile_site_key | string | `""` | 公开 sitekey（未启用时为空串；secret 永不下发） |
 
 > 前端（`frontend/src/api/sitePolicy.ts`）内置同名默认值，`/site-policy/` 不可达时回退；`turnstile_enabled` / `turnstile_site_key` 用于挂载挂件并随请求带 `turnstile_token`。

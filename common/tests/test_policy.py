@@ -275,28 +275,23 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["verification_enabled"], True)
-        self.assertEqual(data["content_review_enabled"], True)
         self.assertEqual(data["registration_enabled"], True)
-        self.assertEqual(data["register_per_ip_per_day"], 5)
-        self.assertEqual(data["resend_verification_per_ip_per_hour"], 5)
-        self.assertEqual(data["login_per_ip_per_hour"], 30)
-        self.assertEqual(data["login_per_username_per_hour"], 10)
-        self.assertEqual(data["feedback_anon_per_ip_per_day"], 10)
-        self.assertEqual(data["reports_per_user_per_day"], 10)
-        self.assertEqual(data["authcode_redeem_per_user_per_hour"], 10)
-        self.assertEqual(data["sync_upload_max_bytes"], 50 * 1024 * 1024)
-        self.assertEqual(data["tus_media_max_bytes"], 500 * 1024 * 1024)
-        self.assertEqual(data["auto_update_enabled"], True)
-        self.assertEqual(data["update_poll_interval_seconds"], 900)
-        self.assertEqual(data["update_timezone"], "Asia/Shanghai")
-        self.assertEqual(data["update_window_start_hour"], 1)
-        self.assertEqual(data["update_window_end_hour"], 3)
-        self.assertEqual(data["update_apply_cutoff_minutes_before_end"], 30)
-        self.assertEqual(data["update_release_keep"], 3)
-        self.assertEqual(data["update_db_backup_keep"], 5)
+        self.assertEqual(data["comments_enabled"], True)
         self.assertEqual(data["comment_max_depth"], 8)
+        self.assertEqual(data["dms_enabled"], True)
+        self.assertEqual(data["sync_upload_max_bytes"], 50 * 1024 * 1024)
         self.assertEqual(data["turnstile_enabled"], False)
         self.assertEqual(data["turnstile_site_key"], "")
+        # 审计 #274：运维参数不再匿名可读（allowlist 之外一律不下发）。
+        for hidden in (
+            "content_review_enabled",
+            "tus_media_max_bytes",
+            "login_per_ip_per_hour",
+            "register_per_ip_per_day",
+            "auto_update_enabled",
+            "update_window_start_hour",
+        ):
+            self.assertNotIn(hidden, data)
 
     @override_settings(TURNSTILE_SITE_KEY="public-sitekey", TURNSTILE_SECRET_KEY="secret")
     def test_get_overlays_turnstile_when_both_keys_set(self):
@@ -313,29 +308,15 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(data["turnstile_site_key"], "")
 
     def test_get_reflects_saved_row(self):
-        """跨五张表一起改，公开端点要一次性反映出来。"""
+        """跨多张表一起改，公开端点要一次性反映出来（只反映公开子集）。"""
         set_policy(
             verification_enabled=False,
-            content_review_enabled=False,
+            comments_enabled=False,
+            comment_max_depth=3,
             sync_upload_max_bytes=1024,
-            auto_update_enabled=False,
-            update_poll_interval_seconds=60,
-            update_timezone="UTC",
-            update_window_start_hour=2,
-            update_window_end_hour=4,
-            update_apply_cutoff_minutes_before_end=15,
-            update_release_keep=2,
-            update_db_backup_keep=1,
         )
         data = APIClient().get("/site-policy/").json()
         self.assertFalse(data["verification_enabled"])
-        self.assertFalse(data["content_review_enabled"])
+        self.assertFalse(data["comments_enabled"])
+        self.assertEqual(data["comment_max_depth"], 3)
         self.assertEqual(data["sync_upload_max_bytes"], 1024)
-        self.assertFalse(data["auto_update_enabled"])
-        self.assertEqual(data["update_poll_interval_seconds"], 60)
-        self.assertEqual(data["update_timezone"], "UTC")
-        self.assertEqual(data["update_window_start_hour"], 2)
-        self.assertEqual(data["update_window_end_hour"], 4)
-        self.assertEqual(data["update_apply_cutoff_minutes_before_end"], 15)
-        self.assertEqual(data["update_release_keep"], 2)
-        self.assertEqual(data["update_db_backup_keep"], 1)
