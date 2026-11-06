@@ -274,6 +274,10 @@ def _remove_publication(case, actor, note):
     """把被举报并成立的内容下架：找到它的审核记录并执行 remove。
 
     ``comment`` 型举报没有对应的审核记录（评论不经审核发布），原样返回。
+
+    ``privileged=True``：授权依据是 ``reviews.handle_report``（调用方已由
+    ``CanHandleReport`` 把关），不是 ``reviews.moderate``——审计 #277 复核后
+    保留该语义，这里显式声明，别改成默认鉴权（会让举报处置整体 400）。
     """
     ref = host_ref(case)
     if ref is None:
@@ -289,4 +293,4 @@ def _remove_publication(case, actor, note):
         return
     if review.status != Review.STATUS_APPROVED:
         return
-    apply(REMOVE, review, actor, comment=note)
+    apply(REMOVE, review, actor, comment=note, privileged=True)

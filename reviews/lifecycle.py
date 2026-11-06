@@ -142,11 +142,23 @@ def reopen_on_edit(*, news=None, activity=None, tutorial=None, actor):
     return review
 
 
-def apply(action, review, user, *, comment=""):
-    """执行通过 / 驳回 / 下架。非法转移抛 TransitionDenied。"""
+def apply(action, review, user, *, comment="", privileged=False):
+    """执行通过 / 驳回 / 下架。非法转移抛 TransitionDenied。
+
+    ``privileged=True`` = 「调用方已自行完成授权判断，本条显式跳过
+    ``reviews.moderate`` 检查」。目前只有举报成立链使用（它以
+    ``reviews.handle_report`` 为授权依据，语义见 ``_dispose``）。
+
+    为什么默认要查：这是审核状态机的唯一写入口，原先只校验状态转移、
+    不校验操作者权限（审计 #278）。新加一个调用方时「忘了传权限」的后果
+    必须是多一条 400，而不是多一条越权通道。跳过鉴权的地方一律显式写
+    ``privileged=True``，这样 ``git grep privileged=True`` 就是完整的审计面。
+    """
     allowed = _ALLOWED.get(action)
     if allowed is None or review.status not in allowed:
         raise TransitionDenied("当前状态不可执行该审核动作")
+    if not privileged and not user.has_perm("reviews.moderate"):
+        raise TransitionDenied("缺少审核权限")
     if action == REJECT and not (comment or "").strip():
         raise TransitionDenied("请填写驳回评语")
     if action == APPROVE:
