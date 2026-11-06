@@ -3,11 +3,14 @@
 覆盖：
 - 注册查重：用户名 / 邮箱（含 pending 通道）/ 真实姓名任一命中即拒，提示登录原账户；
   已注销账号单独提示。
-- 申请：匿名 multipart 提交（账号 + 身份证明），审批人收到站内通知；未知账号 / 重名
-  真实姓名 / 缺证明 / 重复待处理各自拒绝。
+- 申请：匿名 multipart 提交（账号 + 身份证明），审批人收到站内通知；缺证明拒 400，
+  账号状态（不存在 / 已注销 / 已停用 / 已有待处理）一律回同一 201（审计 #276），
+  只有真实姓名重名保留 400。
 - 审批：批准 = 密码 123456 + 强制改密标记 + 吊销会话；驳回不动密码；不能审批自己。
 - 强制改密：登录响应带标记、中间件拦其他请求、改密成功后放行。
 """
+import json
+
 from django.contrib.auth.models import Permission, User
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -18,6 +21,11 @@ from .models import (
     AccountLifecycle, MemberIdentity, PasswordResetRequest, Profile, UserSession, Verification,
 )
 from .testing import make_profile
+
+#: 与 ``accounts/views.py: _RESET_REQUEST_ACK`` 逐字相同。测试里写死字面量
+#: 而不是 import 常量：文案本身是契约的一部分（审计 #276 要求「同一段文案」），
+#: 改文案就该让测试红一次。
+_ACK = "若账号存在，申请已提交。管理员核对身份证明后会重置密码，请留意站内通知。"
 
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489000000"
@@ -175,11 +183,14 @@ class PasswordResetRequestTest(TestCase):
         self.assertEqual(resp.status_code, 201, resp.content)
 
     def test_submit_unknown_account(self):
+        """审计 #276：账号不存在不能与成功区分（原 404 → 现 201 同一文案）。"""
         resp = self.submit(account="nobody")
-        self.assertEqual(resp.status_code, 404, resp.content)
-        self.assertEqual(resp.json()["reason"], "account_not_found")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json(), {"message": _ACK})
+        self.assertFalse(PasswordResetRequest.objects.exists())
 
     def test_submit_ambiguous_real_name(self):
+        """姓名重名：保留 400（名册本就公开，且不提示用户无法自救）。"""
         other = User.objects.create_user(username="other", password="StrongPass123!")
         make_profile(user=other, real_name="周九", identity="student")
         resp = self.submit(account="周九")
@@ -199,24 +210,78 @@ class PasswordResetRequestTest(TestCase):
         self.assertIn("身份证明仅支持 JPG / PNG / WebP 格式", resp.json()["error"])
 
     def test_submit_rejects_duplicate_pending(self):
+        """已有待处理申请：仍回 201 同一文案，且不重复建单。"""
         self.assertEqual(self.submit().status_code, 201)
+        cache.clear()  # 绕开 5/日 的 IP 配额，测的是「重复提交」而不是限流
         resp = self.submit()
-        self.assertEqual(resp.status_code, 409, resp.content)
-        self.assertEqual(resp.json()["reason"], "request_pending")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json(), {"message": _ACK})
+        self.assertEqual(PasswordResetRequest.objects.count(), 1)
 
     def test_submit_rejects_deleted_account(self):
+        """已注销：不再返回 account_deleted（那等于确认账号存在过）。"""
         self.user.lifecycle.deleted_at = timezone.now()
         self.user.lifecycle.save(update_fields=["deleted_at"])
         resp = self.submit()
-        self.assertEqual(resp.status_code, 400, resp.content)
-        self.assertEqual(resp.json()["reason"], "account_deleted")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json(), {"message": _ACK})
+        self.assertFalse(PasswordResetRequest.objects.exists())
 
     def test_submit_rejects_disabled_account(self):
+        """已停用：同上，不通过响应透露账号状态。"""
         self.user.is_active = False
         self.user.save(update_fields=["is_active"])
         resp = self.submit()
-        self.assertEqual(resp.status_code, 400, resp.content)
-        self.assertEqual(resp.json()["reason"], "account_disabled")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json(), {"message": _ACK})
+        self.assertFalse(PasswordResetRequest.objects.exists())
+
+    def test_all_account_states_return_identical_response(self):
+        """审计 #276 的核心断言：五种状态的状态码与响应体逐字相同。
+
+        反证：把任一分支改回专属文案 / 专属状态码，本条立刻变红。
+        每次请求前清缓存——5/日 的 IP 配额会让第 6 次变 429，掩盖真正的差异。
+        """
+        bodies = []
+
+        def snapshot(label):
+            cache.clear()
+            resp = self.submit()
+            bodies.append((label, resp.status_code, resp.json()))
+
+        # 1) 待处理：先提交一次，再重复提交
+        self.assertEqual(self.submit().status_code, 201)
+        snapshot("pending")
+        PasswordResetRequest.objects.all().delete()
+
+        # 2) 不存在
+        cache.clear()
+        bodies.append(("missing", *self._status_body(self.submit(account="ghost"))))
+
+        # 3) 正常受理
+        cache.clear()
+        bodies.append(("ok", *self._status_body(self.submit())))
+
+        # 4) 已注销
+        self.user.lifecycle.deleted_at = timezone.now()
+        self.user.lifecycle.save(update_fields=["deleted_at"])
+        cache.clear()
+        bodies.append(("deleted", *self._status_body(self.submit())))
+
+        # 5) 已停用
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        cache.clear()
+        bodies.append(("disabled", *self._status_body(self.submit())))
+
+        reference = {b[1] for b in bodies}
+        self.assertEqual(reference, {201}, f"状态码不一致：{bodies}")
+        messages = {json.dumps(b[2], sort_keys=True, ensure_ascii=False) for b in bodies}
+        self.assertEqual(len(messages), 1, f"响应体不一致：{bodies}")
+
+    @staticmethod
+    def _status_body(resp):
+        return resp.status_code, resp.json()
 
     def test_list_requires_permission(self):
         self.client.force_login(self.user)

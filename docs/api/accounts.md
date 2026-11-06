@@ -401,10 +401,12 @@
 | proof | 是 | 身份证明 **1 张**（请上传**学生证/校牌**，**不要提交身份证照片**），≤5MB，JPG / PNG / WebP；落私有存储 `PRIVATE_MEDIA_ROOT/password_reset_proofs/` |
 | turnstile_token | 条件 | Turnstile 启用时必填 |
 
-成功 `201 {"message": "申请已提交。管理员核对身份证明后会重置密码，请留意站内通知。"}`，并给持
+成功 `201 {"message": "若账号存在，申请已提交。管理员核对身份证明后会重置密码，请留意站内通知。"}`，并给持
 `accounts.review_password_reset` 的管理员发站内通知（源 `review` / 事件 `password_reset_requested`）。
-错误：`400` 缺字段 / 文件超限 / 格式不支持 / `account_ambiguous`（真实姓名对应多个账号）/ `account_deleted` / `account_disabled`；
-`404 account_not_found`；`409 request_pending`（同账号已有待处理申请）；`429 request_throttled`。
+
+> **响应不区分账号状态**（审计 #276）：账号不存在 / 已注销 / 已停用 / 已有待处理申请，全部回**同一个 201 + 同一段文案**，也不建申请单。响应里的差异本身就是枚举信号（本站用户名多为真实姓名与拼音），而 5 次/日 的 IP 配额只能拖慢、不能消除枚举。
+
+错误：`400` 缺字段 / 文件超限 / 格式不支持 / `account_ambiguous`（真实姓名对应多个账号——姓名唯一性本就公开在 `/about/` 名册，且不提示用户无法自救，故保留）；`429 request_throttled`。仅 `account_ambiguous` 一个分支会透露「这个姓名是否唯一」，它不回答「某用户名是否注册过」。
 
 **队列** `GET /auth/password-reset-requests/?status=pending|approved|rejected`（登录 + `accounts.review_password_reset`）。
 一行含 `username` / `real_name` / `identifier` / `contact` / `note` / `status` / `proof_url` / 处理人与处理说明。

@@ -1136,6 +1136,14 @@ def password_reset_confirm_view(request):
     return JsonResponse({"message": "Password has been reset successfully."})
 
 
+#: 审计 #276：忘记密码申请的**统一回执**。账号不存在 / 已注销 / 已停用 /
+#: 已有待处理申请 / 正常受理，五种情况的响应体逐字相同——存在性不能靠
+#: 状态码或文案差异推断出来。
+_RESET_REQUEST_ACK = (
+    "若账号存在，申请已提交。管理员核对身份证明后会重置密码，请留意站内通知。"
+)
+
+
 @require_POST
 def password_reset_request_view(request):
     """忘记密码 → 向管理员申请手动重置（匿名，multipart）。
@@ -1177,35 +1185,29 @@ def password_reset_request_view(request):
         return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
 
     user, why = resolve_account(identifier)
-    if user is None:
-        if why == "ambiguous":
-            return JsonResponse(
-                {
-                    "error": "该真实姓名对应多个账号，请改填用户名或邮箱。",
-                    "reason": "account_ambiguous",
-                },
-                status=400,
-            )
+    if user is None and why == "ambiguous":
+        # 审计 #276：这是唯一保留 400 的分支。姓名唯一性本来就公开（`/about/`
+        # 有名册），它不回答「某用户名是否注册过」；而不提示的话用户会卡在
+        # 「提交不了、也不知道该改填什么」。
         return JsonResponse(
-            {"error": "未找到该账号，请检查用户名 / 邮箱是否填写正确。", "reason": "account_not_found"},
-            status=404,
+            {
+                "error": "该姓名对应多个账号，请改填用户名或邮箱以便准确定位。",
+                "reason": "account_ambiguous",
+            },
+            status=400,
         )
 
-    if Profile.objects.filter(user=user).filter(deleted_q()).exists():
-        return JsonResponse(
-            {"error": "该账号已注销，无法重置密码。如有疑问请联系信息组。", "reason": "account_deleted"},
-            status=400,
-        )
-    if not user.is_active:
-        return JsonResponse(
-            {"error": "该账号已停用，请联系信息组。", "reason": "account_disabled"},
-            status=400,
-        )
-    if pending_request_for(user) is not None:
-        return JsonResponse(
-            {"error": "该账号已有待处理的申请，请耐心等待管理员审核。", "reason": "request_pending"},
-            status=409,
-        )
+    # 审计 #276：账号存在性不通过响应区分。不存在 / 已注销 / 已停用 /
+    # 已有待处理申请 四种情况回同一段文案，攻击者拿不到「这个用户名是否
+    # 注册过、是否被停用、是否有在办申请」的信号——本站用户名多为真实姓名
+    # 与拼音，枚举价值不低，而 5 次/日 的 IP 配额只能拖慢、不能消除。
+    if (
+        user is None
+        or Profile.objects.filter(user=user).filter(deleted_q()).exists()
+        or not user.is_active
+        or pending_request_for(user) is not None
+    ):
+        return JsonResponse({"message": _RESET_REQUEST_ACK}, status=201)
 
     reset_request = PasswordResetRequest.objects.create(
         user=user, identifier=identifier, contact=contact, note=note, proof=proof,
@@ -1224,10 +1226,7 @@ def password_reset_request_view(request):
             "url": "/reviews",
         },
     )
-    return JsonResponse(
-        {"message": "申请已提交。管理员核对身份证明后会重置密码，请留意站内通知。"},
-        status=201,
-    )
+    return JsonResponse({"message": _RESET_REQUEST_ACK}, status=201)
 
 
 @require_GET
