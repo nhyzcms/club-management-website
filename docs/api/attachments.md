@@ -119,6 +119,10 @@
 
 **创建期校验**（全部在接收任何字节之前）：父级缺失 / 非法 → 400；无权限 → 403；`Upload-Length` 超 `tus_media_max_bytes` → **413**；超同步上限但 `filetype` 非图片 / 视频 → 400；反馈配额超限 → 400。
 
+> **数字头格式闸门**（审计 #273）：`Upload-Length` / `Upload-Offset` 必须是**非负十进制整数**（≤20 位）。畸形值（`abc`、`1e9`、负数、5000 位数字串、任何非数字）在进入 DRF 之前就被 `attachments.middleware.TusHeaderValidationMiddleware` 拦成 **400 `{"detail": "Upload-Length 必须是非负整数。"}`**，响应带 `Tus-Resumable: 1.0.0`。
+>
+> 这层是必要的：`drf-tus` 2.0.3 的 `TusMiddleware` 直接 `int()` 头值且无异常处理，**且不判路径**——不带这层时，任何 URL 上带 `Upload-Length: abc` 都会 500（不只是 `/uploads/`）。闸门比 `TusMiddleware` 更早执行，因此匿名也能被正确拒绝（400 而非 500）。
+
 **错误**
 
 | 状态码 | 场景 |
