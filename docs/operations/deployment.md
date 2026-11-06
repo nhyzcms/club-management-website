@@ -66,6 +66,17 @@ server {
     location /media/ {
         alias /opt/club/media/;
         expires 7d;
+        # 上传文件由 nginx 直出、不经 Django，安全头必须在这里单独声明（审计 #275）
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox" always;
+    }
+
+    # 413 走站点自己的中文 JSON（审计 #272）：默认是 nginx 英文 HTML 页
+    error_page 413 = @payload_too_large;
+    location @payload_too_large {
+        default_type application/json;
+        return 413 '{"error":"上传文件过大，已被服务器拒绝。","reason":"payload_too_large"}';
     }
 
     error_page 502 /maintenance.html;
@@ -105,11 +116,30 @@ server {
     client_max_body_size 600M;   # ≥ 大文件（图 / 视频）500MB 上限 + 余量；同步上传上限由站点策略另控
     server_tokens off;
     add_header Strict-Transport-Security "max-age=31536000" always;
-    # location /static/、/media/、error_page 与 location / 与 80 的块相同
+    # location /static/、/media/、@payload_too_large、error_page 与 location / 与 80 的块相同
+    # 注意：/media/ 与 /static/ 哈希块自带 add_header，会覆盖 server 级继承——
+    # 上面的 HSTS 必须在这两个 location 内再写一遍，否则那批响应会丢 HSTS。
 }
 ```
 
 Django 在 `DJANGO_DEBUG=0` 时也会对 HTTPS 响应发同一条 HSTS（`SECURE_HSTS_SECONDS = 31536000`，`config/settings.py`）；重复同值无害。不要开 `includeSubDomains` / `preload`，除非确认该域名下没有仍走 HTTP 的子域。
+
+#### 上传上限的唯一真源
+
+`client_max_body_size` 有三处会写值：站点策略表、`scripts/install.sh` 模板、线上 `/etc/nginx/conf.d/*.conf`。**只有前两处跟着代码走，第三处不跟**——于是真实发生过「仓库 600M、测试断言不许是 20M、线上仍是 20M」的漂移：20–50MB 的附件在 nginx 层就被 413，Django 根本收不到（审计 #272）。
+
+约定：
+
+- **站点策略是上限的唯一来源**（`sync_upload_max_bytes` 与 `tus_media_max_bytes` 取大者），nginx 只做 **≥ 策略** 的兜底。
+- 部署后跑一次自检，漂移就以非零码退出，可直接挂进巡检：
+
+```bash
+sudo -u club /opt/club/.venv/bin/python /opt/club/manage.py nginx_doctor
+# 或只看某个配置文件：
+python manage.py nginx_doctor --nginx-conf /etc/nginx/conf.d/club.conf --json
+```
+
+它比对 `nginx -T` 里所有 `client_max_body_size` 的最小值与策略最大值，并检查 `/media/` 是否带齐三个安全头。nginx 兜底明显过宽（> 策略 4×）只提醒不报错。
 
 #### 静态文件缓存
 
