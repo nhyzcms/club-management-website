@@ -16,6 +16,8 @@
 | GET | /about/blocks/{key}/ | 公开 | — | 读取单个区块 |
 | PATCH | /about/blocks/{key}/ | 登录 | `about.manage_aboutpage` | 编辑区块：标题 / 正文 / 全景外链 / 文档附件 |
 
+> **限流**（审计 #280）：`/about/`、`/about/overview/`、`/about/blocks/{key}/` 的**安全方法**共用一个按 IP 的读桶，默认 `300/min`，超出回 `429`（DRF 标准 `{"detail": …}`，文案已本地化为中文）。写方法（`PUT`/`PATCH`）不计入这个桶——管理员的保存不该占访客的读额度。速率取 300 而非更严的值，是因为学校网络整栋楼共用 NAT 出口，一个班同时刷名册就会撞上 120/min。
+
 五个固定键：`club`（关于社团）、`school`（关于一中）、`site`（关于网站）、`contact`（联系我们）、`campus-overview`（校园一览）。「校园一览」正文下方固定一个「校园全景图」按钮，外链到 `panorama_url`。
 
 ## 端点详情
