@@ -14,9 +14,9 @@ import {
   type PasswordResetStatus,
 } from "../types/passwordReset";
 import {
-  IDENTITY_LABELS,
   IDENTITY_STATUS_BADGE,
   IDENTITY_STATUS_LABELS,
+  identityWithDepartment,
   type IdentityReviewItem,
   type IdentityReviewStatus,
 } from "../types/identityReviews";
@@ -415,9 +415,7 @@ export default function ReviewQueuePage() {
     : kind === "feedback" ? !feedbackItem
     : kind === "reports" ? !reportItem
     : !contentRow;
-  const identityLabel = identityItem
-    ? (IDENTITY_LABELS[identityItem.identity] || identityItem.identity || "未填写")
-    : "";
+  const identityLabel = identityItem ? identityWithDepartment(identityItem) : "";
 
   return (
     <AppShell>

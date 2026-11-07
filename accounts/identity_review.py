@@ -185,13 +185,14 @@ class IdentityReviewSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source="user.username", read_only=True)
     real_name = serializers.SerializerMethodField()
     identity = serializers.SerializerMethodField()
+    department = serializers.SerializerMethodField()
     verified_by = serializers.SerializerMethodField()
     proofs = serializers.SerializerMethodField()
 
     class Meta:
         model = Verification
         fields = [
-            "id", "user_id", "username", "real_name", "identity",
+            "id", "user_id", "username", "real_name", "identity", "department",
             "status", "verified_at", "verified_by", "proofs",
         ]
         read_only_fields = fields
@@ -201,6 +202,10 @@ class IdentityReviewSerializer(serializers.ModelSerializer):
 
     def get_identity(self, obj):
         return _profile_attr(obj.user, "identity")
+
+    def get_department(self, obj):
+        # 教师身份的所属部门（德育处 / 体育组）；其余身份恒为空串。
+        return _profile_attr(obj.user, "department")
 
     def get_verified_by(self, obj):
         reviewer = obj.verified_by

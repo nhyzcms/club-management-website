@@ -25,7 +25,7 @@ Profile.objects.create(user=u, real_name="张三", deleted_at=now)
 """
 from .models import AccountIdentity, AccountLifecycle, Profile
 
-_IDENTITY_FIELDS = {"real_name", "identity", "card_no"}
+_IDENTITY_FIELDS = {"real_name", "identity", "card_no", "department"}
 _LIFECYCLE_FIELDS = {
     "registration_deadline",
     "expiry_disabled_at",

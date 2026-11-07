@@ -7,7 +7,7 @@ import MemberClaimForm from "../components/member/MemberClaimForm";
 import PasswordInput from "../components/PasswordInput";
 import { useLoginModal } from "../components/LoginModalProvider";
 import { useTurnstile } from "../turnstile";
-import { CARD_NO_IDENTITIES, IDENTITY_OPTIONS } from "../types/profile";
+import { CARD_NO_IDENTITIES, IDENTITY_OPTIONS, TEACHER_DEPARTMENT_OPTIONS } from "../types/profile";
 import type { MemberIdentityStatus } from "../types/member";
 
 /**
@@ -26,6 +26,8 @@ export default function RegisterPage() {
   const [realName, setRealName] = useState("");
   const [identity, setIdentity] = useState("");
   const [cardNo, setCardNo] = useState("");
+  /** 教师身份的所属部门（德育处 / 体育组）：选填，空 = 不选择。 */
+  const [department, setDepartment] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [error, setError] = useState("");
@@ -46,6 +48,8 @@ export default function RegisterPage() {
     useTurnstile();
   // 校牌号：只有在校生 / 毕业生登记（其余身份后端会忽略）。
   const needsCardNo = CARD_NO_IDENTITIES.includes(identity);
+  // 所属部门：只有教师登记（其余身份后端会忽略）。
+  const isTeacher = identity === "teacher";
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -85,6 +89,7 @@ export default function RegisterPage() {
     fd.append("real_name", realName.trim());
     fd.append("identity", identity);
     if (needsCardNo && cardNo.trim()) fd.append("card_no", cardNo.trim());
+    if (isTeacher && department) fd.append("department", department);
     fd.append("password", password);
     fd.append("password2", password2);
     if (turnstileToken) fd.append("turnstile_token", turnstileToken);
@@ -286,7 +291,11 @@ export default function RegisterPage() {
                         id="reg-identity"
                         name="identity"
                         value={identity}
-                        onChange={(e) => setIdentity(e.target.value)}
+                        onChange={(e) => {
+                          setIdentity(e.target.value);
+                          // 切到非教师身份时清掉已选部门，避免残留值随表单提交。
+                          if (e.target.value !== "teacher") setDepartment("");
+                        }}
                         required
                       >
                         <option value="" disabled>请选择身份</option>
@@ -295,6 +304,26 @@ export default function RegisterPage() {
                         ))}
                       </select>
                     </div>
+                    {isTeacher && (
+                      <div className="field">
+                        <label className="label" htmlFor="reg-department">所属部门</label>
+                        <select
+                          className="input"
+                          id="reg-department"
+                          name="department"
+                          value={department}
+                          onChange={(e) => setDepartment(e.target.value)}
+                        >
+                          <option value="">不选择（选填）</option>
+                          {TEACHER_DEPARTMENT_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                        <p className="hint" style={{ marginTop: "var(--s-2)" }}>
+                          选填。选择你所在的部门（德育处 / 体育组），方便审核与联系。
+                        </p>
+                      </div>
+                    )}
                     {needsCardNo && (
                       <div className="field">
                         <label className="label" htmlFor="reg-cardno">校牌号</label>

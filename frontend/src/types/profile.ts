@@ -52,3 +52,9 @@ export const IDENTITY_OPTIONS: { value: string; label: string }[] = [
 
 /** 需要登记「校牌号」的身份（与后端 Profile.CARD_NO_IDENTITIES 对齐）：在校生 / 毕业生。 */
 export const CARD_NO_IDENTITIES: string[] = ["student", "graduate"];
+
+/** 教师身份的所属部门（与后端 Profile.TEACHER_DEPARTMENT_CHOICES 对齐）：注册页选填。 */
+export const TEACHER_DEPARTMENT_OPTIONS: { value: string; label: string }[] = [
+  { value: "moral", label: "德育处" },
+  { value: "sports", label: "体育组" },
+];
