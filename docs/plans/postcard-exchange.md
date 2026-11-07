@@ -46,7 +46,7 @@ stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自�
 
 | 模型 | 要点 |
 |---|---|
-| `PostcardConfig` | Event 一对一。可参与年级、寄达校清单、`ship_at`/`distribute_at` 节点、公告附件(PDF)。`Meta.permissions` 声明 `manage_postcard` / `review_postcard` 两个命名工作流权限 |
+| `PostcardConfig` | Event 一对一。可参与年级、寄达校清单、`ship_at`/`distribute_at` 节点、公告附件(PDF)。`Meta.permissions` 声明 `manage_postcard` / `review_postcard` 两个命名工作流权限。**寄达区下拉 = `REGION_CHOICES` 写死的上海市 16 区固定清单（顺序固定，2026-11-08 用户指定）**；寄达校下拉按所选区从清单过滤，登记校验要求 (区, 校) 配对命中 |
 | `PostcardBarcode` | event + 7 位随机数字，`(event, code)` 唯一（单活动内不重复，跨活动可复用） |
 | `PostcardRegistration` | 6 位随机登记码（单活动唯一，**防 IDOR 的能力凭证**）、姓名、年级(高一~高三)、班级(1-8)、寄达区、寄达校、状态、`device_id`(ncdid) / `fingerprint_hash` / 登录用户 三轨归属 |
 | `PostcardItem` | 登记单内每张明信片，绑条码（`(event, barcode)` 唯一 → 一条码一明信片）；一次登记可多张；同寄出人自动聚合展示 |

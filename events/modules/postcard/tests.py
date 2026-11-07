@@ -266,6 +266,9 @@ class PortalTest(TestCase):
         self.assertEqual(data["grades"], ["高一", "高二", "高三"])
         self.assertEqual(len(data["schools"]), 2)
         self.assertEqual(data["classes"], list(range(1, 9)))
+        # 寄达区 = 写死的 16 区固定清单（顺序即展示顺序）
+        self.assertEqual(data["regions"][:3], ["浦东新区", "宝山区", "崇明区"])
+        self.assertEqual(len(data["regions"]), 16)
 
     def test_non_registering_hides_metadata(self):
         now = timezone.now()
@@ -371,6 +374,20 @@ class RegisterFlowTest(TestCase):
 
     def test_school_not_in_list(self):
         resp = self._post(_register_payload(["1000001"], dest_school="野鸡中学"), _register_files(1))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("寄达校", resp.json()["detail"])
+
+    def test_region_not_in_fixed_list(self):
+        resp = self._post(_register_payload(["1000001"], dest_region="野鸡区"), _register_files(1))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("寄达区", resp.json()["detail"])
+
+    def test_region_school_pair_must_match(self):
+        # 校名合法但配错区（友爱中学在浦东新区，不是黄浦区）→ 拒
+        resp = self._post(
+            _register_payload(["1000001"], dest_region="黄浦区", dest_school="友爱中学"),
+            _register_files(1),
+        )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("寄达校", resp.json()["detail"])
 

@@ -225,8 +225,13 @@ class RegisterView(APIView):
         # —— 业务校验（不通过给用户可读的具体原因）——
         if data["grade"] not in (config.allowed_grades or [k for k, _ in PostcardConfig.GRADE_CHOICES]):
             return Response({"detail": "你的年级不在本次活动可参与范围内"}, status=400)
-        school_names = config.school_names()
-        if data["dest_school"] not in school_names:
+        if data["dest_region"] not in PostcardConfig.REGION_CHOICES:
+            return Response({"detail": "寄达区不在支持范围内"}, status=400)
+        school_pairs = {
+            ((s.get("region") or "").strip(), (s.get("name") or "").strip())
+            for s in (config.destination_schools or [])
+        }
+        if (data["dest_region"], data["dest_school"]) not in school_pairs:
             return Response({"detail": "寄达校不在本次活动支持的学校清单内"}, status=400)
 
         barcode_codes = [it["barcode"] for it in data["items"]]

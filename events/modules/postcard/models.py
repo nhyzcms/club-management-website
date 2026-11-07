@@ -54,13 +54,22 @@ class PostcardConfig(models.Model):
         ("g3", "高三"),
     ]
 
+    #: 寄达区固定清单（用户 2026-11-08 指定，按此顺序写死）：上海市 16 区，
+    #: 拼音序。下拉即按此顺序展示；登记校验与管理端学校配置都以它为准。
+    REGION_CHOICES = [
+        "浦东新区", "宝山区", "崇明区", "奉贤区", "虹口区", "黄浦区",
+        "嘉定区", "金山区", "静安区", "闵行区", "普陀区", "青浦区",
+        "松江区", "徐汇区", "杨浦区", "长宁区",
+    ]
+
     event = models.OneToOneField(
         Event, on_delete=models.CASCADE, related_name="postcard_config", verbose_name="所属活动",
     )
     # 可参与年级：GRADE_CHOICES 的子集（键数组）；空 = 全部三个年级。
     allowed_grades = models.JSONField("可参与年级", default=list, blank=True)
     # 寄达校清单：[{"region": "浦东新区", "name": "××中学"}, ...]；登记表单的
-    # 寄达区/寄达校下拉即由它驱动（区去重、校按区过滤）。
+    # 寄达区下拉 = 上面写死的 REGION_CHOICES（固定顺序），寄达校下拉按所选区
+    # 从本清单过滤。
     destination_schools = models.JSONField("寄达校清单", default=list, blank=True)
     ship_at = models.DateTimeField("寄出节点", null=True, blank=True)
     distribute_at = models.DateTimeField("下发节点", null=True, blank=True)
@@ -94,17 +103,9 @@ class PostcardConfig(models.Model):
         keys = self.allowed_grades or [k for k, _ in self.GRADE_CHOICES]
         return [labels[k] for k in keys if k in labels]
 
-    def school_names(self) -> list[str]:
-        return [s.get("name", "") for s in (self.destination_schools or []) if s.get("name")]
-
     def regions(self) -> list[str]:
-        seen, out = set(), []
-        for s in self.destination_schools or []:
-            r = (s.get("region") or "").strip()
-            if r and r not in seen:
-                seen.add(r)
-                out.append(r)
-        return out
+        """寄达区下拉数据：固定 16 区清单（REGION_CHOICES，写死顺序）。"""
+        return list(self.REGION_CHOICES)
 
 
 class PostcardBarcode(models.Model):

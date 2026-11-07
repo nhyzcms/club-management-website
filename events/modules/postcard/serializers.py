@@ -113,6 +113,13 @@ class AdminConfigInput(serializers.Serializer):
         for s in schools:
             if not isinstance(s, dict) or not s.get("name"):
                 raise serializers.ValidationError({"destination_schools": "每个寄达校须含 name"})
+            region = (s.get("region") or "").strip()
+            if not region:
+                raise serializers.ValidationError({"destination_schools": "每个寄达校须含 region"})
+            if region not in PostcardConfig.REGION_CHOICES:
+                raise serializers.ValidationError(
+                    {"destination_schools": f"寄达区「{region}」不在固定 16 区清单内"}
+                )
         return attrs
 
 
