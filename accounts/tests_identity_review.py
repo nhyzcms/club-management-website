@@ -18,7 +18,7 @@ from .testing import make_profile
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from accounts.models import IdentityProof, Profile, UserSession, Verification, is_verified
+from accounts.models import AccountIdentity, IdentityProof, Profile, UserSession, Verification, is_verified
 from common.testing import set_policy
 
 
@@ -85,7 +85,10 @@ class IdentityReviewApiTest(TestCase):
 
     def test_teacher_department_in_list_row(self):
         # 教师部门（2026-11-07）：审核员在队列里能看到「教师 · 德育处」的原始值。
-        make_profile(user=self.target, identity="teacher", department="moral")
+        # setUp 已给 target 建过 Profile（OneToOne 唯一），这里只改 AccountIdentity 行。
+        AccountIdentity.objects.filter(user=self.target).update(
+            identity="teacher", department="moral",
+        )
         resp = self.client.get(LIST)
         self.assertEqual(resp.status_code, 200)
         row = resp.data["results"][0]
