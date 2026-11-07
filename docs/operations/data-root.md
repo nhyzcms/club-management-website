@@ -32,7 +32,7 @@
 
 | 目录 | 用途 | 服务方式 | 是否备份 |
 |---|---|---|---|
-| `media/` | 头像、新闻图、互动图、教程、附件、全景图等 | nginx `/media/` | 是 |
+| `media/` | 头像、新闻图、互动图、教程、附件、问卷附件、全景图等 | nginx `/media/` | 是 |
 | `private_media/` | 身份证明（IdentityProof） | 鉴权视图（不进 nginx） | 是 |
 | `app-update/` | App 分发（manifest.json / latest.apk） | nginx `/app-update/` | 是 |
 

@@ -106,6 +106,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `django.middleware.clickjacking.XFrameOptionsMiddleware` | |
 | `accounts.middleware.MultiDeviceSessionMiddleware` | 多端登录（最多 3 台设备，ADR-0028）；内容协商：浏览器导航给 HTML 下线页，SPA/API 给 JSON 契约 |
 | `accounts.middleware.LoginThrottleMiddleware` | 登录失败限流（额度来自站点策略） |
+| `attachments.middleware.TusHeaderValidationMiddleware` | tus 数字头格式闸门：`Upload-Length` / `Upload-Offset` 必须是非负十进制整数（≤20 位），畸形值直接 400；**必须早于 `TusMiddleware`**（后者裸 `int()`，畸形值即 500，审计 #273） |
 | `rest_framework_tus.middleware.TusMiddleware` | 解析 `Tus-*` / `Upload-*` 请求头到 `request` 属性 |
 
 `ROOT_URLCONF = "config.urls"`；`WSGI_APPLICATION = "config.wsgi.application"`；`ASGI_APPLICATION = "config.asgi.application"`。

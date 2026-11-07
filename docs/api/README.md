@@ -50,9 +50,10 @@
 | 403 | 已登录但权限不足（或 CSRF 校验失败） |
 | 404 | 资源不存在或不可见 |
 | 409 | 状态冲突；登录保护期（`login_protection`，携带 `retry_after`，单位秒） |
-| 429 | 登录限流（`login_throttled`，携带 `retry_after`，单位秒） |
+| 429 | 限流：登录失败为 `login_throttled`（携带 `retry_after`，单位秒）；其他接口为 DRF 标准 `{"detail": …}` |
 | 503 | 维护模式（全站，期间不触达业务） |
 
+- **公开读限流**：`/about/` 与 `/panorama/` 的读方法（`GET` / `HEAD` / `OPTIONS`）另有按 IP 的兜底桶（默认 300 次/分）；写方法不占读额度。超出回 `429`（标准 `detail`，不带 `reason`）。
 - **会话契约**：登录态相关的特殊结果通过响应体 `reason` 字段区分（前端按类型化错误分支处理，不匹配文案）：
 
 | reason | 场景 | 载荷 |

@@ -91,6 +91,8 @@
 | featured | 布尔 | 否 | 头条 |
 | is_published | 布尔 | 否 | 默认 `true`；为真且无发布时间时自动补 `published_at` |
 
+> **缩略图解码上限**（审计 #279）：封面解码像素超过 4000 万（如 8000×5000 以上的相机原图）时不生成缩略图，`cover_thumbnail_url` 回退原图——上传本身不受影响。判断发生在 `Image.open()` 之后、`exif_transpose()` 之前，避免一张超大图把单 worker 的内存打满。
+
 副作用：按统一审核轴创建审核行——持 `reviews.force_publish` 或站点关闭审核 → `approved`，否则 `pending`；同时自动创建该新闻的评论区。
 
 **响应 `201 Created`**（详情序列化，见下节字段）

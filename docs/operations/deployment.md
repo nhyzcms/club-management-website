@@ -351,6 +351,14 @@ uv run python manage.py prune_orphan_targets --apply # 确认后删除（可加 
 
 B4 删掉 `Profile` 的旧列后，`check_profile_sync` 退化为「新表缺行体检」；`prune_orphan_targets` 处理裸 SQL、数据库级 CASCADE 与迁移删数据绕过 `post_delete` 留下的孤儿锚点（正常删除会自动清理）。
 
+问卷附件回收（审计 #271 起，匿名上传点落 `SurveyUpload` 台账；未被任何作答引用的孤儿文件可清，默认只预演）：
+
+```bash
+uv run python manage.py sweep_survey_uploads             # 预演：列出超过 7 天且未被作答引用的文件
+uv run python manage.py sweep_survey_uploads --apply     # 确认后删除（文件 + 台账行）
+uv run python manage.py sweep_survey_uploads --days 14   # 放宽保留窗口（默认 7 天）
+```
+
 Nginx 侧：
 
 ```bash

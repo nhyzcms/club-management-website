@@ -105,6 +105,8 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 
 `answers` 的键名与 SurveyJS 元素 `name` 一一对应，落库前必须过 `common/survey_answers.validate_answers()`（审计 M-2）：`answers` 须为 JSON 对象且 ≤ 64KB；题目名必须在 Schema 中存在（未知题名 400）；必填题不得为空；`checkbox` / `tagbox` 必须是数组、选项须属于该题；`radiogroup` / `dropdown` 须是单值且选项合法；`boolean` 必须是布尔；文本单值 ≤ 20000 字；矩阵题须为对象 / 数组；文件题项须是字符串或对象。**不解释表达式**：`visibleIf` 隐藏的必填题允许为空（前端按同一 Schema 跳过），空 Schema 的历史问卷直接放行。需要更强的业务约束时，仍应在 Schema 之外另设校验或人工核查。
 
+**文件题上传**（`POST /activities/activities/survey_upload/`）：匿名可传，只收图片（JPG / PNG / GIF / WebP）或 PDF；按 IP 与 `X-Device-Id` 各 20 次/小时限流（登录用户也计数），另有全局 200MB / 24h 字节配额，超限 `429` 且**不落盘**。每次成功上传写一行 `SurveyUpload` 台账；上传超过 7 天、且未被任何作答引用的文件由 `manage.py sweep_survey_uploads` 回收（默认预演，`--apply` 才删）。
+
 **历史作答按提交时的 Schema 解释**：新建作答时自动快照当时的问卷 Schema（`QuestionnaireResponse.schema_snapshot`），之后改题 / 删题不会让旧作答错位——统计、只读查看与导出都按提交时的题目结构读取（快照为空的历史行回退当前 Schema）。
 
 ## 五、结果与统计入口
