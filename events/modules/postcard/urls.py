@@ -1,0 +1,32 @@
+"""明信片互寄路由：挂在 ``/events/postcard/`` 下（经 events/urls.py include）。
+
+公开端点在前、管理端点在 ``admin/`` 前缀后——一眼可辨暴露面。
+"""
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    # —— 公开（AllowAny + phase 门禁 + 限流 + Turnstile）——
+    path("portal/", views.PortalView.as_view(), name="postcard-portal"),
+    path("register/", views.RegisterView.as_view(), name="postcard-register"),
+    path("my/", views.MyRegistrationsView.as_view(), name="postcard-my"),
+    path("my/<str:reg_code>/", views.MyRegistrationDetailView.as_view(), name="postcard-my-detail"),
+    path("suggestions/", views.SuggestionsView.as_view(), name="postcard-suggestions"),
+    path("announcement-pdf/", views.AnnouncementPdfView.as_view(), name="postcard-announcement-pdf"),
+    path("photo/<int:pk>/", views.PhotoView.as_view(), name="postcard-photo"),
+    # —— 管理（命名权限 + 审计）——
+    path("admin/config/", views.AdminConfigView.as_view(), name="postcard-admin-config"),
+    path("admin/publish/", views.AdminPublishView.as_view(), name="postcard-admin-publish"),
+    path("admin/barcodes/", views.AdminBarcodesView.as_view(), name="postcard-admin-barcodes"),
+    path("admin/barcodes/pdf/", views.AdminBarcodesPdfView.as_view(), name="postcard-admin-barcodes-pdf"),
+    path("admin/records/", views.AdminRecordsView.as_view(), name="postcard-admin-records"),
+    path("admin/registrations/<str:reg_code>/", views.AdminRegistrationDetailView.as_view(), name="postcard-admin-registration"),
+    path("admin/export/", views.AdminExportView.as_view(), name="postcard-admin-export"),
+    path("admin/stats/", views.AdminStatsView.as_view(), name="postcard-admin-stats"),
+    path("admin/lookup/", views.AdminLookupView.as_view(), name="postcard-admin-lookup"),
+    path("admin/confirm/", views.AdminConfirmView.as_view(), name="postcard-admin-confirm"),
+    path("admin/unreport/", views.AdminUnreportView.as_view(), name="postcard-admin-unreport"),
+    path("admin/suggestions/", views.AdminSuggestionsView.as_view(), name="postcard-admin-suggestions"),
+    path("admin/audit/", views.AdminAuditView.as_view(), name="postcard-admin-audit"),
+]

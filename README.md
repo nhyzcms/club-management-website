@@ -78,6 +78,17 @@
   （BSD 3-Clause）、著作权人与官网 / 开源地址超链接。**只在 App 壳内可达**：「我的 → 更多」
   的入口按 `isAppShell()` 出现，浏览器手输地址会被送回 `/#/m/me`，手机版网站上不存在这一页
   （`frontend/src/pages/MobileAboutAppPage.tsx`、`frontend/src/utils/aboutApp.ts`）
+- 明信片互寄（2026-11-07 起，`events` 形态模块 `modules/postcard`，方案 `docs/plans/postcard-exchange.md`）：
+  独立页 `/#/postcard`（主页按钮新标签页打开）。活动五阶段（未开始 → 登记中 → 已寄出 →
+  下发中 → 已结束）由管理员配置的节点时间**惰性推导**；仅「登记中」开放登记，其余阶段只读
+  公告与进度。登记：扫码/手输 **7 位 Code128 条码**（管理员预生成 1500~10000 张、步进 500，
+  A4 整版 PDF 导出 40×20mm/2mm 间隙）+ 正反面照片（魔数校验、重编码去 EXIF、私有存储）+
+  姓名/年级/班级/寄达区/寄达校下拉；成功发 **6 位登记码**（即防 IDOR 的能力凭证，改/查自己
+  的记录必须出示）。归属识别 = 设备 Cookie + 轻量指纹哈希 + 登录用户三轨。管理端：配置/发布、
+  条码生成与导出、记录搜索/修改/删除、Excel（公式注入防护）/PDF（NotoSansSC）导出、总数据
+  统计、**签收**（扫条码 → 确认 → 已报寄，未登记给固定提示）、审计日志全留痕。公告支持富文本
+  （word 导入经 mammoth 转 HTML + 服务端 bleach 白名单净化）与 PDF 附件（CSP:sandbox 下发）。
+  AI 审核与人工复核台在后续 PR 接入（见方案文档进度看板）
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA。前端入口（桌面顶栏头像菜单「后台管理」、
   手机版「我的 → 进入后台管理」）**只对 `is_staff` 账号显示**（对应身份徽章 `admin` / `superadmin`，
   判定在 `frontend/src/utils/roles.ts` 的 `canAccessAdmin`）；普通用户与访客不再看到该入口，
@@ -135,7 +146,7 @@ npm run build
 club-management-website/
 ├── accounts/             # 账号、验证、资料、权限相关
 ├── activities/           # 互动与互动类型（众议/征集/展示）
-├── events/               # 活动（限时、参与者之间可发生关系；形态模块待接入）
+├── events/               # 活动（限时、参与者之间可发生关系；含明信片互寄形态模块 modules/postcard）
 ├── about/                # 关于页内容管理
 ├── announcements/        # 全站弹窗公告（发布 / 已读台账 / 原件渲染）
 ├── attachments/          # 附件和上传处理
@@ -180,6 +191,8 @@ club-management-website/
 - 新闻：`/news/`
 - 互动：`/activities/`
 - 活动（限时，`events`）：`/events/`；门户 `/#/events`、`/#/events/:id`
+- 明信片互寄（`events` 形态模块 `postcard`）：`/events/postcard/`；独立页 `/#/postcard`
+  （方案与交接文档：`docs/plans/postcard-exchange.md`）
 - 审核（发布审核 / 意见反馈 / 举报）：`/reviews/`
 - 教程：`/tutorials/`
 - 招聘：`/recruitment/`
