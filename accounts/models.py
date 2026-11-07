@@ -53,6 +53,12 @@ class Profile(models.Model):
         ("parent", "家长"),
         ("teacher", "教师"),
     ]
+    # 教师身份的所属部门（注册页选填；前端 types/profile.ts 镜像）：
+    # 目前只有德育处 / 体育组，其余身份不登记。
+    TEACHER_DEPARTMENT_CHOICES = [
+        ("moral", "德育处"),
+        ("sports", "体育组"),
+    ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     avatar = models.ImageField(upload_to=avatar_upload_path, blank=True)
@@ -101,6 +107,12 @@ class AccountIdentity(models.Model):
     real_name = models.CharField("真实姓名", max_length=100, blank=True)
     identity = models.CharField(
         "身份", max_length=10, choices=Profile.IDENTITY_CHOICES, blank=True,
+    )
+    # 所属部门（选填）：目前仅教师身份登记（德育处 / 体育组），其余身份恒为空。
+    # 存枚举 key（moral / sports），展示时前端 / Django admin 按 choices 映射中文。
+    department = models.CharField(
+        "所属部门", max_length=20, choices=Profile.TEACHER_DEPARTMENT_CHOICES,
+        blank=True, default="",
     )
     # 名册匹配上之前的暂存；``member_roster.sync_card_numbers`` 绑定成功后清空。
     # 权威唯一是 ``MemberIdentity.card_no``（本字段由 ``Profile.card_no`` 改名而来，

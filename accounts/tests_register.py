@@ -324,8 +324,46 @@ class RegisterCardNoTest(TestCase):
 
     def test_register_without_card_no_still_works(self):
         resp = self.post()
-        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.status_code, 201, resp.content)
         self.assertEqual(User.objects.get(username="newbie").identity_record.pending_card_no, "")
+
+
+class RegisterTeacherDepartmentTest(TestCase):
+    """注册页教师「所属部门」（2026-11-07）：教师选填（德育处 / 体育组），其余身份忽略。"""
+
+    def setUp(self):
+        cache.clear()  # 注册限流按 IP 计数；隔离每个用例。
+
+    def post(self, **overrides):
+        return self.client.post("/auth/register/", data=valid_payload(**overrides))
+
+    def test_department_stored_for_teacher(self):
+        for idx, department in enumerate(("moral", "sports"), start=1):
+            username = f"teacher{idx}"
+            resp = self.post(
+                username=username, real_name=f"教师{idx}", identity="teacher",
+                department=department,
+            )
+            self.assertEqual(resp.status_code, 201, resp.content)
+            self.assertEqual(
+                User.objects.get(username=username).identity_record.department, department,
+            )
+
+    def test_department_optional_for_teacher(self):
+        resp = self.post(identity="teacher", real_name="李老师")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(User.objects.get(username="newbie").identity_record.department, "")
+
+    def test_department_ignored_for_other_identities(self):
+        # 非教师身份带了 department 也不入库（与 card_no 的忽略策略一致）。
+        self.post(identity="student", department="moral")
+        self.assertEqual(User.objects.get(username="newbie").identity_record.department, "")
+
+    def test_invalid_department_rejected(self):
+        resp = self.post(identity="teacher", real_name="王老师", department="hack")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("部门", str(resp.json()["error"]))
+        self.assertFalse(User.objects.filter(username="newbie").exists())
 
 
 class IdentityProofStorageTest(TestCase):

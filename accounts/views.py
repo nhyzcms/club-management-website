@@ -121,6 +121,8 @@ def _verification_closed_response():
 
 
 IDENTITY_CHOICE_KEYS = {key for key, _label in Profile.IDENTITY_CHOICES}
+# 教师部门枚举（2026-11-07）：注册页教师身份的选填下拉，空 = 不选择。
+TEACHER_DEPARTMENT_KEYS = {key for key, _label in Profile.TEACHER_DEPARTMENT_CHOICES}
 
 # 人工通道身份证明约束（#38，与自助注册原证明约束一致）
 PROOF_MIN_COUNT = 1
@@ -1262,6 +1264,9 @@ def register_view(request):
 
     2026-10-23（ADR-0025 增补）：在校生 / 毕业生可选填「校牌号」（``card_no``），
     先存 ``Profile.card_no``，并尝试按「姓名 + 校牌号」唯一命中名册行直接绑定。
+
+    2026-11-07：教师身份可选填「所属部门」（``department``，德育处 / 体育组），
+    写入 ``AccountIdentity.department``；其余身份忽略该字段。
     """
     if not get_policy().registration_enabled:
         return JsonResponse(
@@ -1278,6 +1283,7 @@ def register_view(request):
     real_name = (request.POST.get("real_name") or "").strip()
     identity = (request.POST.get("identity") or "").strip()
     card_no = (request.POST.get("card_no") or "").strip()
+    department = (request.POST.get("department") or "").strip()
     email = (request.POST.get("email") or "").strip().lower()  # 邮箱大小写不敏感：归一化小写
     turnstile_token = request.POST.get("turnstile_token") or ""
 
@@ -1313,6 +1319,13 @@ def register_view(request):
         card_no = ""
     elif len(card_no) > 20:
         errors.append("校牌号过长（最多 20 个字符）")
+
+    # 所属部门（2026-11-07）：只有教师登记，其余身份忽略；选填——空 = 不选择，
+    # 填了则须是合法枚举（德育处 / 体育组），防脏值入库。
+    if identity != "teacher":
+        department = ""
+    elif department and department not in TEACHER_DEPARTMENT_KEYS:
+        errors.append("请选择有效部门")
 
     # 邮箱可选；填了须格式合法。唯一性统一走下面的「三条件查重」。
     if email:
@@ -1358,6 +1371,7 @@ def register_view(request):
                 real_name=real_name or "",
                 identity=identity or "",
                 pending_card_no=card_no or "",
+                department=department or "",
             )
             if email and get_policy().verification_enabled:
                 Verification.objects.create(

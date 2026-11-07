@@ -24,9 +24,9 @@ import type {
   PasswordResetStatus,
 } from "../types/passwordReset";
 import {
-  IDENTITY_LABELS,
   IDENTITY_STATUS_BADGE,
   IDENTITY_STATUS_LABELS,
+  identityWithDepartment,
   type IdentityReviewItem,
   type IdentityReviewStatus,
 } from "../types/identityReviews";
@@ -457,9 +457,7 @@ export default function MobileReviewPage() {
           : kind === "reports"
             ? !reportItem
             : !contentRow;
-  const identityLabel = identityItem
-    ? IDENTITY_LABELS[identityItem.identity] || identityItem.identity || "未填写"
-    : "";
+  const identityLabel = identityItem ? identityWithDepartment(identityItem) : "";
 
   return (
     <MobilePage title="审核台" back="/m/me" className="m-review">
