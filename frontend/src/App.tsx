@@ -36,11 +36,6 @@ const FeedbackDetailPage = lazy(() => import("./pages/FeedbackDetailPage"));
 const ActivityListPage = lazy(() => import("./pages/ActivityListPage"));
 const ActivityFormPage = lazy(() => import("./pages/ActivityFormPage"));
 const ActivityDetailPage = lazy(() => import("./pages/ActivityDetailPage"));
-const EventsPage = lazy(() => import("./pages/EventsPage"));
-const EventDetailPage = lazy(() => import("./pages/EventDetailPage"));
-const MobileEventsPage = lazy(() => import("./pages/MobileEventsPage"));
-const MobileEventDetailPage = lazy(() => import("./pages/MobileEventDetailPage"));
-const EventFormPage = lazy(() => import("./pages/EventFormPage"));
 const InboxPage = lazy(() => import("./pages/InboxPage"));
 const NewsListPage = lazy(() => import("./pages/NewsListPage"));
 const NewsDetailPage = lazy(() => import("./pages/NewsDetailPage"));
@@ -109,13 +104,6 @@ function MobileAware({ to, children }: { to: string; children: ReactElement }) {
 }
 
 /** 任务详情：手机 UA 跳到 /m/tasks/:id（需要带上路由参数）。 */
-/** 活动详情：手机 UA 跳到 /m/events/:id（同样要带上路由参数）。 */
-function EventDetailRoute() {
-  const { id } = useParams<{ id: string }>();
-  if (isMobileDevice()) return <Navigate to={`/m/events/${id}`} replace />;
-  return <EventDetailPage />;
-}
-
 function TaskDetailRoute() {
   const { id } = useParams<{ id: string }>();
   if (isMobileDevice()) return <Navigate to={`/m/tasks/${id}`} replace />;
@@ -167,9 +155,6 @@ export default function App() {
           <Route path="/activity/:id/survey-edit" element={<ProtectedRoute><SurveyEditorPage /></ProtectedRoute>} />
           <Route path="/activity/:id/survey-responses" element={<ProtectedRoute><SurveyResponsesPage /></ProtectedRoute>} />
           <Route path="/activity/:id/survey-stats" element={<ProtectedRoute><SurveyStatsPage /></ProtectedRoute>} />
-          <Route path="/events" element={<MobileAware to="/m/events"><EventsPage /></MobileAware>} />
-          <Route path="/events/new" element={<ProtectedRoute><EventFormPage /></ProtectedRoute>} />
-          <Route path="/events/:id" element={<EventDetailRoute />} />
           <Route path="/inbox" element={<MobileAware to="/m/inbox"><ProtectedRoute><InboxPage /></ProtectedRoute></MobileAware>} />
           <Route path="/feedback" element={<FeedbackPage />} />
           <Route path="/feedback/:id" element={<ProtectedRoute><FeedbackDetailPage /></ProtectedRoute>} />
@@ -208,8 +193,6 @@ export default function App() {
           <Route path="/m/activity/:id" element={<MobileActivityDetailPage />} />
           <Route path="/m/tutorials" element={<MobileTutorialsPage />} />
           <Route path="/m/tutorials/:id" element={<MobileTutorialDetailPage />} />
-          <Route path="/m/events" element={<MobileEventsPage />} />
-          <Route path="/m/events/:id" element={<MobileEventDetailPage />} />
           <Route path="/m/join" element={<MobileJoinPage />} />
           <Route path="/m/join/form" element={<MobileJoinFormPage />} />
           <Route path="/m/me" element={<MobileMePage />} />

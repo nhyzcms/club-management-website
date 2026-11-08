@@ -8,8 +8,8 @@
 
 - ``draft``：只有组织者与管理者可见，可任意编辑；
 - ``scheduled`` / ``active``：已上线；``scheduled`` 仍可改时间与内容，``active`` 后锁定；
-- ``ended``：到点自动结算。**只读，不可参与**——这是与 activities 的关键差异：
-  活动「时间过后自动关闭」是硬契约，所有写入口必须先 ``touch()`` 再判状态；
+- ``ended``：到点自动结算。**只读，不可参与**——这是 Event 与 activities 的关键差异：
+  时间过后自动关闭是硬契约，所有写入口必须先 ``touch()`` 再判状态；
 - ``archived``：组织者/管理员手动归档，从默认列表里收起，数据保留。
 
 无定时任务：与 activities 的惰性方案一致，读取时按时间推进。定时任务的唯一增量
@@ -74,7 +74,7 @@ def can_view(event, user):
 def can_edit(event, user):
     """能否编辑：draft / scheduled 可改；active 起锁定；archived 不可改。
 
-    角色轴由 ``CanModifyEvent`` 权限类在视图层把关，此处只管「此刻能否改」。
+    角色轴由调用方（形态模块的权限类）在视图层把关，此处只管「此刻能否改」。
     """
     return event.status in (DRAFT, SCHEDULED)
 
