@@ -5,7 +5,7 @@
 
 ## 项目是什么
 
-南汇一中传媒社的内部协作平台。它是一个 **Django 单体应用**：DRF 提供 JSON API，Django admin 提供后台管理，前端是一个 **React 单页应用（SPA）**，构建产物由 Django 直接托管（不需要单独部署前端服务）。功能覆盖账号与认证、任务协作、互动（众议 / 征集 / 展示 / 调研）、新闻与教程发布、发布审核与意见反馈、评论与私信、通知与横幅公告、考试看板等社团日常运营场景。
+南汇一中传媒社的内部协作平台。它是一个 **Django 单体应用**：DRF 提供 JSON API，Django admin 提供后台管理，前端是一个 **React 单页应用（SPA）**，构建产物由 Django 直接托管（不需要单独部署前端服务）。功能覆盖账号与认证、任务协作、互动（众议 / 征集 / 展示 / 调研）、活动（限时，含明信片互寄）、新闻与教程发布、发布审核与意见反馈、评论与私信、通知与横幅公告、考试看板等社团日常运营场景。完整清单见 [功能总览](features.md)。
 
 ## 技术栈
 
@@ -18,7 +18,7 @@
 | 数据库 | SQLite 缺省（`db.sqlite3`）；可选 PostgreSQL（`DB_ENGINE=postgresql`） | `config/settings.py` |
 | 实时推送 | Django Channels（缺省 `InMemoryChannelLayer`；配 `REDIS_URL` 用 Redis 频道层） | `config/asgi.py` |
 | 前端路由 | hash 路由（应用内 URL 形如 `/#/route`） | `frontend/src/App.tsx` |
-| 生产运行 | Nginx + Gunicorn `UvicornWorker`（**1 worker**，无 Redis） | `start.sh` |
+| 生产运行 | Nginx + Gunicorn `UvicornWorker`（worker 数由 `GUNICORN_WORKERS` 控制，默认 1；未配 `REDIS_URL` 时不得 >1） | `start.sh` |
 
 后端运行时依赖（`pyproject.toml`）：`django`、`djangorestframework`、`django-cors-headers`、`django-filter`、`channels[daphne]`、`drf-tus`、`bleach`、`pillow`、`python-dotenv`、`gunicorn`、`uvicorn[standard]`。
 前端运行时依赖（`frontend/package.json`）：`react` 19、`react-router-dom` 7、Tiptap 3、SurveyJS 3（`survey-core` / `survey-react-ui` / `survey-creator-*` / `survey-analytics`）、`chart.js`、`frappe-gantt`、`docx-preview`、`mammoth`、`lowlight`、`tus-js-client`、`l2d`。
