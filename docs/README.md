@@ -59,7 +59,7 @@
 - [身份认证](guides/certification.md) —— 认证通道与流程
 - [安全验证](guides/security-verification.md) —— 敏感操作的本人确认（Step-up）
 - [账号与安全](guides/account-security.md) —— 登录方式、设备与陌生设备验证、滚动密钥、登录记录
-- [审核系统](guides/moderation.md) —— 六张桌与处理流程
+- [审核系统](guides/moderation.md) —— 审核队列（五张桌 + 明信片复核）与处理流程
 - [问卷系统](guides/surveys.md) —— SurveyJS 问卷与作答规则
 
 ### 运维
