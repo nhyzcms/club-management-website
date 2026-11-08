@@ -278,8 +278,9 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
         <p className="muted">明信片互寄活动尚未开始，敬请期待。</p>
         {portal.is_admin && (
           <p className="pc-admin-hint">
-            管理员可见：活动尚未配置或未到开始时间。管理端配置界面即将上线，
-            当前阶段仅展示本提示。
+            管理员可见：当前活动尚未开始或未配置。可以先去
+            <a href="#/postcard/admin">管理端</a>
+            填写起止时间、各节点与学校清单，或上传填写样例。
           </p>
         )}
       </div>
@@ -291,6 +292,16 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
 
   return (
     <>
+      {portal.is_admin && (
+        <div className="pc-admin-bar">
+          <span>管理员可见</span>
+          <a href="#/postcard/admin">管理端</a>
+          <a href="#/postcard/receive" target="_blank" rel="noopener noreferrer">
+            签收扫码
+          </a>
+        </div>
+      )}
+
       {portal.event && (
         <section className="pc-card pc-announce">
           <h2>{portal.event.title}</h2>

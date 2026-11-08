@@ -5,15 +5,37 @@
 """
 from __future__ import annotations
 
+import json
 import re
 
 from rest_framework import serializers
+from rest_framework.utils import html as drf_html
 
 from .models import PostcardConfig, PostcardRegistration
 
 _BARCODE_RE = re.compile(r"^\d{7}$")
 _REGCODE_RE = re.compile(r"^\d{6}$")
 _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{8,128}$")
+
+
+class JSONListField(serializers.ListField):
+    """multipart 下的列表字段。
+
+    HTML 表单只能提交字符串：前端 FormData 无法直接携带 ``[{...}]``，只能在
+    ``destination_schools`` 里塞一段 JSON 串。DRF 默认会把它当 ``["{...}"]``
+    交给子字段，DictField 立刻报错。这里只在「请求是 html 输入且值是 JSON 数组」
+    时先解码，JSON 请求（list 原样）走父类行为，两种 content-type 结果一致。
+    """
+
+    def get_value(self, dictionary):
+        if drf_html.is_html_input(dictionary):
+            raw = dictionary.get(self.field_name, serializers.empty)
+            if isinstance(raw, str) and raw.strip().startswith("["):
+                try:
+                    return json.loads(raw)
+                except ValueError:
+                    pass
+        return super().get_value(dictionary)
 
 #: 单次登记最多明信片张数（照片 = 张数 × 2，防 multipart 炸内存）。
 MAX_ITEMS_PER_REGISTRATION = 5
@@ -90,7 +112,7 @@ class AdminConfigInput(serializers.Serializer):
         child=serializers.ChoiceField(choices=PostcardConfig.GRADE_CHOICES),
         required=False, allow_empty=True,
     )
-    destination_schools = serializers.ListField(
+    destination_schools = JSONListField(
         child=serializers.DictField(), required=False, allow_empty=True,
     )
 
