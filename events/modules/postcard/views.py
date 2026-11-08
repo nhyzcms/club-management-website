@@ -569,7 +569,7 @@ class AnnouncementPdfView(APIView):
 
 
 class PhotoView(APIView):
-    """照片鉴权下发：复核权限，或「本人三轨命中 + 出示登记码」。
+    """照片鉴权下发：复核权限，或「出示登记码」（登记码即能力凭证，2026-11-08）。
 
     重编码后一律 JPEG，Content-Type 固定 image/jpeg（无用户可控面）。
     """
@@ -592,13 +592,7 @@ class PhotoView(APIView):
         ):
             reg = photo.item.registration
             code = (request.query_params.get("reg_code") or "").strip()
-            fp_hash = _fingerprint_hash(request.query_params.get("fingerprint") or "")
             if not _REGCODE_RE.fullmatch(code) or code != reg.reg_code:
-                return HttpResponseForbidden("无权访问该照片")
-            own = PostcardRegistration.objects.filter(
-                _identity_filters(request, fp_hash),
-            ).filter(pk=reg.pk).exists()
-            if not own:
                 return HttpResponseForbidden("无权访问该照片")
         resp = FileResponse(photo.file.open("rb"), content_type="image/jpeg")
         resp["X-Content-Type-Options"] = "nosniff"
