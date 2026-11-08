@@ -112,6 +112,8 @@ export interface RecordRow {
 }
 
 export interface ReviewRow {
+  /** 审核台通用首键（firstOf 依赖 id）。 */
+  id: number;
   item_id: number;
   barcode: string;
   review_state: string | null;
@@ -273,6 +275,13 @@ export const postcardAdminApi = {
   }>) =>
     request<AIConfig>("/admin/ai/config/", { method: "PUT", body: JSON.stringify(patch) }),
 
+  /** 测试连接：用已保存的配置发一次最小对话请求（不回显 api_key）。 */
+  testAIConfig: () =>
+    request<{ ok: boolean; error?: string; latency_ms?: number; model?: string; reply?: string }>(
+      "/admin/ai/test/",
+      { method: "POST", body: "{}" },
+    ),
+
   aiSamples: () => request<{ results: AISample[]; sample_ready: boolean }>("/admin/ai/samples/"),
 
   uploadAISample: (image: File, caption: string) => {
@@ -293,7 +302,11 @@ export const postcardAdminApi = {
   aiSampleImageUrl: (id: number) => `/events/postcard/admin/ai/samples/${id}/image/`,
 
   // —— 复核台 ——
-  reviewQueue: (page = 1) => request<Paged<ReviewRow>>(`/admin/review/?page=${page}`),
+  /** 复核队列：state = manual_pending / ai_failed / 空（全部）。 */
+  reviewQueue: (page = 1, state = "") =>
+    request<Paged<ReviewRow>>(
+      `/admin/review/?page=${page}${state ? `&state=${encodeURIComponent(state)}` : ""}`,
+    ),
 
   reviewDecision: (itemId: number, decision: "pass" | "fail", note: string) =>
     request<{ item_id: number; review_state: string; review_label: string }>(

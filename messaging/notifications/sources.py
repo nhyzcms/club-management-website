@@ -35,6 +35,7 @@ class ReviewSource(NotificationSource):
         Event("report_submitted", "新举报"),
         Event("identity_submitted", "新认证申请"),
         Event("password_reset_requested", "新密码重置申请"),
+        Event("postcard_submitted", "新明信片待复核"),
         # —— 结果：发给当事人 ——
         Event("approved", "内容审核通过"),
         Event("rejected", "内容审核驳回"),
@@ -45,6 +46,16 @@ class ReviewSource(NotificationSource):
         Event("password_reset_resolved", "密码重置申请结果"),
     )
     default_channels = ("site",)
+
+    def dedup_identity(self, event: str, payload) -> str | None:
+        """明信片待复核：同一登记码的未读通知合成一条（用户定了「同码聚合防刷屏」）。
+
+        其余审核事件保持「每条单独通知」的既有行为。
+        """
+        if event != "postcard_submitted":
+            return None
+        group = payload.get("group")
+        return str(group) if group else None
 
 
 @register_source

@@ -78,6 +78,8 @@ def _copy_for(category: str, event: str, payload: dict) -> str:
             return f"{quoted or '有新内容'}等待审核，请前往审核工作台处理。"
         if event == "report_submitted":
             return "有新的举报提交，请前往审核工作台查看处理。"
+        if event == "postcard_submitted":
+            return "有新的明信片登记待人工复核，请前往审核工作台处理。"
         if event == "identity_submitted":
             return "有新的身份认证申请提交，请前往审核工作台处理。"
         if event == "identity_resolved":

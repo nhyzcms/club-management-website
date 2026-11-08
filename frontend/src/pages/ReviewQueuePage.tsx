@@ -8,6 +8,8 @@ import { reviewsApi } from "../api/reviews";
 import { feedbackApi } from "../api/feedback";
 import { reportsApi } from "../api/reports";
 import ReviewPreview from "./review/ReviewPreview";
+import PostcardReviewPane from "./review/PostcardReviewPane";
+import { postcardAdminApi, type ReviewRow } from "../api/postcardAdmin";
 import PasswordResetPane from "./review/PasswordResetPane";
 import {
   type PasswordResetRequestItem,
@@ -31,6 +33,7 @@ import {
   firstFeedback,
   firstIdentity,
   firstPasswordReset,
+  firstPostcard,
   firstReport,
   type DeskKind,
 } from "../utils/reviewDesk";
@@ -54,6 +57,13 @@ import "../styles/detail.css";
 
 const ADVANCE_MS = 900;
 
+/** 深链：`/#/reviews?kind=postcard`（站内信与「去审核台」按钮都用它）。 */
+function requestedKind(): DeskKind | null {
+  const q = window.location.hash.split("?")[1] || "";
+  const k = new URLSearchParams(q).get("kind") as DeskKind | null;
+  return k || null;
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function ReviewQueuePage() {
@@ -67,6 +77,7 @@ export default function ReviewQueuePage() {
   const [canFeedback, setCanFeedback] = useState(false);
   const [canReports, setCanReports] = useState(false);
   const [canPasswordReset, setCanPasswordReset] = useState(false);
+  const [canPostcard, setCanPostcard] = useState(false);
   const [denied, setDenied] = useState(false);
   const [booting, setBooting] = useState(true);
 
@@ -76,12 +87,15 @@ export default function ReviewQueuePage() {
   const [feedbackStatus, setFeedbackStatus] = useState<FeedbackStatus | "">("pending");
   const [reportStatus, setReportStatus] = useState<ReportStatus | "">("open");
   const [passwordResetStatus, setPasswordResetStatus] = useState<PasswordResetStatus>("pending");
+  // 明信片复核：默认待人工；也可切到 AI 不匹配 / 全部
+  const [postcardStatus, setPostcardStatus] = useState<string>("manual_pending");
 
   const [identityItem, setIdentityItem] = useState<IdentityReviewItem | null>(null);
   const [contentRow, setContentRow] = useState<ReviewItem | null>(null);
   const [feedbackItem, setFeedbackItem] = useState<FeedbackDetail | null>(null);
   const [reportItem, setReportItem] = useState<ReportCase | null>(null);
   const [passwordResetItem, setPasswordResetItem] = useState<PasswordResetRequestItem | null>(null);
+  const [postcardItem, setPostcardItem] = useState<ReviewRow | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -101,6 +115,7 @@ export default function ReviewQueuePage() {
     fStatus: FeedbackStatus | "",
     rStatus: ReportStatus | "",
     prStatus: PasswordResetStatus,
+    pcStatus: string,
     excludeId?: number,
     token?: number,
   ): Promise<"ok" | "empty" | "error"> => {
@@ -117,6 +132,17 @@ export default function ReviewQueuePage() {
         setFeedbackItem(null);
         setReportItem(null);
         setPasswordResetItem(null);
+        setPostcardItem(null);
+        return item ? "ok" : "empty";
+      } else if (nextKind === "postcard") {
+        const item = await firstPostcard(pcStatus, excludeId, skip);
+        if (token != null && token !== gen.current) return "ok";
+        setIdentityItem(null);
+        setContentRow(null);
+        setFeedbackItem(null);
+        setReportItem(null);
+        setPasswordResetItem(null);
+        setPostcardItem(item);
         return item ? "ok" : "empty";
       } else if (nextKind === "passwordReset") {
         const item = await firstPasswordReset(prStatus, excludeId, skip);
@@ -126,6 +152,7 @@ export default function ReviewQueuePage() {
         setFeedbackItem(null);
         setReportItem(null);
         setPasswordResetItem(item);
+        setPostcardItem(null);
         return item ? "ok" : "empty";
       } else if (nextKind === "feedback") {
         const row = await firstFeedback(fStatus, excludeId, skip);
@@ -136,6 +163,7 @@ export default function ReviewQueuePage() {
         setFeedbackItem(detail);
         setReportItem(null);
         setPasswordResetItem(null);
+        setPostcardItem(null);
         return row ? "ok" : "empty";
       } else if (nextKind === "reports") {
         const row = await firstReport(rStatus, excludeId, skip);
@@ -145,6 +173,7 @@ export default function ReviewQueuePage() {
         setFeedbackItem(null);
         setReportItem(row);
         setPasswordResetItem(null);
+        setPostcardItem(null);
         return row ? "ok" : "empty";
       } else {
         const row = await firstContent(nextKind, cStatus, excludeId, skip);
@@ -154,6 +183,7 @@ export default function ReviewQueuePage() {
         setFeedbackItem(null);
         setReportItem(null);
         setPasswordResetItem(null);
+        setPostcardItem(null);
         return row ? "ok" : "empty";
       }
     } catch (e: any) {
@@ -164,6 +194,7 @@ export default function ReviewQueuePage() {
       setFeedbackItem(null);
       setReportItem(null);
       setPasswordResetItem(null);
+      setPostcardItem(null);
       return "error";
     } finally {
       if (token == null || token === gen.current) setLoading(false);
@@ -179,13 +210,15 @@ export default function ReviewQueuePage() {
         const feedback = !!d.user?.permissions?.can_view_feedback;
         const reports = !!d.user?.permissions?.can_handle_reports;
         const passwordReset = !!d.user?.permissions?.can_review_password_reset;
+        const postcard = !!d.user?.permissions?.can_review_postcard;
         if (cancelled) return;
         setCanContent(content);
         setCanIdentity(identity);
         setCanFeedback(feedback);
         setCanReports(reports);
         setCanPasswordReset(passwordReset);
-        if (!content && !identity && !feedback && !reports && !passwordReset) {
+        setCanPostcard(postcard);
+        if (!content && !identity && !feedback && !reports && !passwordReset && !postcard) {
           setDenied(true);
           setBooting(false);
           return;
@@ -193,6 +226,7 @@ export default function ReviewQueuePage() {
         const order: DeskKind[] = [];
         if (identity) order.push("identity");
         if (passwordReset) order.push("passwordReset");
+        if (postcard) order.push("postcard");
         if (content) order.push(...CONTENT_KINDS);
         if (feedback) order.push("feedback");
         if (reports) order.push("reports");
@@ -200,6 +234,7 @@ export default function ReviewQueuePage() {
           try {
             if (k === "identity") return { k, hit: await firstIdentity("pending") };
             if (k === "passwordReset") return { k, hit: await firstPasswordReset("pending") };
+            if (k === "postcard") return { k, hit: await firstPostcard("manual_pending") };
             if (k === "feedback") return { k, hit: await firstFeedback("pending") };
             if (k === "reports") return { k, hit: await firstReport("open") };
             return { k, hit: await firstContent(k, "pending") };
@@ -208,7 +243,12 @@ export default function ReviewQueuePage() {
           }
         }));
         if (cancelled) return;
-        setKind(probes.find((p) => p.hit)?.k ?? order[0]);
+        const wanted = requestedKind();
+        setKind(
+          wanted && order.includes(wanted)
+            ? wanted
+            : probes.find((p) => p.hit)?.k ?? order[0],
+        );
         setBooting(false);
       })
       .catch(() => {
@@ -227,11 +267,11 @@ export default function ReviewQueuePage() {
     setFlash("");
     loadPane(
       kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
-      passwordResetStatus, undefined, token,
+      passwordResetStatus, postcardStatus, undefined, token,
     );
   }, [
     booting, kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
-    passwordResetStatus, loadPane,
+    passwordResetStatus, postcardStatus, loadPane,
   ]);
 
   useEffect(() => {
@@ -250,6 +290,7 @@ export default function ReviewQueuePage() {
     setFeedbackStatus("pending");
     setReportStatus("open");
     setPasswordResetStatus("pending");
+    setPostcardStatus("manual_pending");
     setFlash("");
     setCloseNote("");
     setDismissNote("");
@@ -265,7 +306,7 @@ export default function ReviewQueuePage() {
     setFlash("");
     await loadPane(
       kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
-      passwordResetStatus, excludeId, token,
+      passwordResetStatus, postcardStatus, excludeId, token,
     );
   };
 
@@ -276,6 +317,7 @@ export default function ReviewQueuePage() {
       : kind === "passwordReset" ? passwordResetItem?.id
       : kind === "feedback" ? feedbackItem?.id
       : kind === "reports" ? reportItem?.id
+      : kind === "postcard" ? postcardItem?.id
       : contentRow?.id;
     if (currentId == null) return;
     // 本轮浏览完时恢复当前显示，避免误显示「本队列已空」
@@ -285,13 +327,14 @@ export default function ReviewQueuePage() {
       content: contentRow,
       feedback: feedbackItem,
       report: reportItem,
+      postcard: postcardItem,
     };
     visitedRef.current.add(currentId);
     const token = ++gen.current;
     setFlash("");
     const result = await loadPane(
       kind, identityStatus, contentStatus, feedbackStatus, reportStatus,
-      passwordResetStatus, currentId, token,
+      passwordResetStatus, postcardStatus, currentId, token,
     );
     if (token !== gen.current) return;
     if (result === "empty") {
@@ -300,6 +343,7 @@ export default function ReviewQueuePage() {
       setContentRow(prev.content);
       setFeedbackItem(prev.feedback);
       setReportItem(prev.report);
+      setPostcardItem(prev.postcard);
       setFlash("已是最后一条");
     }
   };
@@ -337,6 +381,21 @@ export default function ReviewQueuePage() {
       const updated = await fn();
       setPasswordResetItem(updated);
       await afterAction(updated.id, notice);
+    } catch (e: any) {
+      setError(e.message || "操作失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runPostcardDecision = async (decision: "pass" | "fail", note: string) => {
+    if (!postcardItem) return;
+    setBusy(true);
+    setError("");
+    try {
+      const r = await postcardAdminApi.reviewDecision(postcardItem.id, decision, note);
+      setFlash(r.review_label);
+      await afterAction(postcardItem.id, r.review_label);
     } catch (e: any) {
       setError(e.message || "操作失败");
     } finally {
@@ -414,6 +473,7 @@ export default function ReviewQueuePage() {
     : kind === "passwordReset" ? !passwordResetItem
     : kind === "feedback" ? !feedbackItem
     : kind === "reports" ? !reportItem
+    : kind === "postcard" ? !postcardItem
     : !contentRow;
   const identityLabel = identityItem ? identityWithDepartment(identityItem) : "";
 
@@ -443,7 +503,7 @@ export default function ReviewQueuePage() {
         ) : (
           <>
             <div className="filter-bar" role="tablist" aria-label="审核类型">
-              {deskTabs({ canContent, canIdentity, canFeedback, canReports, canPasswordReset }).map((t) => (
+              {deskTabs({ canContent, canIdentity, canFeedback, canReports, canPasswordReset, canPostcard }).map((t) => (
                 <button key={t.kind} className="chip" aria-pressed={kind === t.kind}
                         onClick={() => pickKind(t.kind)}>{t.label}</button>
               ))}
@@ -466,6 +526,15 @@ export default function ReviewQueuePage() {
                     {s === "pending" ? "待处理" : s === "approved" ? "已批准" : "已驳回"}
                   </button>
                 ))}
+              </div>
+            ) : kind === "postcard" ? (
+              <div className="filter-bar" role="tablist" aria-label="明信片复核状态">
+                <button className="chip" aria-pressed={postcardStatus === "manual_pending"}
+                        onClick={() => setPostcardStatus("manual_pending")}>待人工复核</button>
+                <button className="chip" aria-pressed={postcardStatus === "ai_failed"}
+                        onClick={() => setPostcardStatus("ai_failed")}>AI 判不匹配</button>
+                <button className="chip" aria-pressed={postcardStatus === ""}
+                        onClick={() => setPostcardStatus("")}>全部</button>
               </div>
             ) : kind === "feedback" ? (
               <div className="filter-bar" role="tablist" aria-label="反馈状态">
@@ -707,6 +776,15 @@ export default function ReviewQueuePage() {
                   </button>
                 </div>
               </div>
+            ) : kind === "postcard" && postcardItem ? (
+              <PostcardReviewPane
+                item={postcardItem}
+                busy={busy}
+                flash={flash}
+                onDecision={(decision, note) => void runPostcardDecision(decision, note)}
+                onNext={skipNext}
+                onLightbox={setLightboxUrl}
+              />
             ) : contentRow ? (
               <ReviewPreview
                 key={`${contentRow.target_type}-${contentRow.target_id}`}

@@ -18,6 +18,10 @@ export default function AITab() {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<
+    { ok: boolean; text: string } | null
+  >(null);
 
   const [config, setConfig] = useState<AIConfig | null>(null);
   const [enabled, setEnabled] = useState(false);
@@ -96,6 +100,29 @@ export default function AITab() {
       setError(errMessage(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** 测试连接：只测「已保存」的配置（未保存的改动不在服务端）。 */
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    setError("");
+    setNotice("");
+    try {
+      const d = await postcardAdminApi.testAIConfig();
+      if (d.ok) {
+        setTestResult({
+          ok: true,
+          text: `连接正常 · ${d.latency_ms ?? "?"}ms · 模型 ${d.model || "—"} · 返回「${d.reply || ""}」`,
+        });
+      } else {
+        setTestResult({ ok: false, text: d.error || "测试失败" });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, text: errMessage(e) });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -197,9 +224,21 @@ export default function AITab() {
             placeholder={"喜羊羊\n熊出没"}
           />
         </label>
-        <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save()}>
-          {saving ? "保存中…" : "保存 AI 配置"}
-        </button>
+        <div className="pa-actions">
+          <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save()}>
+            {saving ? "保存中…" : "保存 AI 配置"}
+          </button>
+          <button type="button" className="btn btn-secondary" disabled={testing} onClick={() => void runTest()}>
+            {testing ? "测试中…" : "测试连接"}
+          </button>
+        </div>
+        <p className="pa-hint">测试连接使用已保存的配置；改了参数请先保存再测试。</p>
+        {testResult && (
+          <p className={testResult.ok ? "pa-ok" : "pa-error"} role="status">
+            {testResult.ok ? "✅ " : "❌ "}
+            {testResult.text}
+          </p>
+        )}
       </section>
 
       <section className="pa-card">

@@ -1788,3 +1788,144 @@ class PortalMetadataAfterRegisteringTest(TestCase):
         self.assertTrue(data["grades"])
         self.assertEqual(len(data["regions"]), 16)
         self.assertTrue(data["schools"])
+
+
+class AITestEndpointTest(TestCase):
+    """管理端「测试连接」：成功/失败文案、不泄露 key、审计留痕。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _ai_config()
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def test_success(self):
+        body = json.dumps({"choices": [{"message": {"content": "正常"}}]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ):
+            resp = self.client.post("/events/postcard/admin/ai/test/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["reply"], "正常")
+        self.assertGreaterEqual(data["latency_ms"], 0)
+        self.assertNotIn("sk-test-key", json.dumps(data))
+        self.assertTrue(
+            PostcardAuditLog.objects.filter(action="ai_test", detail__ok=True).exists()
+        )
+
+    def test_http_error_is_friendly_and_hides_key(self):
+        import urllib.error
+
+        err = urllib.error.HTTPError(
+            "https://ai.example.com/v1/chat/completions", 401, "Unauthorized", {}, None,
+        )
+        with mock.patch("events.modules.postcard.ai.urllib.request.urlopen", side_effect=err):
+            resp = self.client.post("/events/postcard/admin/ai/test/")
+        data = resp.json()
+        self.assertFalse(data["ok"])
+        self.assertIn("API Key", data["error"])
+        self.assertNotIn("sk-test-key", json.dumps(data))
+
+    def test_incomplete_config(self):
+        PostcardAIConfig.objects.update(enabled=False)
+        data = self.client.post("/events/postcard/admin/ai/test/").json()
+        self.assertFalse(data["ok"])
+        self.assertIn("配置不完整", data["error"])
+
+    def test_requires_manage_permission(self):
+        client = APIClient()
+        client.force_authenticate(user=_reviewer())
+        self.assertEqual(client.post("/events/postcard/admin/ai/test/").status_code, 403)
+
+
+class PostcardReviewNotifyTest(TestCase):
+    """新审核申请 → 站内信（权限驱动，与内容送审同规则；同码未读聚合）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001", "1000002"])
+        self.reviewer = _reviewer()
+        self.admin = _admin()
+
+    def test_manual_transfer_notifies_reviewers(self):
+        reg = _make_registration(self.event, ["1000001"])
+        from events.modules.postcard import ai as ai_mod
+
+        state = ai_mod.queue_registration_review(reg)  # 未配置 AI → 同步转人工
+        self.assertEqual(state, PostcardPhoto.REVIEW_MANUAL_PENDING)
+        rows = list(self.reviewer.notifications.all())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].category, "review")
+        self.assertEqual(rows[0].event, "postcard_submitted")
+        self.assertEqual(rows[0].payload["type"], "postcard")
+        self.assertEqual(rows[0].payload["url"], "/reviews?kind=postcard")
+        # 管理权限也收（can_review_postcard 包含 manage 授权）
+        self.assertEqual(len(list(self.admin.notifications.all())), 1)
+
+    def test_same_code_aggregates_unread(self):
+        reg1 = _make_registration(self.event, ["1000001"])
+        reg2 = PostcardRegistration.objects.create(
+            event=self.event, reg_code=reg1.reg_code, sender_name="李四", grade="g2", class_no=5,
+            dest_region="浦东新区", dest_school="友爱中学",
+        )
+        barcode = PostcardBarcode.objects.get(event=self.event, code="1000002")
+        item = PostcardItem.objects.create(registration=reg2, barcode=barcode)
+        photo = PostcardPhoto(item=item, side="front")
+        photo.file.save("x-front.jpg", ContentFile(_jpeg_bytes()), save=True)
+
+        from events.modules.postcard import ai as ai_mod
+
+        ai_mod.queue_registration_review(reg1)
+        ai_mod.queue_registration_review(reg2)
+        rows = list(self.reviewer.notifications.all())
+        self.assertEqual(len(rows), 1)  # 同码未读合并
+        self.assertEqual(rows[0].payload.get("count"), 2)
+
+
+class ReviewQueueForDeskTest(TestCase):
+    """审核台消费的队列：带通用 id，可按状态分桌。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001", "1000002"])
+        self.reg = _make_registration(self.event, ["1000001", "1000002"])
+        items = list(self.reg.items.order_by("pk"))
+        lifecycle_mod.settle_item_photos(items[0], PostcardPhoto.REVIEW_MANUAL_PENDING)
+        lifecycle_mod.settle_item_photos(items[1], PostcardPhoto.REVIEW_AI_FAILED)
+        self.client = APIClient()
+        self.client.force_authenticate(user=_reviewer())
+
+    def test_queue_has_id(self):
+        rows = self.client.get("/events/postcard/admin/review/").json()["results"]
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r["id"] == r["item_id"] for r in rows))
+
+    def test_state_filter(self):
+        manual = self.client.get(
+            "/events/postcard/admin/review/?state=manual_pending"
+        ).json()["results"]
+        failed = self.client.get(
+            "/events/postcard/admin/review/?state=ai_failed"
+        ).json()["results"]
+        self.assertEqual(len(manual), 1)
+        self.assertEqual(len(failed), 1)
+        self.assertNotEqual(manual[0]["id"], failed[0]["id"])

@@ -1,0 +1,41 @@
+/* 审核台「明信片」桌（桌面 / 手机共用，独立于管理端样式）。 */
+
+.pcx-pane { display: flex; flex-direction: column; gap: var(--s-4, 16px); }
+.pcx-meta { display: flex; flex-wrap: wrap; gap: var(--s-3, 12px); align-items: center; }
+.pcx-badge {
+  font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+  background: color-mix(in oklch, #f59e0b 18%, transparent); color: #b45309;
+}
+.pcx-badge.is-failed {
+  background: color-mix(in oklch, #dc2626 14%, transparent); color: #b91c1c;
+}
+:root[data-theme="dark"] .pcx-badge { color: #fbbf24; }
+:root[data-theme="dark"] .pcx-badge.is-failed { color: #f87171; }
+.pcx-barcode { font-size: 0.85rem; color: var(--muted); }
+.pcx-flash { font-size: 0.8rem; color: var(--accent); }
+.pcx-title { margin: 0; font-size: 1.25rem; }
+.pcx-sub { margin: 0; color: var(--muted); font-size: 0.85rem; display: flex; flex-wrap: wrap; gap: 6px; }
+.pcx-sub .sep { opacity: 0.5; }
+.pcx-photos { display: flex; gap: 10px; flex-wrap: wrap; }
+.pcx-photo {
+  padding: 0; border: 1px solid var(--line, #ddd); border-radius: 8px; overflow: hidden;
+  background: var(--bg-soft, #f6f7f9); cursor: zoom-in; line-height: 0;
+}
+.pcx-photo img { width: 220px; height: 160px; object-fit: cover; display: block; }
+.pcx-verdict { font-size: 0.88rem; display: flex; flex-direction: column; gap: 2px; }
+.pcx-verdict p { margin: 0; }
+.pcx-ok { color: #15803d; }
+:root[data-theme="dark"] .pcx-ok { color: #4ade80; }
+.pcx-muted { color: var(--muted); }
+.pcx-empty { color: var(--muted); font-size: 0.85rem; }
+.pcx-note { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--muted); }
+.pcx-note input {
+  padding: 8px 10px; border: 1px solid var(--line-2, #ddd); border-radius: 6px;
+  background: var(--bg, #fff); color: var(--fg, #111); font: inherit;
+}
+.pcx-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+@media (max-width: 720px) {
+  .pcx-photo img { width: 44vw; height: 32vw; }
+  .pcx-title { font-size: 1.1rem; }
+}

@@ -338,6 +338,8 @@ def review_registration(reg: PostcardRegistration) -> dict:
             stats["failed"] += 1
     if any_call_failure:
         note_review_failure(user_key)
+    if stats["manual"]:
+        _notify_manual(reg)
     return stats
 
 
@@ -362,6 +364,12 @@ def _review_worker(reg_pk: int) -> None:
             )
 
 
+def _notify_manual(reg) -> None:
+    from .notify import notify_reviewers
+
+    notify_reviewers(reg)
+
+
 def queue_registration_review(reg: PostcardRegistration) -> str:
     """登记建单后调度审核。返回初始 review_state（响应里带给前端）。
 
@@ -375,6 +383,7 @@ def queue_registration_review(reg: PostcardRegistration) -> str:
         lifecycle.settle_registration(
             reg, PostcardPhoto.REVIEW_MANUAL_PENDING, verdict={"reason": "ai_unavailable"},
         )
+        _notify_manual(reg)
         return PostcardPhoto.REVIEW_MANUAL_PENDING
     thread = threading.Thread(
         target=_review_worker, args=(reg.pk,), daemon=True,
@@ -382,3 +391,67 @@ def queue_registration_review(reg: PostcardRegistration) -> str:
     )
     thread.start()
     return PostcardPhoto.REVIEW_PENDING
+
+
+# ---------------------------------------------------------------------------
+# 连通性测试（管理端「测试连接」按钮）
+# ---------------------------------------------------------------------------
+
+
+def _http_error_text(code: int) -> str:
+    """把厂商 HTTP 状态码收敛成一句可操作的中文（不回显响应体，防泄露）。"""
+    if code in (401, 403):
+        return "鉴权失败：API Key 无效或没有该模型的权限"
+    if code == 404:
+        return "接口不存在：请检查 Base URL 是否包含 /v1（如 https://api.example.com/v1）"
+    if code == 429:
+        return "被上游限流：请稍后重试或检查额度"
+    if 500 <= code < 600:
+        return f"上游服务错误（HTTP {code}），请稍后重试"
+    return f"请求被拒绝（HTTP {code}）"
+
+
+def test_connection(cfg: PostcardAIConfig) -> dict:
+    """用已保存的配置发一次最小对话请求，验证 URL / Key / 模型是否可用。
+
+    只发纯文本（不带图片），避免在 3M 带宽上测个连接就传几百 KB；
+    返回 ``{ok, latency_ms, model, reply}`` 或 ``{ok: False, error}``。
+    **绝不回显 api_key**，错误文案只给结论。
+    """
+    import time
+
+    url = cfg.base_url.strip().rstrip("/") + "/chat/completions"
+    payload = {
+        "model": cfg.model.strip(),
+        "messages": [{"role": "user", "content": "只回复两个字：正常"}],
+        "max_tokens": 8,
+        "temperature": 0,
+    }
+    headers = {"Content-Type": "application/json"}
+    if cfg.api_key:
+        headers["Authorization"] = f"Bearer {cfg.api_key}"
+    for key, value in (cfg.extra_headers or {}).items():
+        if isinstance(key, str) and isinstance(value, str) and key.strip():
+            headers[key.strip()] = value
+
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST",
+    )
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=min(cfg.timeout_seconds or 30, 20)) as resp:
+            body = json.loads(resp.read().decode("utf-8", "replace"))
+        text = body["choices"][0]["message"]["content"]
+        latency = int((time.monotonic() - started) * 1000)
+        return {
+            "ok": True,
+            "latency_ms": latency,
+            "model": cfg.model,
+            "reply": str(text or "").strip()[:120],
+        }
+    except urllib.error.HTTPError as exc:
+        return {"ok": False, "error": _http_error_text(exc.code)}
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return {"ok": False, "error": "网络不可达或超时：请检查 Base URL 与服务器出网"}
+    except (KeyError, IndexError, TypeError, ValueError):
+        return {"ok": False, "error": "响应不是 OpenAI 兼容格式（缺 choices[0].message.content）"}

@@ -1,6 +1,7 @@
 import { feedbackApi } from "../api/feedback";
 import { identityReviewsApi } from "../api/identityReviews";
 import { passwordResetApi } from "../api/passwordReset";
+import { postcardAdminApi, type ReviewRow } from "../api/postcardAdmin";
 import { reportsApi } from "../api/reports";
 import { reviewsApi } from "../api/reviews";
 import type { FeedbackListItem, FeedbackStatus } from "../types/feedback";
@@ -24,7 +25,8 @@ export type DeskKind =
   | ReviewTargetType
   | "feedback"
   | "reports"
-  | "passwordReset";
+  | "passwordReset"
+  | "postcard";
 
 export const CONTENT_KINDS: ReviewTargetType[] = ["news", "activity", "tutorial"];
 
@@ -39,6 +41,8 @@ export interface DeskPermissions {
   canReports?: boolean;
   /** 密码重置审批（忘记密码 → 管理员手动重置） */
   canPasswordReset?: boolean;
+  /** 明信片互寄复核（manual_pending / ai_failed） */
+  canPostcard?: boolean;
 }
 
 export interface DeskTab {
@@ -55,6 +59,7 @@ export function deskTabs(p: DeskPermissions): DeskTab[] {
   const tabs: DeskTab[] = [];
   if (p.canIdentity) tabs.push({ kind: "identity", label: "身份" });
   if (p.canPasswordReset) tabs.push({ kind: "passwordReset", label: "密码重置" });
+  if (p.canPostcard) tabs.push({ kind: "postcard", label: "明信片" });
   if (p.canContent) {
     for (const kind of CONTENT_KINDS) {
       tabs.push({ kind, label: TARGET_TYPE_LABELS[kind] });
@@ -177,4 +182,17 @@ export async function firstReport(
     excludeId,
     skip,
   ) as Promise<ReportCase | null>;
+}
+
+/** 明信片复核队列：state = manual_pending / ai_failed / ""（全部）。 */
+export async function firstPostcard(
+  state: string,
+  excludeId?: number,
+  skip?: Set<number>,
+) {
+  return firstOf(
+    (page) => postcardAdminApi.reviewQueue(page, state),
+    excludeId,
+    skip,
+  ) as Promise<ReviewRow | null>;
 }
