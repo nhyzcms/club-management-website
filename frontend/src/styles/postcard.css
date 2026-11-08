@@ -404,6 +404,31 @@
 }
 .pc-modal-hint { font-size: 13px; }
 
+/* 审核中：旋转指示（纯 CSS，无图） */
+.pc-modal-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--line);
+  border-top-color: var(--brand-600);
+  animation: pc-spin 0.9s linear infinite;
+}
+@keyframes pc-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 未通过：错项提示 */
+.pc-modal-mismatch {
+  font-size: 14px;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-radius: var(--r-md);
+  padding: var(--s-2) var(--s-3);
+  margin: 0;
+  text-align: left;
+}
+.pc-modal-error { color: var(--danger); font-size: 13px; margin: 0; }
+
 /* —— 手机版微调（/m 外壳下卡片贴边、栅格单列） —— */
 @media (max-width: 640px) {
   .pc-card { padding: var(--s-4); border-radius: var(--r-md); margin-bottom: var(--s-4); }

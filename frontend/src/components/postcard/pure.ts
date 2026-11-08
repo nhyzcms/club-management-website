@@ -127,3 +127,36 @@ export function failedReviewRegCodes(regs: PostcardRegistrationSummary[]): strin
 export function hasAiFailedItem(reg: PostcardRegistrationSummary): boolean {
   return reg.items.some((it) => it.review_state === "ai_failed");
 }
+
+/**
+ * 审核结论（用户侧发放登记码的唯一依据，2026-11-08 用户指定）：
+ * - **AI 通过**（全部 ai_passed / manual_passed）→ 发码；
+ * - **转人工**（存在 manual_pending）→ 立即发码（不等人工结果）；
+ * - **失败**（ai_failed / manual_failed）→ 不发码，告知哪项不匹配，
+ *   申请人工复核转 manual_pending 后再发码；
+ * - 其余（仍有 pending）→ 继续等。
+ */
+export type ReviewOutcome =
+  | { kind: "granted"; via: "ai" | "manual" }
+  | { kind: "rejected"; mismatched: string[]; comment: string }
+  | { kind: "pending" };
+
+export function reviewOutcomeOf(reg: PostcardRegistrationSummary): ReviewOutcome {
+  const items = reg.items || [];
+  if (items.length === 0) return { kind: "pending" };
+  const failed = items.filter(
+    (it) => it.review_state === "ai_failed" || it.review_state === "manual_failed",
+  );
+  if (failed.length > 0) {
+    const mismatched = [...new Set(failed.flatMap((it) => it.mismatched || []))];
+    const comment = failed.find((it) => it.comment)?.comment || "";
+    return { kind: "rejected", mismatched, comment };
+  }
+  if (items.some((it) => it.review_state === "manual_pending")) {
+    return { kind: "granted", via: "manual" };
+  }
+  if (items.every((it) => it.review_state === "ai_passed" || it.review_state === "manual_passed")) {
+    return { kind: "granted", via: "ai" };
+  }
+  return { kind: "pending" };
+}

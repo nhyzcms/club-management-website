@@ -279,8 +279,8 @@ export default function RegisterForm({ portal, fingerprint, isMobile, onRegister
         {busy ? "提交中…" : `提交登记（${items.length} 张）`}
       </button>
       <p className="muted pc-form-hint">
-        提交后生成 6 位登记码，是查看和修改登记记录的唯一凭证，请妥善保存。
-        照片仅用于审核填写是否规范，审核通过后自动删除。
+        提交后经 AI 审核：通过后生成 6 位登记码并自动删除照片；AI 暂不可用时转人工
+        复核，登记码立即生成。登记码是查看和修改登记记录的唯一凭证，请妥善保存。
       </p>
     </form>
   );

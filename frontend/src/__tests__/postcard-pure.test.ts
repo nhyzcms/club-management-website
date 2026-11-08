@@ -6,12 +6,13 @@ import {
   failedReviewRegCodes,
   hasAiFailedItem,
   needsReviewPoll,
+  reviewOutcomeOf,
   schoolsInRegion,
   validateRegistration,
   type DraftItem,
   type RegisterFormValues,
 } from "../components/postcard/pure";
-import type { PostcardRegistrationSummary, PostcardSchool } from "../api/postcard";
+import type { PostcardItemSummary, PostcardRegistrationSummary, PostcardSchool } from "../api/postcard";
 
 const SCHOOLS: PostcardSchool[] = [
   { region: "浦东新区", name: "友爱中学" },
@@ -167,5 +168,45 @@ describe("轮询与 sendBeacon 清理的判定", () => {
     const withFailed = reg({ items: [{ id: 1, barcode: "1234567", status: "registered", status_label: "已登记", review_state: "ai_failed", review_label: "AI 不匹配", mismatched: ["寄达校"], comment: "", photos: [] }] });
     expect(hasAiFailedItem(withFailed)).toBe(true);
     expect(hasAiFailedItem(reg())).toBe(false);
+  });
+});
+
+describe("reviewOutcomeOf（登记码发放规则，2026-11-08 用户指定）", () => {
+  const it_ = (state: string | null, extra: Partial<PostcardItemSummary> = {}): PostcardItemSummary => ({
+    id: 1, barcode: "1234567", status: "registered", status_label: "已登记",
+    review_state: state, review_label: state, mismatched: [], comment: "", photos: [], ...extra,
+  });
+  const withItems = (...items: PostcardItemSummary[]) => reg({ items });
+
+  it("全部 AI 通过 → 发码（via ai）", () => {
+    expect(reviewOutcomeOf(withItems(it_("ai_passed"), it_("ai_passed")))).toEqual({ kind: "granted", via: "ai" });
+  });
+
+  it("转人工（manual_pending）→ 立即发码（via manual）", () => {
+    expect(reviewOutcomeOf(withItems(it_("manual_pending")))).toEqual({ kind: "granted", via: "manual" });
+  });
+
+  it("AI 通过 + 转人工混合 → 发码（via manual，还有待人工的）", () => {
+    expect(reviewOutcomeOf(withItems(it_("ai_passed"), it_("manual_pending")))).toEqual({ kind: "granted", via: "manual" });
+  });
+
+  it("AI 判不匹配 → 不发码，带错项与说明", () => {
+    const out = reviewOutcomeOf(withItems(
+      it_("ai_failed", { mismatched: ["寄达校"], comment: "学校名不符" }),
+      it_("ai_passed"),
+    ));
+    expect(out).toEqual({ kind: "rejected", mismatched: ["寄达校"], comment: "学校名不符" });
+  });
+
+  it("人工复核不通过（manual_failed）→ 同样是终态失败，不发码", () => {
+    expect(reviewOutcomeOf(withItems(it_("manual_failed", { mismatched: ["寄出人姓名"] })))).toEqual({
+      kind: "rejected", mismatched: ["寄出人姓名"], comment: "",
+    });
+  });
+
+  it("仍有 pending → 继续等（不亮码也不判失败）", () => {
+    expect(reviewOutcomeOf(withItems(it_("pending")))).toEqual({ kind: "pending" });
+    expect(reviewOutcomeOf(withItems(it_("pending"), it_("ai_passed")))).toEqual({ kind: "pending" });
+    expect(reviewOutcomeOf(reg())).toEqual({ kind: "pending" });
   });
 });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import PostcardPage from "../pages/PostcardPage";
 import type { PostcardPortal, PostcardRegistrationSummary } from "../api/postcard";
@@ -15,6 +15,7 @@ vi.mock("../api/postcard", () => ({
     portal: vi.fn(),
     my: vi.fn(),
     register: vi.fn(),
+    detail: vi.fn(),
     update: vi.fn(),
     cancel: vi.fn(),
     requestReview: vi.fn(),
@@ -240,4 +241,93 @@ describe("PostcardPage · 历史记录", () => {
       { timeout: 8000 },
     );
   }, 12000);
+});
+
+describe("PostcardPage · 登记码发放规则（2026-11-08 用户指定）", () => {
+  beforeEach(() => {
+    // jsdom 没有 URL.createObjectURL（照片预览用）
+    (URL as any).createObjectURL = vi.fn(() => "blob:pc-preview");
+  });
+
+  async function fillAndSubmit(container: HTMLElement) {
+    fireEvent.change(screen.getByLabelText("姓名"), { target: { value: "李明" } });
+    fireEvent.change(screen.getByLabelText("年级"), { target: { value: "g1" } });
+    fireEvent.change(screen.getByLabelText("班级"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("寄达区"), { target: { value: "浦东新区" } });
+    fireEvent.change(screen.getByLabelText("寄达校"), { target: { value: "友爱中学" } });
+    const manual = screen.getByPlaceholderText("或手动输入 7 位条码号");
+    fireEvent.change(manual, { target: { value: "1234567" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    const files = container.querySelectorAll<HTMLInputElement>(".pc-item input[type=file]");
+    fireEvent.change(files[0], { target: { files: [new File(["f"], "f.jpg", { type: "image/jpeg" })] } });
+    fireEvent.change(files[1], { target: { files: [new File(["b"], "b.jpg", { type: "image/jpeg" })] } });
+    fireEvent.click(screen.getByRole("button", { name: /提交登记/ }));
+    await waitFor(() => expect(vi.mocked(postcardApi.register)).toHaveBeenCalled());
+  }
+
+  const reviewingResult = {
+    reg_code: "824617",
+    message: "登记成功",
+    registration: regData(),
+    review: { state: "pending", hint: "" },
+  };
+
+  it("AI 审核中：先不亮码；轮询到 AI 通过后才亮码", async () => {
+    mockedPortal.mockResolvedValue(portalData());
+    vi.mocked(postcardApi.register).mockResolvedValue(reviewingResult);
+    vi.mocked(postcardApi.detail).mockResolvedValue(regData({
+      items: [{
+        id: 11, barcode: "1234567", status: "registered", status_label: "已登记",
+        review_state: "ai_passed", review_label: "AI 通过", mismatched: [], comment: "", photos: [],
+      }],
+    }));
+    const { container } = renderPage();
+    await screen.findByText("明信片登记");
+
+    await fillAndSubmit(container);
+
+    expect(await screen.findByText("照片审核中…")).toBeTruthy();
+    expect(screen.queryByText("824617")).toBeNull();
+    // 2s 轮询出 AI 通过 → 亮码
+    await waitFor(() => expect(screen.getByText("登记成功")).toBeTruthy(), { timeout: 7000 });
+    expect(screen.getByText("824617")).toBeTruthy();
+  }, 15000);
+
+  it("AI 不可用转人工：不轮询，立即亮码", async () => {
+    mockedPortal.mockResolvedValue(portalData());
+    vi.mocked(postcardApi.register).mockResolvedValue({
+      ...reviewingResult,
+      review: { state: "manual_pending", hint: "" },
+    });
+    const { container } = renderPage();
+    await screen.findByText("明信片登记");
+
+    await fillAndSubmit(container);
+
+    expect(await screen.findByText("登记成功")).toBeTruthy();
+    expect(screen.getByText("824617")).toBeTruthy();
+    expect(screen.getByText(/已转人工复核/)).toBeTruthy();
+    expect(vi.mocked(postcardApi.detail)).not.toHaveBeenCalled();
+  }, 15000);
+
+  it("AI 判不匹配：不亮码、告知错项；申请人工复核后立即亮码", async () => {
+    mockedPortal.mockResolvedValue(portalData());
+    vi.mocked(postcardApi.register).mockResolvedValue(reviewingResult);
+    vi.mocked(postcardApi.detail).mockResolvedValue(regData()); // ai_failed fixture（mismatched: 寄达校）
+    vi.mocked(postcardApi.requestReview).mockResolvedValue({ message: "已提交人工复核，请耐心等待复核结果", count: 1 });
+    const { container } = renderPage();
+    await screen.findByText("明信片登记");
+
+    await fillAndSubmit(container);
+
+    await waitFor(() => expect(screen.getByText("本次登记未通过审核")).toBeTruthy(), { timeout: 7000 });
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/寄达校/)).toBeTruthy();
+    expect(screen.queryByText("824617")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "申请人工复核" }));
+    await waitFor(() => expect(vi.mocked(postcardApi.requestReview)).toHaveBeenCalledWith("824617", expect.any(String)));
+    expect(await screen.findByText("登记成功")).toBeTruthy();
+    expect(screen.getByText("824617")).toBeTruthy();
+  }, 20000);
 });

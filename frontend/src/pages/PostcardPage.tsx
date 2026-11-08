@@ -12,7 +12,7 @@ import MobilePage from "../components/MobilePage";
 import RegisterForm from "../components/postcard/RegisterForm";
 import HistorySection from "../components/postcard/HistorySection";
 import SuggestionForm from "../components/postcard/SuggestionForm";
-import { failedReviewRegCodes, needsReviewPoll } from "../components/postcard/pure";
+import { failedReviewRegCodes, needsReviewPoll, reviewOutcomeOf } from "../components/postcard/pure";
 import { getPostcardFingerprint } from "../utils/fingerprint";
 import { isMobileDevice } from "../utils/device";
 import "../styles/postcard.css";
@@ -83,7 +83,16 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
   const [portal, setPortal] = useState<PostcardPortal | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [regs, setRegs] = useState<PostcardRegistrationSummary[] | null>(null);
-  const [success, setSuccess] = useState<RegisterResult | null>(null);
+  /** 提交后的审核状态机：审核中 → 发码（AI 通过 / 转人工）或 不发码（判不匹配）。 */
+  const [submitState, setSubmitState] = useState<
+    | { kind: "reviewing"; regCode: string }
+    | { kind: "granted"; regCode: string; via: "ai" | "manual" }
+    | { kind: "rejected"; regCode: string; mismatched: string[]; comment: string }
+    | null
+  >(null);
+  const [reviewTimedOut, setReviewTimedOut] = useState(false);
+  const [modalError, setModalError] = useState("");
+  const [requestingReview, setRequestingReview] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const regsRef = useRef<PostcardRegistrationSummary[] | null>(null);
@@ -145,13 +154,90 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
   }, [fingerprint]);
 
   const copyRegCode = async () => {
-    if (!success) return;
+    if (!submitState || submitState.kind !== "granted") return;
     try {
-      await navigator.clipboard.writeText(success.reg_code);
+      await navigator.clipboard.writeText(submitState.regCode);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       /* 剪贴板不可用（http 环境 / 旧浏览器）：用户可手动选中复制 */
+    }
+  };
+
+  /** 登记提交成功（201）→ 按审核状态决定是否亮码（2026-11-08 用户指定规则）。 */
+  const handleRegistered = (result: RegisterResult) => {
+    pollCountRef.current = 0;
+    setReviewTimedOut(false);
+    setModalError("");
+    void loadHistory();
+    if (result.review.state === "manual_pending") {
+      // AI 未配置 / 不可用：同步转人工 → 立即发码
+      setSubmitState({ kind: "granted", regCode: result.reg_code, via: "manual" });
+    } else {
+      // AI 后台审核中：先不亮码，轮询等结论
+      setSubmitState({ kind: "reviewing", regCode: result.reg_code });
+    }
+  };
+
+  /** 审核中轮询：2s 一次、最多 20 次（约 40s），出结论即停。 */
+  useEffect(() => {
+    if (!submitState || submitState.kind !== "reviewing") return;
+    const regCode = submitState.regCode;
+    let tries = 0;
+    let stopped = false;
+    const timer = window.setInterval(async () => {
+      if (stopped) return;
+      tries += 1;
+      if (tries > 20) {
+        setReviewTimedOut(true);
+        stopped = true;
+        window.clearInterval(timer);
+        return;
+      }
+      try {
+        const reg = await postcardApi.detail(regCode, fingerprint);
+        const outcome = reviewOutcomeOf(reg);
+        if (outcome.kind === "granted") {
+          stopped = true;
+          window.clearInterval(timer);
+          setSubmitState({ kind: "granted", regCode, via: outcome.via });
+          void loadHistory();
+        } else if (outcome.kind === "rejected") {
+          stopped = true;
+          window.clearInterval(timer);
+          setSubmitState({
+            kind: "rejected",
+            regCode,
+            mismatched: outcome.mismatched,
+            comment: outcome.comment,
+          });
+          void loadHistory();
+        }
+      } catch {
+        /* 单次轮询失败不打断，下一轮再试 */
+      }
+    }, 2000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [submitState, fingerprint, loadHistory]);
+
+  /** 判不匹配 → 申请人工复核：转 manual_pending 后立即发码（同「转人工」规则）。 */
+  const requestManualReview = async () => {
+    if (!submitState || submitState.kind !== "rejected" || requestingReview) return;
+    const regCode = submitState.regCode;
+    setRequestingReview(true);
+    setModalError("");
+    try {
+      await postcardApi.requestReview(regCode, fingerprint);
+      setSubmitState({ kind: "granted", regCode, via: "manual" });
+      pollCountRef.current = 0;
+      void loadHistory();
+    } catch (err: any) {
+      setModalError(err?.message || "提交复核失败，请稍后重试。");
+    } finally {
+      setRequestingReview(false);
     }
   };
 
@@ -251,11 +337,7 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
             portal={portal}
             fingerprint={fingerprint}
             isMobile={isMobile}
-            onRegistered={(result) => {
-              setSuccess(result);
-              pollCountRef.current = 0;
-              void loadHistory();
-            }}
+            onRegistered={handleRegistered}
           />
         </section>
       )}
@@ -292,23 +374,73 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
         <SuggestionForm isMobile={isMobile} />
       </section>
 
-      {success && (
-        <div className="pc-modal-mask" role="dialog" aria-modal="true" aria-label="登记成功">
+      {submitState && (
+        <div className="pc-modal-mask" role="dialog" aria-modal="true" aria-label="登记审核">
           <div className="pc-modal">
-            <h3>登记成功</h3>
-            <p className="muted">{success.message}</p>
-            <div className="pc-modal-code tnum">{success.reg_code}</div>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void copyRegCode()}>
-              {copied ? "已复制 ✓" : "复制登记码"}
-            </button>
-            <p className="muted pc-modal-hint">{success.review.hint}</p>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setSuccess(null)}
-            >
-              我已保存登记码
-            </button>
+            {submitState.kind === "reviewing" && (
+              <>
+                <h3>照片审核中…</h3>
+                <div className="pc-modal-spinner" aria-hidden="true" />
+                <p className="muted">
+                  正在核对照片与填写信息是否一致，通常几秒内完成。
+                </p>
+                {reviewTimedOut && (
+                  <p className="muted pc-modal-hint">
+                    审核还在进行中。可以先关闭本窗口，结果稍后到「历史登记记录」查看。
+                  </p>
+                )}
+                <button type="button" className="btn btn-ghost" onClick={() => setSubmitState(null)}>
+                  关闭，稍后查看
+                </button>
+              </>
+            )}
+
+            {submitState.kind === "granted" && (
+              <>
+                <h3>登记成功</h3>
+                <p className="muted">
+                  {submitState.via === "ai"
+                    ? "照片已通过 AI 审核，审核照片已自动删除。"
+                    : "AI 审核暂不可用，已转人工复核；复核期间照片保留，通过后自动删除。"}
+                </p>
+                <div className="pc-modal-code tnum">{submitState.regCode}</div>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void copyRegCode()}>
+                  {copied ? "已复制 ✓" : "复制登记码"}
+                </button>
+                <p className="muted pc-modal-hint">
+                  登记码是查看和修改登记记录的唯一凭证，请妥善保存。
+                </p>
+                <button type="button" className="btn btn-primary" onClick={() => setSubmitState(null)}>
+                  我已保存登记码
+                </button>
+              </>
+            )}
+
+            {submitState.kind === "rejected" && (
+              <>
+                <h3>本次登记未通过审核</h3>
+                <p className="pc-modal-mismatch">
+                  照片与以下填写项不一致：
+                  {submitState.mismatched.length > 0 ? submitState.mismatched.join("、") : "照片与填写信息"}
+                  {submitState.comment ? `（${submitState.comment}）` : ""}
+                </p>
+                <p className="muted">
+                  登记码暂不发放。如确认自己填写无误，可申请人工复核——转人工后立即发放登记码。
+                </p>
+                {modalError && <p className="pc-modal-error">{modalError}</p>}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={requestingReview}
+                  onClick={() => void requestManualReview()}
+                >
+                  {requestingReview ? "提交中…" : "申请人工复核"}
+                </button>
+                <button type="button" className="btn btn-ghost" onClick={() => setSubmitState(null)}>
+                  关闭
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
