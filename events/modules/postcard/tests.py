@@ -1929,3 +1929,146 @@ class ReviewQueueForDeskTest(TestCase):
         self.assertEqual(len(manual), 1)
         self.assertEqual(len(failed), 1)
         self.assertNotEqual(manual[0]["id"], failed[0]["id"])
+
+
+class MultiSeasonTest(TestCase):
+    """多届活动：归档 + 开启新一届（2026-11-08 用户需求）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event(grades=["g1"], schools=[{"region": "黄浦区", "name": "光明中学"}])
+        self.admin = _admin()
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_new_season_archives_old_and_creates_draft(self):
+        resp = self.client.post("/events/postcard/admin/new-season/")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        data = resp.json()
+        self.assertEqual(data["previous_event"], self.event.pk)
+
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.status, Event.STATUS_ARCHIVED)
+
+        new_event = Event.objects.get(pk=data["event_id"])
+        self.assertEqual(new_event.module_key, "postcard")
+        self.assertEqual(new_event.status, Event.STATUS_DRAFT)
+        new_config = new_event.postcard_config
+        self.assertEqual(new_config.allowed_grades, ["g1"])
+        self.assertEqual(new_config.destination_schools, [{"region": "黄浦区", "name": "光明中学"}])
+        self.assertTrue(
+            PostcardAuditLog.objects.filter(action="new_season", event=new_event).exists()
+        )
+
+        # 之后 PUT 配置作用在新一届上，不再被旧活动的壳锁挡住
+        now = timezone.now()
+        resp = self.client.put("/events/postcard/admin/config/", {
+            "title": "2027 明信片互寄",
+            "start_at": (now + timedelta(days=1)).isoformat(),
+            "end_at": (now + timedelta(days=30)).isoformat(),
+        }, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["event"]["title"], "2027 明信片互寄")
+
+    def test_archive_endpoint(self):
+        resp = self.client.post("/events/postcard/admin/archive/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.status, Event.STATUS_ARCHIVED)
+        self.assertEqual(self.client.post("/events/postcard/admin/archive/").status_code, 400)
+
+    def test_archived_event_displayed_as_ended_to_public(self):
+        self.event.status = Event.STATUS_ARCHIVED
+        self.event.save(update_fields=["status"])
+        data = APIClient().get("/events/postcard/portal/").json()
+        self.assertEqual(data["phase"], "ended")
+        self.assertFalse(data["can_register"])
+
+
+class ConfigPartialAndPdfTest(TestCase):
+    """配置 PUT：可选字段缺省 = 不变；公告 PDF 替换不产生孤儿文件。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, self.config = _config_event()
+        self.config.ship_at = timezone.now() + timedelta(days=3)
+        self.config.announcement_body = "<p>原公告</p>"
+        self.config.save()
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+        now = timezone.now()
+        self.base = {
+            "title": self.event.title,
+            "start_at": self.event.start_at.isoformat(),
+            "end_at": self.event.end_at.isoformat(),
+        }
+
+    def test_omitted_optional_fields_are_kept(self):
+        before_ship = self.config.ship_at
+        resp = self.client.put("/events/postcard/admin/config/", self.base, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.config.refresh_from_db()
+        self.assertEqual(self.config.announcement_body, "<p>原公告</p>")
+        self.assertEqual(self.config.ship_at, before_ship)
+        self.assertEqual(self.config.destination_schools[0]["name"], "友爱中学")
+
+    def test_pdf_replacement_leaves_single_file(self):
+        def upload(name, payload):
+            return self.client.put(
+                "/events/postcard/admin/config/",
+                {**self.base, "announcement_pdf": SimpleUploadedFile(
+                    name, b"%PDF-1.4\n" + payload, "application/pdf",
+                )},
+                format="multipart",
+            )
+
+        self.assertEqual(upload("a.pdf", b"one").status_code, 200)
+        self.config.refresh_from_db()
+        first = self.config.announcement_pdf.name
+        storage = self.config.announcement_pdf.storage
+        self.assertTrue(storage.exists(first))
+
+        self.assertEqual(upload("b.pdf", b"two").status_code, 200)
+        self.config.refresh_from_db()
+        second = self.config.announcement_pdf.name
+        self.assertTrue(storage.exists(second))
+        # 替换前的旧文件必须被删掉（否则每次换公告都留一个孤儿）
+        self.assertFalse(storage.exists(first))
+
+
+class RegisterBarcodeRaceTest(TestCase):
+    """并发抢占同一条码：唯一约束兜底 → 友好 400，而不是 500。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001"])
+        _add_sample(self.event)
+        self.client = APIClient()
+        self.client.cookies["club_device"] = DEVICE_A
+
+    def test_integrity_error_returns_400(self):
+        from django.db import IntegrityError
+
+        with mock.patch(
+            "events.modules.postcard.views.PostcardItem.objects.create",
+            side_effect=IntegrityError("duplicate barcode"),
+        ):
+            resp = self.client.post(
+                "/events/postcard/register/",
+                {**_register_payload(["1000001"]), **_register_files(1)},
+                format="multipart",
+            )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("占用", resp.json()["detail"])
+        self.assertFalse(PostcardRegistration.objects.filter(event=self.event).exists())
+
+
+class RegisterThrottleRateTest(TestCase):
+    """IP 轨必须比单设备宽松（学校 NAT 共用出口）。"""
+
+    def test_ip_rate_is_looser_than_device(self):
+        from .throttles import RegisterDeviceThrottle, RegisterIPThrottle
+
+        self.assertEqual(RegisterIPThrottle.RATE, "60/hour")
+        self.assertEqual(RegisterDeviceThrottle.RATE, "10/hour")

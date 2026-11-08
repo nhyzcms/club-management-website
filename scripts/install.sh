@@ -776,6 +776,34 @@ Restart=on-failure
 WantedBy=multi-user.target
 UNIT
 
+echo "==> 写 ${SERVICE_NAME}-postcard-gc.service / .timer（明信片照片周期清理，每小时）"
+cat > "/etc/systemd/system/${SERVICE_NAME}-postcard-gc.service" <<UNIT
+[Unit]
+Description=Club postcard photo GC (TTL / ended event purge / stale pending)
+
+[Service]
+Type=oneshot
+User=$APP_USER
+Group=$APP_USER
+WorkingDirectory=$DIR
+EnvironmentFile=-$DIR/.env
+ExecStart=$DIR/.venv/bin/python $DIR/manage.py postcard_photo_gc
+UNIT
+cat > "/etc/systemd/system/${SERVICE_NAME}-postcard-gc.timer" <<UNIT
+[Unit]
+Description=Hourly postcard photo GC
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now "${SERVICE_NAME}-postcard-gc.timer" >/dev/null 2>&1 || true
+
 if [ -f "/etc/systemd/system/${SERVICE_NAME}-updater.service" ]; then
   echo "==> 停用并移除过期的 ${SERVICE_NAME}-updater.service（改由 start.sh 拉起）"
   systemctl disable --now "${SERVICE_NAME}-updater" >/dev/null 2>&1 || true

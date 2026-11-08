@@ -26,6 +26,9 @@ urlpatterns = [
     # —— 管理（命名权限 + 审计）——
     path("admin/config/", views.AdminConfigView.as_view(), name="postcard-admin-config"),
     path("admin/publish/", views.AdminPublishView.as_view(), name="postcard-admin-publish"),
+    # 多届活动：归档当前 / 归档并新建下一届（草稿）
+    path("admin/archive/", views.AdminArchiveView.as_view(), name="postcard-admin-archive"),
+    path("admin/new-season/", views.AdminNewSeasonView.as_view(), name="postcard-admin-new-season"),
     path("admin/barcodes/", views.AdminBarcodesView.as_view(), name="postcard-admin-barcodes"),
     path("admin/barcodes/pdf/", views.AdminBarcodesPdfView.as_view(), name="postcard-admin-barcodes-pdf"),
     path("admin/records/", views.AdminRecordsView.as_view(), name="postcard-admin-records"),

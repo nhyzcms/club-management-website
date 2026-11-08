@@ -20,6 +20,7 @@ export default function ConfigTab() {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [newSeasoning, setNewSeasoning] = useState(false);
 
   const [phaseLabel, setPhaseLabel] = useState("");
   const [eventStatus, setEventStatus] = useState("");
@@ -127,6 +128,26 @@ export default function ConfigTab() {
       setError(errMessage(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** 开启新一届：归档当前活动并新建草稿（上一届数据保留在库里）。 */
+  const startNewSeason = async () => {
+    if (!window.confirm(
+      "开启新一届会先归档当前活动（登记数据保留，可在 Django 后台查看），"
+      + "再创建一个新的草稿活动并复制年级与寄达校清单。继续？",
+    )) return;
+    setNotice("");
+    setError("");
+    setNewSeasoning(true);
+    try {
+      await postcardAdminApi.newSeason();
+      setNotice("新一届草稿已创建，请填写时间与学校清单后发布。");
+      await load();
+    } catch (e) {
+      setError(errMessage(e));
+    } finally {
+      setNewSeasoning(false);
     }
   };
 
@@ -305,6 +326,14 @@ export default function ConfigTab() {
             {publishing ? "发布中…" : "发布活动"}
           </button>
         )}
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={newSeasoning}
+          onClick={() => void startNewSeason()}
+        >
+          {newSeasoning ? "处理中…" : "开启新一届（归档当前）"}
+        </button>
       </div>
     </div>
   );

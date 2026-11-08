@@ -27,8 +27,9 @@ import hashlib
 import json
 import re
 import secrets
+from datetime import timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.http import FileResponse, Http404, HttpResponseForbidden
@@ -323,25 +324,32 @@ class RegisterView(APIView):
         reg_code = reused.reg_code if reused is not None else _new_reg_code(event)
         access_token = secrets.token_hex(16)
 
-        with transaction.atomic():
-            reg = PostcardRegistration.objects.create(
-                event=event,
-                reg_code=reg_code,
-                access_token=access_token,
-                sender_name=data["sender_name"],
-                grade=data["grade"],
-                class_no=data["class_no"],
-                dest_region=data["dest_region"],
-                dest_school=data["dest_school"],
-                device_id=device_id,
-                fingerprint_hash=fp_hash,
-                user=request.user if request.user.is_authenticated else None,
+        try:
+            with transaction.atomic():
+                reg = PostcardRegistration.objects.create(
+                    event=event,
+                    reg_code=reg_code,
+                    access_token=access_token,
+                    sender_name=data["sender_name"],
+                    grade=data["grade"],
+                    class_no=data["class_no"],
+                    dest_region=data["dest_region"],
+                    dest_school=data["dest_school"],
+                    device_id=device_id,
+                    fingerprint_hash=fp_hash,
+                    user=request.user if request.user.is_authenticated else None,
+                )
+                for i, code in enumerate(barcode_codes):
+                    item = PostcardItem.objects.create(registration=reg, barcode=barcodes[code])
+                    for side, content in photo_files[i].items():
+                        photo = PostcardPhoto(item=item, side=side)
+                        photo.file.save(f"{item.pk}-{side}.jpg", content, save=True)
+        except IntegrityError:
+            # 并发抢占同一条码：预检通过后被另一请求先写入，唯一约束兜底。
+            return Response(
+                {"detail": "条码刚被其他提交占用，请刷新后重试（一条码对应一份明信片）"},
+                status=400,
             )
-            for i, code in enumerate(barcode_codes):
-                item = PostcardItem.objects.create(registration=reg, barcode=barcodes[code])
-                for side, content in photo_files[i].items():
-                    photo = PostcardPhoto(item=item, side=side)
-                    photo.file.save(f"{item.pk}-{side}.jpg", content, save=True)
 
         # 同一姓名/年级/班级但设备/账号都不同：码被复用给另一条轨道，留痕供追查。
         if reused is not None and not (
@@ -625,9 +633,10 @@ class MyPhotoPurgeView(APIView):
 
     sendBeacon 无法带自定义 header（无 CSRF token）→ 豁免 SessionAuthentication
     （``authentication_classes = []``，DRF 便不做 CSRF 强制）。安全依据：能力
-    凭证 = body 里的 6 位登记码（跨站攻击者不可知，CSRF 所防的「借 cookie
-    伪造操作」在此不成立），且操作仅删自己失败照片（低危、幂等）；ncdid /
-    指纹两轨归属校验照做。前端须以 ``application/json`` Blob 发送。
+    凭证 = URL 里的 6 位登记码（跨站攻击者不可知，CSRF 所防的「借 cookie
+    伪造操作」在此不成立），且操作仅删自己失败照片（低危、幂等）。
+    **实现只校验登记码**（不做 ncdid / 指纹比对），与能力凭证模型的其余端点一致。
+    前端须以 ``application/json`` Blob 发送。
     """
 
     permission_classes = [AllowAny]
@@ -866,17 +875,26 @@ class AdminConfigView(APIView):
             if config is None:
                 config = PostcardConfig.objects.create(event=event)
 
-            config.ship_at = data.get("ship_at")
-            config.distribute_at = data.get("distribute_at")
-            config.allowed_grades = data.get("allowed_grades") or []
-            config.destination_schools = data.get("destination_schools") or []
-            config.announcement_body = sanitize_html(data.get("body") or "")
+            # 可选字段「缺省 = 不变」：第三方调用少传一个字段不该清空配置。
+            if "ship_at" in request.data:
+                config.ship_at = data.get("ship_at")
+            if "distribute_at" in request.data:
+                config.distribute_at = data.get("distribute_at")
+            if "allowed_grades" in request.data:
+                config.allowed_grades = data.get("allowed_grades") or []
+            if "destination_schools" in request.data:
+                config.destination_schools = data.get("destination_schools") or []
+            if "body" in request.data:
+                config.announcement_body = sanitize_html(data.get("body") or "")
             if request.data.get("clear_announcement_pdf") in ("1", "true", True):
                 if config.announcement_pdf:
                     config.announcement_pdf.delete(save=False)
                 config.announcement_pdf = None
             config.save()
             if pdf is not None:
+                # 同名保存时 Django 会改名（announcement_xxx.pdf），先删旧文件防孤儿。
+                if config.announcement_pdf:
+                    config.announcement_pdf.delete(save=False)
                 config.announcement_pdf.save("announcement.pdf", pdf, save=True)
 
         _audit(event, request, "config_update", f"event#{event.pk}", {
@@ -888,6 +906,66 @@ class AdminConfigView(APIView):
         config.refresh_from_db()
         phase = state.phase_of(event, config)
         return Response(self._payload(event, config, phase))
+
+
+class AdminArchiveView(APIView):
+    """归档当前活动：归档后不再参与「当前活动」推导，登记数据保留可查。"""
+
+    permission_classes = [CanManagePostcard]
+
+    def post(self, request):
+        event, _, _ = _phase_guard(admin=True)
+        if event is None:
+            return Response({"detail": "当前没有可归档的明信片活动"}, status=400)
+        if event.status == Event.STATUS_ARCHIVED:
+            return Response({"detail": "当前活动已归档"}, status=400)
+        event.status = Event.STATUS_ARCHIVED
+        event.save(update_fields=["status", "updated_at"])
+        _audit(event, request, "archive", f"event#{event.pk}")
+        return Response({"status": event.status})
+
+
+class AdminNewSeasonView(APIView):
+    """开启新一届：归档当前活动 + 新建草稿活动（复制年级与寄达校清单）。
+
+    解决「上一届结束后无处配置下一届」：归档让 ``current_event`` 不再选中旧活动，
+    新建的草稿立刻成为管理端的工作对象；旧登记数据仍保留在库里。
+    """
+
+    permission_classes = [CanManagePostcard]
+
+    def post(self, request):
+        event, config, _ = _phase_guard(admin=True)
+        previous_pk = None
+        if event is not None and event.status != Event.STATUS_ARCHIVED:
+            previous_pk = event.pk
+            event.status = Event.STATUS_ARCHIVED
+            event.save(update_fields=["status", "updated_at"])
+
+        now = timezone.now()
+        new_event = Event.objects.create(
+            title=f"明信片互寄 {now.year}",
+            summary="",
+            module_key="postcard",
+            visibility=Event.VISIBILITY_PUBLIC,
+            organizer=request.user if request.user.is_authenticated else None,
+            start_at=now + timedelta(days=7),
+            end_at=now + timedelta(days=37),
+            status=Event.STATUS_DRAFT,
+        )
+        PostcardConfig.objects.create(
+            event=new_event,
+            allowed_grades=(config.allowed_grades if config else []) or [],
+            destination_schools=(config.destination_schools if config else []) or [],
+        )
+        _audit(new_event, request, "new_season", f"event#{new_event.pk}", {
+            "previous_event": previous_pk,
+        })
+        return Response({
+            "event_id": new_event.pk,
+            "previous_event": previous_pk,
+            "status": new_event.status,
+        }, status=201)
 
 
 class AdminPublishView(APIView):

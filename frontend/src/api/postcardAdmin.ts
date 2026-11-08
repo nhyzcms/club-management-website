@@ -120,6 +120,7 @@ export interface ReviewRow {
   photo_ids: number[];
   ai_verdict: Record<string, any> | null;
   registration: {
+    registration_id: number;
     reg_code: string;
     sender_name: string;
     grade_label: string;
@@ -249,6 +250,16 @@ export const postcardAdminApi = {
   },
 
   publish: () => request<{ status: string }>("/admin/publish/", { method: "POST" }),
+
+  /** 归档当前活动（数据保留，不再参与「当前活动」推导）。 */
+  archiveSeason: () => request<{ status: string }>("/admin/archive/", { method: "POST", body: "{}" }),
+
+  /** 开启新一届：归档当前活动 + 新建草稿（复制年级与寄达校清单）。 */
+  newSeason: () =>
+    request<{ event_id: number; previous_event: number | null; status: string }>(
+      "/admin/new-season/",
+      { method: "POST", body: "{}" },
+    ),
 
   // —— 条码 ——
   barcodes: () => request<BarcodeSummary>("/admin/barcodes/"),
