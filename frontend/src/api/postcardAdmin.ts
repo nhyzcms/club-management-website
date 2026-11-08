@@ -218,12 +218,23 @@ function query(params: RecordQuery & { fmt?: string }): string {
   return qs ? `?${qs}` : "";
 }
 
+/** 模拟环境导出的文件名标记（`明信片登记-2026-11-08-仅限模拟环境使用.xlsx`）。 */
+export const SIM_FILE_SUFFIX = "-仅限模拟环境使用";
+
+export function withSimFileSuffix(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot > 0
+    ? `${filename.slice(0, dot)}${SIM_FILE_SUFFIX}${filename.slice(dot)}`
+    : `${filename}${SIM_FILE_SUFFIX}`;
+}
+
 /**
  * 带会话下载（条码 PDF / 记录导出）。fetch → blob → <a download>，
  * 这样 403 / 400 能拿到后端 detail 文案，而不是开一个全是 JSON 的新标签页。
  */
 export async function downloadWithCredentials(url: string, filename: string): Promise<void> {
-  const res = await fetch(url, { credentials: "include" });
+  // 模拟环境的文件是浏览器现造的 data URL：不带 cookie，也不加鉴权头。
+  const res = url.startsWith("data:") ? await fetch(url) : await fetch(url, { credentials: "include" });
   if (!res.ok) {
     let detail = `下载失败（${res.status}）`;
     try {
@@ -238,7 +249,8 @@ export async function downloadWithCredentials(url: string, filename: string): Pr
   const href = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = href;
-  a.download = filename;
+  // 模拟环境导出的文件一律带标记，避免和正式导出混在下载目录里（用户要求）。
+  a.download = isPostcardAdminSim() ? withSimFileSuffix(filename) : filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -246,7 +258,7 @@ export async function downloadWithCredentials(url: string, filename: string): Pr
   window.setTimeout(() => URL.revokeObjectURL(href), 10_000);
 }
 
-export const postcardAdminApi = {
+const realPostcardAdminApi = {
   // —— 活动配置 ——
   getConfig: () => request<AdminConfig>("/admin/config/"),
 
@@ -408,6 +420,41 @@ export const postcardAdminApi = {
       body: JSON.stringify({ barcode }),
     }),
 };
+
+/** 管理端 API 的形状（真实现与模拟实现都满足它，Proxy 才能无缝切换）。 */
+export type PostcardAdminApi = typeof realPostcardAdminApi;
+
+/** 正式环境的真实现（模拟实现里需要调真实接口时用，绕过下面的 Proxy）。 */
+export { realPostcardAdminApi };
+
+/** 当前挂着的模拟实现（`?sim=1` 时由 postcardSim/session.ts 装上）。 */
+let simApi: PostcardAdminApi | null = null;
+
+export function installPostcardAdminSimApi(api: PostcardAdminApi | null): void {
+  simApi = api;
+}
+
+/** 是否处于模拟环境（下载文件名加标识、徽标显示等处用）。 */
+export function isPostcardAdminSim(): boolean {
+  return simApi !== null;
+}
+
+/**
+ * 管理端 API 入口。
+ *
+ * 正常情况直通真实现；模拟环境（`#/postcard/admin?sim=1`）下所有方法改路由到内存
+ * 沙箱——管理端各 tab 的源码因此一行都不用改，界面与正式版天然一致。
+ */
+export const postcardAdminApi: PostcardAdminApi = new Proxy(realPostcardAdminApi, {
+  get(target, prop, receiver) {
+    if (simApi) {
+      const impl = simApi as Record<PropertyKey, unknown>;
+      const value = impl[prop];
+      if (typeof value === "function") return (value as (...args: unknown[]) => unknown).bind(simApi);
+    }
+    return Reflect.get(target, prop, receiver);
+  },
+});
 
 /** 16 区固定顺序（与后端 PostcardConfig.REGION_CHOICES 一致；2026-11-08 用户指定）。 */
 export const POSTCARD_REGIONS = [

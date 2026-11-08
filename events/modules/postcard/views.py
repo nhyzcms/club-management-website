@@ -1476,11 +1476,50 @@ class AdminAIConfigView(APIView):
         })
 
 
+class _AIConfigView:
+    """一次性的 AI 配置视图：用请求里的临时参数覆盖已保存配置（**不落库**）。
+
+    模拟环境（``#/postcard/admin?sim=1``）要能验证「填了这套参数能不能通」，
+    但用户的红线是模拟不得改动正式环境——所以这里只做只读合并，字段与
+    ``ai.test_connection`` 用到的属性一一对应，绝不回显 api_key。
+    """
+
+    def __init__(self, base, data: dict):
+        def text(key: str, fallback: str) -> str:
+            value = data.get(key)
+            if value is None or value == "":
+                value = fallback
+            return str(value or "").strip()
+
+        headers = data.get("extra_headers")
+        if not isinstance(headers, dict):
+            headers = (getattr(base, "extra_headers", None) or {})
+        try:
+            timeout = int(data.get("timeout_seconds") or getattr(base, "timeout_seconds", 20) or 20)
+        except (TypeError, ValueError):
+            timeout = getattr(base, "timeout_seconds", 20) or 20
+
+        self.enabled = True
+        self.base_url = text("base_url", getattr(base, "base_url", ""))
+        self.model = text("model", getattr(base, "model", ""))
+        self.api_key = text("api_key", getattr(base, "api_key", ""))
+        self.extra_headers = {
+            str(k).strip(): str(v)
+            for k, v in headers.items()
+            if str(k).strip()
+        }
+        self.timeout_seconds = max(5, min(120, timeout))
+        self.ip_blacklist = list(getattr(base, "ip_blacklist", None) or [])
+
+
 class AdminAITestView(APIView):
     """测试 AI 配置：用已保存的配置发一次最小对话请求。
 
     返回 ``{ok, latency_ms, model, reply}`` 或 ``{ok: false, error}``（HTTP 200，
     由前端按 ok 展示）。失败原因已收敛成人话，**绝不回显 api_key**。
+
+    模拟环境可带临时参数（base_url / model / api_key / extra_headers /
+    timeout_seconds）：只用于本次请求，不写库——正式管理端不传即可。
     """
 
     permission_classes = [CanManagePostcard]
@@ -1489,7 +1528,15 @@ class AdminAITestView(APIView):
         from . import ai
 
         cfg = PostcardAIConfig.load()
-        if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
+        overrides = request.data if isinstance(request.data, dict) else {}
+        if overrides:
+            cfg = _AIConfigView(cfg, overrides)
+        if (
+            cfg is None
+            or (not overrides and not cfg.enabled)
+            or not cfg.base_url.strip()
+            or not cfg.model.strip()
+        ):
             return Response({
                 "ok": False,
                 "error": "配置不完整：需要启用 AI、填写 Base URL 与模型名后才能测试",
@@ -1615,6 +1662,54 @@ class AdminAISampleExplainView(APIView):
             _audit(event, request, "ai_sample_explain", f"sample#{pk}", {"ok": False})
             return Response({"detail": detail}, status=502)
         _audit(event, request, "ai_sample_explain", f"sample#{pk}", {"ok": True, "chars": len(text)})
+        return Response({"text": text})
+
+
+class AdminAIExplainUploadView(APIView):
+    """一次性样例解读：上传一张图 + 说明，让 AI 复述它的理解（**不落库**）。
+
+    为什么要这个端点：模拟环境（``#/postcard/admin?sim=1``）的填写样例只存在
+    浏览器内存里，没有后端 id，也就没法走 ``ai/samples/<pk>/explain/``。这里复用
+    同一段 prompt 与同一套照片安全管线（魔数 + 解码炸弹 + 重编码去 EXIF），
+    图只在请求内存里活一次，既不写私有存储也不进数据库。
+    """
+
+    permission_classes = [CanManagePostcard]
+
+    def post(self, request):
+        from types import SimpleNamespace
+
+        from . import ai
+        from .photos import PhotoRejected, validate_and_reencode
+
+        upload = request.FILES.get("image")
+        if upload is None:
+            return Response({"detail": "请附上样例图片"}, status=400)
+        cfg = PostcardAIConfig.load()
+        if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
+            return Response(
+                {"detail": "AI 未启用或配置不完整：需要启用 AI、填写 Base URL 与模型名"},
+                status=400,
+            )
+        try:
+            cleaned = validate_and_reencode(upload)
+        except PhotoRejected as exc:
+            return Response({"detail": exc.reason}, status=400)
+        sample = SimpleNamespace(
+            caption=str(request.data.get("caption") or "")[:500],
+            image=cleaned,
+        )
+        try:
+            text = ai.explain_sample(cfg, sample)
+        except ai.AIReviewError as exc:
+            reason = str(exc)
+            if reason.startswith("network:"):
+                detail = "网络不可达或超时：请检查 Base URL 与服务器出网"
+            elif reason.startswith("response:"):
+                detail = "AI 返回内容为空或不是 OpenAI 兼容格式"
+            else:
+                detail = "AI 调用失败，请稍后重试"
+            return Response({"detail": detail}, status=502)
         return Response({"text": text})
 
 
