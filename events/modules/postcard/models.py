@@ -67,9 +67,10 @@ class PostcardConfig(models.Model):
     )
     # 可参与年级：GRADE_CHOICES 的子集（键数组）；空 = 全部三个年级。
     allowed_grades = models.JSONField("可参与年级", default=list, blank=True)
-    # 寄达校清单：[{"region": "浦东新区", "name": "××中学"}, ...]；登记表单的
-    # 寄达区下拉 = 上面写死的 REGION_CHOICES（固定顺序），寄达校下拉按所选区
-    # 从本清单过滤。
+    # 寄达校清单：[{"region": "浦东新区", "name": "××中学", "no": 1}, ...]；登记
+    # 表单的寄达区下拉 = 上面写死的 REGION_CHOICES（固定顺序），寄达校下拉按所选
+    # 区从本清单过滤并按 no（区内编号，「浦东新区1」→ 1）排序。no 缺省以兼容旧
+    # 清单；管理端新录入与海报导入都带编号。
     destination_schools = models.JSONField("寄达校清单", default=list, blank=True)
     ship_at = models.DateTimeField("寄出节点", null=True, blank=True)
     distribute_at = models.DateTimeField("下发节点", null=True, blank=True)

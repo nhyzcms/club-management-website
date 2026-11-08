@@ -26,6 +26,7 @@ import {
   type RecordQuery,
   type RecordRow,
   type ReviewRow,
+  type SchoolsImportResult,
   type StatsPayload,
   type SuggestionRow,
 } from "../api/postcardAdmin";
@@ -285,6 +286,13 @@ export function createSimPostcardAdminApi(): PostcardAdminApi {
       fd.set("image", new File([blob], "sample.jpg", { type: blob.type || "image/jpeg" }));
       fd.set("caption", sample.caption || "");
       return request<{ text: string }>("/admin/ai/explain/", { method: "POST", body: fd });
+    },
+
+    // —— 导入海报（AI 识别本身不落库：真跑正式环境的 AI，结果只进内存表单）——
+    importSchools: (image: File) => {
+      const fd = new FormData();
+      fd.set("image", image);
+      return request<SchoolsImportResult>("/admin/schools/import/", { method: "POST", body: fd });
     },
 
     // —— 复核台（PR2 接页面；这里先把数据结构打通）——

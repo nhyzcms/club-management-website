@@ -97,3 +97,16 @@ class CodeAccessDeviceThrottle(_DeviceOrIPThrottle):
 
     def get_rate(self):
         return self.RATE
+
+
+class SchoolsImportThrottle(IPLimitThrottle):
+    """导入海报：一次请求 = 一张大图 + 一次长输出，管理员连点也会真花钱。
+
+    低频管理动作，10/h 对真人不构成限制，对「按钮卡住狂点」足够。
+    """
+
+    scope = "postcard_schools_import"
+    RATE = "10/hour"
+
+    def get_rate(self):
+        return self.RATE

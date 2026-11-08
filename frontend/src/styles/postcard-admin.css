@@ -56,11 +56,14 @@
 .pa-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
 .pa-inline { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
 .pa-inline > input, .pa-inline > select { flex: 1 1 160px; width: auto; }
+.pa-inline > .pa-no-input { flex: 0 0 88px; }
 .pa-check { display: inline-flex; align-items: center; gap: var(--s-2); font-size: 0.875rem; }
 .pa-check input { width: auto; }
 .pa-file input { padding: var(--s-1) 0; border: 0; background: transparent; }
 .pa-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 
+.pa-card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); flex-wrap: wrap; }
+.pa-card-head .pa-card-title { margin: 0; }
 .pa-schools { display: flex; flex-direction: column; gap: var(--s-2); }
 .pa-school-group { display: flex; gap: var(--s-3); align-items: flex-start; font-size: 0.85rem; }
 .pa-school-group > strong { flex: 0 0 88px; color: var(--muted); font-weight: 600; }

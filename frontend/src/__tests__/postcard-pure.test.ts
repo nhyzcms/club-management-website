@@ -5,10 +5,12 @@ import {
   checkPhotoFile,
   failedReviewRegCodes,
   failedReviewTokens,
+  filterSchools,
   hasAiFailedItem,
   needsReviewPoll,
   reviewOutcomeOf,
-  schoolsInRegion,
+  schoolLabel,
+  sortSchools,
   validateRegistration,
   type DraftItem,
   type RegisterFormValues,
@@ -16,9 +18,10 @@ import {
 import type { PostcardItemSummary, PostcardRegistrationSummary, PostcardSchool } from "../api/postcard";
 
 const SCHOOLS: PostcardSchool[] = [
-  { region: "浦东新区", name: "友爱中学" },
-  { region: "浦东新区", name: "临港一中" },
-  { region: "黄浦区", name: "光明中学" },
+  { region: "浦东新区", name: "友爱中学", no: 12 },
+  { region: "浦东新区", name: "临港一中", no: 3 },
+  { region: "浦东新区", name: "无名中学" },
+  { region: "黄浦区", name: "光明中学", no: 2 },
 ];
 
 const VALID_VALUES: RegisterFormValues = {
@@ -66,11 +69,31 @@ describe("addBarcode（扫码/手填入列三道闸）", () => {
   });
 });
 
-describe("schoolsInRegion（寄达校按区过滤）", () => {
-  it("只留所选区，保持配置顺序", () => {
-    expect(schoolsInRegion(SCHOOLS, "浦东新区")).toEqual(["友爱中学", "临港一中"]);
-    expect(schoolsInRegion(SCHOOLS, "黄浦区")).toEqual(["光明中学"]);
-    expect(schoolsInRegion(SCHOOLS, "崇明区")).toEqual([]);
+describe("寄达校排序与检索（区内按编号）", () => {
+  it("sortSchools 按编号升序，无编号排末尾", () => {
+    expect(sortSchools(SCHOOLS).map((s) => s.name)).toEqual([
+      "光明中学", "临港一中", "友爱中学", "无名中学",
+    ]);
+  });
+
+  it("filterSchools 只留所选区并按编号排序", () => {
+    expect(filterSchools(SCHOOLS, "浦东新区", "").map((s) => s.name)).toEqual([
+      "临港一中", "友爱中学", "无名中学",
+    ]);
+    expect(filterSchools(SCHOOLS, "黄浦区", "").map((s) => s.name)).toEqual(["光明中学"]);
+    expect(filterSchools(SCHOOLS, "崇明区", "")).toEqual([]);
+  });
+
+  it("filterSchools 支持校名 / 纯编号 / 完整编号关键词", () => {
+    expect(filterSchools(SCHOOLS, "浦东新区", "临港").map((s) => s.name)).toEqual(["临港一中"]);
+    expect(filterSchools(SCHOOLS, "浦东新区", "12").map((s) => s.name)).toEqual(["友爱中学"]);
+    expect(filterSchools(SCHOOLS, "浦东新区", "浦东新区3").map((s) => s.name)).toEqual(["临港一中"]);
+    expect(filterSchools(SCHOOLS, "浦东新区", "  ").map((s) => s.name)).toHaveLength(3);
+  });
+
+  it("schoolLabel 带编号（无编号只显示校名）", () => {
+    expect(schoolLabel({ region: "浦东新区", name: "友爱中学", no: 12 })).toBe("12 · 友爱中学");
+    expect(schoolLabel({ region: "浦东新区", name: "友爱中学" })).toBe("友爱中学");
   });
 });
 

@@ -142,6 +142,21 @@ class AdminConfigInput(serializers.Serializer):
                 raise serializers.ValidationError(
                     {"destination_schools": f"寄达区「{region}」不在固定 16 区清单内"}
                 )
+            # 区内编号（「浦东新区1」→ no=1）：缺省保留兼容旧清单；给了就必须是
+            # 1~9999 的整数，否则前端排序会得到不可预期的顺序。
+            no = s.get("no")
+            if no not in (None, ""):
+                try:
+                    no_int = int(no)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError(
+                        {"destination_schools": f"学校「{s.get('name')}」的编号须为数字"}
+                    )
+                if not 0 < no_int <= 9999:
+                    raise serializers.ValidationError(
+                        {"destination_schools": f"学校「{s.get('name')}」的编号须在 1~9999 之间"}
+                    )
+                s["no"] = no_int
         return attrs
 
 

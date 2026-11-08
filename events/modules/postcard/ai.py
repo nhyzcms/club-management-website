@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -38,7 +39,14 @@ from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import PostcardAIConfig, PostcardAISample, PostcardItem, PostcardPhoto, PostcardRegistration
+from .models import (
+    PostcardAIConfig,
+    PostcardAISample,
+    PostcardConfig,
+    PostcardItem,
+    PostcardPhoto,
+    PostcardRegistration,
+)
 
 #: 「5 次重试机会」= 1 次初始调用 + 5 次退避重试（共 6 次尝试，2026-11-08 用户确认）。
 RETRY_ATTEMPTS = 6
@@ -119,11 +127,15 @@ def parse_verdict(text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _data_url(content: bytes) -> str:
+    """字节 → data URL（调用方已保证是服务端重编码后的 JPEG）。"""
+    return "data:image/jpeg;base64," + base64.b64encode(content).decode("ascii")
+
+
 def _image_part(filefield) -> dict:
     """照片 → data URL 消息段（重编码后一律 JPEG，无用户可控 Content-Type 面）。"""
     with filefield.open("rb") as f:
-        b64 = base64.b64encode(f.read()).decode("ascii")
-    return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+        return {"type": "image_url", "image_url": {"url": _data_url(f.read())}}
 
 
 def build_messages(cfg: PostcardAIConfig, item: PostcardItem, samples: list) -> list:
@@ -499,3 +511,179 @@ def test_connection(cfg: PostcardAIConfig) -> dict:
         return {"ok": False, "error": "网络不可达或超时：请检查 Base URL 与服务器出网"}
     except (KeyError, IndexError, TypeError, ValueError):
         return {"ok": False, "error": "响应不是 OpenAI 兼容格式（缺 choices[0].message.content）"}
+
+
+# ---------------------------------------------------------------------------
+# 海报学校清单识别（管理端「导入海报」，2026-11-08）
+# ---------------------------------------------------------------------------
+#
+# 管理员上传活动海报（图片），AI 只做一件事：把「参与学校 + 所在区 + 区内编号」
+# 结构化出来。产出**不落库**——前端合并进配置表单，管理员核对后再点保存，
+# 避免识别错误直接污染线上寄达校清单。安全侧与审核同口径：图片先经
+# ``photos.validate_and_reencode``（魔数/防炸弹/去 EXIF），只存在于内存里
+# 随请求发出，不写磁盘、不进私有存储；模型输出按白名单收窄（固定 16 区、
+# 编号正整数、校名长度截断），任何越界条目丢弃而不是照抄。
+
+#: 识别输出上限：一区学校清单通常 < 300 条，4000 tokens 足够且不至于烧钱。
+SCHOOL_EXTRACT_MAX_TOKENS = 4000
+#: 单条校名长度上限（与 PostcardConfig 清单字段口径一致）。
+SCHOOL_NAME_MAX = 128
+#: 区内编号上限（「浦东新区1」这类编号不会超过四位）。
+SCHOOL_NO_MAX = 9999
+#: 一次导入最多接受的学校条数（防模型复读撑爆响应）。
+SCHOOL_MAX_ITEMS = 500
+
+_SCHOOL_EXTRACT_SYSTEM = (
+    "你是上海中学活动海报的信息提取助手。从海报图片中找出全部「参与学校」，"
+    "按学校所在区与区内编号结构化输出。只输出一个 JSON 对象，不要任何解释文字。"
+)
+
+_SCHOOL_EXTRACT_PROMPT = (
+    "请识别这张海报里的全部参与学校，逐条给出区、区内编号与学校全名。要求：\n"
+    "1) region 必须是上海市 16 区之一：浦东新区、宝山区、崇明区、奉贤区、虹口区、"
+    "黄浦区、嘉定区、金山区、静安区、闵行区、普陀区、青浦区、松江区、徐汇区、"
+    "杨浦区、长宁区；\n"
+    "2) no 是学校在该区内的编号（整数）。海报里常写成「浦东新区1」「浦东新区 12」，"
+    "即「区名 + 数字」——区名填 region，数字填 no；若海报用序号列，则用该序号；\n"
+    "3) name 照抄海报上的学校全名，不要改写、不要补全、不要编造海报里没有的学校；\n"
+    "4) 无法确定区或编号的条目不要输出；同一所学校只输出一次；\n"
+    "5) 只输出 JSON：{\"schools\":[{\"region\":\"浦东新区\",\"no\":1,"
+    "\"name\":\"某某中学\"}]}"
+)
+
+#: 区名别名表（全称 + 去掉「区 / 新区」的简写）→ 规范区名。
+_REGION_ALIASES: dict[str, str] = {}
+for _region in PostcardConfig.REGION_CHOICES:
+    _REGION_ALIASES[_region] = _region
+    _short = _region.replace("新区", "").replace("区", "")
+    if _short:
+        _REGION_ALIASES.setdefault(_short, _region)
+_REGION_ALIASES_BY_LEN = sorted(_REGION_ALIASES.items(), key=lambda kv: -len(kv[0]))
+
+
+def normalize_region(raw) -> str | None:
+    """把模型给的区名归一成固定 16 区之一；无法归属返回 None。
+
+    兼容「上海市浦东新区」「浦东」「浦东新区1」等写法（前缀匹配取最长别名）。
+    """
+    text = re.sub(r"\s+", "", str(raw or ""))
+    if not text:
+        return None
+    for junk in ("上海市", "上海", "市辖区"):
+        text = text.replace(junk, "")
+    for alias, region in _REGION_ALIASES_BY_LEN:
+        if text.startswith(alias):
+            return region
+    return None
+
+
+def _as_no(value) -> int | None:
+    """编号转正整数：接受 1 / "1" / "浦东新区1" / "第12号"；越界或缺失返回 None。"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        num = value
+    elif isinstance(value, float) and value.is_integer():
+        num = int(value)
+    elif isinstance(value, str):
+        match = re.search(r"\d{1,4}", value)
+        if match is None:
+            return None
+        num = int(match.group())
+    else:
+        return None
+    return num if 0 < num <= SCHOOL_NO_MAX else None
+
+
+def _clean_school_name(raw, region: str) -> str:
+    """校名清洗：压空白、去「1.」「（1）」等前缀、去误带进名称的「区名+编号」。"""
+    name = re.sub(r"\s+", " ", str(raw or "")).strip()
+    if name.startswith(region):
+        name = name[len(region):]
+        name = re.sub(r"^\s*\d{1,4}\s*[.、．)）:：-]?\s*", "", name).strip()
+    name = re.sub(r"^\d{1,3}\s*[.、．)）]\s*", "", name).strip()
+    return name[:SCHOOL_NAME_MAX]
+
+
+def _raw_school_items(data) -> list:
+    """取模型输出里的学校数组；兼容 {"schools": [...]} 与 {"区名": [...]} 两种形状。"""
+    items = data.get("schools") if isinstance(data, dict) else data
+    if isinstance(items, dict):
+        flat = []
+        for region, value in items.items():
+            if not isinstance(value, list):
+                continue
+            for entry in value:
+                if isinstance(entry, dict):
+                    flat.append({**entry, "region": entry.get("region") or region})
+                elif isinstance(entry, str):
+                    flat.append({"region": region, "name": entry})
+        return flat
+    return items if isinstance(items, list) else []
+
+
+def parse_school_list(text: str) -> dict:
+    """解析模型输出 → ``{schools, skipped, missing_no}``。
+
+    非法 JSON / 找不到学校数组 → ``AIReviewError``（可重试）；单条不合格只丢弃
+    该条并把原因放进 ``skipped``（面向管理员，最多 20 条）。
+    """
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        raise AIReviewError("schools: no json object")
+    try:
+        data = json.loads(text[start : end + 1])
+    except ValueError as exc:
+        raise AIReviewError("schools: bad json") from exc
+
+    schools: list[dict] = []
+    skipped: list[str] = []
+    missing_no = 0
+    seen: set[tuple[str, str]] = set()
+    for entry in _raw_school_items(data)[:SCHOOL_MAX_ITEMS]:
+        if not isinstance(entry, dict):
+            continue
+        region_raw = entry.get("region") or entry.get("district") or entry.get("area") or ""
+        no_raw = entry.get("no")
+        if no_raw is None:
+            no_raw = entry.get("number") if entry.get("number") is not None else entry.get("code")
+        region = normalize_region(region_raw)
+        no = _as_no(no_raw) or _as_no(region_raw)
+        name = _clean_school_name(
+            entry.get("name") or entry.get("school") or entry.get("school_name") or "",
+            region or "",
+        )
+        if region is None or not name:
+            if len(skipped) < 20:
+                skipped.append(str(name or region_raw or entry)[:120])
+            continue
+        if (region, name) in seen:
+            continue
+        seen.add((region, name))
+        if no is None:
+            missing_no += 1
+        schools.append({"region": region, "no": no, "name": name})
+    return {"schools": schools, "skipped": skipped, "missing_no": missing_no}
+
+
+def extract_schools(cfg: PostcardAIConfig, image_bytes: bytes) -> dict:
+    """让多模态模型读海报，返回 ``parse_school_list`` 的结构。
+
+    只做 2 次尝试（无长退避）：这是管理员手动触发、可再点的低频动作，失败
+    直接给人话比让学生侧排队更合理。失败 raise ``AIReviewError``。
+    """
+    messages = [
+        {"role": "system", "content": _SCHOOL_EXTRACT_SYSTEM},
+        {"role": "user", "content": [
+            {"type": "text", "text": _SCHOOL_EXTRACT_PROMPT},
+            {"type": "image_url", "image_url": {"url": _data_url(image_bytes)}},
+        ]},
+    ]
+    last_error: AIReviewError | None = None
+    for _ in range(2):
+        try:
+            return parse_school_list(_post_chat(cfg, messages, max_tokens=SCHOOL_EXTRACT_MAX_TOKENS))
+        except AIReviewError as exc:
+            last_error = exc
+    raise AIReviewError(str(last_error))

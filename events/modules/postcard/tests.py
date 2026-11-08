@@ -2221,6 +2221,168 @@ class AIRetryAttemptsTest(TestCase):
         self.assertEqual(stats["manual"], 1)
 
 
+class SchoolsImportTest(TestCase):
+    """导入海报：AI 未配置门禁、区名/编号归一、图片安全管线、权限与审计。
+
+    识别结果**不落库**（管理员核对后点保存才生效），所以这里只断言响应与审计。
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.event, self.config = _config_event()
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def _post(self, filename="poster.jpg", payload=None):
+        image = SimpleUploadedFile(
+            filename, payload if payload is not None else _jpeg_bytes(size=(120, 120)), "image/jpeg",
+        )
+        return self.client.post(
+            "/events/postcard/admin/schools/import/", {"image": image}, format="multipart",
+        )
+
+    @staticmethod
+    def _body(content: str) -> bytes:
+        return json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+
+    def test_requires_ai_config(self):
+        resp = self._post()
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json(), {"code": "ai_not_configured", "detail": "请先配置AI"})
+        # 未配置时不该走到模型调用
+        self.assertFalse(PostcardAuditLog.objects.filter(action="schools_import").exists())
+
+    def test_disabled_ai_is_not_configured(self):
+        _ai_config(enabled=False)
+        resp = self._post()
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["detail"], "请先配置AI")
+
+    def test_parses_and_normalizes_schools(self):
+        _ai_config()
+        content = json.dumps({"schools": [
+            {"region": "上海市浦东新区", "no": "浦东新区12", "name": "1. 某某中学"},
+            {"region": "浦东", "no": 3, "name": "浦东新区3 临港一中"},
+            {"region": "火星", "no": 1, "name": "外星中学"},
+            {"region": "黄浦区", "no": 2, "name": "光明中学"},
+            {"region": "黄浦区", "no": 2, "name": "光明中学"},
+        ]}, ensure_ascii=False)
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(self._body(content)),
+        ):
+            resp = self._post()
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertEqual(data["schools"], [
+            {"region": "浦东新区", "no": 12, "name": "某某中学"},
+            {"region": "浦东新区", "no": 3, "name": "临港一中"},
+            {"region": "黄浦区", "no": 2, "name": "光明中学"},
+        ])
+        self.assertEqual(len(data["skipped"]), 1)
+        self.assertEqual(data["missing_no"], 0)
+        self.assertTrue(
+            PostcardAuditLog.objects.filter(action="schools_import", detail__recognized=3).exists()
+        )
+        # 不落库：清单原样不动
+        self.config.refresh_from_db()
+        self.assertEqual(len(self.config.destination_schools), 2)
+
+    def test_keeps_school_without_number_but_flags_it(self):
+        _ai_config()
+        content = json.dumps({"schools": [
+            {"region": "浦东新区", "name": "无编号中学"},
+        ]}, ensure_ascii=False)
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(self._body(content)),
+        ):
+            data = self._post().json()
+        self.assertEqual(data["schools"], [{"region": "浦东新区", "no": None, "name": "无编号中学"}])
+        self.assertEqual(data["missing_no"], 1)
+
+    def test_retries_once_then_reports_friendly_error(self):
+        import urllib.error
+
+        _ai_config()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            side_effect=urllib.error.URLError("boom"),
+        ) as patched:
+            resp = self._post()
+        self.assertEqual(resp.status_code, 502, resp.content)
+        self.assertIn("识别失败", resp.json()["detail"])
+        self.assertNotIn("boom", resp.content.decode())
+        self.assertEqual(patched.call_count, 2)
+
+    def test_rejects_non_image_payload(self):
+        _ai_config()
+        with mock.patch("events.modules.postcard.ai.urllib.request.urlopen") as patched:
+            resp = self._post(payload=b"<html>not an image</html>")
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("JPEG", resp.json()["detail"])
+        patched.assert_not_called()
+
+    def test_requires_manage_permission(self):
+        client = APIClient()
+        client.force_authenticate(user=_reviewer())
+        image = SimpleUploadedFile("poster.jpg", _jpeg_bytes(), "image/jpeg")
+        resp = client.post(
+            "/events/postcard/admin/schools/import/", {"image": image}, format="multipart",
+        )
+        self.assertEqual(resp.status_code, 403)
+
+
+class SchoolNumberConfigTest(TestCase):
+    """配置写入接受区内编号：字符串数字归一为 int，非法值拒绝。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, self.config = _config_event()
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+        self.base = {
+            "title": self.event.title,
+            "start_at": self.event.start_at.isoformat(),
+            "end_at": self.event.end_at.isoformat(),
+        }
+
+    def _put(self, schools):
+        return self.client.put(
+            "/events/postcard/admin/config/",
+            {**self.base, "destination_schools": json.dumps(schools, ensure_ascii=False)},
+            format="multipart",
+        )
+
+    def test_number_is_stored_as_int(self):
+        resp = self._put([{"region": "浦东新区", "name": "友爱中学", "no": "7"}])
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.config.refresh_from_db()
+        self.assertEqual(self.config.destination_schools[0]["no"], 7)
+
+    def test_invalid_number_is_rejected(self):
+        resp = self._put([{"region": "浦东新区", "name": "友爱中学", "no": "七"}])
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("编号须为数字", resp.content.decode())
+
+    def test_legacy_school_without_number_still_saves(self):
+        resp = self._put([{"region": "浦东新区", "name": "友爱中学"}])
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.config.refresh_from_db()
+        self.assertNotIn("no", self.config.destination_schools[0])
 class AITestTempParamsTest(TestCase):
     """模拟环境用：「测试连接」可带临时参数，但绝不落库、绝不回显 key。
 

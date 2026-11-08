@@ -17,6 +17,23 @@ export type PostcardPhase = "not_started" | "registering" | "shipped" | "distrib
 export interface AdminSchool {
   region: string;
   name: string;
+  /** 区内编号（「浦东新区1」→ 1）；区内按它排序。 */
+  no?: number | null;
+}
+
+/** 「导入海报」AI 识别结果：只回解析结果，落库仍走 saveConfig。 */
+export interface ImportedSchool {
+  region: string;
+  name: string;
+  no: number | null;
+}
+
+export interface SchoolsImportResult {
+  schools: ImportedSchool[];
+  /** 无法归属区 / 名称的条目（面向管理员的原因文案，最多 20 条）。 */
+  skipped: string[];
+  /** 识别出学校但没识别出编号的条数（需管理员手补）。 */
+  missing_no: number;
 }
 
 export interface AdminEventShell {
@@ -299,6 +316,13 @@ const realPostcardAdminApi = {
     ip_blacklist: string[];
   }>) =>
     request<AIConfig>("/admin/ai/config/", { method: "PUT", body: JSON.stringify(patch) }),
+
+  /** 导入海报：AI 识别参与学校（区 + 区内编号 + 校名），只回结果不落库。 */
+  importSchools: (image: File) => {
+    const fd = new FormData();
+    fd.set("image", image);
+    return request<SchoolsImportResult>("/admin/schools/import/", { method: "POST", body: fd });
+  },
 
   /** 测试连接：用已保存的配置发一次最小对话请求（不回显 api_key）。 */
   testAIConfig: () =>
