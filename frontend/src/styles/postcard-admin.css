@@ -156,3 +156,17 @@
   .pa-chart-tall { height: 260px; }
   .pa-photos img { width: 104px; height: 104px; }
 }
+
+/* 模拟环境标识（2026-11-08 用户要求：标题「管理端」后面红底白字「模拟环境」）。
+   红底白字在浅色 / 深色下都用固定色，深色模式把红调深一档以免刺眼。 */
+.pa-sim-badge {
+  display: inline-block; margin-left: var(--s-2); padding: 2px 8px;
+  border-radius: var(--r-sm); background: #dc2626; color: #fff;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+  vertical-align: middle; line-height: 1.5; white-space: nowrap;
+}
+:root[data-theme="dark"] .pa-sim-badge { background: #b91c1c; }
+
+/* <button> 版的 .pa-inline-link（模拟活动入口 / 退出模拟：语义是动作不是跳转）。 */
+.pa-inline-btn { border: 0; background: transparent; padding: 0; font: inherit; cursor: pointer; }
+.pa-inline-btn:hover { text-decoration: underline; }
