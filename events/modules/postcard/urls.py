@@ -45,6 +45,7 @@ urlpatterns = [
     path("admin/ai/test/", views.AdminAITestView.as_view(), name="postcard-admin-ai-test"),
     path("admin/ai/samples/", views.AdminAISamplesView.as_view(), name="postcard-admin-ai-samples"),
     path("admin/ai/samples/<int:pk>/", views.AdminAISampleDetailView.as_view(), name="postcard-admin-ai-sample"),
+    path("admin/ai/samples/<int:pk>/explain/", views.AdminAISampleExplainView.as_view(), name="postcard-admin-ai-sample-explain"),
     path("admin/ai/samples/<int:pk>/image/", views.AdminAISampleImageView.as_view(), name="postcard-admin-ai-sample-image"),
     path("admin/review/", views.AdminReviewQueueView.as_view(), name="postcard-admin-review-queue"),
     path("admin/review/<int:item_pk>/", views.AdminReviewDecisionView.as_view(), name="postcard-admin-review-decision"),

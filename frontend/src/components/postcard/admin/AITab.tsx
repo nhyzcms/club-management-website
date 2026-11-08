@@ -35,6 +35,9 @@ export default function AITab() {
   const [samples, setSamples] = useState<AISample[]>([]);
   const [sampleFile, setSampleFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
+  const [explain, setExplain] = useState<
+    { id: number; busy: boolean; text: string; error: string } | null
+  >(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,6 +163,16 @@ export default function AITab() {
     }
   };
 
+  const explainSample = async (id: number) => {
+    setExplain({ id, busy: true, text: "", error: "" });
+    try {
+      const d = await postcardAdminApi.explainAISample(id);
+      setExplain({ id, busy: false, text: d.text, error: "" });
+    } catch (e) {
+      setExplain({ id, busy: false, text: "", error: errMessage(e) });
+    }
+  };
+
   if (loading) return <p className="pa-muted">加载中…</p>;
 
   return (
@@ -273,8 +286,37 @@ export default function AITab() {
                     删除
                   </button>
                 </figcaption>
+                <button
+                  type="button"
+                  className="pa-link pa-sample-ai-btn"
+                  disabled={explain?.busy === true && explain.id === s.id}
+                  onClick={() => void explainSample(s.id)}
+                >
+                  {explain?.id === s.id && explain.busy ? "AI 阅读中…" : "让 AI 读样例"}
+                </button>
               </figure>
             ))}
+          </div>
+        )}
+
+        {explain && (
+          <div className="pa-ai-box" role="status">
+            <div className="pa-ai-box-h">
+              <span>AI 对样例 #{explain.id} 的理解</span>
+              <button type="button" className="pa-link-danger" onClick={() => setExplain(null)}>
+                关闭
+              </button>
+            </div>
+            {explain.busy ? (
+              <p className="pa-muted">AI 正在阅读这张样例…</p>
+            ) : explain.error ? (
+              <p className="pa-error">{explain.error}</p>
+            ) : (
+              <p className="pa-ai-text">{explain.text}</p>
+            )}
+            <p className="pa-hint">
+              这是 AI 对样例要求的复述，用来核对它的理解是否与你的预期一致；它不影响审核判定本身。
+            </p>
           </div>
         )}
       </section>

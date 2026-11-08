@@ -58,6 +58,8 @@ export interface AdminConfigInput {
 export interface BarcodeSummary {
   configured: boolean;
   total?: number;
+  /** 已被登记占用（已发出去）的条码数——覆盖生成时会被保护。 */
+  bound?: number;
   min?: number;
   max?: number;
   step?: number;
@@ -264,10 +266,10 @@ export const postcardAdminApi = {
   // —— 条码 ——
   barcodes: () => request<BarcodeSummary>("/admin/barcodes/"),
 
-  generateBarcodes: (count: number) =>
-    request<{ generated: number; total: number }>("/admin/barcodes/", {
+  generateBarcodes: (count: number, replace = false) =>
+    request<{ generated: number; total: number; replaced: boolean }>("/admin/barcodes/", {
       method: "POST",
-      body: JSON.stringify({ count }),
+      body: JSON.stringify({ count, replace }),
     }),
 
   barcodePdfUrl: () => "/events/postcard/admin/barcodes/pdf/",
@@ -311,6 +313,13 @@ export const postcardAdminApi = {
     }),
 
   aiSampleImageUrl: (id: number) => `/events/postcard/admin/ai/samples/${id}/image/`,
+
+  /** 让 AI 复述它对这张样例的理解（管理员核对 AI 是否理解正确）。 */
+  explainAISample: (id: number) =>
+    request<{ text: string }>(`/admin/ai/samples/${id}/explain/`, {
+      method: "POST",
+      body: "{}",
+    }),
 
   // —— 复核台 ——
   /** 复核队列：state = manual_pending / ai_failed / 空（全部）。 */

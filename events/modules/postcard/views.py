@@ -985,7 +985,11 @@ class AdminPublishView(APIView):
 
 
 class AdminBarcodesView(APIView):
-    """条码：GET 汇总，POST 生成（1500~10000、步进 500；增量式、单活动累计 ≤10000）。"""
+    """条码：GET 汇总，POST 生成。
+
+    默认增量（1500~10000、步进 500、单活动累计 ≤10000）；``replace=true`` 覆盖
+    重建（只清未登记占用的条码，被占用则 400 拒绝）。
+    """
 
     permission_classes = [CanManagePostcard]
 
@@ -996,6 +1000,7 @@ class AdminBarcodesView(APIView):
         qs = PostcardBarcode.objects.filter(event=event)
         return Response({
             "total": qs.count(),
+            "bound": qs.filter(item__isnull=False).count(),
             "min": barcode_mod.COUNT_MIN,
             "max": barcode_mod.COUNT_MAX,
             "step": barcode_mod.COUNT_STEP,
@@ -1006,14 +1011,20 @@ class AdminBarcodesView(APIView):
         event, _, _ = _phase_guard(admin=True)
         if event is None:
             return Response({"detail": "请先保存活动配置"}, status=400)
+        replace = bool(request.data.get("replace"))
         try:
-            rows = barcode_mod.generate_barcodes(event, request.data.get("count"))
+            rows = barcode_mod.generate_barcodes(event, request.data.get("count"), replace=replace)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
-        _audit(event, request, "barcode_generate", f"event#{event.pk}", {"count": len(rows)})
+        _audit(
+            event, request,
+            "barcode_regenerate" if replace else "barcode_generate",
+            f"event#{event.pk}", {"count": len(rows), "replace": replace},
+        )
         return Response({
             "generated": len(rows),
             "total": PostcardBarcode.objects.filter(event=event).count(),
+            "replaced": replace,
         }, status=201)
 
 
@@ -1562,6 +1573,48 @@ class AdminAISampleDetailView(APIView):
             "deleted": pk,
             "sample_ready": event.postcard_ai_samples.exists(),
         })
+
+
+class AdminAISampleExplainView(APIView):
+    """让 AI 复述它对一张填写样例的理解（管理员核对 AI 是否理解正确）。
+
+    POST 同步调用（2C2G 上单次调用可接受）：返回 ``{text}``；配置缺失 / 调用失败
+    一律给人话错误（不回显 api_key，也不回显上游响应体）。
+    """
+
+    permission_classes = [CanManagePostcard]
+
+    def post(self, request, pk: int):
+        from . import ai
+
+        event, _, _ = _phase_guard(admin=True)
+        if event is None:
+            return Response({"detail": "请先保存活动配置"}, status=400)
+        sample = event.postcard_ai_samples.filter(pk=pk).first()
+        if sample is None:
+            raise Http404
+        if not sample.image:
+            return Response({"detail": "这条样例没有照片，无法让 AI 阅读"}, status=400)
+        cfg = PostcardAIConfig.load()
+        if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
+            return Response(
+                {"detail": "AI 未启用或配置不完整：需要启用 AI、填写 Base URL 与模型名"},
+                status=400,
+            )
+        try:
+            text = ai.explain_sample(cfg, sample)
+        except ai.AIReviewError as exc:
+            reason = str(exc)
+            if reason.startswith("network:"):
+                detail = "网络不可达或超时：请检查 Base URL 与服务器出网"
+            elif reason.startswith("response:"):
+                detail = "AI 返回内容为空或不是 OpenAI 兼容格式"
+            else:
+                detail = "AI 调用失败，请稍后重试"
+            _audit(event, request, "ai_sample_explain", f"sample#{pk}", {"ok": False})
+            return Response({"detail": detail}, status=502)
+        _audit(event, request, "ai_sample_explain", f"sample#{pk}", {"ok": True, "chars": len(text)})
+        return Response({"text": text})
 
 
 class AdminAISampleImageView(APIView):

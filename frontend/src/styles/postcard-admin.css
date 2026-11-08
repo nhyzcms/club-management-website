@@ -76,10 +76,26 @@
 .pa-big { font-size: 2.2rem; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
 
 .pa-samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--s-3); }
-.pa-sample { margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--bg-soft); }
+.pa-sample { margin: 0; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--bg-soft); display: flex; flex-direction: column; }
 .pa-sample img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .pa-sample figcaption { display: flex; justify-content: space-between; gap: var(--s-2);
   padding: var(--s-2); font-size: 0.78rem; color: var(--muted); }
+.pa-sample .pa-sample-ai-btn { display: block; width: 100%; margin-top: auto; padding: var(--s-2);
+  border-top: 1px solid var(--line); text-align: left; line-height: 1.5; }
+.pa-ai-box { margin-top: var(--s-3); padding: var(--s-3); border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: var(--r-sm); background: var(--bg-soft); }
+.pa-ai-box-h { display: flex; justify-content: space-between; align-items: center;
+  gap: var(--s-2); margin-bottom: var(--s-2); font-weight: 600; font-size: 0.85rem; }
+.pa-ai-text { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 0.85rem; line-height: 1.7; }
+
+/* 数量步进器（条码生成）：不用自由输入，免得填出非 500 倍数的数字 */
+.pa-stepper { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--bg-soft); }
+.pa-step-btn { width: 34px; height: 34px; border: 0; background: transparent; color: var(--fg, inherit);
+  font-size: 1.1rem; line-height: 1; cursor: pointer; border-radius: var(--r-sm); }
+.pa-step-btn:hover:not(:disabled) { background: var(--line); }
+.pa-step-btn:disabled { color: var(--muted); cursor: not-allowed; }
+.pa-step-value { min-width: 64px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .pa-link { border: 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.8rem; padding: 0; }
 .pa-link:hover { text-decoration: underline; }

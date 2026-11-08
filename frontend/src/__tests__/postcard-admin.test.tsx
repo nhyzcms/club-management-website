@@ -119,5 +119,75 @@ describe("BarcodeTab", () => {
     await waitFor(() => expect(screen.getByText("6200")).toBeTruthy());
     const btn = screen.getByRole("button", { name: "下载整版 PDF" }) as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
+    // 已有条码时主按钮是「继续生成」，不是「生成」
+    expect(screen.getByRole("button", { name: "继续生成条码" })).toBeTruthy();
+  });
+
+  it("数量按加减号步进，不能自由输入", async () => {
+    const { postcardAdminApi } = await import("../api/postcardAdmin");
+    (postcardAdminApi.barcodes as any).mockResolvedValue({
+      configured: true,
+      total: 0,
+      bound: 0,
+      min: 1500,
+      max: 10000,
+      step: 500,
+      default: 6000,
+    });
+    const { default: BarcodeTab } = await import("../components/postcard/admin/BarcodeTab");
+    render(<BarcodeTab />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "生成条码" })).toBeTruthy());
+    expect(screen.queryByRole("spinbutton")).toBeNull();
+    (screen.getByRole("button", { name: "增加 500 个" }) as HTMLButtonElement).click();
+    await waitFor(() => expect(screen.getByText("6500")).toBeTruthy());
+    (screen.getByRole("button", { name: "减少 500 个" }) as HTMLButtonElement).click();
+    await waitFor(() => expect(screen.getByText("6000")).toBeTruthy());
+  });
+
+  it("覆盖生成要二次确认后才调接口", async () => {
+    const { postcardAdminApi } = await import("../api/postcardAdmin");
+    (postcardAdminApi.barcodes as any).mockResolvedValue({
+      configured: true,
+      total: 6200,
+      bound: 0,
+      min: 1500,
+      max: 10000,
+      step: 500,
+      default: 6000,
+    });
+    (postcardAdminApi.generateBarcodes as any).mockResolvedValue({
+      generated: 6000,
+      total: 6000,
+      replaced: true,
+    });
+    const { default: BarcodeTab } = await import("../components/postcard/admin/BarcodeTab");
+    render(<BarcodeTab />);
+    await waitFor(() => expect(screen.getByText("6200")).toBeTruthy());
+    (screen.getByRole("button", { name: "覆盖生成新条码" }) as HTMLButtonElement).click();
+    await waitFor(() => expect(screen.getByRole("alertdialog")).toBeTruthy());
+    expect(postcardAdminApi.generateBarcodes).not.toHaveBeenCalled();
+    (screen.getByRole("button", { name: "覆盖生成" }) as HTMLButtonElement).click();
+    await waitFor(() =>
+      expect(postcardAdminApi.generateBarcodes).toHaveBeenCalledWith(6000, true),
+    );
+  });
+
+  it("已有条码被登记占用时禁用覆盖生成", async () => {
+    const { postcardAdminApi } = await import("../api/postcardAdmin");
+    (postcardAdminApi.barcodes as any).mockResolvedValue({
+      configured: true,
+      total: 6200,
+      bound: 3,
+      min: 1500,
+      max: 10000,
+      step: 500,
+      default: 6000,
+    });
+    const { default: BarcodeTab } = await import("../components/postcard/admin/BarcodeTab");
+    render(<BarcodeTab />);
+    await waitFor(() => expect(screen.getByText("6200")).toBeTruthy());
+    const btn = screen.getByRole("button", { name: "覆盖生成新条码" }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(screen.getByText(/已有 3 个条码被登记占用/)).toBeTruthy();
   });
 });

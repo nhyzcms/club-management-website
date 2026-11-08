@@ -169,10 +169,12 @@ def build_messages(cfg: PostcardAIConfig, item: PostcardItem, samples: list) -> 
     ]
 
 
-def call_once(cfg: PostcardAIConfig, messages: list) -> dict:
-    """单次调用 + 严格解析。任何失败 raise AIReviewError（可重试）。"""
+def _post_chat(cfg: PostcardAIConfig, messages: list, max_tokens: int | None = None) -> str:
+    """单次对话调用，返回模型回复正文。任何失败 raise AIReviewError。"""
     url = cfg.base_url.strip().rstrip("/") + "/chat/completions"
     payload = {"model": cfg.model.strip(), "messages": messages, "temperature": 0}
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
     headers = {"Content-Type": "application/json"}
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
@@ -194,7 +196,49 @@ def call_once(cfg: PostcardAIConfig, messages: list) -> dict:
         raise AIReviewError("response: unexpected shape") from exc
     if not isinstance(text, str) or not text.strip():
         raise AIReviewError("response: empty content")
-    return parse_verdict(text)
+    return text
+
+
+def call_once(cfg: PostcardAIConfig, messages: list) -> dict:
+    """单次调用 + 严格解析。任何失败 raise AIReviewError（可重试）。"""
+    return parse_verdict(_post_chat(cfg, messages))
+
+
+_SAMPLE_EXPLAIN_SYSTEM = (
+    "你是明信片填写样例的解读助手。管理员给你一张「填写样例」照片和一段说明，"
+    "你要用简洁中文复述你从中理解到的填写要求，供管理员核对 AI 是否理解正确。"
+    "只讲填写要求，不要评价照片拍得好不好，不要输出 JSON。"
+)
+
+_SAMPLE_EXPLAIN_PROMPT = (
+    "请阅读这张明信片填写样例，并回答：\n"
+    "1) 哪些字段必须填写（寄出人姓名、年级/班级、寄达区、寄达校、条码等）；\n"
+    "2) 每个字段写在哪里、格式或写法上有什么硬要求（例如是否要求正楷、"
+    "条码是否必须完整可见、地址写到什么粒度）；\n"
+    "3) 哪些情况你会判为「填写不合格」并打回；\n"
+    "4) 画面中是否出现网络动漫形象 IP，以及你会如何判断它是否属于黑名单。\n"
+    "用要点式短句回答，总字数不超过 400 字。"
+)
+
+
+def explain_sample(cfg: PostcardAIConfig, sample) -> str:
+    """让模型复述它对一张填写样例的理解（管理员核对 AI 理解是否正确）。
+
+    失败 raise AIReviewError；调用方负责把错误收敛成人话，绝不回显 api_key。
+    """
+    content = [{
+        "type": "text",
+        "text": f"【管理员说明】{sample.caption or '（无）'}\n\n{_SAMPLE_EXPLAIN_PROMPT}",
+    }]
+    if sample.image:
+        content.append(_image_part(sample.image))
+    messages = [
+        {"role": "system", "content": _SAMPLE_EXPLAIN_SYSTEM},
+        {"role": "user", "content": content},
+    ]
+    text = _post_chat(cfg, messages, max_tokens=900)
+    return text.strip()[:4000]
+
 
 
 def review_item_with_retry(cfg: PostcardAIConfig, item: PostcardItem, samples: list) -> dict:
