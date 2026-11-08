@@ -80,14 +80,10 @@ export default function MobileHomePage() {
       )}
 
       <div className="m-grid">
-        {/* 活动（events app）：与「互动」是两件事——活动有时间窗，到点自动关闭。 */}
-        <Link to="/m/events" className="m-grid-item">
-          <svg viewBox="0 0 24 24" {...stroke}><path d="M4 6h16v14H4z" /><path d="M8 3v4M16 3v4M4 11h16" /><path d="M9 15h6" /></svg>
-          <span>活动</span>
-        </Link>
+        {/* 活动（activities app）：众议 / 征集 / 展示 / 调研。 */}
         <Link to="/m/activity" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>
-          <span>互动</span>
+          <span>活动</span>
         </Link>
         <Link to="/m/news" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><path d="M4 5h13v14H4z" /><path d="M17 8h3v9a2 2 0 0 1-2 2H4" /><path d="M7 9h7M7 12h7M7 15h4" /></svg>
@@ -106,20 +102,7 @@ export default function MobileHomePage() {
           <svg viewBox="0 0 24 24" {...stroke}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
           <span>查询</span>
         </Link>
-        {/* 明信片互寄（重大活动，/#/postcard 独立页）：浏览器新标签页打开；
-            App 壳没有标签页，交回 Link 走同窗口路由跳转。 */}
-        <Link
-          to="/postcard"
-          className="m-grid-item"
-          onClick={(e) => {
-            if (isAppShell()) return;
-            e.preventDefault();
-            window.open("/#/postcard", "_blank", "noopener");
-          }}
-        >
-          <svg viewBox="0 0 24 24" {...stroke}><path d="M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" /><path d="m3 9 9 6 9-6" /></svg>
-          <span>明信片</span>
-        </Link>
+        {/* 明信片互寄：重大活动，放到下方「重大活动」分组。 */}
         {/* 工作入口（2026-10-18）：登录后直达任务与待办；未登录不显示，避免点了弹登录 */}
         {counts.signedIn && (
           <Link to="/m/tasks" className="m-grid-item">
@@ -133,6 +116,26 @@ export default function MobileHomePage() {
             <span>待办</span>
           </Link>
         )}
+      </div>
+
+      <div className="m-section-h">
+        <h2>重大活动</h2>
+      </div>
+      <div className="m-grid">
+        {/* 明信片互寄（/#/postcard 独立页）：浏览器新标签页打开；
+            App 壳没有标签页，交回 Link 走同窗口路由跳转。 */}
+        <Link
+          to="/postcard"
+          className="m-grid-item"
+          onClick={(e) => {
+            if (isAppShell()) return;
+            e.preventDefault();
+            window.open("/#/postcard", "_blank", "noopener");
+          }}
+        >
+          <svg viewBox="0 0 24 24" {...stroke}><path d="M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" /><path d="m3 9 9 6 9-6" /></svg>
+          <span>明信片</span>
+        </Link>
       </div>
 
       <div className="m-section-h">

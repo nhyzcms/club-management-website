@@ -6,11 +6,12 @@
 问卷 Schema 与作答是独立模型（``Questionnaire`` / ``QuestionnaireResponse``）；
 调研活动以外键指向问卷，门户调研页与加入页只作投影入口。
 
-命名说明（2026-10 定）：本 app 承载的四种形态（众议 / 征集 / 展示 / 调研）在
-**用户可见中文里统称「互动」**，不再叫「活动」——它们都是「中心向成员发起、等
-成员交回东西」的星形结构，与真正的活动（有时间窗、参与者之间会发生关系的事件）
-是两回事。代码层保留 ``Activity`` / ``activities`` / ``/activities/`` 全部标识符
-**不作重命名**（全站引用太多，收益为零、风险极高）；新增的中文文案一律写「互动」。
+命名说明（2026-11 定）：本 app 承载的四种形态（众议 / 征集 / 展示 / 调研）在
+**用户可见中文里统称「活动」**。2026-10 曾把它们改叫「互动」、把带时间窗的
+events 叫「活动」；该改名已撤销——events 通用模块下线，只保留明信片互寄用的
+``Event`` 壳，中文文案统一写「活动」。代码层保留 ``Activity`` / ``activities`` /
+``/activities/`` 与 DB 元数据里的旧中文（``verbose_name`` 等）不作改动
+（全站引用太多，收益为零、风险极高）。
 """
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -352,7 +353,7 @@ class Activity(models.Model):
         super().clean()
         if self.is_permanent and self.end_at is not None:
             raise ValidationError(
-                {"end_at": "长期互动不能设截止时间；请清空截止时间或取消「长期有效」"}
+                {"end_at": "长期活动不能设截止时间；请清空截止时间或取消「长期有效」"}
             )
 
     def save(self, *args, **kwargs):

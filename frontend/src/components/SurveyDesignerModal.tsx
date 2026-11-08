@@ -127,7 +127,7 @@ export default function SurveyDesignerModal({
         >
           <strong style={{ fontSize: 16 }}>{title}</strong>
           <span style={{ color: "var(--muted)", fontSize: 12 }}>
-            从左侧题型拖拽（或点选）到画布添加题目；完成后回填到互动表单，随互动一起保存。
+            从左侧题型拖拽（或点选）到画布添加题目；完成后回填到活动表单，随活动一起保存。
           </span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={cancel}>取消</button>

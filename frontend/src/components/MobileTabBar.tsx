@@ -16,7 +16,7 @@ const TABS = [
   },
   {
     to: "/m/activity",
-    label: "互动",
+    label: "活动",
     icon: (
       <svg viewBox="0 0 24 24" {...stroke}>
         <rect x="3" y="5" width="18" height="16" rx="2" />

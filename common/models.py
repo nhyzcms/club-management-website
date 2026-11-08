@@ -111,7 +111,7 @@ class ContentTarget(models.Model):
     KIND_FEEDBACK = "feedback"
     KIND_CHOICES = [
         (KIND_NEWS, "新闻"),
-        (KIND_ACTIVITY, "互动"),
+        (KIND_ACTIVITY, "活动"),
         (KIND_TUTORIAL, "教程"),
         (KIND_TASK, "任务"),
         (KIND_COMMENT, "评论"),
