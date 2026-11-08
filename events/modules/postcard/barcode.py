@@ -193,6 +193,20 @@ def export_pdf(event, title: str = "") -> HttpResponse:
             x = margin_x + col * (CELL_W + GAP)
             y = page_h - margin_y - (row + 1) * CELL_H - row * GAP
             _draw_code128(c, code, x, y, CELL_W, CELL_H)
+        # 页脚打印提示：5 列 40mm 撑满 A4 横向，缩放打印会把条码裁掉/变窄。
+        c.setFillColorRGB(0.45, 0.45, 0.45)
+        if noto:
+            c.setFont(noto, 6)
+            c.drawCentredString(
+                page_w / 2, margin_y - 4.5 * mm,
+                "打印提示：请选择「实际大小 / 100%」，勿缩放；条码 40×20mm，间隙 2mm 供裁切",
+            )
+        else:
+            c.setFont("Helvetica", 6)
+            c.drawCentredString(
+                page_w / 2, margin_y - 4.5 * mm,
+                "Print at 100% (actual size): barcode 40x20mm, 2mm gap",
+            )
         c.showPage()
 
     if page_no == 0:

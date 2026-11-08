@@ -1219,7 +1219,9 @@ class AdminStatsView(APIView):
         if event is None:
             return Response({"detail": "请先保存活动配置"}, status=400)
         regs = PostcardRegistration.objects.filter(event=event)
-        items = PostcardItem.objects.filter(registration__event=event)
+        items_all = PostcardItem.objects.filter(registration__event=event)
+        # 统计口径：已取消不再计入「明信片总数 / 按校 / 按年级 / 按日」（2026-11-08 定）。
+        items = items_all.exclude(status=PostcardItem.STATUS_CANCELLED)
         reported_q = Q(status=PostcardItem.STATUS_REPORTED)
 
         by_school = list(
@@ -1242,7 +1244,8 @@ class AdminStatsView(APIView):
                 "total": items.count(),
                 "registered": items.filter(status=PostcardItem.STATUS_REGISTERED).count(),
                 "reported": items.filter(reported_q).count(),
-                "cancelled": items.filter(status=PostcardItem.STATUS_CANCELLED).count(),
+                # 取消数单独给出，但不计入 total 与按校/按年级/按日分布。
+                "cancelled": items_all.filter(status=PostcardItem.STATUS_CANCELLED).count(),
             },
             "destination_schools": len({
                 r["registration__dest_school"] for r in by_school if r["registration__dest_school"]
