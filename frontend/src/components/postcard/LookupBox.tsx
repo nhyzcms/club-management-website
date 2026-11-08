@@ -46,7 +46,6 @@ export default function LookupBox({ portal, fingerprint, isMobile, onChanged }: 
   };
 
   const primaryBtn = isMobile ? "m-btn-primary" : "btn btn-primary";
-  const ghostBtn = isMobile ? "m-btn-ghost" : "btn btn-ghost";
 
   return (
     <div className="pc-lookup">
