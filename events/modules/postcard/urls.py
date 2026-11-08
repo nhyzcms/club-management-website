@@ -11,7 +11,11 @@ urlpatterns = [
     path("portal/", views.PortalView.as_view(), name="postcard-portal"),
     path("register/", views.RegisterView.as_view(), name="postcard-register"),
     path("my/", views.MyRegistrationsView.as_view(), name="postcard-my"),
+    # 用户侧查询入口（按登记码 / 寄出人姓名，2026-11-08）
+    path("lookup/", views.LookupView.as_view(), name="postcard-lookup"),
     path("my/<str:reg_code>/", views.MyRegistrationDetailView.as_view(), name="postcard-my-detail"),
+    path("my/<str:reg_code>/review-request/", views.MyReviewRequestView.as_view(), name="postcard-my-review-request"),
+    path("my/<str:reg_code>/purge-photos/", views.MyPhotoPurgeView.as_view(), name="postcard-my-purge-photos"),
     path("suggestions/", views.SuggestionsView.as_view(), name="postcard-suggestions"),
     path("announcement-pdf/", views.AnnouncementPdfView.as_view(), name="postcard-announcement-pdf"),
     path("photo/<int:pk>/", views.PhotoView.as_view(), name="postcard-photo"),
@@ -29,4 +33,10 @@ urlpatterns = [
     path("admin/unreport/", views.AdminUnreportView.as_view(), name="postcard-admin-unreport"),
     path("admin/suggestions/", views.AdminSuggestionsView.as_view(), name="postcard-admin-suggestions"),
     path("admin/audit/", views.AdminAuditView.as_view(), name="postcard-admin-audit"),
+    path("admin/ai/config/", views.AdminAIConfigView.as_view(), name="postcard-admin-ai-config"),
+    path("admin/ai/samples/", views.AdminAISamplesView.as_view(), name="postcard-admin-ai-samples"),
+    path("admin/ai/samples/<int:pk>/", views.AdminAISampleDetailView.as_view(), name="postcard-admin-ai-sample"),
+    path("admin/ai/samples/<int:pk>/image/", views.AdminAISampleImageView.as_view(), name="postcard-admin-ai-sample-image"),
+    path("admin/review/", views.AdminReviewQueueView.as_view(), name="postcard-admin-review-queue"),
+    path("admin/review/<int:item_pk>/", views.AdminReviewDecisionView.as_view(), name="postcard-admin-review-decision"),
 ]

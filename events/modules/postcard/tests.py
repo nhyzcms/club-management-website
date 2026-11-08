@@ -14,10 +14,13 @@ import io
 import json
 import uuid
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth.models import Permission, User
 from django.core.cache import cache
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core import mail
 from django.test import TestCase
 from django.utils import timezone
 from PIL import Image
@@ -25,9 +28,13 @@ from rest_framework.test import APIClient
 
 from events.models import Event
 
+from . import ai as ai_mod
 from . import barcode as barcode_mod
+from . import lifecycle as lifecycle_mod
 from . import state
 from .models import (
+    PostcardAIConfig,
+    PostcardAISample,
     PostcardAuditLog,
     PostcardBarcode,
     PostcardConfig,
@@ -131,6 +138,47 @@ def _register_files(n_items):
             f"back{i}.jpg", _jpeg_bytes(color="green"), "image/jpeg",
         )
     return files
+
+
+def _add_sample(event, caption="样例：正面写寄达信息，反面写祝福语"):
+    """建一条 AI 填写样例（PR2 登记门禁要求至少一条）。"""
+    sample = PostcardAISample(event=event, caption=caption)
+    sample.image.save("sample.jpg", ContentFile(_jpeg_bytes(color="white")), save=True)
+    return sample
+
+
+def _ai_config(*, enabled=True, base_url="https://ai.example.com/v1", model="gpt-4o-mini"):
+    cfg = PostcardAIConfig.objects.create(
+        base_url=base_url, api_key="sk-test-key", model=model, enabled=enabled,
+    )
+    return cfg
+
+
+def _make_registration(event, codes, device=DEVICE_A, fingerprint="aabbccdd00112233"):
+    """直接建登记单（不走 HTTP，AI 流测试用——快且不依赖门禁/限流）。"""
+    reg = PostcardRegistration.objects.create(
+        event=event, reg_code="654321", sender_name="李四", grade="g2", class_no=5,
+        dest_region="浦东新区", dest_school="友爱中学",
+        device_id=device,
+        fingerprint_hash=hashlib.sha256(fingerprint.encode()).hexdigest() if fingerprint else "",
+    )
+    for code in codes:
+        barcode = PostcardBarcode.objects.get(event=event, code=code)
+        item = PostcardItem.objects.create(registration=reg, barcode=barcode)
+        for side in ("front", "back"):
+            photo = PostcardPhoto(item=item, side=side)
+            photo.file.save(f"{item.pk}-{side}.jpg", ContentFile(_jpeg_bytes()), save=True)
+    return reg
+
+
+def _verdict(matched=True, mismatched=None, blacklist_hit=False, names=None):
+    return {
+        "matched": matched,
+        "mismatched_items": mismatched or [],
+        "blacklist_hit": blacklist_hit,
+        "blacklist_names": names or [],
+        "comment": "ok",
+    }
 
 
 class PhaseStateTest(TestCase):
@@ -263,12 +311,25 @@ class PortalTest(TestCase):
         data = resp.json()
         self.assertEqual(data["phase"], "registering")
         self.assertTrue(data["can_register"])
-        self.assertEqual(data["grades"], ["高一", "高二", "高三"])
+        # 年级下拉 = 键值对（value 即登记接口的 grade 键；PR3 前端表单直接消费）
+        self.assertEqual(
+            data["grades"],
+            [{"value": "g1", "label": "高一"}, {"value": "g2", "label": "高二"},
+             {"value": "g3", "label": "高三"}],
+        )
         self.assertEqual(len(data["schools"]), 2)
         self.assertEqual(data["classes"], list(range(1, 9)))
         # 寄达区 = 写死的 16 区固定清单（顺序即展示顺序）
         self.assertEqual(data["regions"][:3], ["浦东新区", "宝山区", "崇明区"])
         self.assertEqual(len(data["regions"]), 16)
+
+    def test_announcement_body_served(self):
+        """公告正文随 portal 下发（PR3 用户侧渲染；入库前已 bleach 净化）。"""
+        event, config = _config_event()
+        config.announcement_body = "<p>活动公告内容</p>"
+        config.save(update_fields=["announcement_body"])
+        data = self.client.get("/events/postcard/portal/").json()
+        self.assertEqual(data["announcement_body"], "<p>活动公告内容</p>")
 
     def test_non_registering_hides_metadata(self):
         now = timezone.now()
@@ -290,7 +351,11 @@ class PortalTest(TestCase):
         client.force_authenticate(user=admin)
         data = client.get("/events/postcard/portal/").json()
         self.assertTrue(data["is_admin"])
-        self.assertEqual(data["grades"], ["高一", "高二", "高三"])
+        self.assertEqual(
+            data["grades"],
+            [{"value": "g1", "label": "高一"}, {"value": "g2", "label": "高二"},
+             {"value": "g3", "label": "高三"}],
+        )
 
 
 class RegisterFlowTest(TestCase):
@@ -300,6 +365,7 @@ class RegisterFlowTest(TestCase):
         cache.clear()
         self.event, self.config = _config_event()
         _barcodes(self.event, ["1000001", "1000002", "1000003"])
+        _add_sample(self.event)  # PR2：样例门禁
         self.client = APIClient()
         self.client.cookies["club_device"] = DEVICE_A
 
@@ -429,14 +495,31 @@ class RegisterFlowTest(TestCase):
         resp = self._post(_register_payload(["1000001"]), files)
         self.assertEqual(resp.status_code, 400)
 
+    def test_reencode_compresses_to_audit_size(self):
+        """默认压缩（2026-11-08 用户定调）：大图重编码到最长边 1280。"""
+        from .photos import MAX_EDGE, validate_and_reencode
+
+        content = validate_and_reencode(
+            SimpleUploadedFile("big.jpg", _jpeg_bytes(size=(3000, 2000)), "image/jpeg"),
+        )
+        img = Image.open(content)
+        self.assertLessEqual(max(img.size), MAX_EDGE)
+        self.assertEqual(max(img.size), 1280)  # 3000x2000 → 1280x853
+        # 小图不放大：64x64 保持原尺寸
+        small = validate_and_reencode(
+            SimpleUploadedFile("small.jpg", _jpeg_bytes(size=(64, 64)), "image/jpeg"),
+        )
+        self.assertEqual(max(Image.open(small).size), 64)
+
 
 class MyRecordsAndIDORTest(TestCase):
-    """归属三轨 + 登记码能力凭证 + IDOR（非本人一律 404）。"""
+    """归属三轨（列表归集）+ 登记码即能力凭证（详情/改/取消，任何设备凭码可用）。"""
 
     def setUp(self):
         cache.clear()
         self.event, _ = _config_event()
         _barcodes(self.event, ["1000001", "1000002"])
+        _add_sample(self.event)  # PR2：样例门禁
         self.client = APIClient()
         self.client.cookies["club_device"] = DEVICE_A
         resp = self.client.post(
@@ -455,6 +538,12 @@ class MyRecordsAndIDORTest(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["reg_code"], self.reg_code)
         self.assertEqual(len(results[0]["items"]), 2)
+        # PR3：条目摘要带照片 id/side——用户侧历史记录据此构造鉴权照片 URL
+        first = results[0]["items"][0]
+        self.assertEqual(
+            sorted(p["side"] for p in first["photos"]), ["back", "front"],
+        )
+        self.assertTrue(all(p["id"] for p in first["photos"]))
 
     def test_my_list_by_fingerprint(self):
         client = APIClient()  # 无 device cookie，靠指纹
@@ -467,10 +556,18 @@ class MyRecordsAndIDORTest(TestCase):
         resp = client.get("/events/postcard/my/")
         self.assertEqual(resp.json()["results"], [])
 
-    def test_detail_requires_ownership(self):
+    def test_detail_by_code_any_device(self):
+        """2026-11-08 起：登记码即凭证——换设备凭码可查（用户要求）。"""
         client = APIClient()
         client.cookies["club_device"] = DEVICE_B
         resp = client.get(f"/events/postcard/my/{self.reg_code}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["reg_code"], self.reg_code)
+
+    def test_detail_unknown_code_404(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.get("/events/postcard/my/000000/")
         self.assertEqual(resp.status_code, 404)  # 不泄露存在性
 
     def test_edit_own_record(self):
@@ -483,10 +580,19 @@ class MyRecordsAndIDORTest(TestCase):
         self.assertEqual(self.reg.sender_name, "李四")
         self.assertEqual(self.reg.class_no, 5)
 
-    def test_edit_by_other_rejected(self):
+    def test_edit_by_code_any_device(self):
+        """换设备凭码可改（登记码即凭证）。"""
         client = APIClient()
         client.cookies["club_device"] = DEVICE_B
-        resp = client.patch(f"/events/postcard/my/{self.reg_code}/", {"sender_name": "黑客"})
+        resp = client.patch(f"/events/postcard/my/{self.reg_code}/", {"sender_name": "李四"})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.reg.refresh_from_db()
+        self.assertEqual(self.reg.sender_name, "李四")
+
+    def test_edit_unknown_code_404(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.patch("/events/postcard/my/000000/", {"sender_name": "黑客"})
         self.assertEqual(resp.status_code, 404)
         self.reg.refresh_from_db()
         self.assertEqual(self.reg.sender_name, "张三")
@@ -503,10 +609,12 @@ class MyRecordsAndIDORTest(TestCase):
         url = f"/events/postcard/photo/{photo.pk}/"
         # 匿名无凭证 → 403
         self.assertEqual(APIClient().get(url).status_code, 403)
-        # 他人设备 + 正确登记码 → 403
+        # 他人设备 + 正确登记码 → 200（登记码即凭证）
         client = APIClient()
         client.cookies["club_device"] = DEVICE_B
-        self.assertEqual(client.get(f"{url}?reg_code={self.reg_code}").status_code, 403)
+        self.assertEqual(client.get(f"{url}?reg_code={self.reg_code}").status_code, 200)
+        # 他人设备 + 错误登记码 → 403
+        self.assertEqual(client.get(f"{url}?reg_code=000000").status_code, 403)
         # 本人设备 + 登记码 → 200
         resp = self.client.get(f"{url}?reg_code={self.reg_code}")
         self.assertEqual(resp.status_code, 200)
@@ -517,6 +625,73 @@ class MyRecordsAndIDORTest(TestCase):
         rc = APIClient()
         rc.force_authenticate(user=reviewer)
         self.assertEqual(rc.get(url).status_code, 200)
+
+
+class LookupTest(TestCase):
+    """用户侧查询入口：登记码 → 完整摘要；姓名 → 掩码摘要（需完整码才能改）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001"])
+        _add_sample(self.event)
+        self.reg = _make_registration(self.event, ["1000001"])
+        self.client = APIClient()
+        # 预置设备 Cookie：否则首个请求计入 IP 轨、之后计入设备轨（限流计数
+        # 会多放行 1 次），测试对不上；真实浏览器同理（首访响应才种 Cookie）。
+        self.client.cookies["club_device"] = DEVICE_A
+
+    def test_lookup_by_code_full_summary(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": self.reg.reg_code})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertEqual(data["kind"], "code")
+        self.assertEqual(len(data["results"]), 1)
+        row = data["results"][0]
+        self.assertEqual(row["reg_code"], self.reg.reg_code)
+        self.assertEqual(row["sender_name"], "李四")
+        self.assertEqual(len(row["items"]), 1)
+        self.assertTrue(row["items"][0]["photos"])  # 完整码可见照片 id
+
+    def test_lookup_by_code_from_any_device(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.post("/events/postcard/lookup/", {"q": self.reg.reg_code})
+        self.assertEqual(len(resp.json()["results"]), 1)
+
+    def test_lookup_by_name_masked(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": "李四"})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertEqual(data["kind"], "name")
+        self.assertEqual(len(data["results"]), 1)
+        row = data["results"][0]
+        # 姓名查询只给掩码，不能据此改他人记录
+        self.assertEqual(row["reg_code"], f"{self.reg.reg_code[:2]}****")
+        self.assertEqual(row["items"][0]["photos"], [])
+
+    def test_lookup_by_name_exact_match_only(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": "王"})
+        self.assertEqual(resp.status_code, 400)  # 至少 2 字
+        resp = self.client.post("/events/postcard/lookup/", {"q": "王五"})
+        self.assertEqual(resp.json()["results"], [])
+
+    def test_lookup_unknown_code_empty(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": "000000"})
+        self.assertEqual(resp.json(), {"kind": "code", "results": []})
+
+    def test_lookup_empty_rejected(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": ""})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_lookup_throttled(self):
+        for _ in range(20):
+            self.assertEqual(
+                self.client.post("/events/postcard/lookup/", {"q": "李四"}).status_code, 200,
+            )
+        self.assertEqual(
+            self.client.post("/events/postcard/lookup/", {"q": "李四"}).status_code, 429,
+        )
 
 
 class SuggestionTest(TestCase):
@@ -661,6 +836,7 @@ class AdminRecordsAndOpsTest(TestCase):
         self.reviewer = _reviewer()
         self.event, self.config = _config_event()
         _barcodes(self.event, ["1000001", "1000002"])
+        _add_sample(self.event)  # PR2：样例门禁
         self.client = APIClient()
         self.client.cookies["club_device"] = DEVICE_A
         resp = self.client.post(
@@ -796,3 +972,581 @@ class AdminRecordsAndOpsTest(TestCase):
         resp = self.admin_client.get("/events/postcard/admin/suggestions/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["count"], 1)
+
+
+# ===========================================================================
+# PR2：AI 审核与人工复核
+# ===========================================================================
+
+
+class AISampleGateTest(TestCase):
+    """样例门禁：活动开始前必须配填写样例，否则登记不开放。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001"])
+        self.client = APIClient()
+        self.client.cookies["club_device"] = DEVICE_A
+
+    def test_no_sample_blocks_register(self):
+        data = self.client.get("/events/postcard/portal/").json()
+        self.assertFalse(data["sample_ready"])
+        resp = self.client.post(
+            "/events/postcard/register/",
+            {**_register_payload(["1000001"]), **_register_files(1)},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("样例", resp.json()["detail"])
+        self.assertEqual(PostcardRegistration.objects.count(), 0)
+
+    def test_sample_opens_register(self):
+        _add_sample(self.event)
+        data = self.client.get("/events/postcard/portal/").json()
+        self.assertTrue(data["sample_ready"])
+        resp = self.client.post(
+            "/events/postcard/register/",
+            {**_register_payload(["1000001"]), **_register_files(1)},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_no_event_sample_ready_false(self):
+        data = self.client.get("/events/postcard/portal/").json()
+        self.assertFalse(data["sample_ready"])
+
+
+class AIConfigAdminTest(TestCase):
+    """AI 配置管理端：api_key 写后不可读（掩码）、默认黑名单、权限。"""
+
+    def setUp(self):
+        cache.clear()
+        self.admin = _admin()
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_get_unconfigured(self):
+        data = self.client.get("/events/postcard/admin/ai/config/").json()
+        self.assertFalse(data["configured"])
+
+    def test_put_then_masked_get(self):
+        resp = self.client.put("/events/postcard/admin/ai/config/", {
+            "base_url": "https://ai.example.com/v1/",
+            "api_key": "sk-secret-123",
+            "model": "gpt-4o-mini",
+            "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = self.client.get("/events/postcard/admin/ai/config/").json()
+        self.assertTrue(data["api_key_set"])
+        self.assertTrue(data["ready"])
+        self.assertEqual(data["base_url"], "https://ai.example.com/v1")  # 尾斜杠归一
+        self.assertNotIn("sk-secret-123", str(data))  # 明文绝不回显
+        self.assertNotIn("api_key", data)  # 连字段都不出现
+
+    def test_put_empty_api_key_keeps_old(self):
+        self.client.put("/events/postcard/admin/ai/config/", {
+            "api_key": "sk-first", "base_url": "https://a.example/v1", "model": "m",
+        }, format="json")
+        self.client.put("/events/postcard/admin/ai/config/", {
+            "api_key": "", "enabled": True,
+        }, format="json")
+        cfg = PostcardAIConfig.load()
+        self.assertEqual(cfg.api_key, "sk-first")
+
+    def test_default_blacklist_preset(self):
+        self.client.put("/events/postcard/admin/ai/config/", {
+            "base_url": "https://a.example/v1", "model": "m",
+        }, format="json")
+        data = self.client.get("/events/postcard/admin/ai/config/").json()
+        self.assertIn("进击的巨人", data["ip_blacklist"])
+        self.assertTrue(len(data["ip_blacklist"]) >= 10)
+
+    def test_plain_user_forbidden(self):
+        user = User.objects.create_user(username="plain", password="test-pass-123")
+        client = APIClient()
+        client.force_authenticate(user=user)
+        resp = client.put("/events/postcard/admin/ai/config/", {"enabled": True}, format="json")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_bad_base_url_rejected(self):
+        resp = self.client.put("/events/postcard/admin/ai/config/", {
+            "base_url": "ftp://bad.example",
+        }, format="json")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_timeout_bounds(self):
+        resp = self.client.put("/events/postcard/admin/ai/config/", {
+            "timeout_seconds": 300,
+        }, format="json")
+        self.assertEqual(resp.status_code, 400)
+
+
+class AISamplesAdminTest(TestCase):
+    """样例上传/列表/删除/下发：与用户照片同一道安全管线。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        self.admin = _admin()
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def _upload(self, content=None, caption="正面样例"):
+        return self.client.post(
+            "/events/postcard/admin/ai/samples/",
+            {
+                "caption": caption,
+                "image": SimpleUploadedFile(
+                    "s.jpg", content or _jpeg_bytes(color="white"), "image/jpeg",
+                ),
+            },
+            format="multipart",
+        )
+
+    def test_upload_and_list(self):
+        resp = self._upload()
+        self.assertEqual(resp.status_code, 201, resp.content)
+        data = self.client.get("/events/postcard/admin/ai/samples/").json()
+        self.assertTrue(data["sample_ready"])
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["caption"], "正面样例")
+
+    def test_fake_image_rejected(self):
+        resp = self._upload(content=b"definitely not an image")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(PostcardAISample.objects.count(), 0)
+
+    def test_delete(self):
+        sample = _add_sample(self.event)
+        resp = self.client.delete(f"/events/postcard/admin/ai/samples/{sample.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["sample_ready"])
+        self.assertEqual(PostcardAISample.objects.count(), 0)
+
+    def test_image_requires_permission(self):
+        sample = _add_sample(self.event)
+        url = f"/events/postcard/admin/ai/samples/{sample.pk}/image/"
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "image/jpeg")
+        anonymous = APIClient()
+        self.assertEqual(anonymous.get(url).status_code, 403)
+        reviewer = _reviewer()
+        rc = APIClient()
+        rc.force_authenticate(user=reviewer)
+        self.assertEqual(rc.get(url).status_code, 200)
+
+    def test_upload_requires_event(self):
+        PostcardConfig.objects.get(event=self.event).delete()
+        self.event.delete()
+        resp = self._upload()
+        self.assertEqual(resp.status_code, 400)
+
+
+class AIReviewFlowTest(TestCase):
+    """AI 审核流：通过即删 / 不匹配告知项 / 黑名单打回 / 重试转人工 / 重入安全。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001", "1000002"])
+        _add_sample(self.event)
+        _ai_config()
+        self.reg = _make_registration(self.event, ["1000001", "1000002"])
+
+    def _review(self):
+        with mock.patch.object(ai_mod, "_sleep", lambda s: None):
+            return ai_mod.review_registration(self.reg)
+
+    def test_ai_pass_purges_files(self):
+        with mock.patch.object(ai_mod, "call_once", return_value=_verdict(matched=True)):
+            stats = self._review()
+        self.assertEqual(stats, {"passed": 2, "failed": 0, "manual": 0})
+        for photo in PostcardPhoto.objects.all():
+            self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_AI_PASSED)
+            self.assertEqual(photo.file, "")  # 通过即删（行保留、file 置空）
+
+    def test_ai_fail_reports_mismatch(self):
+        verdict = _verdict(matched=False, mismatched=["寄达校与照片不一致", "条码未贴"])
+        with mock.patch.object(ai_mod, "call_once", return_value=verdict):
+            self._review()
+        photo = PostcardPhoto.objects.first()
+        self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_AI_FAILED)
+        self.assertNotEqual(photo.file, "")  # 失败保留（用户可申请复核）
+        # 用户侧能看到「哪里填错」
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_A
+        data = client.get(f"/events/postcard/my/{self.reg.reg_code}/").json()
+        mismatched = [it["mismatched"] for it in data["items"]]
+        self.assertIn("寄达校与照片不一致", mismatched[0])
+
+    def test_blacklist_hit_rejected(self):
+        verdict = _verdict(matched=True, blacklist_hit=True, names=["进击的巨人"])
+        with mock.patch.object(ai_mod, "call_once", return_value=verdict):
+            self._review()
+        photo = PostcardPhoto.objects.first()
+        self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_AI_FAILED)
+        self.assertIn("进击的巨人", photo.ai_verdict["blacklist_names"])
+
+    def test_retry_then_success(self):
+        verdict = _verdict(matched=True)
+        calls = {"n": 0}
+
+        def flaky(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise ai_mod.AIReviewError("boom")
+            return verdict
+
+        with mock.patch.object(ai_mod, "call_once", side_effect=flaky):
+            stats = self._review()
+        self.assertEqual(stats["passed"], 2)  # 每张前 2 次失败、第 3 次成功
+
+    def test_retry_exhausted_to_manual(self):
+        with mock.patch.object(ai_mod, "call_once", side_effect=ai_mod.AIReviewError("down")):
+            stats = self._review()
+        self.assertEqual(stats["manual"], 2)
+        for photo in PostcardPhoto.objects.all():
+            self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_MANUAL_PENDING)
+            self.assertNotEqual(photo.file, "")
+        # 技术失败计入连续失败 streak（告警计数）
+        self.assertEqual(cache.get("postcard:ai:fail-streak"), 1)
+
+    def test_ai_unavailable_goes_manual_synchronously(self):
+        PostcardAIConfig.objects.update(enabled=False)
+        state_ = ai_mod.queue_registration_review(self.reg)
+        self.assertEqual(state_, PostcardPhoto.REVIEW_MANUAL_PENDING)
+        photo = PostcardPhoto.objects.first()
+        self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_MANUAL_PENDING)
+
+    def test_queue_enabled_returns_pending_without_blocking(self):
+        started = []
+        with mock.patch.object(ai_mod.threading, "Thread") as thread_cls:
+            thread_cls.return_value.start.side_effect = lambda: started.append(1)
+            state_ = ai_mod.queue_registration_review(self.reg)
+        self.assertEqual(state_, PostcardPhoto.REVIEW_PENDING)
+        self.assertEqual(len(started), 1)  # 起线程、不阻塞
+
+    def test_reentry_safe(self):
+        with mock.patch.object(ai_mod, "call_once", return_value=_verdict(matched=True)):
+            self._review()
+            stats2 = self._review()  # 第二遍：全部已终态 → 跳过
+        self.assertEqual(stats2, {"passed": 0, "failed": 0, "manual": 0})
+
+    def test_worker_exception_fallback(self):
+        with mock.patch.object(
+            ai_mod, "review_registration", side_effect=RuntimeError("unexpected"),
+        ):
+            ai_mod._review_worker(self.reg.pk)
+        photo = PostcardPhoto.objects.first()
+        self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_MANUAL_PENDING)
+        self.assertEqual(photo.ai_verdict, {"reason": "ai_worker_error"})
+
+    def test_verdict_parser_strict(self):
+        good = '{"matched": true, "blacklist_hit": false, "mismatched_items": [], "comment": "ok"}'
+        self.assertTrue(ai_mod.parse_verdict(good)["matched"])
+        self.assertTrue(ai_mod.parse_verdict("废话一堆 " + good + " 后缀")["matched"])
+        for bad in ["no json", "{}", '{"matched": "yes"}', "[1,2]", '{"matched": true}']:
+            with self.assertRaises(ai_mod.AIReviewError):
+                ai_mod.parse_verdict(bad)
+
+
+class AIAlertTest(TestCase):
+    """连续 5 个不同用户失败 → 邮件告警；同用户去重；成功重置；冷却防轰炸。"""
+
+    def setUp(self):
+        cache.clear()
+        mail.outbox.clear()
+        self.admin = _admin()
+        self.admin.email = "admin@example.com"
+        self.admin.save()
+
+    def test_five_distinct_users_trigger_email(self):
+        for i in range(4):
+            ai_mod.note_review_failure(f"d:user{i}")
+            self.assertEqual(len(mail.outbox), 0)
+        ai_mod.note_review_failure("d:user4")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("AI 审核连续失败", mail.outbox[0].subject)
+        self.assertEqual(mail.outbox[0].to, ["admin@example.com"])
+        # 告警后 streak 重置
+        self.assertIsNone(cache.get("postcard:ai:fail-streak"))
+
+    def test_same_user_not_double_counted(self):
+        for _ in range(10):
+            ai_mod.note_review_failure("d:same")
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(cache.get("postcard:ai:fail-streak"), 1)
+
+    def test_success_resets_streak(self):
+        for i in range(4):
+            ai_mod.note_review_failure(f"d:u{i}")
+        ai_mod.note_review_success("d:any")
+        ai_mod.note_review_failure("d:u9")
+        self.assertEqual(cache.get("postcard:ai:fail-streak"), 1)
+
+    def test_cooldown_prevents_spam(self):
+        for i in range(5):
+            ai_mod.note_review_failure(f"d:a{i}")
+        self.assertEqual(len(mail.outbox), 1)
+        for i in range(5):
+            ai_mod.note_review_failure(f"d:b{i}")
+        self.assertEqual(len(mail.outbox), 1)  # 1h 冷却内不重发
+
+    def test_no_recipients_no_crash(self):
+        self.admin.email = ""
+        self.admin.save()
+        for i in range(5):
+            ai_mod.note_review_failure(f"d:c{i}")
+        self.assertEqual(len(mail.outbox), 0)  # 无收件人：静默不炸
+
+
+class ReviewDeskTest(TestCase):
+    """人工复核台：队列 / 判定 / 权限 / 跨活动 IDOR / 审计。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001", "1000002"])
+        _add_sample(self.event)
+        self.reg = _make_registration(self.event, ["1000001", "1000002"])
+        # 一张待人工、一张 AI 不匹配 → 都应出现在队列
+        lifecycle_mod.settle_item_photos(
+            self.reg.items.get(barcode__code="1000001"), PostcardPhoto.REVIEW_MANUAL_PENDING,
+        )
+        lifecycle_mod.settle_item_photos(
+            self.reg.items.get(barcode__code="1000002"), PostcardPhoto.REVIEW_AI_FAILED,
+            verdict=_verdict(matched=False, mismatched=["字迹不清"]),
+        )
+        self.reviewer = _reviewer()
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.reviewer)
+
+    def _item(self, code):
+        return PostcardItem.objects.get(registration=self.reg, barcode__code=code)
+
+    def test_queue_lists_both_states(self):
+        data = self.client.get("/events/postcard/admin/review/").json()
+        self.assertEqual(len(data["results"]), 2)
+        codes = {r["barcode"] for r in data["results"]}
+        self.assertEqual(codes, {"1000001", "1000002"})
+        entry = next(r for r in data["results"] if r["barcode"] == "1000002")
+        self.assertEqual(entry["review_state"], PostcardPhoto.REVIEW_AI_FAILED)
+        self.assertEqual(entry["registration"]["sender_name"], "李四")
+        self.assertTrue(entry["photo_ids"])
+
+    def test_pass_purges_files_and_audits(self):
+        item = self._item("1000001")
+        resp = self.client.post(
+            f"/events/postcard/admin/review/{item.pk}/",
+            {"decision": "pass", "note": "人工确认无误"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["review_state"], PostcardPhoto.REVIEW_MANUAL_PASSED)
+        for photo in item.photos.all():
+            self.assertEqual(photo.file, "")  # 通过即删
+        self.assertTrue(PostcardAuditLog.objects.filter(
+            action="review_decision", target=f"item#{item.pk}",
+        ).exists())
+
+    def test_fail_keeps_files_for_ttl(self):
+        item = self._item("1000002")
+        resp = self.client.post(
+            f"/events/postcard/admin/review/{item.pk}/", {"decision": "fail"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        for photo in item.photos.all():
+            self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_MANUAL_FAILED)
+            self.assertNotEqual(photo.file, "")  # 24h TTL 内保留
+
+    def test_only_reviewable_states_accepted(self):
+        item = self._item("1000001")
+        self.client.post(f"/events/postcard/admin/review/{item.pk}/", {"decision": "pass"}, format="json")
+        resp = self.client.post(
+            f"/events/postcard/admin/review/{item.pk}/", {"decision": "fail"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 400)  # 已终态不能再判
+
+    def test_plain_user_forbidden(self):
+        user = User.objects.create_user(username="plain2", password="test-pass-123")
+        client = APIClient()
+        client.force_authenticate(user=user)
+        item = self._item("1000001")
+        resp = client.post(
+            f"/events/postcard/admin/review/{item.pk}/", {"decision": "pass"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_item_from_other_event_404(self):
+        # 再建一个更晚的活动 → current_event 切走；旧活动条目对新活动 404
+        event2, _ = _config_event()
+        item = self._item("1000001")
+        resp = self.client.post(
+            f"/events/postcard/admin/review/{item.pk}/", {"decision": "pass"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_unknown_item_404(self):
+        resp = self.client.post(
+            "/events/postcard/admin/review/999999/", {"decision": "pass"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 404)
+
+
+class UserReviewRequestTest(TestCase):
+    """用户申请人工复核：ai_failed → manual_pending；非本人 404。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001"])
+        _add_sample(self.event)
+        self.reg = _make_registration(self.event, ["1000001"])
+        lifecycle_mod.settle_item_photos(
+            self.reg.items.first(), PostcardPhoto.REVIEW_AI_FAILED,
+            verdict=_verdict(matched=False, mismatched=["寄达区不符"]),
+        )
+        self.client = APIClient()
+        self.client.cookies["club_device"] = DEVICE_A
+
+    def test_request_moves_to_manual(self):
+        resp = self.client.post(f"/events/postcard/my/{self.reg.reg_code}/review-request/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        photo = PostcardPhoto.objects.first()
+        self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_MANUAL_PENDING)
+        # AI 判定保留（复核员要看 AI 判了什么）
+        self.assertEqual(photo.ai_verdict["mismatched_items"], ["寄达区不符"])
+
+    def test_no_failed_returns_400(self):
+        lifecycle_mod.settle_item_photos(
+            self.reg.items.first(), PostcardPhoto.REVIEW_AI_PASSED, purge_files=True,
+        )
+        resp = self.client.post(f"/events/postcard/my/{self.reg.reg_code}/review-request/")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_code_authorizes_any_device(self):
+        """登记码即凭证：换设备凭码可申请复核。"""
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.post(f"/events/postcard/my/{self.reg.reg_code}/review-request/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_unknown_code_404(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.post("/events/postcard/my/000000/review-request/")
+        self.assertEqual(resp.status_code, 404)
+
+
+class PhotoPurgeAndGCTest(TestCase):
+    """sendBeacon 清理 + 周期兜底 GC + 活动结束惰性全清。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001", "1000002"])
+        _add_sample(self.event)
+        self.reg = _make_registration(self.event, ["1000001", "1000002"])
+        self.client = APIClient()
+        self.client.cookies["club_device"] = DEVICE_A
+
+    def _photo(self, code, side="front"):
+        return PostcardPhoto.objects.get(
+            item__registration=self.reg, item__barcode__code=code, side=side,
+        )
+
+    def test_sendbeacon_purges_failed_only(self):
+        lifecycle_mod.settle_item_photos(
+            self.reg.items.get(barcode__code="1000001"), PostcardPhoto.REVIEW_AI_FAILED,
+        )
+        # 另一张保持 pending（还在审，不能删）
+        resp = self.client.post(f"/events/postcard/my/{self.reg.reg_code}/purge-photos/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["purged"], 2)  # 失败那张的正反两面
+        self.assertEqual(self._photo("1000001").file, "")
+        self.assertNotEqual(self._photo("1000002").file, "")
+
+    def test_sendbeacon_works_without_csrf_token(self):
+        """sendBeacon 带不了 CSRF header——豁免 SessionAuthentication 后必须可达。"""
+        lifecycle_mod.settle_item_photos(
+            self.reg.items.first(), PostcardPhoto.REVIEW_MANUAL_FAILED,
+        )
+        strict = APIClient(enforce_csrf_checks=True)
+        strict.cookies["club_device"] = DEVICE_A
+        resp = strict.post(
+            f"/events/postcard/my/{self.reg.reg_code}/purge-photos/",
+            data=json.dumps({"fingerprint": "aabbccdd00112233"}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_code_authorizes_any_device(self):
+        """登记码即凭证：换设备凭码可触发关页清理（仅删自己失败照片）。"""
+        lifecycle_mod.settle_item_photos(
+            self.reg.items.first(), PostcardPhoto.REVIEW_AI_FAILED,
+        )
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.post(f"/events/postcard/my/{self.reg.reg_code}/purge-photos/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_unknown_code_404(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.post("/events/postcard/my/000000/purge-photos/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_gc_ended_event_purges_all(self):
+        now = timezone.now()
+        self.event.start_at = now - timedelta(days=10)
+        self.event.end_at = now - timedelta(days=1)
+        self.event.status = Event.STATUS_ENDED
+        self.event.save()
+        stats = lifecycle_mod.gc_sweep()
+        self.assertGreaterEqual(stats["ended_events_purged"], 4)
+        for photo in PostcardPhoto.objects.all():
+            self.assertEqual(photo.file, "")  # 全清（含 pending）
+            self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_PENDING)  # 状态保留
+
+    def test_gc_ttl_purges_failed_after_24h(self):
+        photo = self._photo("1000001")
+        # update() 绕过 auto_now，才能把 updated_at 拨回 25h 前
+        PostcardPhoto.objects.filter(pk=photo.pk).update(
+            review_state=PostcardPhoto.REVIEW_AI_FAILED,
+            updated_at=timezone.now() - timedelta(hours=25),
+        )
+        stats = lifecycle_mod.gc_sweep()
+        self.assertEqual(stats["ttl_purged"], 1)
+        photo.refresh_from_db()
+        self.assertEqual(photo.file, "")
+
+    def test_gc_stale_pending_to_manual(self):
+        photo = self._photo("1000001")
+        PostcardPhoto.objects.filter(pk=photo.pk).update(
+            created_at=timezone.now() - timedelta(minutes=61),
+        )
+        stats = lifecycle_mod.gc_sweep()
+        self.assertEqual(stats["stale_pending_to_manual"], 1)
+        photo.refresh_from_db()
+        self.assertEqual(photo.review_state, PostcardPhoto.REVIEW_MANUAL_PENDING)
+
+    def test_maybe_purge_ended_event_lazy(self):
+        now = timezone.now()
+        self.event.start_at = now - timedelta(days=10)
+        self.event.end_at = now - timedelta(days=1)
+        self.event.status = Event.STATUS_ENDED
+        self.event.save()
+        # 任意明信片请求过 _phase_guard → 惰性触发全清
+        self.client.get("/events/postcard/portal/")
+        for photo in PostcardPhoto.objects.all():
+            self.assertEqual(photo.file, "")
+
+    def test_command_runs(self):
+        from django.core.management import call_command
+
+        out = io.StringIO()
+        call_command("postcard_photo_gc", stdout=out)
+        stats = json.loads(out.getvalue())
+        self.assertIn("ended_events_purged", stats)
