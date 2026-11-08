@@ -6,6 +6,7 @@ import {
   fmtTime,
   groupSchools,
   isoToLocalInput,
+  mergeSchools,
   localInputToIso,
   verdictSummary,
 } from "../components/postcard/admin/pure";
@@ -48,17 +49,35 @@ describe("管理端纯函数", () => {
     expect(clampBarcodeCount(Number.NaN, 1500, 10000, 500)).toBe(1500);
   });
 
-  it("groupSchools 保持 16 区固定顺序，区内保持录入顺序", () => {
+  it("groupSchools 保持 16 区固定顺序，区内按编号升序", () => {
     const out = groupSchools(
       [
-        { region: "黄浦区", name: "光明中学" },
-        { region: "浦东新区", name: "友爱中学" },
-        { region: "浦东新区", name: "建平中学" },
+        { region: "黄浦区", name: "光明中学", no: 2 },
+        { region: "浦东新区", name: "友爱中学", no: 12 },
+        { region: "浦东新区", name: "建平中学", no: 3 },
       ],
       POSTCARD_REGIONS,
     );
     expect(out.map((g) => g.region)).toEqual(["浦东新区", "黄浦区"]);
-    expect(out[0].names).toEqual(["友爱中学", "建平中学"]);
+    expect(out[0].schools.map((s) => s.name)).toEqual(["建平中学", "友爱中学"]);
+  });
+
+  it("mergeSchools 同区同名以识别编号为准，其余追加", () => {
+    const current = [
+      { region: "浦东新区", name: "友爱中学", no: 9 },
+      { region: "黄浦区", name: "光明中学", no: 2 },
+    ];
+    const out = mergeSchools(current, [
+      { region: "浦东新区", name: "友爱中学", no: 12 },
+      { region: "浦东新区", name: "建平中学", no: 3 },
+    ]);
+    expect(out.added).toBe(1);
+    expect(out.schools).toEqual([
+      { region: "浦东新区", name: "友爱中学", no: 12 },
+      { region: "黄浦区", name: "光明中学", no: 2 },
+      { region: "浦东新区", name: "建平中学", no: 3 },
+    ]);
+    expect(current[0].no).toBe(9); // 不改入参
   });
 
   it("verdictSummary 兼容 AI 原始判定与人工改判后的复合结构", () => {

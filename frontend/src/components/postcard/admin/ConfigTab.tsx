@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RichTextEditor from "../../RichTextEditor";
 import {
   POSTCARD_GRADES,
@@ -6,7 +6,14 @@ import {
   postcardAdminApi,
   type AdminSchool,
 } from "../../../api/postcardAdmin";
-import { errMessage, groupSchools, isForbidden, isoToLocalInput, localInputToIso } from "./pure";
+import {
+  errMessage,
+  groupSchools,
+  isForbidden,
+  isoToLocalInput,
+  localInputToIso,
+  mergeSchools,
+} from "./pure";
 
 /**
  * 活动配置：Event 壳（标题 / 简介 / 起止时间）+ 模块节点 / 年级 / 寄达校 / 公告。
@@ -42,6 +49,9 @@ export default function ConfigTab() {
 
   const [newRegion, setNewRegion] = useState(POSTCARD_REGIONS[0]);
   const [newSchool, setNewSchool] = useState("");
+  const [newNo, setNewNo] = useState("");
+  const [importing, setImporting] = useState(false);
+  const posterRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,17 +92,64 @@ export default function ConfigTab() {
   const addSchool = () => {
     const name = newSchool.trim();
     if (!name) return;
+    // 每个寄达校都有区内编号（用户口径），手填也要求填编号，否则区内无法排序。
+    const no = Number(newNo.trim());
+    if (!newNo.trim() || !Number.isInteger(no) || no < 1 || no > 9999) {
+      setNotice("请填写该校在本区的编号（1~9999，例如「浦东新区1」的编号是 1）。");
+      return;
+    }
     if (schools.some((s) => s.region === newRegion && s.name === name)) {
       setNotice("该区已有同名学校。");
       return;
     }
-    setSchools((prev) => [...prev, { region: newRegion, name }]);
+    setSchools((prev) => [...prev, { region: newRegion, name, no }]);
     setNewSchool("");
+    setNewNo("");
     setNotice("");
   };
 
   const removeSchool = (region: string, name: string) => {
     setSchools((prev) => prev.filter((s) => !(s.region === region && s.name === name)));
+  };
+
+  /** 点「导入海报」：先确认 AI 已就绪——未配置就弹窗，不白白上传一次图片。 */
+  const startImport = async () => {
+    setNotice("");
+    setError("");
+    try {
+      const cfg = await postcardAdminApi.aiConfig();
+      if (!cfg.configured || !cfg.ready) {
+        window.alert("请先配置AI");
+        return;
+      }
+    } catch (e) {
+      setError(errMessage(e));
+      return;
+    }
+    posterRef.current?.click();
+  };
+
+  /** 海报 → AI 识别 → 合并进表单；落库仍由「保存」完成（识别错误不污染线上）。 */
+  const importPoster = async (file: File | null) => {
+    if (!file) return;
+    setNotice("");
+    setError("");
+    setImporting(true);
+    try {
+      const res = await postcardAdminApi.importSchools(file);
+      const merged = mergeSchools(schools, res.schools);
+      setSchools(merged.schools);
+      const parts = [`已识别 ${res.schools.length} 所，新增 ${merged.added} 所`];
+      if (res.missing_no > 0) parts.push(`${res.missing_no} 所缺编号，请手动补`);
+      if (res.skipped.length > 0) parts.push(`${res.skipped.length} 条无法识别已跳过`);
+      setNotice(`${parts.join("；")}。请核对清单后点「保存」。`);
+    } catch (e) {
+      const msg = errMessage(e);
+      if (msg.includes("请先配置AI")) window.alert("请先配置AI");
+      else setError(msg);
+    } finally {
+      setImporting(false);
+    }
   };
 
   const save = async () => {
@@ -231,7 +288,31 @@ export default function ConfigTab() {
       </section>
 
       <section className="pa-card">
-        <h3 className="pa-card-title">寄达校清单（{schools.length}）</h3>
+        <div className="pa-card-head">
+          <h3 className="pa-card-title">寄达校清单（{schools.length}）</h3>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void startImport()}
+            disabled={importing}
+          >
+            {importing ? "识别中…" : "导入海报"}
+          </button>
+          <input
+            ref={posterRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null;
+              e.target.value = "";
+              void importPoster(file);
+            }}
+          />
+        </div>
+        <p className="pa-hint">
+          导入活动海报，AI 自动识别「寄达区 + 区内编号 + 校名」并合并进下面的清单；识别结果需点「保存」才生效。
+        </p>
         <div className="pa-inline">
           <select value={newRegion} onChange={(e) => setNewRegion(e.target.value)}>
             {POSTCARD_REGIONS.map((r) => (
@@ -252,25 +333,40 @@ export default function ConfigTab() {
               }
             }}
           />
+          <input
+            className="pa-no-input"
+            placeholder="编号"
+            inputMode="numeric"
+            aria-label="学校在本区的编号"
+            value={newNo}
+            maxLength={4}
+            onChange={(e) => setNewNo(e.target.value.replace(/[^\d]/g, ""))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addSchool();
+              }
+            }}
+          />
           <button type="button" className="btn btn-secondary btn-sm" onClick={addSchool}>
             添加
           </button>
         </div>
         {grouped.length === 0 ? (
-          <p className="pa-muted">还没有寄达校。登记页的寄达校下拉由这份清单生成。</p>
+          <p className="pa-muted">还没有寄达校。可以「导入海报」自动识别，也可以按「区 + 编号 + 校名」手动添加。</p>
         ) : (
           <div className="pa-schools">
             {grouped.map((g) => (
               <div key={g.region} className="pa-school-group">
                 <strong>{g.region}</strong>
                 <div className="pa-chips">
-                  {g.names.map((name) => (
-                    <span key={name} className="pa-chip">
-                      {name}
+                  {g.schools.map((s) => (
+                    <span key={s.name} className="pa-chip">
+                      {typeof s.no === "number" ? `${s.no} · ${s.name}` : s.name}
                       <button
                         type="button"
-                        aria-label={`删除 ${g.region} ${name}`}
-                        onClick={() => removeSchool(g.region, name)}
+                        aria-label={`删除 ${g.region} ${s.name}`}
+                        onClick={() => removeSchool(g.region, s.name)}
                       >
                         ×
                       </button>

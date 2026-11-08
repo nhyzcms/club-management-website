@@ -24,6 +24,8 @@ export interface PostcardGradeOption {
 export interface PostcardSchool {
   region: string;
   name: string;
+  /** 区内编号（「浦东新区1」→ 1）；老清单可能缺失。 */
+  no?: number | null;
 }
 
 export interface PostcardProgressNode {

@@ -159,6 +159,12 @@
   margin-bottom: var(--s-4);
 }
 .pc-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* 寄达校：检索框 + 下拉并排、整行铺开（区内按编号排序，见 SchoolPicker）。 */
+.pc-field-wide { grid-column: 1 / -1; }
+.pc-school-picker {
+  display: grid; grid-template-columns: minmax(160px, 1fr) minmax(200px, 1.3fr);
+  gap: var(--s-2); min-width: 0;
+}
 
 .pc-items-head { margin-bottom: var(--s-3); }
 .pc-items-head h3 { margin: 0 0 4px; font-size: 15px; }
@@ -498,6 +504,7 @@
   .pc-card { padding: var(--s-4); border-radius: var(--r-md); margin-bottom: var(--s-4); }
   .pc-field-grid { grid-template-columns: 1fr 1fr; }
   .pc-field:first-child { grid-column: 1 / -1; }
+  .pc-school-picker { grid-template-columns: 1fr; }
   .pc-item-photos { flex-wrap: wrap; }
   .pc-manual-add { flex-wrap: wrap; }
   .pc-progress li { min-width: 100%; flex-basis: 100%; }

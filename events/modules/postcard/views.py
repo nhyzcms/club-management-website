@@ -75,6 +75,7 @@ from .serializers import (
 from .throttles import (
     CodeAccessDeviceThrottle,
     CodeAccessIPThrottle,
+    SchoolsImportThrottle,
     LookupDeviceThrottle,
     LookupIPThrottle,
     RegisterDeviceThrottle,
@@ -1633,6 +1634,51 @@ class AdminAISampleImageView(APIView):
         resp["X-Content-Type-Options"] = "nosniff"
         resp["Cache-Control"] = "private, max-age=300"
         return resp
+
+
+class AdminSchoolsImportView(APIView):
+    """导入海报：AI 识别「参与学校 + 所在区 + 区内编号」。
+
+    只回解析结果、**不落库**——前端合并进配置表单，管理员核对后点保存才生效
+    （识别错误不会直接污染线上寄达校清单）。图片走与用户照片同一道安全管线
+    （魔数 / 防解码炸弹 / 重编码去 EXIF），只在内存里转发给模型，不写磁盘。
+    AI 未配置时返回 ``code=ai_not_configured``，前端据此弹「请先配置AI」。
+    """
+
+    permission_classes = [CanManagePostcard]
+    throttle_classes = [SchoolsImportThrottle]
+
+    def post(self, request):
+        from . import ai
+        from .photos import PhotoRejected, validate_and_reencode
+
+        cfg = PostcardAIConfig.load()
+        if cfg is None or not cfg.ready:
+            return Response(
+                {"code": "ai_not_configured", "detail": "请先配置AI"}, status=400,
+            )
+        image = request.FILES.get("image")
+        if image is None:
+            return Response({"detail": "请选择要导入的海报图片"}, status=400)
+        try:
+            content = validate_and_reencode(image)
+        except PhotoRejected as exc:
+            return Response({"detail": exc.reason}, status=400)
+        try:
+            result = ai.extract_schools(cfg, content.read())
+        except ai.AIReviewError:
+            # 不回显上游地址/状态码：管理员只需要知道「再试一次或手填」。
+            return Response(
+                {"detail": "AI 识别失败，请稍后重试，或手动添加学校"}, status=502,
+            )
+        event, _, _ = _phase_guard(admin=True)
+        if event is not None:
+            _audit(event, request, "schools_import", "schools", {
+                "recognized": len(result["schools"]),
+                "skipped": len(result["skipped"]),
+                "missing_no": result["missing_no"],
+            })
+        return Response(result)
 
 
 class AdminReviewQueueView(APIView):
