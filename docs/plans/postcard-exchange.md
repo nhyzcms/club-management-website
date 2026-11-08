@@ -71,7 +71,7 @@ stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自�
 | CSRF | DRF SessionAuthentication 自带校验（全站现状） |
 | SQL 注入 | 全程 Django ORM 参数化，零裸 SQL |
 | 越权 IDOR | 历史/修改按 ncdid + 指纹哈希 + 登录用户过滤；**改记录必须出示 6 位登记码**；管理端命名权限 |
-| 文件上传 | 魔数校验 → Pillow 重编码（EXIF 自动剥离）→ 像素上限 2048 → `PRIVATE_MEDIA_ROOT` 私有存储 → 短期签名 URL 仅审核台可达 |
+| 文件上传 | 魔数校验 → Pillow 重编码（**压缩至最长边 1280 / 质量 80**，EXIF 自动剥离）→ `PRIVATE_MEDIA_ROOT` 私有存储 → 短期签名 URL 仅审核台可达 |
 | 速率限制 | 登记 / 照片 / 建议 按 IP + 设备双轨限流（复用 `common/throttles.py`） |
 | 人机验证 | 登记提交挂 Turnstile（复用 `turnstile.ts`） |
 | CSP | 公告渲染走 `common/rich_text.sanitize_html` 白名单净化；PDF 公告经独立视图输出，强制 `CSP: sandbox` + `nosniff`，PDF 内嵌 JS 不可能执行 |
@@ -111,7 +111,7 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 ## 9. 服务器约束（2C / 2G / 3M）
 
 - 条码 PDF 流式生成，不落盘缓存全量；
-- 照片重编码像素上限 2048、单张 ≤5MB、单次登记 ≤5 张明信片（10 张照片）；
+- 照片重编码压缩至最长边 1280（质量 80；审核用途足够，省存储与 AI 上行载荷）、单张 ≤5MB、单次登记 ≤5 张明信片（10 张照片）；
 - AI 调用带超时（默认 30s）+ 重试上限，绝不挂起 worker；
 - 导出接口仅管理员 + 限流；
 - 不在生产服务器跑测试 / 构建（CI 四路：backend / frontend / frontend-test / e2e）。

@@ -478,6 +478,22 @@ class RegisterFlowTest(TestCase):
         resp = self._post(_register_payload(["1000001"]), files)
         self.assertEqual(resp.status_code, 400)
 
+    def test_reencode_compresses_to_audit_size(self):
+        """默认压缩（2026-11-08 用户定调）：大图重编码到最长边 1280。"""
+        from .photos import MAX_EDGE, validate_and_reencode
+
+        content = validate_and_reencode(
+            SimpleUploadedFile("big.jpg", _jpeg_bytes(size=(3000, 2000)), "image/jpeg"),
+        )
+        img = Image.open(content)
+        self.assertLessEqual(max(img.size), MAX_EDGE)
+        self.assertEqual(max(img.size), 1280)  # 3000x2000 → 1280x853
+        # 小图不放大：64x64 保持原尺寸
+        small = validate_and_reencode(
+            SimpleUploadedFile("small.jpg", _jpeg_bytes(size=(64, 64)), "image/jpeg"),
+        )
+        self.assertEqual(max(Image.open(small).size), 64)
+
 
 class MyRecordsAndIDORTest(TestCase):
     """归属三轨 + 登记码能力凭证 + IDOR（非本人一律 404）。"""
