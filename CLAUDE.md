@@ -72,6 +72,26 @@ npx playwright test                        # Browser E2E: auto-starts Django (:8
   否则权限不落库（历史踩坑）。
 - **推送后自检**：CI 状态 + 关键接口/页面人工确认；涉及前端构建的改动，确认 `frontend/dist` 真的重建了。
 
+### 移动端与 App 契约
+
+- **手机版与桌面版是两套页面**：`/m` 页面不用 `AppShell`，二级页统一走 `components/MobilePage.tsx`。
+  新增桌面工作流页面时，若该功能对手机用户必要，同时补一个 `/m` 实现，并在 `App.tsx` 的
+  `MobileAware` 里登记改道；审核台的取数规则在 `frontend/src/utils/reviewDesk.ts`（两端共用，勿复制）。
+- **入口不重复**：首页九宫格或「关于我们」里已有的功能，不在「我的」再列一次；
+  手机版考试看板只保留管理员的「考试日程编辑」，不渲染看板本体。
+- **未读红点**的数据源在 `frontend/src/api/unreadBadges.ts`：30 s 轮询 + 窗口可见/聚焦刷新，
+  并监听 App 壳派发的 `club:unread` 常量事件。`/m` 页面不用 `AppShell`，桌面顶栏那套徽标与它们无关。
+- **App 壳 UA 契约**：`NhyzClubApp/<versionName> (Android; <versionCode>)`。改壳的 UA 必须同步
+  `frontend/src/utils/device.ts`，否则「App 内默认跟随系统深色」等 App 专属行为会静默失效。
+- **`MIN_SHELL_VERSION_CODE` 慎动**：提高它等于把老壳用户挡在门外（只留「暂时继续」），
+  只有老壳真的会让网站出错时才动；改完同步 app 仓库的 `docs/FEATURE-MATRIX.md`。
+
+### 数据删除
+
+- **账号注销是软删除**（[ADR-0027](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/adr/0027-account-deletion.md)）：
+  `Profile.deleted_at` 标记，只清邮箱 / 头像 / 身份证明材料 / 会话等敏感信息；
+  `User`、`Profile`、`MemberIdentity`（社员编号）行永不删除。新增「删除用户」类功能时先读该 ADR，不要物理删账号。
+
 ### Issue tracker
 
 Issues and PRDs live as GitHub issues in `nanhui-no1-media/club-management-website`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
