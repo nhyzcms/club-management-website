@@ -318,6 +318,102 @@ class PostcardSuggestion(models.Model):
         return f"建议 #{self.pk}"
 
 
+#: 预置「网络动漫产品黑名单」形象 IP（广电历次通报下架条目摘录，2026-11）。
+#: 这是 AI 配置的**初始默认值**而非硬编码约束——管理员可在后台编辑增删。
+DEFAULT_IP_BLACKLIST = [
+    "进击的巨人", "东京喰种", "学园默示录", "寄生兽", "暗杀教室",
+    "死亡笔记", "心理测量者", "Blood-C", "斩·赤红之瞳", "大剑",
+    "妖精的旋律", "学园孤岛",
+]
+
+
+def _default_ip_blacklist() -> list:
+    return list(DEFAULT_IP_BLACKLIST)
+
+
+def postcard_sample_upload_path(instance, filename):
+    """AI 样例照片落私有存储（uuid 文件名，不经公开 MEDIA_URL 暴露）。"""
+    import uuid
+
+    return os.path.join(
+        "postcards", str(instance.event_id),
+        f"sample-{uuid.uuid4().hex[:12]}{os.path.splitext(filename)[1].lower()}",
+    )
+
+
+class PostcardAIConfig(models.Model):
+    """AI 审核配置：**全局单例**（连接参数与黑名单跨活动复用）。
+
+    ``api_key`` 写后不可读：管理端 GET 只回 ``api_key_set`` 布尔，绝不回显
+    明文（堵死任何读取面泄露）。活动级门禁在样例侧（``PostcardAISample``）：
+    活动开始前必须配样例，否则登记接口拒绝开放。
+    """
+
+    base_url = models.CharField(
+        "Base URL（OpenAI 兼容，含 /v1）", max_length=256, blank=True, default="",
+    )
+    api_key = models.CharField("API Key", max_length=512, blank=True, default="")
+    model = models.CharField("模型名", max_length=128, blank=True, default="")
+    # 自定义请求头：{"x-api-key": "..."} 等（部分兼容服务不用 Bearer）。
+    extra_headers = models.JSONField("自定义请求头", default=dict, blank=True)
+    timeout_seconds = models.PositiveSmallIntegerField("单次调用超时（秒）", default=30)
+    ip_blacklist = models.JSONField("动漫黑名单 IP 清单", default=_default_ip_blacklist, blank=True)
+    enabled = models.BooleanField("启用 AI 审核", default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "events"
+        verbose_name = "明信片 AI 审核配置"
+        verbose_name_plural = "明信片 AI 审核配置"
+
+    def __str__(self):
+        return "明信片 AI 审核配置"
+
+    @classmethod
+    def load(cls):
+        """取单例（无则 None——未配置 = AI 关闭，照片直接走人工复核）。"""
+        return cls.objects.order_by("pk").first()
+
+    @property
+    def ready(self) -> bool:
+        """AI 可用：启用 + base_url + model 齐备（api_key 允许空——部分兼容服务免鉴权）。"""
+        return bool(self.enabled and self.base_url.strip() and self.model.strip())
+
+
+class PostcardAISample(models.Model):
+    """AI 审核样例：管理员上传的「明信片信息填写样例」照片 + 说明。
+
+    每活动**至少一条才开放登记**（需求：活动开始前必须上传样例）。照片走
+    与用户照片同一道安全管线（魔数 + 重编码 + 私有存储）——管理员账号同样
+    不可信（可能被盗），上传面一律收口。
+    """
+
+    event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, related_name="postcard_ai_samples", verbose_name="所属活动",
+    )
+    image = models.FileField("样例照片", upload_to=postcard_sample_upload_path, storage=_private_storage)
+    caption = models.CharField("说明", max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = "events"
+        verbose_name = "明信片 AI 审核样例"
+        verbose_name_plural = "明信片 AI 审核样例"
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"样例 #{self.pk}"
+
+    def delete_file(self):
+        """只删物理文件；失败静默——清理不拖垮主流程（同 PostcardPhoto）。"""
+        try:
+            if self.image and self.image.storage.exists(self.image.name):
+                self.image.storage.delete(self.image.name)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 class PostcardAuditLog(models.Model):
     """管理员操作审计：配置变更 / 条码生成 / 导出 / 记录修改删除 / 签收 / 复核。"""
 

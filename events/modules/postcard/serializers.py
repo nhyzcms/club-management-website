@@ -134,6 +134,64 @@ class AdminRegistrationEditInput(serializers.Serializer):
     status = serializers.ChoiceField(choices=PostcardRegistration.STATUS_CHOICES, required=False)
 
 
+class AIConfigInput(serializers.Serializer):
+    """AI 审核配置写入（全局单例）。``api_key`` 留空 = 保持原值（写后不可读，
+    前端拿不到明文，只能整体换新）。"""
+
+    base_url = serializers.CharField(required=False, allow_blank=True, max_length=256, trim_whitespace=True)
+    api_key = serializers.CharField(required=False, allow_blank=True, max_length=512, trim_whitespace=True)
+    model = serializers.CharField(required=False, allow_blank=True, max_length=128, trim_whitespace=True)
+    extra_headers = serializers.DictField(required=False, allow_empty=True)
+    timeout_seconds = serializers.IntegerField(required=False, min_value=5, max_value=120)
+    ip_blacklist = serializers.ListField(
+        child=serializers.CharField(max_length=128, trim_whitespace=True),
+        required=False, allow_empty=True,
+    )
+    enabled = serializers.BooleanField(required=False)
+
+    def validate_base_url(self, value):
+        if value and not value.startswith(("http://", "https://")):
+            raise serializers.ValidationError("Base URL 必须以 http(s):// 开头")
+        return value.rstrip("/")
+
+    def validate_extra_headers(self, value):
+        for key, val in (value or {}).items():
+            if not isinstance(key, str) or not isinstance(val, str):
+                raise serializers.ValidationError("自定义请求头的键值都必须是字符串")
+            if not key.strip():
+                raise serializers.ValidationError("请求头键不能为空")
+        return value
+
+    def validate_ip_blacklist(self, value):
+        return [v for v in (value or []) if v.strip()]
+
+
+class ReviewDecisionInput(serializers.Serializer):
+    """人工复核判定：pass = 通过（照片即删），fail = 不通过。"""
+
+    DECISIONS = ["pass", "fail"]
+
+    decision = serializers.ChoiceField(choices=DECISIONS)
+    note = serializers.CharField(required=False, allow_blank=True, max_length=500, trim_whitespace=True)
+
+
+def item_review_info(item) -> dict:
+    """条目 → 审核状态摘要（两面照片状态由 ai 层保证同进同出，取首张即可）。
+
+    ``mismatched`` 即「告知用户哪里填错」的数据源（ai_verdict.mismatched_items）。
+    """
+    photos = list(item.photos.all())
+    if not photos:
+        return {"review_state": None, "review_label": None, "mismatched": [], "comment": ""}
+    verdict = next((p.ai_verdict for p in photos if p.ai_verdict), None) or {}
+    return {
+        "review_state": photos[0].review_state,
+        "review_label": photos[0].get_review_state_display(),
+        "mismatched": verdict.get("mismatched_items") or [],
+        "comment": verdict.get("comment") or "",
+    }
+
+
 def registration_summary(reg: PostcardRegistration, *, include_items: bool = True) -> dict:
     """登记单 → 前端展示 dict（公开侧与管理端共用）。"""
     data = {
@@ -156,7 +214,8 @@ def registration_summary(reg: PostcardRegistration, *, include_items: bool = Tru
                 "barcode": item.barcode.code,
                 "status": item.status,
                 "status_label": item.get_status_display(),
+                **item_review_info(item),
             }
-            for item in reg.items.select_related("barcode").order_by("barcode__code")
+            for item in reg.items.select_related("barcode").prefetch_related("photos").order_by("barcode__code")
         ]
     return data

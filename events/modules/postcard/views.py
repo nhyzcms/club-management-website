@@ -45,8 +45,11 @@ from events import lifecycle
 from events.models import Event
 
 from . import barcode as barcode_mod
+from . import lifecycle as photo_lifecycle
 from . import state
 from .models import (
+    PostcardAIConfig,
+    PostcardAISample,
     PostcardAuditLog,
     PostcardBarcode,
     PostcardConfig,
@@ -59,8 +62,10 @@ from .permissions import CanManagePostcard, CanReviewPostcard
 from .serializers import (
     AdminConfigInput,
     AdminRegistrationEditInput,
+    AIConfigInput,
     MyRecordEditInput,
     RegisterInput,
+    ReviewDecisionInput,
     SuggestionInput,
     registration_summary,
 )
@@ -128,10 +133,14 @@ def _phase_guard(*, admin: bool = False):
     """取 (event, config, phase)。活动不存在 → (None, None, 未开始)。
 
     ``admin=True`` 时草稿活动也纳入（配置页要能看到已建未发的活动）。
+    phase 推导出「已结束」时惰性触发照片全清（方案 §7：状态翻转触发 +
+    周期兜底双保险）——任何明信片请求都会过这道闸。
     """
     event = state.current_event(include_draft=admin)
     config = getattr(event, "postcard_config", None) if event else None
-    return event, config, state.phase_of(event, config)
+    phase = state.phase_of(event, config)
+    photo_lifecycle.maybe_purge_ended_event(event, phase)
+    return event, config, phase
 
 
 # ---------------------------------------------------------------------------
@@ -158,8 +167,10 @@ class PortalView(APIView):
             "phase_label": state.PHASE_LABELS.get(phase, phase),
             "can_register": state.can_register(phase),
             "is_admin": is_admin,
-            # PR2 起由 AI 样例配置决定；PR1 恒 True（无 AI 门禁）。
-            "sample_ready": True,
+            # PR2：样例门禁——活动开始前管理员必须上传填写样例，否则登记不开放。
+            "sample_ready": (
+                PostcardAISample.objects.filter(event=event).exists() if event else False
+            ),
             "event": None,
             "progress": [],
             "grades": [],
@@ -202,6 +213,12 @@ class RegisterView(APIView):
         event, config, phase = _phase_guard()
         if event is None or config is None or not state.can_register(phase):
             return Response({"detail": "当前不在登记期内"}, status=400)
+        # —— 样例门禁（PR2）：活动开始前管理员必须上传「填写样例」——
+        if not PostcardAISample.objects.filter(event=event).exists():
+            return Response(
+                {"detail": "活动填写样例尚未配置，暂不能登记；请联系管理员"},
+                status=400,
+            )
         if not passes_turnstile(request, request.data.get("turnstile_token") or ""):
             return turnstile_error_response(drf=True)
 
@@ -290,10 +307,24 @@ class RegisterView(APIView):
                     photo = PostcardPhoto(item=item, side=side)
                     photo.file.save(f"{item.pk}-{side}.jpg", content, save=True)
 
+        # —— AI 审核调度（PR2）：未启用 → 同步转人工；启用 → 后台线程，
+        # 登记接口立即返回（绝不挂起 worker，方案 §9）。前端轮询 my/<code>/ 拿结果。
+        from . import ai
+
+        review_state = ai.queue_registration_review(reg)
+
         return Response({
             "reg_code": reg.reg_code,
             "message": "登记成功！请保存好您的登记码，凭它可查看和修改自己的登记记录",
             "registration": registration_summary(reg),
+            "review": {
+                "state": review_state,
+                "hint": (
+                    "照片正在 AI 审核，结果稍后可在「历史登记记录」查看"
+                    if review_state == PostcardPhoto.REVIEW_PENDING
+                    else "AI 审核暂不可用，已转人工复核"
+                ),
+            },
         }, status=201)
 
 
@@ -310,10 +341,30 @@ class MyRegistrationsView(APIView):
         qs = (
             PostcardRegistration.objects.filter(event=event)
             .filter(_identity_filters(request, fp_hash))
-            .prefetch_related("items__barcode")
+            .prefetch_related("items__barcode", "items__photos")
             .order_by("-created_at")
         )
         return Response({"results": [registration_summary(r) for r in qs]})
+
+
+def _get_own_registration(request, reg_code: str) -> PostcardRegistration:
+    """按登记码（能力凭证）+ 三轨归属取自己的登记单；不命中一律 404。
+
+    MyRegistrationDetailView / 复核申请 / sendBeacon 清理三个用户侧入口共用。
+    """
+    event, _, _ = _phase_guard()
+    if event is None:
+        raise Http404
+    fp_hash = _fingerprint_hash(request.query_params.get("fingerprint") or request.data.get("fingerprint") or "")
+    reg = (
+        PostcardRegistration.objects.filter(event=event, reg_code=reg_code)
+        .filter(_identity_filters(request, fp_hash))
+        .prefetch_related("items__barcode", "items__photos")
+        .first()
+    )
+    if reg is None:
+        raise Http404
+    return reg
 
 
 class MyRegistrationDetailView(APIView):
@@ -325,19 +376,7 @@ class MyRegistrationDetailView(APIView):
     permission_classes = [AllowAny]
 
     def _get_own(self, request, reg_code: str):
-        event, _, _ = _phase_guard()
-        if event is None:
-            raise Http404
-        fp_hash = _fingerprint_hash(request.query_params.get("fingerprint") or request.data.get("fingerprint") or "")
-        reg = (
-            PostcardRegistration.objects.filter(event=event, reg_code=reg_code)
-            .filter(_identity_filters(request, fp_hash))
-            .prefetch_related("items__barcode")
-            .first()
-        )
-        if reg is None:
-            raise Http404
-        return reg
+        return _get_own_registration(request, reg_code)
 
     def get(self, request, reg_code: str):
         return Response(registration_summary(self._get_own(request, reg_code)))
@@ -367,6 +406,53 @@ class MyRegistrationDetailView(APIView):
         )
         reg.status = PostcardRegistration.STATUS_CANCELLED
         return Response(registration_summary(reg))
+
+
+class MyReviewRequestView(APIView):
+    """申请人工复核（AI 判不匹配后）：ai_failed 的条目 → manual_pending。
+
+    本人三轨 + 登记码（同 MyRegistrationDetailView）；非本人 404。
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, reg_code: str):
+        reg = _get_own_registration(request, reg_code)
+        moved = 0
+        for item in reg.items.prefetch_related("photos"):
+            if item.photos.filter(review_state=PostcardPhoto.REVIEW_AI_FAILED).exists():
+                # 保留 ai_verdict——复核员要看 AI 判了什么，只翻状态。
+                old_verdict = next(
+                    (p.ai_verdict for p in item.photos.all() if p.ai_verdict), None,
+                )
+                photo_lifecycle.settle_item_photos(
+                    item, PostcardPhoto.REVIEW_MANUAL_PENDING, verdict=old_verdict,
+                )
+                moved += 1
+        if moved == 0:
+            return Response(
+                {"detail": "当前没有 AI 判定不匹配、需要人工复核的明信片"}, status=400,
+            )
+        return Response({"message": "已提交人工复核，请耐心等待复核结果", "count": moved})
+
+
+class MyPhotoPurgeView(APIView):
+    """关标签页清理（sendBeacon）：删除自己登记单下**终态失败**照片的文件。
+
+    sendBeacon 无法带自定义 header（无 CSRF token）→ 豁免 SessionAuthentication
+    （``authentication_classes = []``，DRF 便不做 CSRF 强制）。安全依据：能力
+    凭证 = body 里的 6 位登记码（跨站攻击者不可知，CSRF 所防的「借 cookie
+    伪造操作」在此不成立），且操作仅删自己失败照片（低危、幂等）；ncdid /
+    指纹两轨归属校验照做。前端须以 ``application/json`` Blob 发送。
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, reg_code: str):
+        reg = _get_own_registration(request, reg_code)
+        purged = photo_lifecycle.purge_registration_failed_photos(reg)
+        return Response({"purged": purged})
 
 
 class SuggestionsView(APIView):
@@ -967,3 +1053,257 @@ class AdminAuditView(APIView):
             }
             for log in page
         ])
+
+
+class AdminAIConfigView(APIView):
+    """AI 审核配置（全局单例）：GET 只回掩码（api_key 绝不回显），PUT 写入。
+
+    审计挂当前活动（PostcardAuditLog.event 必填）；活动未建时跳过审计行——
+    配置变更有 updated_at 可查，活动建立后的任何变更都会留痕。
+    """
+
+    permission_classes = [CanManagePostcard]
+
+    def get(self, request):
+        cfg = PostcardAIConfig.load()
+        if cfg is None:
+            return Response({"configured": False})
+        return Response({
+            "configured": True,
+            "enabled": cfg.enabled,
+            "ready": cfg.ready,
+            "base_url": cfg.base_url,
+            "model": cfg.model,
+            "extra_headers": cfg.extra_headers or {},
+            "timeout_seconds": cfg.timeout_seconds,
+            "ip_blacklist": cfg.ip_blacklist or [],
+            "api_key_set": bool(cfg.api_key),
+        })
+
+    def put(self, request):
+        serializer = AIConfigInput(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        cfg = PostcardAIConfig.load() or PostcardAIConfig()
+        cfg.base_url = data.get("base_url", cfg.base_url)
+        cfg.model = data.get("model", cfg.model)
+        cfg.extra_headers = data.get("extra_headers", cfg.extra_headers)
+        cfg.timeout_seconds = data.get("timeout_seconds", cfg.timeout_seconds)
+        cfg.ip_blacklist = data.get("ip_blacklist", cfg.ip_blacklist)
+        cfg.enabled = data.get("enabled", cfg.enabled)
+        if data.get("api_key"):
+            cfg.api_key = data["api_key"]  # 留空 = 保持原值（写后不可读）
+        cfg.save()
+        event, _, _ = _phase_guard(admin=True)
+        if event is not None:
+            _audit(event, request, "ai_config_update", "ai-config", {
+                "enabled": cfg.enabled,
+                "base_url": cfg.base_url,
+                "model": cfg.model,
+                "api_key_changed": bool(data.get("api_key")),
+                "blacklist_count": len(cfg.ip_blacklist or []),
+            })
+        return Response({
+            "configured": True,
+            "enabled": cfg.enabled,
+            "ready": cfg.ready,
+            "api_key_set": bool(cfg.api_key),
+        })
+
+
+class AdminAISamplesView(APIView):
+    """填写样例管理：GET 列表（含 sample_ready 门禁状态），POST 上传。
+
+    样例照片走与用户照片同一道安全管线（魔数 + 重编码 + 私有存储）——
+    管理员账号同样不可信（可能被盗），上传面一律收口。
+    """
+
+    permission_classes = [CanManagePostcard]
+
+    def get(self, request):
+        event, _, _ = _phase_guard(admin=True)
+        if event is None:
+            return Response({"results": [], "sample_ready": False})
+        samples = list(event.postcard_ai_samples.all())
+        return Response({
+            "results": [
+                {
+                    "id": s.pk,
+                    "caption": s.caption,
+                    "has_image": bool(s.image),
+                    "created_at": s.created_at.isoformat(),
+                }
+                for s in samples
+            ],
+            "sample_ready": bool(samples),
+        })
+
+    def post(self, request):
+        event, _, _ = _phase_guard(admin=True)
+        if event is None:
+            return Response({"detail": "请先保存活动配置"}, status=400)
+        image = request.FILES.get("image")
+        if image is None:
+            return Response({"detail": "缺少样例照片"}, status=400)
+        from .photos import PhotoRejected, validate_and_reencode
+
+        try:
+            content = validate_and_reencode(image)
+        except PhotoRejected as exc:
+            return Response({"detail": exc.reason}, status=400)
+        caption = str(request.data.get("caption") or "").strip()[:500]
+        sample = PostcardAISample(event=event, caption=caption)
+        sample.image.save("sample.jpg", content, save=True)
+        _audit(event, request, "ai_sample_upload", f"sample#{sample.pk}", {"caption": caption})
+        return Response({
+            "id": sample.pk,
+            "caption": sample.caption,
+            "sample_ready": True,
+        }, status=201)
+
+
+class AdminAISampleDetailView(APIView):
+    """单条样例：DELETE 删（行 + 文件）。"""
+
+    permission_classes = [CanManagePostcard]
+
+    def delete(self, request, pk: int):
+        event, _, _ = _phase_guard(admin=True)
+        if event is None:
+            return Response({"detail": "请先保存活动配置"}, status=400)
+        sample = event.postcard_ai_samples.filter(pk=pk).first()
+        if sample is None:
+            raise Http404
+        sample.delete_file()
+        sample.delete()
+        _audit(event, request, "ai_sample_delete", f"sample#{pk}")
+        return Response({
+            "deleted": pk,
+            "sample_ready": event.postcard_ai_samples.exists(),
+        })
+
+
+class AdminAISampleImageView(APIView):
+    """样例照片下发（manage / review 权限；重编码后一律 JPEG）。"""
+
+    permission_classes = [CanReviewPostcard]
+
+    def get(self, request, pk: int):
+        event, _, _ = _phase_guard(admin=True)
+        if event is None:
+            raise Http404
+        sample = event.postcard_ai_samples.filter(pk=pk).first()
+        if sample is None or not sample.image or not sample.image.storage.exists(sample.image.name):
+            raise Http404
+        resp = FileResponse(sample.image.open("rb"), content_type="image/jpeg")
+        resp["X-Content-Type-Options"] = "nosniff"
+        resp["Cache-Control"] = "private, max-age=300"
+        return resp
+
+
+class AdminReviewQueueView(APIView):
+    """人工复核台队列：待人工（manual_pending）+ AI 不匹配（ai_failed）。
+
+    按条目（一张明信片）聚合：登记信息 + 照片 id（前端经 photo/<pk>/ 取图，
+    复核权限直达）+ AI 判定详情（复核员要看 AI 判了什么）。
+    """
+
+    permission_classes = [CanReviewPostcard]
+
+    def get(self, request):
+        event, _, _ = _phase_guard(admin=True)
+        if event is None:
+            return Response({"results": []})
+        qs = (
+            PostcardItem.objects.filter(
+                registration__event=event,
+                photos__review_state__in=[
+                    PostcardPhoto.REVIEW_MANUAL_PENDING, PostcardPhoto.REVIEW_AI_FAILED,
+                ],
+            )
+            .select_related("barcode", "registration")
+            .prefetch_related("photos")
+            .distinct()
+            .order_by("-pk")
+        )
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(qs, request)
+        results = []
+        for item in page:
+            reg = item.registration
+            photos = list(item.photos.all())
+            verdict = next((p.ai_verdict for p in photos if p.ai_verdict), None)
+            results.append({
+                "item_id": item.pk,
+                "barcode": item.barcode.code,
+                "review_state": photos[0].review_state if photos else None,
+                "photo_ids": [p.pk for p in photos if p.file],
+                "ai_verdict": verdict,
+                "registration": {
+                    "reg_code": reg.reg_code,
+                    "sender_name": reg.sender_name,
+                    "grade_label": reg.grade_label,
+                    "class_no": reg.class_no,
+                    "dest_region": reg.dest_region,
+                    "dest_school": reg.dest_school,
+                    "created_at": reg.created_at.isoformat(),
+                },
+            })
+        return paginator.get_paginated_response(results)
+
+
+class AdminReviewDecisionView(APIView):
+    """人工复核判定：pass = 通过（照片文件即删）/ fail = 不通过（24h TTL 删）。
+
+    只接受待复核状态（manual_pending / ai_failed）；其余 400。全量审计。
+    """
+
+    permission_classes = [CanReviewPostcard]
+
+    def post(self, request, item_pk: int):
+        event, _, _ = _phase_guard(admin=True)
+        if event is None:
+            return Response({"detail": "请先保存活动配置"}, status=400)
+        item = (
+            PostcardItem.objects.select_related("registration")
+            .filter(pk=item_pk, registration__event=event)
+            .first()
+        )
+        if item is None:
+            raise Http404
+        serializer = ReviewDecisionInput(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        decision = serializer.validated_data["decision"]
+        note = serializer.validated_data.get("note", "")
+        current = set(item.photos.values_list("review_state", flat=True))
+        if not current & {PostcardPhoto.REVIEW_MANUAL_PENDING, PostcardPhoto.REVIEW_AI_FAILED}:
+            return Response({"detail": "该明信片不在待复核状态"}, status=400)
+        new_state = (
+            PostcardPhoto.REVIEW_MANUAL_PASSED if decision == "pass"
+            else PostcardPhoto.REVIEW_MANUAL_FAILED
+        )
+        # 人工判定覆盖 ai_verdict（保留 AI 原判定于 manual.ai_verdict 供追溯）。
+        old_verdict = next(
+            (p.ai_verdict for p in item.photos.all() if p.ai_verdict), None,
+        )
+        verdict = {
+            "manual": {
+                "decision": decision,
+                "note": note,
+                "by": request.user.username if request.user.is_authenticated else None,
+            },
+            "ai_verdict": old_verdict,
+        }
+        photo_lifecycle.settle_item_photos(
+            item, new_state, verdict=verdict, purge_files=(decision == "pass"),
+        )
+        _audit(event, request, "review_decision", f"item#{item.pk}", {
+            "decision": decision,
+            "note": note,
+            "barcode": item.barcode.code,
+        })
+        return Response({
+            "item_id": item.pk,
+            "review_state": new_state,
+            "review_label": dict(PostcardPhoto.REVIEW_CHOICES).get(new_state, new_state),
+        })
