@@ -178,6 +178,9 @@ class PortalView(APIView):
             "regions": [],
             "schools": [],
             "announcement_pdf": False,
+            # 公告正文：入库前已 bleach 白名单净化（AdminConfigView PUT），
+            # 这里原样下发，前端直接渲染。
+            "announcement_body": "",
         }
         if event is not None:
             payload["event"] = {
@@ -190,9 +193,10 @@ class PortalView(APIView):
             payload["progress"] = state.progress_nodes(event, config)
         if config is not None:
             payload["announcement_pdf"] = bool(config.announcement_pdf)
+            payload["announcement_body"] = config.announcement_body or ""
             # 表单元数据只在「登记中」对普通用户开放；管理员任何阶段都要（配置预览）。
             if state.can_register(phase) or is_admin:
-                payload["grades"] = config.grade_labels
+                payload["grades"] = config.grade_options()
                 payload["regions"] = config.regions()
                 payload["schools"] = config.destination_schools or []
         return Response(payload)

@@ -8,6 +8,7 @@ import ClubFeed from "../components/ClubFeed";
 import NeonParticles from "../components/NeonParticles";
 import MemberLookup from "../components/member/MemberLookup";
 import { useLoginModal } from "../components/LoginModalProvider";
+import { isAppShell } from "../utils/device";
 import "../styles/form.css";
 import "../styles/home.css";
 import "../styles/about.css";
@@ -131,6 +132,16 @@ export default function HomePage() {
             <div className="rail-card">
               <h4><span className="bar" /> 小工具</h4>
               <div className="widget-links">
+                {/* 明信片互寄（重大活动）：独立页，浏览器新标签页打开；App 壳没有
+                    标签页，同窗口跳转。 */}
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  onClick={() => {
+                    if (isAppShell()) navigate("/postcard");
+                    else window.open("/#/postcard", "_blank", "noopener");
+                  }}
+                >明信片互寄</button>
                 <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate("/exam")}>考试看板</button>
                 <button className="btn btn-ghost btn-sm" type="button" onClick={() => navigate("/tutorials")}>教程集锦</button>
                 <button className="btn btn-ghost btn-sm" type="button" onClick={() => navigate("/schedule")}>课表下载</button>

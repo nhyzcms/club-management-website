@@ -311,12 +311,25 @@ class PortalTest(TestCase):
         data = resp.json()
         self.assertEqual(data["phase"], "registering")
         self.assertTrue(data["can_register"])
-        self.assertEqual(data["grades"], ["高一", "高二", "高三"])
+        # 年级下拉 = 键值对（value 即登记接口的 grade 键；PR3 前端表单直接消费）
+        self.assertEqual(
+            data["grades"],
+            [{"value": "g1", "label": "高一"}, {"value": "g2", "label": "高二"},
+             {"value": "g3", "label": "高三"}],
+        )
         self.assertEqual(len(data["schools"]), 2)
         self.assertEqual(data["classes"], list(range(1, 9)))
         # 寄达区 = 写死的 16 区固定清单（顺序即展示顺序）
         self.assertEqual(data["regions"][:3], ["浦东新区", "宝山区", "崇明区"])
         self.assertEqual(len(data["regions"]), 16)
+
+    def test_announcement_body_served(self):
+        """公告正文随 portal 下发（PR3 用户侧渲染；入库前已 bleach 净化）。"""
+        event, config = _config_event()
+        config.announcement_body = "<p>活动公告内容</p>"
+        config.save(update_fields=["announcement_body"])
+        data = self.client.get("/events/postcard/portal/").json()
+        self.assertEqual(data["announcement_body"], "<p>活动公告内容</p>")
 
     def test_non_registering_hides_metadata(self):
         now = timezone.now()
@@ -338,7 +351,11 @@ class PortalTest(TestCase):
         client.force_authenticate(user=admin)
         data = client.get("/events/postcard/portal/").json()
         self.assertTrue(data["is_admin"])
-        self.assertEqual(data["grades"], ["高一", "高二", "高三"])
+        self.assertEqual(
+            data["grades"],
+            [{"value": "g1", "label": "高一"}, {"value": "g2", "label": "高二"},
+             {"value": "g3", "label": "高三"}],
+        )
 
 
 class RegisterFlowTest(TestCase):
@@ -521,6 +538,12 @@ class MyRecordsAndIDORTest(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["reg_code"], self.reg_code)
         self.assertEqual(len(results[0]["items"]), 2)
+        # PR3：条目摘要带照片 id/side——用户侧历史记录据此构造鉴权照片 URL
+        first = results[0]["items"][0]
+        self.assertEqual(
+            sorted(p["side"] for p in first["photos"]), ["back", "front"],
+        )
+        self.assertTrue(all(p["id"] for p in first["photos"]))
 
     def test_my_list_by_fingerprint(self):
         client = APIClient()  # 无 device cookie，靠指纹

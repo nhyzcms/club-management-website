@@ -7,6 +7,7 @@ import type { ActivityListItem } from "../types/activities";
 import { ACTIVITY_TYPE_META, ACTIVITY_STATUS_LABELS } from "../types/activities";
 import MobileTabBar from "../components/MobileTabBar";
 import ThemeToggle from "../components/ThemeToggle";
+import { isAppShell } from "../utils/device";
 import { formatUnreadCount, useUnreadCounts } from "../api/unreadBadges";
 import "../styles/mobile.css";
 
@@ -104,6 +105,20 @@ export default function MobileHomePage() {
         <Link to="/v" className="m-grid-item">
           <svg viewBox="0 0 24 24" {...stroke}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
           <span>查询</span>
+        </Link>
+        {/* 明信片互寄（重大活动，/#/postcard 独立页）：浏览器新标签页打开；
+            App 壳没有标签页，交回 Link 走同窗口路由跳转。 */}
+        <Link
+          to="/postcard"
+          className="m-grid-item"
+          onClick={(e) => {
+            if (isAppShell()) return;
+            e.preventDefault();
+            window.open("/#/postcard", "_blank", "noopener");
+          }}
+        >
+          <svg viewBox="0 0 24 24" {...stroke}><path d="M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" /><path d="m3 9 9 6 9-6" /></svg>
+          <span>明信片</span>
         </Link>
         {/* 工作入口（2026-10-18）：登录后直达任务与待办；未登录不显示，避免点了弹登录 */}
         {counts.signedIn && (

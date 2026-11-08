@@ -103,6 +103,15 @@ class PostcardConfig(models.Model):
         keys = self.allowed_grades or [k for k, _ in self.GRADE_CHOICES]
         return [labels[k] for k in keys if k in labels]
 
+    def grade_options(self) -> list[dict]:
+        """登记表单年级下拉：``[{value, label}]``——value 即 RegisterInput 的 grade 键。
+
+        PR3 起用户侧表单直接消费（portal 载荷）；只给标签会让前端反向猜键，脆。
+        """
+        labels = dict(self.GRADE_CHOICES)
+        keys = self.allowed_grades or [k for k, _ in self.GRADE_CHOICES]
+        return [{"value": k, "label": labels[k]} for k in keys if k in labels]
+
     def regions(self) -> list[str]:
         """寄达区下拉数据：固定 16 区清单（REGION_CHOICES，写死顺序）。"""
         return list(self.REGION_CHOICES)
