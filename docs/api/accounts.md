@@ -150,6 +150,7 @@
 | real_name | string | 是 | 真实姓名，写入 `AccountIdentity.real_name`（不公开展示） |
 | identity | string | 是 | 身份，写入 `AccountIdentity.identity`；∈ `student` / `external` / `graduate` / `parent` / `teacher` |
 | card_no | string | 否 | **校牌号**（≤20 字符）。仅 `student` / `graduate` 登记，其余身份传了也忽略；先存 `AccountIdentity.pending_card_no`（待绑定暂存；绑定后以名册行 `MemberIdentity.card_no` 为准）。见下方「校牌号与自动绑定」 |
+| department | string | 否 | **教师部门**（`moral` 德育处 / `sports` 体育组）。仅 `teacher` 登记，其余身份传了也忽略；写入 `AccountIdentity.department`。可选，非法值 400「请选择有效部门」 |
 | turnstile_token | string | 条件 | Turnstile 启用时必填 |
 
 **响应 `201 Created`**
@@ -176,7 +177,7 @@
 
 `field` ∈ `username` / `email` / `real_name_card_no`；命中的是已注销账号时 `reason=account_deleted`（文案改为联系信息组）。产品意图是引导忘了原账号的人去登录，而不是开第二个号。
 
-**错误**：400 字段校验（两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、邮箱格式，单条或数组）、邮箱后缀不在白名单 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`，或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；409 注册查重（见上）；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
+**错误**：400 字段校验（两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、部门枚举非法、邮箱格式，单条或数组）、邮箱后缀不在白名单 `{"error": "该邮箱后缀暂不可用，请换用其他邮箱。详询社长或服务器管理员", "reason": "email_domain_not_allowed", "domain": "gmail.com"}`，或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；409 注册查重（见上）；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
 
 ### 邮箱认证与重发
 
@@ -541,14 +542,14 @@
 {
   "count": 1, "next": null, "previous": null,
   "results": [
-    {"id": 9, "user_id": 42, "username": "lisi", "real_name": "李四", "identity": "student",
+    {"id": 9, "user_id": 42, "username": "lisi", "real_name": "李四", "identity": "student", "department": "",
      "status": "pending", "verified_at": null, "verified_by": null,
      "proofs": [{"id": 3, "uploaded_at": "2026-09-19T03:00:00+00:00", "url": "/auth/identity-proof/3/"}]}
   ]
 }
 ```
 
-`verified_by` 为 `{"id", "username"}` 或 `null`；`real_name` / `identity` 取自该用户 `AccountIdentity`（缺行时为空串）；`proofs` 为该用户全部证明材料（倒序）。
+`verified_by` 为 `{"id", "username"}` 或 `null`；`real_name` / `identity` / `department` 取自该用户 `AccountIdentity`（缺行时为空串；`department` 仅教师身份有值：`moral` 德育处 / `sports` 体育组）；`proofs` 为该用户全部证明材料（倒序）。
 
 `POST /auth/identity-reviews/{pk}/approve/`、`POST …/reject/`、`POST …/disable/`
 

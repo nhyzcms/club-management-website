@@ -81,7 +81,7 @@
 
 **人工审批通道**的身份证明审核（`accounts.identity_review`）。一用户一行（其 manual `Verification`），队列端点 `/auth/identity-reviews/`，前端在 `/reviews` 的「身份」桌。
 
-- 桌面展示真实姓名、身份、证明材料图（可点开大图；图下标注每张的上传时间），三个动作：
+- 桌面展示真实姓名、身份（教师身份带所属部门，如「教师 · 德育处」）、证明材料图（可点开大图；图下标注每张的上传时间），三个动作：
   - **通过**：manual 通道置 `approved` + `verified_at` / `verified_by`，并发邮件；
   - **驳回**：manual 通道置 `rejected`，邮件提示可在面板重交（驳回 ≠ 停用，账号仍可登录、可重交证明）；
   - **停用账号**：`is_active=False` 并**立即吊销既有会话**（删 Session 行 + 写 `UserSession.revoked_at` / `revoked_reason=security`），发邮件通知。
