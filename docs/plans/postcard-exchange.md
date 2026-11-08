@@ -1,18 +1,23 @@
 # 明信片互寄 · 实施方案与交接文档
 
-> 状态：**开发中**。本文是唯一权威方案落点：任何开发者 / agent 读本文即可接手。
+> 状态：**已完成**（2026-11-08，批次 1–4 全部合并）。本文是唯一权威方案落点：任何开发者 / agent 读本文即可接手。
 > 需求提出：2026-11-07（用户）；方案批准：2026-11-07（用户逐条认可，含第五节 4 处解释）。
 
 ## 0. 进度看板
 
 | PR | 分支 | 内容 | 状态 |
 |---|---|---|---|
-| #1 后端核心 | `feature/postcard-backend-core` | 模型 + 5 阶段状态机 + 条码生成/PDF + 登记 CRUD/搜索/导出 + 统计 + 权限 + 限流 + 审计 + 照片安全管线 + 测试 | 已完成（63 测试全绿，待 CI） |
-| #2 AI 与复核 | `feature/postcard-ai-review`（stacked on #1） | AI 客户端(OpenAI 兼容) + 配置/样例 + AI 审核流 + 人工复核台 + 照片自动删除 + 管理员邮件告警 + 测试 | 已完成（113 模块测试全绿，待 CI） |
-| #3 前端用户侧 | `feature/postcard-portal`（stacked on #2） | 主页按钮(新标签页) + `/#/postcard` 独立页 5 状态 + 登记表单(扫码/照片/下拉) + 历史 + **查询入口(登记码/姓名)** + 建议 + 深色纯黑适配 | 已完成（42 前端测试全绿，待 CI；含 portal 载荷补 `announcement_body`/年级键值对/条目照片 id，及登记码发放时机与小查询端点） |
-| #4 前端管理侧 | `feature/postcard-admin`（stacked on #3） | 活动配置 + 条码导出 UI + AI 配置/样例 + 复核台 + 记录管理/导出 + 统计图表 + 签收扫码页 + 截图 + README | 已完成（管理端 7 分区 + 签收页 + 7 个前端测试全绿，待 CI） |
+| #1 后端核心 | `feature/postcard-backend-core` | 模型 + 5 阶段状态机 + 条码生成/PDF + 登记 CRUD/搜索/导出 + 统计 + 权限 + 限流 + 审计 + 照片安全管线 + 测试 | ✅ #292 已合并 |
+| #2 AI 与复核 | `feature/postcard-ai-review`（stacked on #1） | AI 客户端(OpenAI 兼容) + 配置/样例 + AI 审核流 + 人工复核台 + 照片自动删除 + 管理员邮件告警 + 测试 | ✅ #293 已合并（经 #295/#297 合流回 main） |
+| #3 前端用户侧 | `feature/postcard-portal`（stacked on #2） | 主页按钮(新标签页) + `/#/postcard` 独立页 5 状态 + 登记表单(扫码/照片/下拉) + 历史 + **查询入口(登记码/姓名)** + 建议 + 深色纯黑适配 | ✅ #294 已合并（经 #295/#297 合流回 main） |
+| #4 前端管理侧 | `feature/postcard-admin`（stacked on #3） | 活动配置 + 条码导出 UI + AI 配置/样例 + 记录管理/导出 + 统计图表 + 签收扫码页 + 截图 + README | ✅ #296 已合并（经 #297 合流回 main） |
+| 批次 1 · 登记码体系 | `feature/postcard-shared-code` | 同一发件人共用登记码 + 服务端发码门禁（`access_token`）+ 截止后仍可改 + `/my/` 收紧 + 管理端 by-id | ✅ #298 已合并 |
+| 批次 2 · 审核台/站内信/测试 | `feature/postcard-review-desk` | AI 连通性测试 + 复核并入 `/#/reviews`「明信片」桌 + 新待复核站内信（同码未读合并） | ✅ #300 已合并 |
+| 批次 3 · 多届活动与健壮性 | `feature/postcard-next-season` | 归档 + 开启新一届 + IP 限流 60/h + 条码并发 400 + 配置缺省不变 + PDF 无孤儿 + GC timer | ✅ #301 已合并 |
+| 批次 4 · 口径收尾 | `feature/postcard-polish` | 统计排除已取消 + 重试 1+5 / 超时 20s + 条码 PDF 打印提示 + docs-guard 收窄 | ✅ #302 已合并 |
 
 stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自动改指 main。
+2026-11-08 起改为**一批一个 PR、base 直接指 main**（避免再次出现合到旧分支的问题）。
 
 ## 1. 架构落点
 
@@ -62,7 +67,9 @@ stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自�
 - 生成数量：**1500 ~ 10000，步进 500，默认 6000**（服务端强校验）；
 - PDF 整版导出：A4，条码规格 40×20mm（条 + 下方 7 位人眼可读数字），间隙 2mm，
   每页 5 列 × 13 行 = 65 枚；6000 张 ≈ 93 页；reportlab 流式输出（2C2G 服务器实测无压力）；
-- 中文字体：`activities/fonts/NotoSansSC.ttf`（页眉用；缺失时退化 Helvetica，条码数字为 ASCII 不受影响）。
+- 中文字体：`activities/fonts/NotoSansSC.ttf`（页眉/页脚用；缺失时退化 Helvetica，条码数字为 ASCII 不受影响）；
+- 版面边距：5 列 × 40mm + 4 × 2mm = 208mm，横向仅约 1mm 余量——**PDF 每页页脚提示「请选实际大小 /
+  100%，勿缩放」**，否则打印机缩放会把条码裁掉或压窄导致扫不出。
 
 ## 5. 网安设计对照（需求 → 实现）
 
@@ -95,10 +102,23 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 - OpenAI 兼容协议，**urllib 零依赖**实现（JSON + base64 图片，带超时）；
 - 判定输入：用户照片 + 管理员样例 + 规则文本 + **动漫黑名单 IP 清单**（预置广电网络动漫黑名单条目，管理员可编辑）；
 - 输出强制严格 JSON（匹配与否 + 不匹配项 + 黑名单判定）；解析失败视为本次失败；
-- **5 次重试**（指数退避）→ 全败自动转人工复核队列；
+- **5 次重试机会 = 1 次初始 + 5 次退避重试（共 6 次尝试，退避 1/2/4/8/16s）** → 全败自动转人工复核队列；
+- 单次调用超时默认 **20s**（管理端可调 5–120s）；另有「测试连接」端点用已保存配置发一次最小文本请求，
+  回 `{ok, latency_ms, model, reply}`，错误按 HTTP 状态收敛成人话、绝不回显 api_key；
 - Redis 计数器跟踪**连续 5 个用户失败** → `send_mail` 通知所有绑定邮箱的管理员；
 - 照片生命周期：AI/人工通过 → 立即删；复核失败 → 用户关标签页 `sendBeacon` 删 + 24h TTL 兜底；
   活动结束 → 全量清除（状态翻转触发 + 周期兜底）。登记数据永久保留，除非管理员手动删。
+
+### 7.1 管理端前端（PR4）
+
+- 路由：`/#/postcard/admin`（六个分区：配置 / 条码 / AI / 记录 / 统计 / 建议与审计）、
+  `/#/postcard/receive`（签收扫码）——两者均挂 `ProtectedRoute`，权限真源在服务端命名权限，
+  前端只做「403 → 无权限提示」，不复制一套权限判定；人工复核不在管理端，见 §7.3。
+- 配置提交固定走 **multipart**：公告 PDF 只能走文件上传，而 HTML 表单承载不了对象数组，
+  所以 `destination_schools` 以 JSON 串提交，后端 `JSONListField` 只在 html 输入且值以 `[`
+  开头时解码（JSON 请求行为不变，非法 JSON 仍按字段错误返回）。
+- 性能：`chart.js`（统计页）与 `zxing-wasm`（扫码）全部动态 `import()`，普通用户首屏零增量；
+  管理端样式复用 `cobalt.css` 设计令牌，深色模式随 `data-theme` 自动接管。
 
 ### 7.2 共用登记码（批次 1，2026-11-08）
 
@@ -108,16 +128,33 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 - 管理端：记录行带 `registration_id`，改/删走 `admin/registrations/by-id/<id>/`；按码操作在多份提交时返回 400。
 - 登记截止后 portal 仍下发年级 / 16 区 / 学校清单（历史「修改」可用）；用户改登记与登记同一套区校校验；已取消条目不再阻塞登记单状态联动。
 
-### 7.1 管理端前端（PR4）
+### 7.3 审核台集成 + 站内信 + 连通性测试（批次 2，2026-11-08）
 
-- 路由：`/#/postcard/admin`（七个分区：配置 / 条码 / AI / 复核 / 记录 / 统计 / 建议与审计）、
-  `/#/postcard/receive`（签收扫码）；两者均挂 `ProtectedRoute`，权限真源在服务端命名权限，
-  前端只做「403 → 无权限提示」，不复制一套权限判定。
-- 配置提交固定走 **multipart**：公告 PDF 只能走文件上传，而 HTML 表单承载不了对象数组，
-  所以 `destination_schools` 以 JSON 串提交，后端 `JSONListField` 只在 html 输入且值以 `[`
-  开头时解码（JSON 请求行为不变，非法 JSON 仍按字段错误返回）。
-- 性能：`chart.js`（统计页）与 `zxing-wasm`（扫码）全部动态 `import()`，普通用户首屏零增量；
-  管理端样式复用 `cobalt.css` 设计令牌，深色模式随 `data-theme` 自动接管。
+- **不单开复核台**：管理端删除「复核台」tab，人工复核并入全站审核台 `/#/reviews` 的「明信片」桌
+  （桌面 `ReviewQueuePage` 与手机 `MobileReviewPage` 共用 `PostcardReviewPane`，沿用 `reviewDesk.ts`
+  的取数与「下一条」语义）；队列接口补通用 `id` 与 `state=manual_pending|ai_failed` 过滤；
+  `/auth/me` 增 `can_review_postcard`（manage 隐含），能力标签表同步（契约测试钉死）。
+- **站内信**：`ReviewSource` 新增事件 `postcard_submitted`（「新明信片待复核」），
+  `notify_perm("review", ..., "events.review_postcard", extra_recipients=manage 持有者)` 投递；
+  订阅开关 / 未读 / 推送 / 外发规则与「新内容送审」完全一致；**同登记码未读合并**
+  （`ReviewSource.dedup_identity`）防刷屏。触发点：AI 未配置或不可用转人工、AI 重试耗尽转人工、
+  用户主动申请人工复核。
+- **AI 连通性测试**：`POST /admin/ai/test/`（manage）用已保存配置发一次最小文本请求，
+  返回 `{ok, latency_ms, model, reply}` 或 `{ok:false, error}`；401/403/404/429/5xx 收敛成中文，
+  写审计 `ai_test`；管理端 AI 页有「测试连接」按钮。
+
+### 7.4 多届活动与健壮性（批次 3/4，2026-11-08）
+
+- **多届活动**：`POST /admin/new-season/` 归档当前活动 + 新建草稿（复制年级与寄达校清单）；
+  `POST /admin/archive/` 单独归档。管理端配置页「开启新一届（归档当前）」按钮，二次确认。
+  归档活动对公众仍显示「活动已结束」（`current_event` 回退语义保留），旧登记数据不动。
+- **限流**：登记 IP 轨 10/h → **60/h**（学校 NAT 整层楼共出口），设备轨维持 10/h。
+- **并发**：条码预检通过后被另一请求抢占时，捕获唯一约束冲突返回友好 400（不再 500）。
+- **配置 PUT**：节点 / 年级 / 清单 / 公告正文缺省 = 保持不变；公告 PDF 替换前删旧文件。
+- **周期清理**：`install.sh` 安装 `${SERVICE}-postcard-gc.timer`（每小时 + 随机延迟），
+  活动结束后的照片清除不再依赖「有人访问页面」。
+- **统计口径**：已取消条目不计入「明信片总数 / 按校 / 按年级 / 按日」，取消数单独给出。
+
 
 ## 8. 需求解释（已获用户认可，勿再改动）
 
@@ -134,6 +171,6 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 
 - 条码 PDF 流式生成，不落盘缓存全量；
 - 照片重编码压缩至最长边 1280（质量 80；审核用途足够，省存储与 AI 上行载荷）、单张 ≤5MB、单次登记 ≤5 张明信片（10 张照片）；
-- AI 调用带超时（默认 30s）+ 重试上限，绝不挂起 worker；
+- AI 调用带超时（默认 20s）+ 重试上限（1+5），绝不挂起 worker；
 - 导出接口仅管理员 + 限流；
-- 不在生产服务器跑测试 / 构建（CI 四路：backend / frontend / frontend-test / e2e）。
+- 不在生产服务器跑测试 / 构建（CI：docs-guard / backend / frontend / frontend-test / e2e）。
