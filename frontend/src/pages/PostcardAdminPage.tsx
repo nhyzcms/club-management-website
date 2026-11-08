@@ -4,7 +4,6 @@ import MobilePage from "../components/MobilePage";
 import ConfigTab from "../components/postcard/admin/ConfigTab";
 import BarcodeTab from "../components/postcard/admin/BarcodeTab";
 import AITab from "../components/postcard/admin/AITab";
-import ReviewTab from "../components/postcard/admin/ReviewTab";
 import RecordsTab from "../components/postcard/admin/RecordsTab";
 import StatsTab from "../components/postcard/admin/StatsTab";
 import MiscTab from "../components/postcard/admin/MiscTab";
@@ -15,7 +14,6 @@ const TABS = [
   { key: "config", label: "活动配置" },
   { key: "barcode", label: "条码" },
   { key: "ai", label: "AI 审核" },
-  { key: "review", label: "复核台" },
   { key: "records", label: "登记记录" },
   { key: "stats", label: "统计" },
   { key: "misc", label: "建议与审计" },
@@ -57,6 +55,10 @@ export default function PostcardAdminPage() {
             <a className="pa-inline-link" href="#/postcard/receive" target="_blank" rel="noopener noreferrer">
               签收扫码
             </a>
+            {/* 复核并入全站审核台：这里只留入口，不再单开一桌（2026-11-08 用户要求）。 */}
+            <a className="pa-inline-link" href="#/reviews?kind=postcard">
+              去审核台复核
+            </a>
           </p>
         </div>
       </header>
@@ -80,7 +82,6 @@ export default function PostcardAdminPage() {
         {tab === "config" && <ConfigTab />}
         {tab === "barcode" && <BarcodeTab />}
         {tab === "ai" && <AITab />}
-        {tab === "review" && <ReviewTab />}
         {tab === "records" && <RecordsTab />}
         {tab === "stats" && <StatsTab />}
         {tab === "misc" && <MiscTab />}

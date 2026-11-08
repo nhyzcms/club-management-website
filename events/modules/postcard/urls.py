@@ -39,6 +39,7 @@ urlpatterns = [
     path("admin/suggestions/", views.AdminSuggestionsView.as_view(), name="postcard-admin-suggestions"),
     path("admin/audit/", views.AdminAuditView.as_view(), name="postcard-admin-audit"),
     path("admin/ai/config/", views.AdminAIConfigView.as_view(), name="postcard-admin-ai-config"),
+    path("admin/ai/test/", views.AdminAITestView.as_view(), name="postcard-admin-ai-test"),
     path("admin/ai/samples/", views.AdminAISamplesView.as_view(), name="postcard-admin-ai-samples"),
     path("admin/ai/samples/<int:pk>/", views.AdminAISampleDetailView.as_view(), name="postcard-admin-ai-sample"),
     path("admin/ai/samples/<int:pk>/image/", views.AdminAISampleImageView.as_view(), name="postcard-admin-ai-sample-image"),

@@ -955,6 +955,8 @@ class CapabilityKeysContractTest(TestCase):
             "can_manage_announcements",
             "can_review_password_reset",
             "can_manage_events",
+            "can_manage_postcard",
+            "can_review_postcard",
         }
         user = User.objects.create_user(username="cap", password="p")
         keys = set(_capabilities(user).keys())

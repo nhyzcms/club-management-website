@@ -1574,6 +1574,11 @@ def _capabilities(user):
         # 活动（events app）：可管理任意活动。装载形态的 can_manage_event_types
         # 等模块注册表落地时再加——能力键集是冻结契约，不预留空键。
         "can_manage_events": user.has_perm("events.manage_events"),
+        # 明信片互寄：管理端 / 审核台（复核）两张门禁。
+        "can_manage_postcard": user.has_perm("events.manage_postcard"),
+        "can_review_postcard": user.has_perm("events.review_postcard")
+        or user.has_perm("events.manage_postcard")
+        or user.is_superuser,
     }
 
 

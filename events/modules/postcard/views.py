@@ -577,7 +577,9 @@ def _request_manual_review(event, reg_code: str):
     regs = list(PostcardRegistration.objects.filter(event=event, reg_code=reg_code)) if event else []
     if not regs:
         raise Http404
+    touched = []
     for reg in regs:
+        hit = False
         for item in reg.items.prefetch_related("photos"):
             if item.photos.filter(review_state=PostcardPhoto.REVIEW_AI_FAILED).exists():
                 # 保留 ai_verdict——复核员要看 AI 判了什么，只翻状态。
@@ -588,10 +590,19 @@ def _request_manual_review(event, reg_code: str):
                     item, PostcardPhoto.REVIEW_MANUAL_PENDING, verdict=old_verdict,
                 )
                 moved += 1
+                hit = True
+        if hit:
+            touched.append(reg)
     if moved == 0:
         return Response(
             {"detail": "当前没有 AI 判定不匹配、需要人工复核的明信片"}, status=400,
         )
+    # 新审核申请 → 站内信（与其他类型审核同一套规则；同码未读聚合防刷屏）
+    from .notify import notify_reviewers
+
+    for reg in touched:
+        notify_reviewers(reg)
+
     return Response({"message": "已提交人工复核，请耐心等待复核结果", "count": moved})
 
 
@@ -1372,6 +1383,34 @@ class AdminAIConfigView(APIView):
         })
 
 
+class AdminAITestView(APIView):
+    """测试 AI 配置：用已保存的配置发一次最小对话请求。
+
+    返回 ``{ok, latency_ms, model, reply}`` 或 ``{ok: false, error}``（HTTP 200，
+    由前端按 ok 展示）。失败原因已收敛成人话，**绝不回显 api_key**。
+    """
+
+    permission_classes = [CanManagePostcard]
+
+    def post(self, request):
+        from . import ai
+
+        cfg = PostcardAIConfig.load()
+        if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
+            return Response({
+                "ok": False,
+                "error": "配置不完整：需要启用 AI、填写 Base URL 与模型名后才能测试",
+            })
+        result = ai.test_connection(cfg)
+        event, _, _ = _phase_guard(admin=True)
+        if event is not None:
+            _audit(event, request, "ai_test", "ai-config", {
+                "ok": bool(result.get("ok")),
+                "latency_ms": result.get("latency_ms"),
+            })
+        return Response(result)
+
+
 class AdminAISamplesView(APIView):
     """填写样例管理：GET 列表（含 sample_ready 门禁状态），POST 上传。
 
@@ -1475,12 +1514,17 @@ class AdminReviewQueueView(APIView):
         event, _, _ = _phase_guard(admin=True)
         if event is None:
             return Response({"results": []})
+        # 审核台按状态分桌：待人工 / AI 不匹配 / 全部（缺省=全部）
+        state = (request.query_params.get("state") or "").strip()
+        wanted = [PostcardPhoto.REVIEW_MANUAL_PENDING, PostcardPhoto.REVIEW_AI_FAILED]
+        if state == PostcardPhoto.REVIEW_MANUAL_PENDING:
+            wanted = [PostcardPhoto.REVIEW_MANUAL_PENDING]
+        elif state == PostcardPhoto.REVIEW_AI_FAILED:
+            wanted = [PostcardPhoto.REVIEW_AI_FAILED]
         qs = (
             PostcardItem.objects.filter(
                 registration__event=event,
-                photos__review_state__in=[
-                    PostcardPhoto.REVIEW_MANUAL_PENDING, PostcardPhoto.REVIEW_AI_FAILED,
-                ],
+                photos__review_state__in=wanted,
             )
             .select_related("barcode", "registration")
             .prefetch_related("photos")
@@ -1495,6 +1539,8 @@ class AdminReviewQueueView(APIView):
             photos = list(item.photos.all())
             verdict = next((p.ai_verdict for p in photos if p.ai_verdict), None)
             results.append({
+                # 审核台通用首键（firstOf 依赖 id）与明信片语义的 item_id 同时给。
+                "id": item.pk,
                 "item_id": item.pk,
                 "barcode": item.barcode.code,
                 "review_state": photos[0].review_state if photos else None,
