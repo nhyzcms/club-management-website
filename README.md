@@ -112,7 +112,14 @@
   （三轨），支持改寄出人信息 / 取消（两步确认）/ 申请人工复核 / 查看 AI 错项提示与照片，
   待审条目 5s 轻量轮询；**查询入口**：6 位登记码（换设备/清 Cookie 也能查改）或寄出人姓名
   （只回掩码登记码 + 状态，修改须完整码）找回登记；建议箱；深色（OLED 纯黑）经 CSS 变量
-  自动适配。管理端界面在后续 PR 接入（见方案文档进度看板）
+  自动适配。**管理端前端已上线**（PR4，`frontend/src/pages/PostcardAdminPage.tsx`）：
+  `/#/postcard/admin` 七个分区——活动配置（壳字段 + 寄出/下发节点 + 年级 + 16 区寄达校清单
+  + 富文本公告与 Word 导入 + 公告 PDF）、条码（数量校验 / 生成 / 整版 PDF）、AI 配置与填写
+  样例（api_key 写后不可读，留空保存 = 保持原值）、人工复核台（双面照片 + AI 判定 + 通过/
+  不通过 + 备注）、登记记录（搜索筛选 / 改 / 取消 / 删除 / xlsx·pdf 导出）、统计（指标卡 +
+  寄达校 / 年级 / 每日登记 chart.js 图表，按需动态加载）、建议与审计；另有独立签收页
+  `/#/postcard/receive`（扫码或手输 7 位条码 → 核对 → 确认签收 / 误签回退），入口只在
+  管理员身份下显示（权限真源仍是服务端命名权限 `manage_postcard` / `review_postcard`）
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA。前端入口（桌面顶栏头像菜单「后台管理」、
   手机版「我的 → 进入后台管理」）**只对 `is_staff` 账号显示**（对应身份徽章 `admin` / `superadmin`，
   判定在 `frontend/src/utils/roles.ts` 的 `canAccessAdmin`）；普通用户与访客不再看到该入口，
@@ -215,8 +222,8 @@ club-management-website/
 - 新闻：`/news/`
 - 互动：`/activities/`
 - 活动（限时，`events`）：`/events/`；门户 `/#/events`、`/#/events/:id`
-- 明信片互寄（`events` 形态模块 `postcard`）：`/events/postcard/`；独立页 `/#/postcard`
-  （方案与交接文档：`docs/plans/postcard-exchange.md`）
+- 明信片互寄（`events` 形态模块 `postcard`）：`/events/postcard/`；用户页 `/#/postcard`、
+  管理端 `/#/postcard/admin`、签收 `/#/postcard/receive`（方案与交接文档：`docs/plans/postcard-exchange.md`）
 - 审核（发布审核 / 意见反馈 / 举报）：`/reviews/`
 - 教程：`/tutorials/`
 - 招聘：`/recruitment/`

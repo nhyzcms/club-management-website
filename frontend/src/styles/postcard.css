@@ -42,6 +42,24 @@
 }
 .pc-gate h2 { margin: 0; }
 .pc-gate-icon { width: 56px; height: 56px; color: var(--brand-500); }
+.pc-admin-hint a { color: var(--accent); font-weight: 600; margin-inline: 2px; }
+
+/* 管理员工具条（仅 is_admin 渲染；普通用户看不到）。 */
+.pc-admin-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--s-2) var(--s-4);
+}
+.pc-admin-bar a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.pc-admin-bar a:hover { text-decoration: underline; }
+
 .pc-admin-hint {
   font-size: 13px;
   color: var(--muted);

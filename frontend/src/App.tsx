@@ -77,6 +77,8 @@ const MobileNotificationsPage = lazy(() => import("./pages/MobileNotificationsPa
 const MobileTaskListPage = lazy(() => import("./pages/MobileTaskListPage"));
 const MobileTaskDetailPage = lazy(() => import("./pages/MobileTaskDetailPage"));
 const PostcardPage = lazy(() => import("./pages/PostcardPage"));
+const PostcardAdminPage = lazy(() => import("./pages/PostcardAdminPage"));
+const PostcardReceivePage = lazy(() => import("./pages/PostcardReceivePage"));
 
 function Loading() {
   return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中…</div>;
@@ -182,6 +184,15 @@ export default function App() {
           <Route path="/exam" element={<ExamBoardPage />} />
           {/* 明信片互寄独立页：主页按钮新标签页打开；直链 / App 壳内同窗口可达。 */}
           <Route path="/postcard" element={<PostcardPage />} />
+          {/* 管理端与签收页：权限真源在服务端（manage_postcard / review_postcard）。 */}
+          <Route
+            path="/postcard/admin"
+            element={<ProtectedRoute><PostcardAdminPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/postcard/receive"
+            element={<ProtectedRoute><PostcardReceivePage /></ProtectedRoute>}
+          />
           <Route path="/schedule" element={<SchedulePage />} />
           <Route path="/tutorials" element={<TutorialListPage />} />
           <Route path="/tutorials/new" element={<ProtectedRoute><TutorialFormPage /></ProtectedRoute>} />
