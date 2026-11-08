@@ -80,15 +80,51 @@ export function clampBarcodeCount(value: number, min: number, max: number, step:
   return min + Math.round((clamped - min) / step) * step;
 }
 
-/** 寄达校清单按区聚组（保持 16 区固定顺序，区内保持录入顺序）。 */
+export interface SchoolEntry {
+  region: string;
+  name: string;
+  /** 区内编号（「浦东新区1」→ 1）；老清单可能缺失（排在该区末尾）。 */
+  no?: number | null;
+}
+
+/** 寄达校清单按区聚组：保持 16 区固定顺序，区内按编号升序（无编号排末尾）。 */
 export function groupSchools(
-  schools: { region: string; name: string }[],
+  schools: SchoolEntry[],
   regions: string[],
-): { region: string; names: string[] }[] {
+): { region: string; schools: SchoolEntry[] }[] {
   return regions
     .map((region) => ({
       region,
-      names: schools.filter((s) => s.region === region).map((s) => s.name),
+      schools: schools
+        .filter((s) => s.region === region)
+        .sort((a, b) => {
+          const an = typeof a.no === "number" ? a.no : Number.POSITIVE_INFINITY;
+          const bn = typeof b.no === "number" ? b.no : Number.POSITIVE_INFINITY;
+          if (an !== bn) return an - bn;
+          return a.name.localeCompare(b.name, "zh-Hans-CN");
+        }),
     }))
-    .filter((g) => g.names.length > 0);
+    .filter((g) => g.schools.length > 0);
+}
+
+/**
+ * 合并「导入海报」的识别结果：同区同名视为同一所（编号以识别结果为准），
+ * 其余追加。返回新的清单与新增条数（提示文案要用），不改入参。
+ */
+export function mergeSchools(
+  current: SchoolEntry[],
+  incoming: SchoolEntry[],
+): { schools: SchoolEntry[]; added: number } {
+  const next = current.map((s) => ({ ...s }));
+  let added = 0;
+  for (const inc of incoming) {
+    const i = next.findIndex((s) => s.region === inc.region && s.name === inc.name);
+    if (i >= 0) {
+      if (typeof inc.no === "number") next[i] = { ...next[i], no: inc.no };
+      continue;
+    }
+    next.push({ region: inc.region, name: inc.name, no: inc.no });
+    added += 1;
+  }
+  return { schools: next, added };
 }

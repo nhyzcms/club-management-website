@@ -47,6 +47,8 @@ urlpatterns = [
     path("admin/ai/samples/<int:pk>/", views.AdminAISampleDetailView.as_view(), name="postcard-admin-ai-sample"),
     path("admin/ai/samples/<int:pk>/explain/", views.AdminAISampleExplainView.as_view(), name="postcard-admin-ai-sample-explain"),
     path("admin/ai/samples/<int:pk>/image/", views.AdminAISampleImageView.as_view(), name="postcard-admin-ai-sample-image"),
+    # 导入海报 → AI 识别参与学校（只回结果，不落库）
+    path("admin/schools/import/", views.AdminSchoolsImportView.as_view(), name="postcard-admin-schools-import"),
     path("admin/review/", views.AdminReviewQueueView.as_view(), name="postcard-admin-review-queue"),
     path("admin/review/<int:item_pk>/", views.AdminReviewDecisionView.as_view(), name="postcard-admin-review-decision"),
 ]

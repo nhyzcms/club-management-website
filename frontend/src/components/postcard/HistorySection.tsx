@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { PostcardPortal, PostcardRegistrationSummary } from "../../api/postcard";
 import { postcardApi } from "../../api/postcard";
-import { hasAiFailedItem, schoolsInRegion } from "./pure";
+import SchoolPicker from "./SchoolPicker";
+import { hasAiFailedItem } from "./pure";
 
 interface Props {
   regs: PostcardRegistrationSummary[];
@@ -173,8 +174,6 @@ export default function HistorySection({ regs, portal, fingerprint, isMobile, on
     );
   }
 
-  const schoolOptions = schoolsInRegion(portal.schools, draft.dest_region);
-
   return (
     <div className="pc-history">
       {notice && <p className="pc-history-notice">{notice}</p>}
@@ -250,19 +249,14 @@ export default function HistorySection({ regs, portal, fingerprint, isMobile, on
                       ))}
                     </select>
                   </div>
-                  <div className="pc-field">
+                  <div className="pc-field pc-field-wide">
                     <label className="label">寄达校</label>
-                    <select
-                      className="input"
+                    <SchoolPicker
+                      schools={portal.schools}
+                      region={draft.dest_region}
                       value={draft.dest_school}
-                      disabled={!draft.dest_region}
-                      onChange={(e) => setDraft({ ...draft, dest_school: e.target.value })}
-                    >
-                      <option value="">请选择</option>
-                      {schoolOptions.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
+                      onChange={(name) => setDraft({ ...draft, dest_school: name })}
+                    />
                   </div>
                 </div>
                 <div className="pc-reg-actions">

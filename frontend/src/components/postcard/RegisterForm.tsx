@@ -1,13 +1,13 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { PostcardPortal, RegisterResult } from "../../api/postcard";
 import { postcardApi } from "../../api/postcard";
 import { useTurnstile } from "../../turnstile";
 import BarcodeScanPanel from "./BarcodeScanPanel";
+import SchoolPicker from "./SchoolPicker";
 import {
   addBarcode,
   buildRegisterFormData,
   checkPhotoFile,
-  schoolsInRegion,
   validateRegistration,
   type DraftItem,
   type RegisterFormValues,
@@ -40,11 +40,6 @@ export default function RegisterForm({ portal, fingerprint, isMobile, onRegister
   const [itemError, setItemError] = useState("");
   const [busy, setBusy] = useState(false);
   const { containerRef, token, reset, enabled } = useTurnstile(true);
-
-  const schoolOptions = useMemo(
-    () => schoolsInRegion(portal.schools, values.dest_region),
-    [portal.schools, values.dest_region],
-  );
 
   const setField = (key: keyof RegisterFormValues, value: string) => {
     setValues((v) => {
@@ -180,20 +175,15 @@ export default function RegisterForm({ portal, fingerprint, isMobile, onRegister
             ))}
           </select>
         </div>
-        <div className="pc-field">
+        <div className="pc-field pc-field-wide">
           <label className="label" htmlFor="pc-school">寄达校</label>
-          <select
+          <SchoolPicker
             id="pc-school"
-            className="input"
+            schools={portal.schools}
+            region={values.dest_region}
             value={values.dest_school}
-            disabled={!values.dest_region}
-            onChange={(e) => setField("dest_school", e.target.value)}
-          >
-            <option value="">{values.dest_region ? "请选择" : "请先选择寄达区"}</option>
-            {schoolOptions.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+            onChange={(name) => setField("dest_school", name)}
+          />
         </div>
       </div>
 

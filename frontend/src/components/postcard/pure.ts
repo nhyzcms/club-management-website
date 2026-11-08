@@ -40,9 +40,49 @@ export function addBarcode(items: DraftItem[], raw: string): AddBarcodeResult {
   return { ok: true, items: [...items, { barcode: code, front: null, back: null }] };
 }
 
-/** 寄达校下拉：按所选区从清单过滤（顺序保持管理员配置序）。 */
-export function schoolsInRegion(schools: PostcardSchool[], region: string): string[] {
-  return (schools || []).filter((s) => s.region === region).map((s) => s.name);
+/** 区内编号比较：有编号的按编号升序在前，无编号的排末尾（老清单兜底），同号按校名。 */
+function compareSchool(a: PostcardSchool, b: PostcardSchool): number {
+  const an = typeof a.no === "number" ? a.no : null;
+  const bn = typeof b.no === "number" ? b.no : null;
+  if (an !== bn) {
+    if (an === null) return 1;
+    if (bn === null) return -1;
+    return an - bn;
+  }
+  return a.name.localeCompare(b.name, "zh-Hans-CN");
+}
+
+/** 寄达校排序：区内按编号（「浦东新区1/2/3…」），无编号的排末尾。 */
+export function sortSchools(schools: PostcardSchool[]): PostcardSchool[] {
+  return [...(schools || [])].sort(compareSchool);
+}
+
+/**
+ * 寄达校检索：先按区过滤、再按关键词筛（空关键词 = 全区按编号列出）。
+ *
+ * 关键词命中三种写法：校名片段、纯编号（`12`）、完整编号（`浦东新区12`）；
+ * 换区后由调用方清空关键词，避免「上一区的词搜不到新区学校」的错觉。
+ */
+export function filterSchools(
+  schools: PostcardSchool[],
+  region: string,
+  query: string,
+): PostcardSchool[] {
+  const list = sortSchools((schools || []).filter((s) => s.region === region));
+  const q = (query || "").trim().toLowerCase().replace(/\s+/g, "");
+  if (!q) return list;
+  const numeric = /^\d+$/.test(q);
+  return list.filter((s) => {
+    if (s.name.toLowerCase().includes(q)) return true;
+    if (typeof s.no !== "number") return false;
+    if (q === `${s.region}${s.no}`.toLowerCase()) return true;
+    return numeric ? String(s.no) === q : `${s.region}${s.no}`.toLowerCase().includes(q);
+  });
+}
+
+/** 下拉展示文案：`12 · 某某中学`（无编号时只显示校名）。 */
+export function schoolLabel(s: PostcardSchool): string {
+  return typeof s.no === "number" ? `${s.no} · ${s.name}` : s.name;
 }
 
 export interface RegisterFormValues {
