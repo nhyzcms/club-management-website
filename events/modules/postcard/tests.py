@@ -637,6 +637,9 @@ class LookupTest(TestCase):
         _add_sample(self.event)
         self.reg = _make_registration(self.event, ["1000001"])
         self.client = APIClient()
+        # 预置设备 Cookie：否则首个请求计入 IP 轨、之后计入设备轨（限流计数
+        # 会多放行 1 次），测试对不上；真实浏览器同理（首访响应才种 Cookie）。
+        self.client.cookies["club_device"] = DEVICE_A
 
     def test_lookup_by_code_full_summary(self):
         resp = self.client.post("/events/postcard/lookup/", {"q": self.reg.reg_code})
