@@ -10,7 +10,7 @@
 | #1 后端核心 | `feature/postcard-backend-core` | 模型 + 5 阶段状态机 + 条码生成/PDF + 登记 CRUD/搜索/导出 + 统计 + 权限 + 限流 + 审计 + 照片安全管线 + 测试 | 已完成（63 测试全绿，待 CI） |
 | #2 AI 与复核 | `feature/postcard-ai-review`（stacked on #1） | AI 客户端(OpenAI 兼容) + 配置/样例 + AI 审核流 + 人工复核台 + 照片自动删除 + 管理员邮件告警 + 测试 | 已完成（113 模块测试全绿，待 CI） |
 | #3 前端用户侧 | `feature/postcard-portal`（stacked on #2） | 主页按钮(新标签页) + `/#/postcard` 独立页 5 状态 + 登记表单(扫码/照片/下拉) + 历史 + **查询入口(登记码/姓名)** + 建议 + 深色纯黑适配 | 已完成（42 前端测试全绿，待 CI；含 portal 载荷补 `announcement_body`/年级键值对/条目照片 id，及登记码发放时机与小查询端点） |
-| #4 前端管理侧 | （stacked on #3） | 活动配置 + 条码导出 UI + AI 配置/样例 + 复核台 + 记录管理/导出 + 统计图表 + 签收扫码页 + 截图 + README | 未开始 |
+| #4 前端管理侧 | `feature/postcard-admin`（stacked on #3） | 活动配置 + 条码导出 UI + AI 配置/样例 + 复核台 + 记录管理/导出 + 统计图表 + 签收扫码页 + 截图 + README | 已完成（管理端 7 分区 + 签收页 + 7 个前端测试全绿，待 CI） |
 
 stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自动改指 main。
 
@@ -99,6 +99,17 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 - Redis 计数器跟踪**连续 5 个用户失败** → `send_mail` 通知所有绑定邮箱的管理员；
 - 照片生命周期：AI/人工通过 → 立即删；复核失败 → 用户关标签页 `sendBeacon` 删 + 24h TTL 兜底；
   活动结束 → 全量清除（状态翻转触发 + 周期兜底）。登记数据永久保留，除非管理员手动删。
+
+### 7.1 管理端前端（PR4）
+
+- 路由：`/#/postcard/admin`（七个分区：配置 / 条码 / AI / 复核 / 记录 / 统计 / 建议与审计）、
+  `/#/postcard/receive`（签收扫码）；两者均挂 `ProtectedRoute`，权限真源在服务端命名权限，
+  前端只做「403 → 无权限提示」，不复制一套权限判定。
+- 配置提交固定走 **multipart**：公告 PDF 只能走文件上传，而 HTML 表单承载不了对象数组，
+  所以 `destination_schools` 以 JSON 串提交，后端 `JSONListField` 只在 html 输入且值以 `[`
+  开头时解码（JSON 请求行为不变，非法 JSON 仍按字段错误返回）。
+- 性能：`chart.js`（统计页）与 `zxing-wasm`（扫码）全部动态 `import()`，普通用户首屏零增量；
+  管理端样式复用 `cobalt.css` 设计令牌，深色模式随 `data-theme` 自动接管。
 
 ## 8. 需求解释（已获用户认可，勿再改动）
 
