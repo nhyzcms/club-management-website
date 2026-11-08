@@ -1,347 +1,93 @@
 # 南汇一中传媒社 · 社团管理系统
 
-这是一个以 Django 为核心、React 前端为展示层的社团内部管理系统。当前代码结构已经覆盖了用户认证、任务管理、互动/众议/征集/展示、新闻发布、提案/反馈、教程、招聘、评论与私信、通知、横幅公告和站点策略等核心场景，适用于校内社团的日常运营和后台管理。
+校内社团的**自托管运营平台**：入社与身份、互动与活动、内容发布与审核、通知与私信、考试看板，一套 Django 单体 + React SPA 全包。
 
-## 1. 当前项目状况
+- 线上：<https://8.153.145.175/>
+- 形态：Django 6（DRF + Channels）后端 + React 19 SPA 前端，前端产物由 Django 直接托管
+- 客户端：桌面网页 · 独立手机版 `/#/m` · Android 系统 WebView 壳
+- 许可：BSD 3-Clause
 
-项目当前已经具备以下模块：
+## 亮点
 
-- 认证与账号：登录、注册、邮箱认证、人工审核、认证码、密码重置、用户资料、会话管理
-  （任一条认证通道通过后，其余通道自动显示「无需再次认证」，避免重复操作）；
-  **多端登录**（ADR-0028）：同一账号最多 **3 台设备同时保持登录态**（网页 / 手机浏览器 / App
-  各一台），第 4 台登录自动顶掉「最久未活动」的那台；个人中心「登录设备」可查看在线设备、
-  下线单台或「下线其他所有设备」（手机版「我的 → 个人资料 → 账号与安全」内）；退出登录只下线本机。
-  **账号与安全中心**（ADR-0029，`/#/security`）：把改密 / 安全问题 / 登录方式 / 设备 / 登录记录
-  收进一处；登录记录带城市级 IP 定位与地图打点（无 key 降级文字），IP 在本人界面脱敏。
-  **陌生设备二次验证**：设备信任只由「在这台设备上完成过一次二次验证」写入——可用滚动密钥
-  （TOTP，RFC 6238，最多 5 个）、邮箱验证码、安全问题或恢复代码（10 个一次性码）；没有任何
-  二次验证方式时本次豁免放行并引导绑定，设备保持陌生。生产可置 `LOGIN_CHALLENGE=0` 应急关闭。
-  管理端新增登录事件 / 账号设备 / 管理端访问记录三张只读表，查看即留痕。
-  **记住登录**：勾选 → 30 天持久会话；不勾 → 关闭浏览器即失效（桌面默认不勾、移动端默认勾选）。
-  **注册查重**（用户名、邮箱各自唯一；真实姓名不单独判重，**姓名 + 校牌号**同时一致才视为
-  同一账号，提示「请登录原账户」）；
-  **教师部门**：注册选「教师」时可选填所属部门（德育处 / 体育组，非必填），存枚举 key
-  防脏值；审核队列对审核员显示「教师 · 德育处」；
-  **忘记密码双通道**：邮箱链接自助重置，或向管理员申请手动重置（上传**学生证/校牌**照片作证明、
-  **不要提交身份证照片** → 审核台「密码重置」桌批准 → 密码重置为 `123456`，所有设备下线，首次登录**强制改密**）；
-  **账号有效期**（ADR-0041）在注册成功 / 认证通过时弹窗说明到期时间、剩余有效期与规则
-  （已读标记存服务端，续期后才再弹），认证面板也常显到期时间；
-  个人中心支持**账号注销**（软删除：邮箱 / 头像 / 身份证明材料 / 登录设备记录即刻清除，
-  账号编码、真实姓名与社员编号保留在后台；历史私信与评论展示为「该用户已注销」；
-  提交后再弹一次二次确认才真正执行）
-- 社员身份（ADR-0025）：名册导入 → 按真实姓名自动匹配账号 → 注册后自助认领（手机号后四位）
-  → 每人生成唯一**识别码** → 工牌二维码 / 条形码导出与公开校验页。识别码 =
-  `[入学年2位][首次入社届数2位][姓名序号2位][校验位2位]`，序号按**姓名拼音首字母**
-  （同届、当次导入）分配；补录接着该届已有最大序号继续、不重排已发码，一次导入可混多届；
-  首页「社团概览」提供**社员查询**：按**真实姓名 / 社员编号**查社员，结果卡与扫码校验页同一组件、
-  同样只给姓名 / 届数 / 状态 / 识别码 / 头像；按查询者身份分档限次（未登录 3 次、已登录未认证
-  10 次、已认证非社员 20 次，社员 / 认证教师 / 管理员 / 超级管理员不限，滚动 24 小时，
-  未命中同样计数）
-- 内容管理：新闻、教程、关于页、站点政策
-- 协作管理：任务、标签、评论区、私信、提案/反馈
-- 提醒与运营：站内通知（可按来源开关）、横幅公告、全站禁言；
-  **全站弹窗公告**（ADR-0042）：后台发布 → 登录即弹窗，可导入 PDF / Word 并**按原排版渲染**
-  （pdf.js / docx-preview，不转站内富文本），受众可选全站 / 注册用户 / 认证用户 / 管理员，
-  可选同步发邮件到已认证邮箱；关闭即已读（服务端台账），站内通知里可再回看，后台可看
-  已读人数 / 阅读率 / 逐人已读明细
-- 互动管理：互动、众议、征集、展示、公开投票、审核；期限可设截止时间，也可勾选「长期有效」（不设截止、不会因时间自动结束，只能由发起人或管理员手动终结）；
-  列表与首页「社团动态」默认**未结束的互动在前、已结束的沉底**，同一档按发布时间倒序（后发布的在上）
-- 问卷系统：SurveyJS 问卷（**发起互动时即可设计**、创建后补题 / 作答 / 按作答内容检索 / 统计与导出，含 panel 与选项内子题）
-- 招聘与审批：招聘信息、面试/审核流程
-- 移动端：独立的手机版站点（`/#/m`）。底部 tab 与首页铃铛带未读数字红点（私信 + 通知），
-  「我的」页列出带未读数的私信/通知入口，并提供**外观**切换（浅色 / 深色 / 跟随系统）；
-  深色模式页面底色为纯黑（`#000`，OLED 省电），卡片与表单靠 `--bg-soft` / `--surface-2` 保留层次；
-  Android 壳内默认跟随系统深色（壳的 UA 标记见 `frontend/src/utils/device.ts` 的 `isAppShell`）；
-  每次刷新都会对比 UA 类别，移动侧（手机浏览器 / App 壳）与桌面侧切换后自动落到对应版本的等价页面
-  （`frontend/src/utils/uaSwitch.ts`，类别不变时深链接不动）
-- 手机版工作台（2026-10-18）：审核台 `/#/m/review`（身份 / 密码重置 / 内容 / 意见反馈 / 举报案）、
-  待办 `/#/m/inbox`、通知 `/#/m/notifications`、任务列表与详情 `/#/m/tasks`；
-  「我的」按权限分「工作 / 常用 / 更多」三组，首页九宫格对登录用户追加「任务」「待办」；
-  手机 UA 打开桌面路径（如 `/#/reviews`）会自动改道到对应手机版页面
-- 手机版「我的」精简（2026-11-02）：**别处能到达的入口不重复列** ——
-  任务 / 待办 / 社员查询走首页九宫格，全景图走「关于我们 → 校园全景图」，
-  登录设备 / 注销账号收进「个人资料」一条；「我的」只留通知、私信、个人资料、意见反馈、
-  课表、关于我们，加上按权限出现的审核台 / 考试日程编辑 / 后台管理
-- 手机版考试看板（2026-11-02）：`/#/exam` **不再展示看板本体**（看板按教室大屏设计，
-  手机上还会把编辑抽屉挤出屏幕）。持「管理考试看板」权限的账号在「我的 → 工作」看到
-  **考试日程编辑**，进入后直接是编辑面板（编辑考试 / 题目误刊），抽屉改为文档流页面、
-  科目表横向可滚；无权限的账号只看到「请用大屏打开」的引导
-- 考试看板设置默认全关（2026-11-03）：看板娘 / 提示音（收卷·下场·误刊）/ 语音播报
-  三项默认都是**关闭**（`frontend/src/examBoard/prefs.ts`）。`examBoardPrefs` 版本升到 v3，
-  旧的 v2 记录分不清「主动开启」和「默认开启」，统一按「未选择」处理一次性落成关闭；
-  之后用户手动勾选的值带 v3 写回，照常保存
-- 手机版已补齐「活动 / 社员查询 / 意见反馈」（2026-11-01，App 壳内同样可达）：
-  活动列表与详情 `/#/m/events`、`/#/m/events/:id`（`events` app 的活动，与「互动」是两件事，
-  到点自动关闭；列表是「筛选 chips + 加载更多」，不做无限滚动）; 社员查询 `/#/v` 在手机 UA 下
-  直接渲染手机版版式（结果卡与扫码校验同源）; 意见反馈 `/#/feedback` 同样按 UA 切换版式。
-  `/#/m/join` 之外，首页九宫格新增「活动」「查询」两格
-- 「关于 APP」页（2026-11-02）：`/#/m/about-app`，展示 App 图标、名称、版本号（从壳 UA 的
-  `NhyzClubApp/<versionName> (Android; <versionCode>)` 实时解析，不在网页里写死）、开源协议
-  （BSD 3-Clause）、著作权人与官网 / 开源地址超链接。**只在 App 壳内可达**：「我的 → 更多」
-  的入口按 `isAppShell()` 出现，浏览器手输地址会被送回 `/#/m/me`，手机版网站上不存在这一页
-  （`frontend/src/pages/MobileAboutAppPage.tsx`、`frontend/src/utils/aboutApp.ts`）
-- 明信片互寄（2026-11-07 起，`events` 形态模块 `modules/postcard`，方案见 `documentation` 分支 `docs/plans/postcard-exchange.md`）：
-  独立页 `/#/postcard`（主页按钮新标签页打开）。活动五阶段（未开始 → 登记中 → 已寄出 →
-  下发中 → 已结束）由管理员配置的节点时间**惰性推导**；仅「登记中」开放登记，其余阶段只读
-  公告与进度。登记：扫码/手输 **7 位 Code128 条码**（管理员预生成 1500~10000 张、步进 500，
-  A4 整版 PDF 导出 40×20mm/2mm 间隙）+ 正反面照片（魔数校验、重编码**默认压缩**至最长边
-  1280/质量 80 并去 EXIF、私有存储）+
-  姓名/年级/班级/寄达区/寄达校下拉（寄达区为**上海市 16 区固定清单**、顺序写死，寄达校按区
-  从管理员配置的学校清单过滤，登记校验要求区校配对命中）；提交后经 AI 审核，**AI 通过才在
-  「登记成功」弹窗亮 6 位登记码**；AI 不可用转人工复核时立即亮码；AI 判不匹配则不发码、
-  告知具体错项，申请人工复核转人工后立即亮码（6 位码即能力凭证：任何设备凭码可查 / 改 /
-  取消 / 申请复核）。归属识别 = 设备 Cookie + 轻量指纹哈希 + 登录用户三轨（历史列表归集用）。
-  用户侧另有**查询入口**：按 6 位登记码或寄出人姓名找回登记（姓名只回掩码码与状态）。管理端：配置/发布、
-  条码生成与导出、记录搜索/修改/删除、Excel（公式注入防护）/PDF（NotoSansSC）导出、总数据
-  统计、**签收**（扫条码 → 确认 → 已报寄，未登记给固定提示）、审计日志全留痕。公告支持富文本
-  （word 导入经 mammoth 转 HTML + 服务端 bleach 白名单净化）与 PDF 附件（CSP:sandbox 下发）。
-  **AI 审核**（2026-11-08 起）：OpenAI 兼容协议（urllib 零依赖、JSON + base64 图片、单次超时
-  默认 20s），管理员后台配 base_url / api_key（**写后不可读**，GET 只回掩码）/ 模型 / 自定义
-  请求头 / 超时 / **动漫黑名单 IP 清单**（预置广电通报条目、可编辑）；活动开始前必须上传
-  **填写样例**（走与用户照片同一道安全管线），否则登记不开放。登记建单后**后台线程**审
-  （Semaphore 限并发，绝不挂起 worker；AI 未启用则同步转人工），前端轮询拿结果；判定不匹配
-  告知具体哪一项，用户可**申请人工复核**；1 次初始 + 5 次重试（指数退避）全败自动转人工，**连续 5 个
-  不同用户**失败邮件告警所有绑定邮箱的管理员（1h 冷却）。**人工复核台**（`review_postcard`
-  权限）：队列聚合待人工 + AI 不匹配条目，通过即删照片 / 不通过 24h TTL 删。**照片生命周期**
-  收口于 `lifecycle.py`：AI/人工通过立即删文件（行保留记终态）、失败照片用户关标签页
-  sendBeacon 删 + TTL 兜底、活动结束全量清除（状态翻转惰性触发 + `postcard_photo_gc`；
-  安装脚本会装 `${SERVICE}-postcard-gc.timer` 每小时兜底）；登记数据永久保留。**用户侧前端已上线**（PR3，
-  `frontend/src/pages/PostcardPage.tsx`）：主页「小工具」/ 手机版九宫格按钮新标签页打开
-  `/#/postcard`（App 壳内同窗口跳转）；五阶段渲染（未开始全屏提示、登记中出表单、
-  其余阶段公告 + 进度条 + 横幅）；登记表单 = 摄像头扫码（`barcode-detector` + zxing-wasm
-  兜底，同社员查询链路）/ 手输条码（≤5 张、查重）+ 每张正反面照片预览 + 16 区/按区过滤
-  寄达校下拉 + Turnstile；历史登记记录自动归集
-  （三轨；指纹须与设备或登录同轨命中），支持改寄出人信息 / 单份或整批取消
-  （不可逆，整批须重新输入 6 位码）/ 申请人工复核 / 查看 AI 错项提示与照片；
-  待审条目 5s 轻量轮询；**同一发件人（姓名 + 年级 + 班级）多次提交共用同一个 6 位登记码**，
-  每次提交独立审核、按流程各自亮码；审核未过时服务端只回掩码 + 轮询凭证（`access_token`），
-  不提前发放能力凭证；**查询入口**：6 位登记码（换设备/清 Cookie 也能查改）或寄出人姓名
-  （只回掩码登记码 + 状态，修改须完整码）找回登记；建议箱；深色（OLED 纯黑）经 CSS 变量
-  自动适配。**管理端前端已上线**（PR4，`frontend/src/pages/PostcardAdminPage.tsx`）：
-  `/#/postcard/admin` 六个分区——活动配置（壳字段 + 寄出/下发节点 + 年级 + 16 区寄达校清单
-  + 富文本公告与 Word 导入 + 公告 PDF）、条码（数量校验 / 生成 / 整版 PDF）、AI 配置与填写
-  样例（api_key 写后不可读，留空保存 = 保持原值；**「测试连接」按钮**用已保存配置发一次最小
-  对话请求，回延迟与模型回复，错误收敛成人话且不回显 key）、登记记录（搜索筛选 / 改 / 取消 /
-  删除 / xlsx·pdf 导出）、统计（指标卡 + 寄达校 / 年级 / 每日登记 chart.js 图表，按需动态加载）、
-  建议与审计；支持**多届活动**（「开启新一届」自动归档当前活动并新建草稿、复制年级与学校
-  清单；归档后旧登记数据仍保留）；**人工复核并入全站审核台** `/#/reviews` 的「明信片」桌（双面照片 + AI 判定 +
-  通过/不通过 + 备注，与内容送审同一套队列与「下一条」），新待复核申请按现有站内信规则
-  通知持复核权限的管理员（同登记码未读合并，防刷屏）；另有独立签收页
-  `/#/postcard/receive`（扫码或手输 7 位条码 → 核对 → 确认签收 / 误签回退），入口只在
-  管理员身份下显示（权限真源仍是服务端命名权限 `manage_postcard` / `review_postcard`）
-- 后台管理：Django Admin + 自定义视图 + 前端 SPA。前端入口（桌面顶栏头像菜单「后台管理」、
-  手机版「我的 → 进入后台管理」）**只对 `is_staff` 账号显示**（对应身份徽章 `admin` / `superadmin`，
-  判定在 `frontend/src/utils/roles.ts` 的 `canAccessAdmin`）；普通用户与访客不再看到该入口，
-  直接手输 `/admin/` 也会被 Django admin 挡回登录页
-- 运维能力：一键部署脚本（`scripts/install.sh`）、GitHub Release 自动更新（维护页 / 回滚）、systemd + Nginx + Gunicorn（ASGI / 单 worker），适合内部低门槛生产环境
+- **社员身份有「证」**：名册导入 → 自助认领 → 唯一识别码 → 工牌二维码 / 条形码，扫码即可校验；公开查询按查询者身份分档限次。
+- **「互动」与「活动」两套模型各管一摊**：互动是星形收集（众议投选票 / 征集收作品 / 展示布展点赞 / 调研收问卷）；活动有起止时间窗、参与者之间可发生关系——首个形态是**明信片互寄**（Code128 条码登记 + AI 审图 + 签收 + 全量审计）。
+- **账号安全按「丢了手机」的真实场景设计**：3 设备并发登录、陌生设备二次验证（TOTP / 邮箱码 / 安全问题 / 恢复码）、账号与安全中心、有效期与软删除注销。
+- **审核是一条流水线，不是一个弹窗**：身份、密码重置、内容、意见反馈、举报、明信片复核统一进「审核台」，桌面与手机版各有工作台。
+- **三端一套代码、一套数据**：UA 自动改道到对应版式，深色模式覆盖（OLED 纯黑），App 壳有最低版本闸门。
+- **2 核 2 GB 的小机器就能跑**：单 ASGI worker、PG / Redis 全部可选，一键安装脚本 + GitHub Release 自动更新与回滚。
 
-## 2. 技术栈
+## 功能一览
 
-- 后端：Python 3.14 / Django 6.0
-- 前端：React 19 / TypeScript / Webpack 5
-- 数据库：SQLite（默认开发/生产都可用）
-- 依赖管理：uv（Python） + npm（前端）
-- 运行方式：Django 直接托管前端产物；生产为 Nginx + Gunicorn ASGI（`UvicornWorker`，**1 worker**，无 Redis；见 [ADR 0015](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/adr/0015-channels-without-redis.md)）
+| 业务域 | 主要能力 |
+|---|---|
+| 账号与安全 | 多渠道认证、注册查重、多端登录、陌生设备验证、安全中心、记住登录、有效期、注销 |
+| 社员身份 | 名册导入、自助认领、识别码、工牌导出、扫码校验、社员查询 |
+| 互动 | 众议 / 征集 / 展示 / 调研、排期与期限、受众、秘密投票、展品与点赞、征集复审 |
+| 活动 | 限时活动壳 + 形态模块；明信片互寄（条码、AI 审核、复核台、签收、多届） |
+| 问卷 | SurveyJS 设计、作答、检索、统计与导出（含 panel 与子题） |
+| 内容 | 新闻、教程、关于页、校园全景图（瓦片化）、站点政策 |
+| 协作 | 任务与标签、评论区（三态 / 撤回 / 墓碑）、私信、意见反馈 |
+| 通知与运营 | 站内通知、横幅、全站禁言、全站弹窗公告（PDF / Word 原版渲染 + 已读台账） |
+| 考试看板 | 批次课表、题目误刊 WebSocket 广播、大屏授时 |
+| 后台与运维 | Django Admin、一键部署、Release 自动更新与回滚、维护模式、运行时策略旋钮 |
 
-## 3. 快速开始
+每项的规则细节、代码落点与入口见 **[功能总览](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/features.md)**。
 
-### 3.1 本地开发
+## 技术栈
+
+| 层 | 选型 |
+|---|---|
+| 后端 | Python 3.14 · Django 6 · Django REST Framework · Channels（ASGI） |
+| 前端 | React 19 · TypeScript · Webpack 5，hash 路由 SPA（`/#/route`） |
+| 数据 | SQLite（缺省，开发 / 裸机开箱可用）或 PostgreSQL（`DB_ENGINE=postgresql`）；Redis 可选，配 `REDIS_URL` 后兼任缓存与 Channels 频道层 |
+| 依赖管理 | uv（Python） · npm（前端） |
+| 生产运行 | Nginx + Gunicorn `UvicornWorker`；worker 数由 `GUNICORN_WORKERS` 控制（默认 1，未配 Redis 时不得 >1） |
+
+## 快速开始
 
 ```bash
-# 安装 Python 依赖
+# 后端 → http://localhost:8000
 uv sync
-
-# 创建本地数据库
 uv run python manage.py migrate
-
-# 可选：创建超级管理员
-uv run python manage.py createsuperuser
-
-# 启动后端
 uv run python manage.py runserver
+
+# 前端开发服务器 → http://localhost:3000（HMR）
+cd frontend && npm ci && npm run dev
 ```
 
-前端开发：
+生产构建：`cd frontend && npm run build` → 产物在 `frontend/dist/`，由 Django 直接托管，不需要单独部署前端服务。
+完整环境要求、测试与 CI、目录结构见 [快速开始文档](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/getting-started.md)。
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## 文档
 
-默认前端开发地址通常为 `http://localhost:3000`，后端默认 `http://localhost:8000`。
+代码在 `main`（每次推送都会触发一次 release），**文档在 [`documentation` 分支](https://github.com/nhyzcms/club-management-website/tree/documentation/docs)**，不占用发布通道。
 
-### 3.2 生产构建
+| 我想…… | 读这里 |
+|---|---|
+| 知道每个功能到底怎么用 | [功能总览](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/features.md) |
+| 把项目跑起来 | [快速开始](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/getting-started.md) · [配置参考](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/configuration.md) |
+| 了解架构与前端结构 | [架构总览](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/architecture/overview.md) · [前端架构](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/architecture/frontend.md) |
+| 调接口 | [API 总览](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/api/README.md) |
+| 部署 / 备份 / 排障 | [部署与运维](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/deployment.md) · [统一数据根](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/data-root.md) |
+| 在后台发布与审核 | [管理后台指南](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/admin-guide.md) · [审核系统](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/guides/moderation.md) |
+| 弄清权限模型 | [访问控制](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/guides/access-control.md) |
+| 看当初为什么这么设计 | [ADR](https://github.com/nhyzcms/club-management-website/tree/documentation/docs/adr) · [领域术语](CONTEXT.md) |
+| 参与开发 / 让 AI 接手 | [CLAUDE.md](CLAUDE.md)（分支 + PR、CI 四作业、生产机不跑测试） |
 
-```bash
-cd frontend
-npm run build
-```
+对外入口另有 [GitHub Wiki](https://github.com/nhyzcms/club-management-website/wiki)。
 
-构建产物写入 `frontend/dist/`（含 Django admin 用的 SurveyJS 静态文件），Django 会直接托管 SPA 页面与静态资源，无需额外部署独立前端服务。
+## 开发约定
 
-## 4. 目录结构
+- **改动一律走分支 + PR**（`feature/…` / `fix/…` / `docs/…`），不直推 `main`。
+- **测试与构建一律交 CI**（`backend` / `frontend` / `frontend-test` / `e2e`）：生产机只有 2 核 2 GB / 3 MB 带宽，跑测试会拖垮线上。
+- **升级不要在服务器上 `git pull`**：走 GitHub Release + 更新守护进程（或 `scripts/updater.py --apply-now <sha>`），失败自动回滚。
+- 更多协作细节见 [CLAUDE.md](CLAUDE.md)。
 
-```text
-club-management-website/
-├── accounts/             # 账号、验证、资料、权限相关
-├── activities/           # 互动与互动类型（众议/征集/展示）
-├── events/               # 活动（限时、参与者之间可发生关系；含明信片互寄形态模块 modules/postcard）
-├── about/                # 关于页内容管理
-├── announcements/        # 全站弹窗公告（发布 / 已读台账 / 原件渲染）
-├── attachments/          # 附件和上传处理
-├── common/               # 公共组件、站点策略等
-├── config/               # Django settings / urls / ASGI/WSGI
-├── exam_board/           # 考试看板（批次课表 + 题目误刊广播）
-├── frontend/             # React 前端源代码与构建输出
-├── messaging/            # 评论区 / 私信 / 通知 / 横幅公告
-├── news/                 # 新闻模块
-├── recruitment/          # 招聘模块
-├── reviews/              # 发布审核 / 意见反馈 / 举报案
-├── scripts/              # 运维脚本（install.sh、更新/回滚）
-├── static/               # 静态资源
-├── tasks/                # 任务与标签模块
-├── tutorials/            # 教程上传与审核模块
-├── .env.example          # 环境变量模板
-├── start.sh              # 运行/重启脚本
-├── manage.py             # Django 启动入口
-├── pyproject.toml        # Python 项目配置
-├── uv.lock               # uv 锁文件
-└── README.md             # 项目入口文档
-```
+## 许可证
 
-## 5. 文档导航
+代码采用 **BSD 3-Clause License**，全文见 [LICENSE](LICENSE)：可自由使用、修改、再分发（含商用），但须保留版权声明与免责声明，且不得用本社团或贡献者名义为衍生品背书。软件按「现状」提供，不附带担保。
 
-文档不在本分支维护：[`documentation` 分支](https://github.com/nhyzcms/club-management-website/tree/documentation/docs) 只放 `docs/`。
-这样文档更新不会占用发布通道——`main` 每次推送都会触发一次 release（生产更新包）。
-
-- 完整文档索引：[`docs/README.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/README.md)
-- 协作者 / AI 助手指引：[`CLAUDE.md`](CLAUDE.md)（改动流程、环境限制、工具链）
-- 快速开始：[`docs/getting-started.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/getting-started.md) · 配置参考：[`docs/configuration.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/configuration.md)
-- API 参考：[`docs/api/README.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/api/README.md)（各模块分册见 `documentation` 分支的 `docs/api/`）
-- 架构：[`docs/architecture/overview.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/architecture/overview.md) · [`docs/architecture/frontend.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/architecture/frontend.md)
-- 指南：`documentation` 分支的 `docs/guides/`（访问控制 / 身份认证 / 安全验证 / 账号与安全 / 审核系统 / 问卷）
-- 运维：[`docs/operations/deployment.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/deployment.md) · [`docs/operations/data-root.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/data-root.md) · [`docs/operations/admin-guide.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/admin-guide.md)
-- ADR 设计记录：[`docs/adr/`](https://github.com/nhyzcms/club-management-website/tree/documentation/docs/adr)
-- GitHub Wiki（对外入口）：<https://github.com/nhyzcms/club-management-website/wiki>
-
-## 6. 主要入口和 URL
-
-- 后台管理：`/admin/`（仅 `is_staff` 可进；前端不给无权限用户显示入口，见 `utils/roles.ts`）
-- 认证：`/auth/`
-- 任务：`/tasks/`
-- 新闻：`/news/`
-- 互动：`/activities/`
-- 活动（限时，`events`）：`/events/`；门户 `/#/events`、`/#/events/:id`
-- 明信片互寄（`events` 形态模块 `postcard`）：`/events/postcard/`；用户页 `/#/postcard`、
-  管理端 `/#/postcard/admin`、签收 `/#/postcard/receive`（方案与交接文档：`documentation` 分支的 `docs/plans/postcard-exchange.md`）
-- 审核（发布审核 / 意见反馈 / 举报）：`/reviews/`
-- 教程：`/tutorials/`
-- 招聘：`/recruitment/`
-- 消息（评论区 / 私信 / 通知 / 横幅）：`/messaging/`
-- 全站弹窗公告（只读，发布在后台）：`/announcements/`；回看页 `/#/announcements/:id`
-- 实时推送（已登录）：`/ws/messaging/`
-- 考试看板：`/exam_board/`，广播 `/ws/exam-board/`
-- 附件上传：`/uploads/`
-- 站点政策：`/site-policy/`
-- 手机版（移动端站点）：`/#/m`
-  - 工作台：`/#/m/review`（审核台）、`/#/m/inbox`（待办）、`/#/m/notifications`（通知）、
-    `/#/m/tasks` 与 `/#/m/tasks/:id`（任务）
-  - 活动（限时，`events`）：`/#/m/events`、`/#/m/events/:id`
-  - 手机 UA 访问 `/reviews`、`/inbox`、`/notifications`、`/tasks`、`/tasks/:id`、`/events`、
-    `/events/:id` 会自动 `replace` 到对应的 `/#/m/...`（桌面 UA 不受影响）
-  - `/v`（社员查询）与 `/feedback`（意见反馈）不跳转，页面内部按 UA 切换桌面 / 手机版式
-  - **降级入口（区块 8）**：「我的 → 更多」分组挂着仍是桌面版式的页面 ——
-    `/schedule`（课表）、`/about`（关于我们，内含「校园全景图」）。
-    `/#/exam` 在手机 UA 下不展示看板本体：有 `can_manage_exam` 权限的账号直接进入
-    「考试日程编辑」（编辑考试 / 题目误刊），其他账号只看到「请用大屏打开」的引导。
-    课表 / 关于我们手机上**有入口、能操作**，但没有专门版式；后续按使用频率再逐页补 `/m` 版本。
-  - **App 壳最低版本闸门（区块 8）**：壳在 UA 里注入 `NhyzClubApp/<versionName> (Android; <versionCode>)`，
-    低于 `frontend/src/utils/shellVersion.ts` 的 `MIN_SHELL_VERSION_CODE` 时，
-    `components/ShellVersionGate.tsx` 会全屏提示更新（可「暂时继续」，不写 localStorage，刷新即恢复）。
-    浏览器、以及解析不出版本码的请求一律放行 —— 闸门不猜、不锁死。
-  - **SPA 入口不可缓存（L0 热更新的前提）**：`/` 与兜底路由都用 `never_cache` 包了一层
-    （`config/urls.py`）。dist 的 JS/CSS 文件名带 contenthash，HTML 一旦被 WebView 缓存，
-    就会拿着旧哈希去要已删除的 chunk → 白屏，且"改完网站重开 App 就生效"会失效。
-
-注意：本项目使用 Django + React 的单页架构，前端路由需要由 Django 回落到 `index.html`，非 API 路径都会进入 SPA 入口。
-
-## 7. 常用命令
-
-```bash
-uv run python manage.py runserver        # 启动开发服务器
-uv run python manage.py migrate          # 执行数据库迁移
-uv run python manage.py makemigrations  # 生成迁移文件
-uv run python manage.py test             # 运行测试
-uv run python manage.py check            # 检查项目配置
-uv run python manage.py enforce_validity # 兜底执行有效期规则 + 到期前提醒
-uv run python manage.py send_validity_broadcast --dry-run  # 试跑：有效期说明群发私信
-
-cd frontend && npm run dev               # 启动前端开发服务器
-cd frontend && npm run build             # 构建生产资源
-cd frontend && npm test                  # 前端单元测试（Vitest）
-cd frontend && npx playwright test       # 浏览器 E2E（Playwright）
-
-sudo ./scripts/install.sh                # 一键部署生产环境
-./start.sh                              # 启动生产服务
-```
-
-## 8. 维护建议
-
-- 生产环境用 `scripts/install.sh`：它会生成 SECRET_KEY、写入 FRONTEND_URL、创建超级用户。邮箱 / Turnstile / GitHub token 仍按需补进 `.env`。
-- 如果你需要给别人上手使用，优先为管理员配一份后台操作手册和一份运维手册，避免直接让运维/运营人员碰源码。
-- 日常更新走 GitHub Release + 更新守护进程（或 `scripts/updater.py --apply-now`），不要在生产机 `git pull` 再手工构建。
-- 代码需保持 DRF API 与前端能力一致，改动接口时同步更新文档和前端调用逻辑。
-- **协作者 / AI 助手请先读 [`CLAUDE.md`](CLAUDE.md)**：里面写了改动流程（分支 + PR）、
-  环境限制（生产机 2 核 2 GB，**不要在生产服务器跑测试或构建**、前端无法在服务器构建），
-  以及"写入与推送的载荷上限已解除（大文件/长文档不必再拆片）"这条工具链事实。
-- **不要在生产服务器上跑测试或构建**：生产机只有 2 核 / 2 GB 内存 / 3 MB 带宽，
-  测试与构建一律交 CI（`backend` / `frontend` / `frontend-test` / `e2e` 四个作业）。
-- **手机版与桌面版是两套页面**：`/m` 页面不用 `AppShell`，二级页统一走 `components/MobilePage.tsx`。
-  新增桌面工作流页面时，若该功能对手机用户必要，同时补一个 `/m` 实现并在 `App.tsx` 的 `MobileAware`
-  里登记改道；审核台的取数规则在 `frontend/src/utils/reviewDesk.ts`（两端共用，勿复制）。
-- 手机版未读红点的数据源在 `frontend/src/api/unreadBadges.ts`：30 s 轮询 + 窗口可见/聚焦时刷新，
-  并监听 App 壳派发的 `club:unread` 事件（壳在原生的 WS 收到新消息时发一个**不带数据**的常量事件）。
-  改这条链路时注意：/m 页面**不用** `AppShell`，桌面顶栏那套徽标与它们无关。
-- App 壳与网站的契约：UA 标记 `NhyzClubApp/<versionName> (Android; <versionCode>)`。
-  修改壳的 UA 必须同步 `frontend/src/utils/device.ts`，否则「App 内默认跟随系统深色」等
-  App 专属行为会静默失效。
-- **手机端「全部功能可达」的验收口径（区块 8）**：任何页面都不能"只有桌面能进"。
-  能做成移动版式的补 `/m` 页面并在 `App.tsx` 的 `MobileAware` 里登记改道；
-  暂时做不了的（课表 / 关于）也要在 `MobileMePage` 里留入口。
-  **入口不重复**：首页九宫格或「关于我们」里已有的功能，不在「我的」再列一次；
-  手机版考试看板只保留管理员的「考试日程编辑」，不渲染看板本体。
-  提高 `MIN_SHELL_VERSION_CODE` 等于把老壳用户挡在门外（只留「暂时继续」），
-  只有在老壳真的会让网站出错时才动它；改完记得同步 app 仓库的 `docs/FEATURE-MATRIX.md`。
-- **账号注销是软删除**（[ADR-0027](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/adr/0027-account-deletion.md)）：`Profile.deleted_at` 标记，
-  只清邮箱 / 头像 / 身份证明材料 / 会话等敏感信息；`User`、`Profile`、`MemberIdentity`（社员编号）
-  行永不删除。新增「删除用户」类功能时先读该 ADR，不要物理删账号。
-
-如果你是第一次接手这个项目，建议先读：
-
-1. [docs/getting-started.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/getting-started.md)
-2. [docs/architecture/overview.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/architecture/overview.md)
-3. [docs/api/README.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/api/README.md)
-4. [docs/operations/deployment.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/deployment.md)
-5. [docs/operations/admin-guide.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/admin-guide.md)
-
-## 9. 许可证
-
-本项目代码采用 **BSD 3-Clause License**（三条款 BSD 许可证），全文见 [LICENSE](LICENSE)。
-
-简单说：你可以自由使用、修改、再分发，包括商用，但必须
-
-1. 在源码中保留版权声明、条款与免责声明；
-2. 在二进制分发时于文档或其他材料中复现上述内容；
-3. **不得**用本社团或贡献者的名义为你的衍生品背书（未经书面许可）。
-
-软件按「现状」提供，不附带任何担保。
-
-**第三方素材不受本许可证覆盖**，它们各自保留原许可，再分发时请遵守对应条款：
-
-- Live2D 运行时与模型：`frontend/vendor/live2d/runtime/LICENSE.txt`、`frontend/vendor/live2d/models/*/LICENSE`
-- Noto Sans SC 字体：`activities/fonts/OFL.txt`（SIL Open Font License 1.1）
-- 站内内容（新闻、互动作品、照片、全景图、社徽等）的著作权归原作者或社团所有，不属于代码许可的授权范围。
+第三方素材各自保留原许可：Live2D 运行时与模型（`frontend/vendor/live2d/`）、Noto Sans SC 字体（`activities/fonts/OFL.txt`，SIL OFL 1.1）。站内内容（新闻、作品、照片、全景图、社徽等）著作权归原作者或社团，不在代码许可范围内。
 
 ---
 
