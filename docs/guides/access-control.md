@@ -57,7 +57,7 @@
 公开（匿名）→ 身份（已登录）→ 可见性过滤（本人 / 管理员）→ 敏感读（view_* / read_feedback）
 ```
 
-- 常规内容读取（如新闻）匿名可读；任务等内容登录可读、并经 [accounts/visibility.py](../../accounts/visibility.py) 按所有权收窄；
+- 常规内容读取（如新闻）匿名可读；任务等内容登录可读、并经 [accounts/visibility.py](https://github.com/nhyzcms/club-management-website/blob/main/accounts/visibility.py) 按所有权收窄；
 - 仅**敏感读**使用专门权限（如 `reviews.read_feedback`）。
 
 **写** = 权限与所有权组合。例如「能改这条任务」= `tasks.manage_tasks` **或** 你是创建者（`creator == user`）——所有权是另一轴，与权限组合，不算违反原则。
