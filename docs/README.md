@@ -45,6 +45,7 @@
 ## 设计记录
 
 - [ADR（架构决策记录）](adr/) —— 0001–0029、0041–0046，重要决策的来龙去脉
+- [实施方案（plans）](plans/) —— 大功能的权威方案与交接文档（含进度看板），当前：[明信片互寄](plans/postcard-exchange.md)
 - 领域术语与项目概览：[CONTEXT.md](../CONTEXT.md)
 - AI 协作流程约定：[docs/agents/](agents/)
 - GitHub Wiki（对外入口）：<https://github.com/nhyzcms/club-management-website/wiki>

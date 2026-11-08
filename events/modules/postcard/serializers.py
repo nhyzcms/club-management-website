@@ -1,0 +1,162 @@
+"""明信片互寄序列化与输入校验。
+
+公开输入（登记 / 建议）是访客可控数据，校验从严：长度、枚举、格式全部
+在序列化层收口，视图层只做业务判定（phase / 条码占用 / 学校清单）。
+"""
+from __future__ import annotations
+
+import re
+
+from rest_framework import serializers
+
+from .models import PostcardConfig, PostcardRegistration
+
+_BARCODE_RE = re.compile(r"^\d{7}$")
+_REGCODE_RE = re.compile(r"^\d{6}$")
+_FINGERPRINT_RE = re.compile(r"^[0-9a-f]{8,128}$")
+
+#: 单次登记最多明信片张数（照片 = 张数 × 2，防 multipart 炸内存）。
+MAX_ITEMS_PER_REGISTRATION = 5
+
+
+class RegisterItemInput(serializers.Serializer):
+    barcode = serializers.CharField(max_length=7)
+
+    def validate_barcode(self, value):
+        value = (value or "").strip()
+        if not _BARCODE_RE.fullmatch(value):
+            raise serializers.ValidationError("条码号须为 7 位数字")
+        return value
+
+
+class RegisterInput(serializers.Serializer):
+    """登记提交（multipart：JSON 字段 + photo_<i>_front/back 文件由视图另取）。"""
+
+    sender_name = serializers.CharField(max_length=64, trim_whitespace=True)
+    grade = serializers.ChoiceField(choices=PostcardConfig.GRADE_CHOICES)
+    class_no = serializers.IntegerField(min_value=1, max_value=8)
+    dest_region = serializers.CharField(max_length=64, trim_whitespace=True)
+    dest_school = serializers.CharField(max_length=128, trim_whitespace=True)
+    items = RegisterItemInput(many=True, allow_empty=False)
+    fingerprint = serializers.CharField(required=False, allow_blank=True, max_length=128)
+
+    def validate_sender_name(self, value):
+        if not value:
+            raise serializers.ValidationError("姓名不能为空")
+        return value
+
+    def validate_items(self, value):
+        if len(value) > MAX_ITEMS_PER_REGISTRATION:
+            raise serializers.ValidationError(
+                f"单次最多登记 {MAX_ITEMS_PER_REGISTRATION} 张明信片"
+            )
+        barcodes = [it["barcode"] for it in value]
+        if len(set(barcodes)) != len(barcodes):
+            raise serializers.ValidationError("登记的条码号不能重复")
+        return value
+
+    def validate_fingerprint(self, value):
+        if value and not _FINGERPRINT_RE.fullmatch(value):
+            return ""  # 指纹格式不对不致命：静默降级为仅 Cookie 识别
+        return value
+
+
+class SuggestionInput(serializers.Serializer):
+    content = serializers.CharField(max_length=1000, trim_whitespace=True)
+    contact = serializers.CharField(required=False, allow_blank=True, max_length=128)
+
+
+class MyRecordEditInput(serializers.Serializer):
+    """用户改自己的登记（仅寄出人信息；条码与照片不可改——实物已印好）。"""
+
+    sender_name = serializers.CharField(required=False, max_length=64, trim_whitespace=True)
+    grade = serializers.ChoiceField(choices=PostcardConfig.GRADE_CHOICES, required=False)
+    class_no = serializers.IntegerField(required=False, min_value=1, max_value=8)
+    dest_region = serializers.CharField(required=False, max_length=64, trim_whitespace=True)
+    dest_school = serializers.CharField(required=False, max_length=128, trim_whitespace=True)
+
+
+class AdminConfigInput(serializers.Serializer):
+    """管理端配置写入：Event 壳字段 + 模块节点/清单字段。"""
+
+    title = serializers.CharField(max_length=200)
+    summary = serializers.CharField(required=False, allow_blank=True, max_length=300)
+    body = serializers.CharField(required=False, allow_blank=True)
+    start_at = serializers.DateTimeField()
+    end_at = serializers.DateTimeField()
+    ship_at = serializers.DateTimeField(required=False, allow_null=True)
+    distribute_at = serializers.DateTimeField(required=False, allow_null=True)
+    allowed_grades = serializers.ListField(
+        child=serializers.ChoiceField(choices=PostcardConfig.GRADE_CHOICES),
+        required=False, allow_empty=True,
+    )
+    destination_schools = serializers.ListField(
+        child=serializers.DictField(), required=False, allow_empty=True,
+    )
+
+    def validate(self, attrs):
+        start, end = attrs.get("start_at"), attrs.get("end_at")
+        if start and end and end <= start:
+            raise serializers.ValidationError({"end_at": "结束时间必须晚于开始时间"})
+        ship, dist = attrs.get("ship_at"), attrs.get("distribute_at")
+        if ship and start and ship < start:
+            raise serializers.ValidationError({"ship_at": "寄出节点不能早于登记开始"})
+        if dist and ship and dist < ship:
+            raise serializers.ValidationError({"distribute_at": "下发节点不能早于寄出节点"})
+        if dist and start and dist < start:
+            raise serializers.ValidationError({"distribute_at": "下发节点不能早于登记开始"})
+        if end and ship and ship > end:
+            raise serializers.ValidationError({"ship_at": "寄出节点不能晚于活动结束"})
+        if end and dist and dist > end:
+            raise serializers.ValidationError({"distribute_at": "下发节点不能晚于活动结束"})
+        schools = attrs.get("destination_schools") or []
+        for s in schools:
+            if not isinstance(s, dict) or not s.get("name"):
+                raise serializers.ValidationError({"destination_schools": "每个寄达校须含 name"})
+            region = (s.get("region") or "").strip()
+            if not region:
+                raise serializers.ValidationError({"destination_schools": "每个寄达校须含 region"})
+            if region not in PostcardConfig.REGION_CHOICES:
+                raise serializers.ValidationError(
+                    {"destination_schools": f"寄达区「{region}」不在固定 16 区清单内"}
+                )
+        return attrs
+
+
+class AdminRegistrationEditInput(serializers.Serializer):
+    """管理端改登记单：寄出人信息 + 状态（cancelled 联动全部条目）。"""
+
+    sender_name = serializers.CharField(required=False, max_length=64)
+    grade = serializers.ChoiceField(choices=PostcardConfig.GRADE_CHOICES, required=False)
+    class_no = serializers.IntegerField(required=False, min_value=1, max_value=8)
+    dest_region = serializers.CharField(required=False, max_length=64)
+    dest_school = serializers.CharField(required=False, max_length=128)
+    status = serializers.ChoiceField(choices=PostcardRegistration.STATUS_CHOICES, required=False)
+
+
+def registration_summary(reg: PostcardRegistration, *, include_items: bool = True) -> dict:
+    """登记单 → 前端展示 dict（公开侧与管理端共用）。"""
+    data = {
+        "reg_code": reg.reg_code,
+        "sender_name": reg.sender_name,
+        "grade": reg.grade,
+        "grade_label": reg.grade_label,
+        "class_no": reg.class_no,
+        "dest_region": reg.dest_region,
+        "dest_school": reg.dest_school,
+        "status": reg.status,
+        "status_label": reg.get_status_display(),
+        "created_at": reg.created_at.isoformat(),
+        "updated_at": reg.updated_at.isoformat(),
+    }
+    if include_items:
+        data["items"] = [
+            {
+                "id": item.pk,
+                "barcode": item.barcode.code,
+                "status": item.status,
+                "status_label": item.get_status_display(),
+            }
+            for item in reg.items.select_related("barcode").order_by("barcode__code")
+        ]
+    return data
