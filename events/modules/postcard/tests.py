@@ -271,6 +271,42 @@ class BarcodeTest(TestCase):
         with self.assertRaises(ValueError):
             barcode_mod.generate_barcodes(event, 1500)  # 9000+1500 > 10000
 
+    def test_generate_replace_clears_unused(self):
+        """覆盖生成：清空未占用的旧条码，只留新的一批。"""
+        event, _ = _config_event()
+        barcode_mod.generate_barcodes(event, 1500)
+        second = barcode_mod.generate_barcodes(event, 1500, replace=True)
+        db_codes = set(
+            PostcardBarcode.objects.filter(event=event).values_list("code", flat=True)
+        )
+        self.assertEqual(len(db_codes), 1500)
+        self.assertEqual(db_codes, {r.code for r in second})
+
+    def test_generate_replace_refuses_when_bound(self):
+        """覆盖生成：有条码已被登记占用时拒绝，绝不删已发出去的条码。"""
+        event, _ = _config_event()
+        barcode_mod.generate_barcodes(event, 1500)
+        code = PostcardBarcode.objects.filter(event=event).values_list("code", flat=True).first()
+        _make_registration(event, [code])
+        with self.assertRaises(ValueError):
+            barcode_mod.generate_barcodes(event, 1500, replace=True)
+        self.assertEqual(PostcardBarcode.objects.filter(event=event).count(), 1500)
+
+    def test_admin_barcode_replace_endpoint(self):
+        event, _ = _config_event()
+        barcode_mod.generate_barcodes(event, 1500)
+        client = APIClient()
+        client.force_authenticate(user=_admin())
+        resp = client.post(
+            "/events/postcard/admin/barcodes/", {"count": 2000, "replace": True}, format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()["total"], 2000)
+        self.assertTrue(resp.json()["replaced"])
+        self.assertEqual(
+            PostcardAuditLog.objects.filter(event=event, action="barcode_regenerate").count(), 1,
+        )
+
     def test_pdf_layout_pages(self):
         event, _ = _config_event()
         _barcodes(event, [f"{i:07d}" for i in range(66)])  # 65/页 → 2 页
@@ -1853,6 +1889,72 @@ class AITestEndpointTest(TestCase):
         client = APIClient()
         client.force_authenticate(user=_reviewer())
         self.assertEqual(client.post("/events/postcard/admin/ai/test/").status_code, 403)
+
+
+class AISampleExplainTest(TestCase):
+    """「让 AI 读样例」：成功返回理解正文、失败给人话、审计留痕、权限门禁。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _ai_config()
+        self.sample = PostcardAISample(event=self.event, caption="姓名写在左上角")
+        self.sample.image.save("sample.jpg", ContentFile(_jpeg_bytes()), save=True)
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+        self.url = f"/events/postcard/admin/ai/samples/{self.sample.pk}/explain/"
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def test_success_returns_understanding(self):
+        body = json.dumps({"choices": [{"message": {"content": "要求：姓名正楷写在左上角。"}}]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ):
+            resp = self.client.post(self.url)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertIn("姓名正楷", resp.json()["text"])
+        self.assertNotIn("sk-test-key", json.dumps(resp.json()))
+        self.assertTrue(
+            PostcardAuditLog.objects.filter(action="ai_sample_explain", detail__ok=True).exists()
+        )
+
+    def test_network_error_is_friendly_and_hides_key(self):
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            side_effect=TimeoutError("boom"),
+        ):
+            resp = self.client.post(self.url)
+        self.assertEqual(resp.status_code, 502)
+        self.assertIn("网络不可达或超时", resp.json()["detail"])
+        self.assertNotIn("sk-test-key", json.dumps(resp.json()))
+
+    def test_incomplete_config(self):
+        PostcardAIConfig.objects.update(enabled=False)
+        resp = self.client.post(self.url)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("AI 未启用", resp.json()["detail"])
+
+    def test_requires_manage_permission(self):
+        client = APIClient()
+        client.force_authenticate(user=_reviewer())
+        self.assertEqual(client.post(self.url).status_code, 403)
+
+    def test_unknown_sample_404(self):
+        resp = self.client.post("/events/postcard/admin/ai/samples/999999/explain/")
+        self.assertEqual(resp.status_code, 404)
 
 
 class PostcardReviewNotifyTest(TestCase):

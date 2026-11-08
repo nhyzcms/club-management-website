@@ -96,20 +96,33 @@ def validate_count(count: int) -> int:
     return count
 
 
-def generate_barcodes(event, count: int) -> list[PostcardBarcode]:
-    """为活动生成 count 个不重复的 7 位条码（增量式：避开存量，累计 ≤ 10000）。
+def generate_barcodes(event, count: int, replace: bool = False) -> list[PostcardBarcode]:
+    """为活动生成 count 个不重复的 7 位条码（默认增量，``replace=True`` 覆盖重建）。
+
+    - 增量（默认）：避开存量，累计 ≤ 10000；
+    - 覆盖：先清空**尚未被登记占用**的条码，再按 count 重建（= 生成新区间）。
+      已被 ``PostcardItem`` 绑定的条码受 ``PROTECT`` 保护，一条都不能删——此时
+      直接拒绝并告知占用数量，避免把已发出去的明信片变成孤儿。
 
     7 位数字空间 10^7，万级取样的碰撞率极低，但仍以「批量抽样 → 排除存量 →
     补齐」循环保证唯一；DB 唯一约束是最后防线。
     """
     count = validate_count(count)
-    existing = set(
-        PostcardBarcode.objects.filter(event=event).values_list("code", flat=True)
-    )
-    if len(existing) + count > COUNT_MAX:
-        raise ValueError(
-            f"本活动已有 {len(existing)} 个条码，累计不得超过 {COUNT_MAX}"
-        )
+    existing_qs = PostcardBarcode.objects.filter(event=event)
+    if replace:
+        bound = existing_qs.filter(item__isnull=False).count()
+        if bound:
+            raise ValueError(
+                f"已有 {bound} 个条码被登记占用，不能覆盖重建；请先处理这些登记"
+            )
+        existing_qs.delete()
+        existing: set[str] = set()
+    else:
+        existing = set(existing_qs.values_list("code", flat=True))
+        if len(existing) + count > COUNT_MAX:
+            raise ValueError(
+                f"本活动已有 {len(existing)} 个条码，累计不得超过 {COUNT_MAX}"
+            )
 
     codes: set[str] = set()
     while len(codes) < count:
