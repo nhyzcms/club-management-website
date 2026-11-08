@@ -24,8 +24,13 @@ class _DeviceOrIPThrottle(IPLimitThrottle):
 
 
 class RegisterIPThrottle(IPLimitThrottle):
+    """登记 IP 轨：学校 NAT 整层楼共用出口，必须比单设备宽松（2026-11-08 修正）。
+
+    原来 IP 与设备同为 10/h，一个班 30 人同时登记第 11 个就全 429。
+    设备轨仍 10/h（一人一天几张足够），IP 轨放宽到 60/h。
+    """
     scope = "postcard_register_ip"
-    RATE = "10/hour"
+    RATE = "60/hour"
 
     def get_rate(self):
         return self.RATE
