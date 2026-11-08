@@ -16,6 +16,8 @@ vi.mock("../api/postcard", () => ({
     my: vi.fn(),
     register: vi.fn(),
     detail: vi.fn(),
+    statusByToken: vi.fn(),
+    requestReviewByToken: vi.fn(),
     lookup: vi.fn(),
     update: vi.fn(),
     cancel: vi.fn(),
@@ -88,7 +90,10 @@ function portalData(overrides: Partial<PostcardPortal> = {}): PostcardPortal {
 
 function regData(overrides: Partial<PostcardRegistrationSummary> = {}): PostcardRegistrationSummary {
   return {
+    id: 1,
     reg_code: "654321",
+    code_granted: true,
+    access_token: "tok-654321",
     sender_name: "张三",
     grade: "g1",
     grade_label: "高一",
@@ -215,7 +220,7 @@ describe("PostcardPage · 历史记录", () => {
     expect(screen.getByText(/AI 判定以下填写与照片不符/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "申请人工复核" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "修改" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "取消登记" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "取消本份" })).toBeTruthy();
   });
 
   it("空历史给出引导文案", async () => {
@@ -267,7 +272,9 @@ describe("PostcardPage · 登记码发放规则（2026-11-08 用户指定）", (
   }
 
   const reviewingResult = {
-    reg_code: "824617",
+    reg_code: null as string | null,
+    code_granted: false,
+    access_token: "tok-824617",
     message: "登记成功",
     registration: regData(),
     review: { state: "pending", hint: "" },
@@ -276,7 +283,9 @@ describe("PostcardPage · 登记码发放规则（2026-11-08 用户指定）", (
   it("AI 审核中：先不亮码；轮询到 AI 通过后才亮码", async () => {
     mockedPortal.mockResolvedValue(portalData());
     vi.mocked(postcardApi.register).mockResolvedValue(reviewingResult);
-    vi.mocked(postcardApi.detail).mockResolvedValue(regData({
+    vi.mocked(postcardApi.statusByToken).mockResolvedValue(regData({
+      reg_code: "824617",
+      code_granted: true,
       items: [{
         id: 11, barcode: "1234567", status: "registered", status_label: "已登记",
         review_state: "ai_passed", review_label: "AI 通过", mismatched: [], comment: "", photos: [],
@@ -298,6 +307,8 @@ describe("PostcardPage · 登记码发放规则（2026-11-08 用户指定）", (
     mockedPortal.mockResolvedValue(portalData());
     vi.mocked(postcardApi.register).mockResolvedValue({
       ...reviewingResult,
+      reg_code: "824617",
+      code_granted: true,
       review: { state: "manual_pending", hint: "" },
     });
     const { container } = renderPage();
@@ -308,14 +319,17 @@ describe("PostcardPage · 登记码发放规则（2026-11-08 用户指定）", (
     expect(await screen.findByText("登记成功")).toBeTruthy();
     expect(screen.getByText("824617")).toBeTruthy();
     expect(screen.getByText(/已转人工复核/)).toBeTruthy();
-    expect(vi.mocked(postcardApi.detail)).not.toHaveBeenCalled();
+    expect(vi.mocked(postcardApi.statusByToken)).not.toHaveBeenCalled();
   }, 15000);
 
   it("AI 判不匹配：不亮码、告知错项；申请人工复核后立即亮码", async () => {
     mockedPortal.mockResolvedValue(portalData());
     vi.mocked(postcardApi.register).mockResolvedValue(reviewingResult);
-    vi.mocked(postcardApi.detail).mockResolvedValue(regData()); // ai_failed fixture（mismatched: 寄达校）
+    vi.mocked(postcardApi.statusByToken)
+      .mockResolvedValueOnce(regData({ code_granted: false, reg_code: "82****" })) // ai_failed
+      .mockResolvedValueOnce(regData({ reg_code: "824617", code_granted: true })); // 转人工后发码
     vi.mocked(postcardApi.requestReview).mockResolvedValue({ message: "已提交人工复核，请耐心等待复核结果", count: 1 });
+    vi.mocked(postcardApi.requestReviewByToken).mockResolvedValue({ message: "已提交人工复核，请耐心等待复核结果", count: 1 });
     const { container } = renderPage();
     await screen.findByText("明信片登记");
 
@@ -327,7 +341,7 @@ describe("PostcardPage · 登记码发放规则（2026-11-08 用户指定）", (
     expect(screen.queryByText("824617")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "申请人工复核" }));
-    await waitFor(() => expect(vi.mocked(postcardApi.requestReview)).toHaveBeenCalledWith("824617", expect.any(String)));
+    await waitFor(() => expect(vi.mocked(postcardApi.requestReviewByToken)).toHaveBeenCalledWith("tok-824617"));
     expect(await screen.findByText("登记成功")).toBeTruthy();
     expect(screen.getByText("824617")).toBeTruthy();
   }, 20000);
@@ -350,7 +364,7 @@ describe("PostcardPage · 查询入口（登记码 / 姓名）", () => {
     expect(await screen.findByText("找到登记记录，可直接在此修改或取消：")).toBeTruthy();
     expect(screen.getByText("654321")).toBeTruthy();
     expect(screen.getByRole("button", { name: "修改" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "取消登记" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "取消本份" })).toBeTruthy();
   });
 
   it("姓名查询：只给掩码登记码与提示，无修改入口", async () => {

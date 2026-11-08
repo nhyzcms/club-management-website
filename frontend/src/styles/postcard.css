@@ -44,6 +44,22 @@
 .pc-gate-icon { width: 56px; height: 56px; color: var(--brand-500); }
 .pc-admin-hint a { color: var(--accent); font-weight: 600; margin-inline: 2px; }
 
+.pc-reg-code-hint { font-size: 11px; color: var(--muted); margin-left: 6px; }
+
+.pc-batch-cancel {
+  border: 1px solid color-mix(in oklch, #dc2626 45%, var(--line));
+  border-radius: var(--r-md);
+  background: color-mix(in oklch, #dc2626 8%, transparent);
+  padding: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  font-size: 13px;
+}
+.pc-batch-cancel p { margin: 0; line-height: 1.6; }
+.pc-batch-cancel .pc-inline { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+.pc-batch-cancel input { width: 140px; }
+
 /* 管理员工具条（仅 is_admin 渲染；普通用户看不到）。 */
 .pc-admin-bar {
   display: flex;

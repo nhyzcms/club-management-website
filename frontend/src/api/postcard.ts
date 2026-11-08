@@ -74,7 +74,14 @@ export interface PostcardItemSummary {
 }
 
 export interface PostcardRegistrationSummary {
+  /** 单份提交 id（同一登记码可能对应多份提交）。 */
+  id: number;
+  /** 未达到发放条件时是掩码（82****）。 */
   reg_code: string;
+  /** 服务端权威：这条提交现在是否该亮码。 */
+  code_granted: boolean;
+  /** 轮询凭证（仅 /my/ 列表下发；审核中不暴露 6 位码）。 */
+  access_token?: string;
   sender_name: string;
   grade: string;
   grade_label: string;
@@ -89,7 +96,11 @@ export interface PostcardRegistrationSummary {
 }
 
 export interface RegisterResult {
-  reg_code: string;
+  /** 未达发放条件时为 null（审核中 / 判不匹配）。 */
+  reg_code: string | null;
+  code_granted: boolean;
+  /** 审核中的轮询凭证：拉状态、申请人工复核、清失败照片。 */
+  access_token: string;
   message: string;
   registration: PostcardRegistrationSummary;
   review: { state: string; hint: string };
@@ -109,10 +120,15 @@ export const postcardApi = {
       `/my/?fingerprint=${encodeURIComponent(fingerprint)}`,
     ),
 
-  detail: (regCode: string, fingerprint: string) =>
+  detail: (regCode: string, fingerprint: string, submissionId?: number) =>
     request<PostcardRegistrationSummary>(
-      `/my/${encodeURIComponent(regCode)}/?fingerprint=${encodeURIComponent(fingerprint)}`,
+      `/my/${encodeURIComponent(regCode)}/?fingerprint=${encodeURIComponent(fingerprint)}`
+        + (submissionId ? `&id=${submissionId}` : ""),
     ),
+
+  /** 审核中的轮询（凭证不含 6 位码，未通过时也不泄露能力凭证）。 */
+  statusByToken: (token: string) =>
+    request<PostcardRegistrationSummary>(`/my/token/${encodeURIComponent(token)}/`),
 
   /**
    * 用户侧查询（2026-11-08）：q = 6 位登记码 → 完整摘要（能力凭证，可直接改）；
@@ -129,24 +145,40 @@ export const postcardApi = {
     regCode: string,
     patch: Partial<Pick<PostcardRegistrationSummary, "sender_name" | "grade" | "class_no" | "dest_region" | "dest_school">>,
     fingerprint: string,
+    submissionId?: number,
   ) =>
-    request<PostcardRegistrationSummary>(`/my/${encodeURIComponent(regCode)}/`, {
-      method: "PATCH",
-      body: JSON.stringify({ ...patch, fingerprint }),
-    }),
+    request<PostcardRegistrationSummary>(
+      `/my/${encodeURIComponent(regCode)}/` + (submissionId ? `?id=${submissionId}` : ""),
+      { method: "PATCH", body: JSON.stringify({ ...patch, fingerprint }) },
+    ),
 
-  /** 取消自己的登记（整单 + 全部条目，不可恢复）。 */
-  cancel: (regCode: string, fingerprint: string) =>
-    request<PostcardRegistrationSummary>(`/my/${encodeURIComponent(regCode)}/`, {
-      method: "POST",
-      body: JSON.stringify({ fingerprint }),
-    }),
+  /**
+   * 取消登记（不可恢复）：scope="one" 取消单份提交；scope="all" 取消该码下全部提交。
+   * 整批取消前前端必须二次确认（重新输入 6 位登记码）。
+   */
+  cancel: (
+    regCode: string,
+    fingerprint: string,
+    scope: "one" | "all" = "one",
+    submissionId?: number,
+  ) =>
+    request<PostcardRegistrationSummary>(
+      `/my/${encodeURIComponent(regCode)}/` + (submissionId ? `?id=${submissionId}` : ""),
+      { method: "POST", body: JSON.stringify({ fingerprint, scope }) },
+    ),
 
   /** AI 判不匹配后申请人工复核。 */
   requestReview: (regCode: string, fingerprint: string) =>
     request<{ message: string; count: number }>(
       `/my/${encodeURIComponent(regCode)}/review-request/`,
       { method: "POST", body: JSON.stringify({ fingerprint }) },
+    ),
+
+  /** 审核中（还没拿到 6 位码）申请人工复核：走轮询凭证。 */
+  requestReviewByToken: (token: string) =>
+    request<{ message: string; count: number }>(
+      `/my/token/${encodeURIComponent(token)}/review-request/`,
+      { method: "POST", body: "{}" },
     ),
 
   /** 建议箱。 */
@@ -169,18 +201,17 @@ export const postcardApi = {
 };
 
 /**
- * 关标签页清理失败照片（sendBeacon）：AI/人工复核判不通过的登记单，
- * 用户离开页面时请求服务端删除照片文件（24h TTL 兜底，见方案 §7）。
+ * 关标签页清理失败照片（sendBeacon）。
  *
- * sendBeacon 无法带自定义 header → 后端该端点豁免 SessionAuthentication，
- * 能力凭证 = body 里的登记码（跨站攻击者不可知）。必须以 application/json
- * Blob 发送（后端 docstring 钉死的契约）。
+ * 审核失败时登记码尚未发放（服务端只给掩码），所以清理凭证是登记时下发的
+ * ``access_token``；服务端 24h TTL 仍是兜底。必须以 application/json Blob
+ * 发送（后端该端点豁免 CSRF，凭证在 URL 里）。
  */
-export function purgePhotosBeacon(regCode: string, fingerprint: string): void {
+export function purgePhotosBeacon(token: string): void {
   try {
-    const blob = new Blob([JSON.stringify({ fingerprint })], { type: "application/json" });
+    const blob = new Blob(["{}"], { type: "application/json" });
     navigator.sendBeacon(
-      `/events/postcard/my/${encodeURIComponent(regCode)}/purge-photos/`,
+      `/events/postcard/my/token/${encodeURIComponent(token)}/purge-photos/`,
       blob,
     );
   } catch {

@@ -331,7 +331,8 @@ class PortalTest(TestCase):
         data = self.client.get("/events/postcard/portal/").json()
         self.assertEqual(data["announcement_body"], "<p>活动公告内容</p>")
 
-    def test_non_registering_hides_metadata(self):
+    def test_non_registering_keeps_metadata_for_editing(self):
+        """登记截止后仍下发年级/区/校：历史记录的「修改」表单需要下拉项（2026-11-08 修复）。"""
         now = timezone.now()
         _config_event(start=now - timedelta(days=3), ship=now - timedelta(days=1),
                       end=now + timedelta(days=1))
@@ -339,7 +340,17 @@ class PortalTest(TestCase):
         data = resp.json()
         self.assertEqual(data["phase"], "shipped")
         self.assertFalse(data["can_register"])
-        self.assertEqual(data["grades"], [])  # 不泄露表单元数据
+        self.assertTrue(data["grades"])
+        self.assertEqual(len(data["regions"]), 16)
+        self.assertTrue(data["schools"])
+
+    def test_not_started_still_hides_metadata(self):
+        """未开始时对普通用户仍不泄露表单元数据。"""
+        now = timezone.now()
+        _config_event(start=now + timedelta(days=2), end=now + timedelta(days=9))
+        data = self.client.get("/events/postcard/portal/").json()
+        self.assertEqual(data["phase"], "not_started")
+        self.assertEqual(data["grades"], [])
         self.assertEqual(data["schools"], [])
 
     def test_admin_sees_metadata_in_any_phase(self):
@@ -545,8 +556,15 @@ class MyRecordsAndIDORTest(TestCase):
         )
         self.assertTrue(all(p["id"] for p in first["photos"]))
 
-    def test_my_list_by_fingerprint(self):
-        client = APIClient()  # 无 device cookie，靠指纹
+    def test_my_list_fingerprint_alone_is_not_enough(self):
+        """2026-11-08 收紧：指纹可被复制，单轨不再能列出他人登记。"""
+        client = APIClient()  # 无 device / 未登录
+        resp = client.get("/events/postcard/my/?fingerprint=aabbccdd00112233")
+        self.assertEqual(resp.json()["results"], [])
+
+    def test_my_list_fingerprint_with_device(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_A
         resp = client.get("/events/postcard/my/?fingerprint=aabbccdd00112233")
         self.assertEqual(len(resp.json()["results"]), 1)
 
@@ -1576,3 +1594,197 @@ class PhotoPurgeAndGCTest(TestCase):
         call_command("postcard_photo_gc", stdout=out)
         stats = json.loads(out.getvalue())
         self.assertIn("ended_events_purged", stats)
+
+
+class SharedCodeAndGrantTest(TestCase):
+    """同一发件人共用登记码（B：姓名 + 年级 + 班级）+ 服务端发码门禁。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001", "1000002", "1000003"])
+        _add_sample(self.event)
+        self.client = APIClient()
+        self.client.cookies["club_device"] = DEVICE_A
+
+    def _register(self, codes, **overrides):
+        return self.client.post(
+            "/events/postcard/register/",
+            {**_register_payload(codes, **overrides), **_register_files(len(codes))},
+            format="multipart",
+        )
+
+    def test_same_sender_reuses_code(self):
+        r1 = self._register(["1000001"])
+        r2 = self._register(["1000002"])
+        self.assertEqual(r1.status_code, 201, r1.content)
+        self.assertEqual(r2.status_code, 201, r2.content)
+        self.assertEqual(r1.json()["reg_code"], r2.json()["reg_code"])
+        regs = PostcardRegistration.objects.filter(event=self.event)
+        self.assertEqual(regs.count(), 2)
+        self.assertEqual(regs.values("reg_code").distinct().count(), 1)
+        # 每次提交仍是独立一行（各自寄达校与审核状态）
+        self.assertEqual(regs.values("sender_name").distinct().count(), 1)
+
+    def test_different_class_gets_new_code(self):
+        r1 = self._register(["1000001"])
+        r2 = self._register(["1000002"], class_no=4)
+        self.assertNotEqual(r1.json()["reg_code"], r2.json()["reg_code"])
+
+    def test_cross_track_reuse_is_audited(self):
+        self._register(["1000001"])
+        other = APIClient()
+        other.cookies["club_device"] = DEVICE_B
+        resp = other.post(
+            "/events/postcard/register/",
+            {**_register_payload(["1000002"], fingerprint="ffffffffffffffff"), **_register_files(1)},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertTrue(
+            PostcardAuditLog.objects.filter(action="code_reused_cross_track").exists()
+        )
+        self.assertEqual(
+            PostcardRegistration.objects.filter(event=self.event).values("reg_code").distinct().count(), 1
+        )
+
+    def test_pending_does_not_reveal_code(self):
+        with mock.patch(
+            "events.modules.postcard.ai.queue_registration_review",
+            return_value=PostcardPhoto.REVIEW_PENDING,
+        ):
+            resp = self._register(["1000001"])
+        body = resp.json()
+        self.assertIsNone(body["reg_code"])
+        self.assertFalse(body["code_granted"])
+        self.assertTrue(body["access_token"])
+        self.assertIn("****", body["registration"]["reg_code"])
+
+        listing = self.client.get("/events/postcard/my/").json()["results"][0]
+        self.assertFalse(listing["code_granted"])
+        self.assertIn("****", listing["reg_code"])
+
+        # 转为人工复核 → 凭证拿真码
+        reg = PostcardRegistration.objects.get(event=self.event)
+        PostcardPhoto.objects.filter(item__registration=reg).update(
+            review_state=PostcardPhoto.REVIEW_MANUAL_PENDING
+        )
+        status = self.client.get(f"/events/postcard/my/token/{body['access_token']}/").json()
+        self.assertTrue(status["code_granted"])
+        self.assertEqual(status["reg_code"], reg.reg_code)
+
+    def test_token_review_request_grants_code(self):
+        with mock.patch(
+            "events.modules.postcard.ai.queue_registration_review",
+            return_value=PostcardPhoto.REVIEW_PENDING,
+        ):
+            token = self._register(["1000001"]).json()["access_token"]
+        reg = PostcardRegistration.objects.get(event=self.event)
+        PostcardPhoto.objects.filter(item__registration=reg).update(
+            review_state=PostcardPhoto.REVIEW_AI_FAILED,
+            ai_verdict={"matched": False, "mismatched_items": ["寄达校"]},
+        )
+        resp = self.client.post(f"/events/postcard/my/token/{token}/review-request/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        status = self.client.get(f"/events/postcard/my/token/{token}/").json()
+        self.assertTrue(status["code_granted"])
+        self.assertEqual(status["reg_code"], reg.reg_code)
+
+    def test_unknown_token_404(self):
+        self.assertEqual(
+            self.client.get("/events/postcard/my/token/deadbeef/").status_code, 404,
+        )
+
+    def test_cancel_one_then_all(self):
+        self._register(["1000001"])
+        self._register(["1000002"])
+        regs = list(PostcardRegistration.objects.filter(event=self.event).order_by("pk"))
+        code = regs[0].reg_code
+        resp = self.client.post(
+            f"/events/postcard/my/{code}/?id={regs[1].pk}", {"scope": "one"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        regs[1].refresh_from_db()
+        regs[0].refresh_from_db()
+        self.assertEqual(regs[1].status, PostcardRegistration.STATUS_CANCELLED)
+        self.assertEqual(regs[0].status, PostcardRegistration.STATUS_REGISTERED)
+
+        resp = self.client.post(f"/events/postcard/my/{code}/", {"scope": "all"}, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["cancelled_count"], 1)  # 已取消的那份跳过
+        self.assertFalse(
+            PostcardRegistration.objects.filter(event=self.event)
+            .exclude(status=PostcardRegistration.STATUS_CANCELLED).exists()
+        )
+
+    def test_patch_validates_school_pair(self):
+        self._register(["1000001"])
+        reg = PostcardRegistration.objects.get(event=self.event)
+        url = f"/events/postcard/my/{reg.reg_code}/?id={reg.pk}"
+        bad = self.client.patch(url, {"dest_school": "不存在的中学"}, format="json")
+        self.assertEqual(bad.status_code, 400)
+        ok = self.client.patch(
+            url, {"dest_region": "黄浦区", "dest_school": "光明中学"}, format="json",
+        )
+        self.assertEqual(ok.status_code, 200, ok.content)
+        reg.refresh_from_db()
+        self.assertEqual(reg.dest_school, "光明中学")
+
+    def test_sync_status_ignores_cancelled(self):
+        self._register(["1000001", "1000002"])
+        reg = PostcardRegistration.objects.get(event=self.event)
+        items = list(reg.items.order_by("pk"))
+        items[0].status = PostcardItem.STATUS_REPORTED
+        items[0].save(update_fields=["status"])
+        items[1].status = PostcardItem.STATUS_CANCELLED
+        items[1].save(update_fields=["status"])
+        reg.sync_status_from_items()
+        reg.refresh_from_db()
+        self.assertEqual(reg.status, PostcardRegistration.STATUS_REPORTED)
+
+    def test_admin_by_id_and_ambiguous_code(self):
+        self._register(["1000001"])
+        self._register(["1000002"])
+        admin = _admin()
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        regs = list(PostcardRegistration.objects.filter(event=self.event).order_by("pk"))
+        code = regs[0].reg_code
+
+        ambiguous = client.patch(
+            f"/events/postcard/admin/registrations/{code}/", {"sender_name": "王五"}, format="json",
+        )
+        self.assertEqual(ambiguous.status_code, 400)
+
+        ok = client.patch(
+            f"/events/postcard/admin/registrations/by-id/{regs[0].pk}/",
+            {"sender_name": "王五"}, format="json",
+        )
+        self.assertEqual(ok.status_code, 200, ok.content)
+        regs[0].refresh_from_db()
+        self.assertEqual(regs[0].sender_name, "王五")
+
+        deleted = client.delete(f"/events/postcard/admin/registrations/by-id/{regs[1].pk}/")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(PostcardRegistration.objects.filter(pk=regs[1].pk).exists())
+
+
+class PortalMetadataAfterRegisteringTest(TestCase):
+    """登记截止后，用户改自己的记录仍需要年级/区/校下拉（2026-11-08 修复）。"""
+
+    def setUp(self):
+        cache.clear()
+        now = timezone.now()
+        self.event, _ = _config_event(
+            start=now - timedelta(days=5), end=now + timedelta(days=5),
+            ship=now - timedelta(days=1),
+        )
+        _add_sample(self.event)
+
+    def test_metadata_present_after_registration_closed(self):
+        data = APIClient().get("/events/postcard/portal/").json()
+        self.assertEqual(data["phase"], "shipped")
+        self.assertFalse(data["can_register"])
+        self.assertTrue(data["grades"])
+        self.assertEqual(len(data["regions"]), 16)
+        self.assertTrue(data["schools"])

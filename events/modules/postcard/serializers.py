@@ -11,7 +11,7 @@ import re
 from rest_framework import serializers
 from rest_framework.utils import html as drf_html
 
-from .models import PostcardConfig, PostcardRegistration
+from .models import PostcardConfig, PostcardPhoto, PostcardRegistration
 
 _BARCODE_RE = re.compile(r"^\d{7}$")
 _REGCODE_RE = re.compile(r"^\d{6}$")
@@ -219,10 +219,48 @@ def item_review_info(item) -> dict:
     }
 
 
-def registration_summary(reg: PostcardRegistration, *, include_items: bool = True) -> dict:
-    """登记单 → 前端展示 dict（公开侧与管理端共用）。"""
+#: 登记码发放规则（2026-11-08 用户指定，**服务端权威**，不再只靠前端弹窗）：
+#: - 存在失败条目（AI 判不匹配 / 人工不通过）→ 不发码；
+#: - 已转人工复核 → 立即发码（不等人工结果）；
+#: - 全部通过（AI / 人工）→ 发码；
+#: - 仍在 AI 审核（pending）→ 不发码。
+_CODE_FAILED = {PostcardPhoto.REVIEW_AI_FAILED, PostcardPhoto.REVIEW_MANUAL_FAILED}
+_CODE_PASSED = {PostcardPhoto.REVIEW_AI_PASSED, PostcardPhoto.REVIEW_MANUAL_PASSED}
+
+
+def code_granted(reg: PostcardRegistration) -> bool:
+    """这条提交现在是否该把 6 位登记码发给用户。"""
+    states: set[str] = set()
+    for item in reg.items.all():
+        for photo in item.photos.all():
+            states.add(photo.review_state)
+    if states & _CODE_FAILED:
+        return False
+    if PostcardPhoto.REVIEW_MANUAL_PENDING in states:
+        return True
+    if states and states <= _CODE_PASSED:
+        return True
+    return False
+
+
+def mask_code(reg_code: str) -> str:
+    """未发放时的掩码（与姓名查询同形：前 2 位 + ****）。"""
+    return f"{reg_code[:2]}****"
+
+
+def registration_summary(
+    reg: PostcardRegistration, *, include_items: bool = True, force_code: bool = False,
+) -> dict:
+
+    """登记单 → 前端展示 dict（公开侧与管理端共用）。
+
+    ``force_code=True``：调用方已出示完整登记码（详情 / 管理端），照原样返回；
+    否则按发放规则掩码，避免「审核未过也拿到能力凭证」。
+    """
+    granted = force_code or code_granted(reg)
     data = {
-        "reg_code": reg.reg_code,
+        "reg_code": reg.reg_code if granted else mask_code(reg.reg_code),
+        "code_granted": granted,
         "sender_name": reg.sender_name,
         "grade": reg.grade,
         "grade_label": reg.grade_label,

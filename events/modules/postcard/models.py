@@ -179,6 +179,9 @@ class PostcardRegistration(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="postcard_registrations", verbose_name="登记时登录用户",
     )
+    #: 单次提交的只读轮询凭证（32 位十六进制）：审核未通过前不发放登记码，
+    #: 前端用它在「审核中」阶段拉状态 / 申请人工复核（不泄露 6 位能力凭证）。
+    access_token = models.CharField("轮询凭证", max_length=32, blank=True, default="", db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -187,10 +190,10 @@ class PostcardRegistration(models.Model):
         verbose_name = "明信片登记"
         verbose_name_plural = "明信片登记"
         ordering = ["-created_at", "-id"]
-        constraints = [
-            models.UniqueConstraint(fields=["event", "reg_code"], name="postcard_regcode_unique_per_event"),
-        ]
         indexes = [
+            # 同一发件人（姓名 + 年级 + 班级，2026-11-08 用户指定）在活动内共用登记码，
+            # 因此 (event, reg_code) 不再唯一——查询按该索引聚合整批提交。
+            models.Index(fields=["event", "reg_code"], name="postcard_reg_code_idx"),
             models.Index(fields=["event", "status"], name="postcard_reg_status_idx"),
             models.Index(fields=["event", "sender_name"], name="postcard_reg_name_idx"),
         ]
@@ -209,8 +212,9 @@ class PostcardRegistration(models.Model):
         """
         if self.status == self.STATUS_CANCELLED:
             return
-        has_items = self.items.exists()
-        all_reported = has_items and not self.items.exclude(
+        # 已取消的条目不再参与联动（否则一张取消就让整单永远停在「已登记」）。
+        active = self.items.exclude(status=PostcardItem.STATUS_CANCELLED)
+        all_reported = active.exists() and not active.exclude(
             status=PostcardItem.STATUS_REPORTED
         ).exists()
         target = self.STATUS_REPORTED if all_reported else self.STATUS_REGISTERED

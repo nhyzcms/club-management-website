@@ -96,6 +96,8 @@ export interface RecordRow {
   item_status: string;
   item_status_label: string;
   registration: {
+    /** 单份提交 id（同一登记码可能对应多份提交）。 */
+    registration_id: number;
     reg_code: string;
     sender_name: string;
     grade: string;
@@ -305,8 +307,9 @@ export const postcardAdminApi = {
   // —— 登记记录 ——
   records: (params: RecordQuery) => request<Paged<RecordRow>>(`/admin/records/${query(params)}`),
 
+  /** 按单份提交 id 修改（同一登记码多份提交时按码操作会被后端拒绝）。 */
   updateRegistration: (
-    regCode: string,
+    registrationId: number,
     patch: Partial<{
       sender_name: string;
       grade: string;
@@ -316,13 +319,13 @@ export const postcardAdminApi = {
       status: string;
     }>,
   ) =>
-    request<{ reg_code: string }>(`/admin/registrations/${regCode}/`, {
+    request<{ reg_code: string }>(`/admin/registrations/by-id/${registrationId}/`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
 
-  deleteRegistration: (regCode: string) =>
-    request<null>(`/admin/registrations/${regCode}/`, { method: "DELETE" }),
+  deleteRegistration: (registrationId: number) =>
+    request<null>(`/admin/registrations/by-id/${registrationId}/`, { method: "DELETE" }),
 
   exportUrl: (params: RecordQuery, fmt: "xlsx" | "pdf") =>
     `/events/postcard/admin/export/${query({ ...params, page: undefined, fmt })}`,

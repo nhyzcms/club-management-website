@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import secrets
 
 from django.db import transaction
 from django.db.models import Count, Q
@@ -67,6 +68,7 @@ from .serializers import (
     RegisterInput,
     ReviewDecisionInput,
     SuggestionInput,
+    code_granted,
     registration_summary,
 )
 from .throttles import (
@@ -105,18 +107,25 @@ def _fingerprint_hash(fp: str) -> str:
 
 
 def _identity_filters(request, fp_hash: str):
-    """归属三轨的 Q 过滤：ncdid / 指纹哈希 / 登录用户。"""
+    """归属三轨的 Q 过滤：ncdid / 指纹哈希 / 登录用户。
+
+    2026-11-08 收紧（审计）：**指纹不再单轨生效**——前端指纹由浏览器特征推导、
+    可被复制，只凭它就能列出别人的登记（含登记码）。现在要求「指纹 + 设备/登录
+    至少一轨同时命中」；三轨全空时返回空集（绝不退化成全表）。
+    """
     from django.db.models import Q
 
     device = device_id_from_request(request)
-    q = Q()
+    base = Q()
     if device:
-        q |= Q(device_id=device)
-    if fp_hash:
-        q |= Q(fingerprint_hash=fp_hash)
+        base |= Q(device_id=device)
     if request.user.is_authenticated:
-        q |= Q(user=request.user)
-    return q
+        base |= Q(user=request.user)
+    if not base.children:
+        return Q(pk__in=[])
+    if fp_hash:
+        base &= Q(fingerprint_hash=fp_hash)
+    return base
 
 
 def _new_reg_code(event) -> str:
@@ -198,8 +207,9 @@ class PortalView(APIView):
         if config is not None:
             payload["announcement_pdf"] = bool(config.announcement_pdf)
             payload["announcement_body"] = config.announcement_body or ""
-            # 表单元数据只在「登记中」对普通用户开放；管理员任何阶段都要（配置预览）。
-            if state.can_register(phase) or is_admin:
+            # 表单元数据：「登记中」给所有人；管理员任何阶段；其余阶段给普通用户
+            # 是为了让「历史登记记录 → 修改」的表单仍有下拉项（2026-11-08 修复）。
+            if state.can_register(phase) or is_admin or phase != state.PHASE_NOT_STARTED:
                 payload["grades"] = config.grade_options()
                 payload["regions"] = config.regions()
                 payload["schools"] = config.destination_schools or []
@@ -296,16 +306,34 @@ class RegisterView(APIView):
 
         # —— 原子建单 ——
         fp_hash = _fingerprint_hash(data.get("fingerprint") or "")
+        device_id = device_id_from_request(request)
+
+        # 同一发件人（姓名 + 年级 + 班级，2026-11-08 用户指定）在活动内共用登记码：
+        # 后续提交复用首份的 6 位码，每次提交仍是独立一行（各自的寄达校与审核状态）。
+        reused = (
+            PostcardRegistration.objects.filter(
+                event=event,
+                sender_name=data["sender_name"],
+                grade=data["grade"],
+                class_no=data["class_no"],
+            )
+            .order_by("created_at", "id")
+            .first()
+        )
+        reg_code = reused.reg_code if reused is not None else _new_reg_code(event)
+        access_token = secrets.token_hex(16)
+
         with transaction.atomic():
             reg = PostcardRegistration.objects.create(
                 event=event,
-                reg_code=_new_reg_code(event),
+                reg_code=reg_code,
+                access_token=access_token,
                 sender_name=data["sender_name"],
                 grade=data["grade"],
                 class_no=data["class_no"],
                 dest_region=data["dest_region"],
                 dest_school=data["dest_school"],
-                device_id=device_id_from_request(request),
+                device_id=device_id,
                 fingerprint_hash=fp_hash,
                 user=request.user if request.user.is_authenticated else None,
             )
@@ -315,14 +343,29 @@ class RegisterView(APIView):
                     photo = PostcardPhoto(item=item, side=side)
                     photo.file.save(f"{item.pk}-{side}.jpg", content, save=True)
 
+        # 同一姓名/年级/班级但设备/账号都不同：码被复用给另一条轨道，留痕供追查。
+        if reused is not None and not (
+            (reused.device_id and reused.device_id == device_id)
+            or (fp_hash and reused.fingerprint_hash == fp_hash)
+            or (request.user.is_authenticated and reused.user_id == request.user.pk)
+        ):
+            _audit(event, request, "code_reused_cross_track", reg_code, {
+                "submission": reg.pk,
+                "first_submission": reused.pk,
+            })
+
         # —— AI 审核调度（PR2）：未启用 → 同步转人工；启用 → 后台线程，
-        # 登记接口立即返回（绝不挂起 worker，方案 §9）。前端轮询 my/<code>/ 拿结果。
+        # 登记接口立即返回（绝不挂起 worker，方案 §9）。前端轮询拿结果。
         from . import ai
 
         review_state = ai.queue_registration_review(reg)
 
+        granted = code_granted(reg)
         return Response({
-            "reg_code": reg.reg_code,
+            "reg_code": reg.reg_code if granted else None,
+            "code_granted": granted,
+            # 审核中的轮询凭证（不含 6 位码）：前端用它拉状态 / 申请人工复核。
+            "access_token": reg.access_token,
             "message": "登记成功！请保存好您的登记码，凭它可查看和修改自己的登记记录",
             "registration": registration_summary(reg),
             "review": {
@@ -352,7 +395,13 @@ class MyRegistrationsView(APIView):
             .prefetch_related("items__barcode", "items__photos")
             .order_by("-created_at")
         )
-        return Response({"results": [registration_summary(r) for r in qs]})
+        results = []
+        for reg in qs:
+            data = registration_summary(reg)
+            # 轮询凭证只回给归属三轨命中的本人：审核未过时用它拉状态/清照片。
+            data["access_token"] = reg.access_token
+            results.append(data)
+        return Response({"results": results})
 
 
 def _get_own_registration(request, reg_code: str) -> PostcardRegistration:
@@ -406,7 +455,7 @@ class LookupView(APIView):
                 .first()
             )
             return Response(
-                {"kind": "code", "results": [registration_summary(reg)] if reg else []}
+                {"kind": "code", "results": [registration_summary(reg, force_code=True)] if reg else []}
             )
         if len(q) < 2:
             return Response({"detail": "姓名至少 2 个字"}, status=400)
@@ -442,34 +491,108 @@ class MyRegistrationDetailView(APIView):
     def _get_own(self, request, reg_code: str):
         return _get_own_registration(request, reg_code)
 
+    def _pick(self, request, reg_code: str):
+        """同一登记码可能对应多份提交：``?id=`` 指定单份，缺省取最早一份。"""
+        event, _, _ = _phase_guard()
+        qs = PostcardRegistration.objects.filter(event=event, reg_code=reg_code) if event else None
+        if qs is None:
+            raise Http404
+        sub_id = (request.query_params.get("id") or "").strip()
+        if sub_id.isdigit():
+            qs = qs.filter(pk=int(sub_id))
+        reg = qs.prefetch_related("items__barcode", "items__photos").order_by("created_at", "id").first()
+        if reg is None:
+            raise Http404
+        return event, reg
+
     def get(self, request, reg_code: str):
-        return Response(registration_summary(self._get_own(request, reg_code)))
+        _, reg = self._pick(request, reg_code)
+        return Response(registration_summary(reg, force_code=True))
 
     def patch(self, request, reg_code: str):
-        reg = self._get_own(request, reg_code)
+        event, reg = self._pick(request, reg_code)
         if reg.status == PostcardRegistration.STATUS_CANCELLED:
             return Response({"detail": "已取消的登记不能修改"}, status=400)
+        siblings = PostcardRegistration.objects.filter(event=event, reg_code=reg_code)
+        if siblings.count() > 1 and not (request.query_params.get("id") or "").strip():
+            return Response(
+                {"detail": "该登记码对应多份提交，请指定要修改的提交（id）"}, status=400,
+            )
         serializer = MyRecordEditInput(data=request.data)
         serializer.is_valid(raise_exception=True)
-        for field, value in serializer.validated_data.items():
+        data = serializer.validated_data
+
+        # 与服务端登记同一套清单校验：年级 / 16 区 / (区, 校) 配对。
+        config = getattr(event, "postcard_config", None)
+        if config is not None:
+            allowed = config.allowed_grades or [k for k, _ in PostcardConfig.GRADE_CHOICES]
+            if "grade" in data and data["grade"] not in allowed:
+                return Response({"detail": "你的年级不在本次活动可参与范围内"}, status=400)
+            region = data.get("dest_region", reg.dest_region)
+            school = data.get("dest_school", reg.dest_school)
+            if "dest_region" in data and region not in PostcardConfig.REGION_CHOICES:
+                return Response({"detail": "寄达区不在支持范围内"}, status=400)
+            pairs = {
+                ((s.get("region") or "").strip(), (s.get("name") or "").strip())
+                for s in (config.destination_schools or [])
+            }
+            if ("dest_region" in data or "dest_school" in data) and (region, school) not in pairs:
+                return Response({"detail": "寄达校不在本次活动支持的学校清单内"}, status=400)
+
+        for field, value in data.items():
             setattr(reg, field, value)
         reg.save()
-        return Response(registration_summary(reg))
+        return Response(registration_summary(reg, force_code=True))
 
     def post(self, request, reg_code: str):
-        """取消自己的登记（整单 + 全部条目）。"""
-        reg = self._get_own(request, reg_code)
-        if reg.status == PostcardRegistration.STATUS_CANCELLED:
-            return Response({"detail": "该登记已是取消状态"}, status=400)
+        """取消：默认取消指定的单份提交；``body.scope="all"`` 取消该码下全部提交。
+
+        2026-11-08 用户要求：同一登记码可能有多份提交，两种粒度都要支持；
+        整批取消是不可逆操作，前端须二次确认（重新输入 6 位登记码）后才提交。
+        """
+        event, reg = self._pick(request, reg_code)
+        scope = (request.data.get("scope") or "one").strip()
         now = timezone.now()
-        PostcardRegistration.objects.filter(pk=reg.pk).update(
-            status=PostcardRegistration.STATUS_CANCELLED, updated_at=now,
+        if scope == "all":
+            targets = list(PostcardRegistration.objects.filter(event=event, reg_code=reg_code))
+        else:
+            targets = [reg]
+        changed = [r for r in targets if r.status != PostcardRegistration.STATUS_CANCELLED]
+        if not changed:
+            return Response({"detail": "该登记已是取消状态"}, status=400)
+        for r in changed:
+            PostcardRegistration.objects.filter(pk=r.pk).update(
+                status=PostcardRegistration.STATUS_CANCELLED, updated_at=now,
+            )
+            r.items.update(status=PostcardItem.STATUS_CANCELLED, updated_at=now)
+            r.status = PostcardRegistration.STATUS_CANCELLED
+        data = registration_summary(changed[0], force_code=True)
+        data["cancelled_count"] = len(changed)
+        return Response(data)
+
+
+def _request_manual_review(event, reg_code: str):
+    """把该登记码下所有 ai_failed 的条目转人工复核（整批语义）。"""
+    moved = 0
+    regs = list(PostcardRegistration.objects.filter(event=event, reg_code=reg_code)) if event else []
+    if not regs:
+        raise Http404
+    for reg in regs:
+        for item in reg.items.prefetch_related("photos"):
+            if item.photos.filter(review_state=PostcardPhoto.REVIEW_AI_FAILED).exists():
+                # 保留 ai_verdict——复核员要看 AI 判了什么，只翻状态。
+                old_verdict = next(
+                    (p.ai_verdict for p in item.photos.all() if p.ai_verdict), None,
+                )
+                photo_lifecycle.settle_item_photos(
+                    item, PostcardPhoto.REVIEW_MANUAL_PENDING, verdict=old_verdict,
+                )
+                moved += 1
+    if moved == 0:
+        return Response(
+            {"detail": "当前没有 AI 判定不匹配、需要人工复核的明信片"}, status=400,
         )
-        reg.items.update(
-            status=PostcardItem.STATUS_CANCELLED, updated_at=now,
-        )
-        reg.status = PostcardRegistration.STATUS_CANCELLED
-        return Response(registration_summary(reg))
+    return Response({"message": "已提交人工复核，请耐心等待复核结果", "count": moved})
 
 
 class MyReviewRequestView(APIView):
@@ -482,23 +605,8 @@ class MyReviewRequestView(APIView):
     throttle_classes = [CodeAccessIPThrottle, CodeAccessDeviceThrottle]
 
     def post(self, request, reg_code: str):
-        reg = _get_own_registration(request, reg_code)
-        moved = 0
-        for item in reg.items.prefetch_related("photos"):
-            if item.photos.filter(review_state=PostcardPhoto.REVIEW_AI_FAILED).exists():
-                # 保留 ai_verdict——复核员要看 AI 判了什么，只翻状态。
-                old_verdict = next(
-                    (p.ai_verdict for p in item.photos.all() if p.ai_verdict), None,
-                )
-                photo_lifecycle.settle_item_photos(
-                    item, PostcardPhoto.REVIEW_MANUAL_PENDING, verdict=old_verdict,
-                )
-                moved += 1
-        if moved == 0:
-            return Response(
-                {"detail": "当前没有 AI 判定不匹配、需要人工复核的明信片"}, status=400,
-            )
-        return Response({"message": "已提交人工复核，请耐心等待复核结果", "count": moved})
+        event, _, _ = _phase_guard()
+        return _request_manual_review(event, reg_code)
 
 
 class MyPhotoPurgeView(APIView):
@@ -516,7 +624,62 @@ class MyPhotoPurgeView(APIView):
     throttle_classes = [CodeAccessIPThrottle, CodeAccessDeviceThrottle]
 
     def post(self, request, reg_code: str):
-        reg = _get_own_registration(request, reg_code)
+        event, _, _ = _phase_guard()
+        regs = list(PostcardRegistration.objects.filter(event=event, reg_code=reg_code)) if event else []
+        if not regs:
+            raise Http404
+        purged = 0
+        for reg in regs:
+            purged += photo_lifecycle.purge_registration_failed_photos(reg)
+        return Response({"purged": purged})
+
+
+def _token_submission(request, token: str):
+    event, _, _ = _phase_guard()
+    if event is None or not token:
+        raise Http404
+    return PostcardRegistration.objects.filter(event=event, access_token=token).first() or _raise_404()
+
+
+def _raise_404():
+    raise Http404
+
+
+class MyTokenStatusView(APIView):
+    """轮询凭证：审核中的提交用它拉状态（不暴露 6 位登记码）。
+
+    凭证是登记时下发的一次性 32 位随机串，只存在本人浏览器；与 6 位码不同，
+    它**不能**改/取消/取图，只能读状态与申请人工复核、清失败照片。
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [CodeAccessIPThrottle, CodeAccessDeviceThrottle]
+
+    def get(self, request, token: str):
+        reg = _token_submission(request, token)
+        return Response(registration_summary(reg))
+
+
+class MyTokenReviewRequestView(APIView):
+    """按轮询凭证申请人工复核（审核判不匹配后，用户还没拿到 6 位码时使用）。"""
+
+    permission_classes = [AllowAny]
+    throttle_classes = [CodeAccessIPThrottle, CodeAccessDeviceThrottle]
+
+    def post(self, request, token: str):
+        reg = _token_submission(request, token)
+        return _request_manual_review(reg.event, reg.reg_code)
+
+
+class MyTokenPhotoPurgeView(APIView):
+    """按轮询凭证清理失败照片（sendBeacon 不支持自定义头，豁免 CSRF）。"""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [CodeAccessIPThrottle, CodeAccessDeviceThrottle]
+
+    def post(self, request, token: str):
+        reg = _token_submission(request, token)
         purged = photo_lifecycle.purge_registration_failed_photos(reg)
         return Response({"purged": purged})
 
@@ -836,6 +999,7 @@ class AdminRecordsView(APIView):
                 "item_status": item.status,
                 "item_status_label": status_labels.get(item.status, item.status),
                 "registration": {
+                    "registration_id": reg.pk,
                     "reg_code": reg.reg_code,
                     "sender_name": reg.sender_name,
                     "grade": reg.grade,
@@ -851,47 +1015,84 @@ class AdminRecordsView(APIView):
         return paginator.get_paginated_response(rows)
 
 
+def _admin_patch_registration(request, event, reg):
+    serializer = AdminRegistrationEditInput(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+    for field in ("sender_name", "grade", "class_no", "dest_region", "dest_school"):
+        if field in data:
+            setattr(reg, field, data[field])
+    reg.save()
+    if data.get("status") == PostcardRegistration.STATUS_CANCELLED:
+        now = timezone.now()
+        reg.items.update(status=PostcardItem.STATUS_CANCELLED, updated_at=now)
+        reg.status = PostcardRegistration.STATUS_CANCELLED
+        reg.save(update_fields=["status", "updated_at"])
+    _audit(event, request, "registration_update", reg.reg_code, {
+        "fields": list(data.keys()),
+        "submission": reg.pk,
+    })
+    return Response(registration_summary(reg, force_code=True))
+
+
+def _admin_delete_registration(request, event, reg):
+    for photo in PostcardPhoto.objects.filter(item__registration=reg):
+        photo.delete_file()
+    reg_code = reg.reg_code
+    reg.delete()
+    _audit(event, request, "registration_delete", reg_code, {"submission": reg.pk})
+    return Response(status=http_status.HTTP_204_NO_CONTENT)
+
+
 class AdminRegistrationDetailView(APIView):
-    """改/删登记单（按登记码定位）。取消联动全部条目；删除连带照片文件。"""
+    """改/删登记单（按登记码定位）。
+
+    同一登记码可能对应多份提交（同一发件人多次登记，2026-11-08）：
+    多份时按码操作会误伤整批，因此返回 400，要求改用 ``by-id`` 路由。
+    """
 
     permission_classes = [CanManagePostcard]
 
-    def patch(self, request, reg_code: str):
-        event, _, _ = _phase_guard(admin=True)
-        reg = PostcardRegistration.objects.filter(
-            event=event, reg_code=reg_code,
-        ).prefetch_related("items__barcode").first() if event else None
+    def _resolve(self, event, reg_code):
+        qs = PostcardRegistration.objects.filter(event=event, reg_code=reg_code)
+        if qs.count() > 1:
+            return None, Response(
+                {"detail": "该登记码对应多份提交，请按单份操作（使用 by-id 接口）"}, status=400,
+            )
+        reg = qs.prefetch_related("items__barcode").first()
         if reg is None:
             raise Http404
-        serializer = AdminRegistrationEditInput(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        for field in ("sender_name", "grade", "class_no", "dest_region", "dest_school"):
-            if field in data:
-                setattr(reg, field, data[field])
-        reg.save()
-        if data.get("status") == PostcardRegistration.STATUS_CANCELLED:
-            now = timezone.now()
-            reg.items.update(status=PostcardItem.STATUS_CANCELLED, updated_at=now)
-            reg.status = PostcardRegistration.STATUS_CANCELLED
-            reg.save(update_fields=["status", "updated_at"])
-        _audit(event, request, "registration_update", reg.reg_code, {
-            "fields": list(data.keys()),
-        })
-        return Response(registration_summary(reg))
+        return reg, None
+
+    def patch(self, request, reg_code: str):
+        event, _, _ = _phase_guard(admin=True)
+        reg, err = self._resolve(event, reg_code)
+        return err or _admin_patch_registration(request, event, reg)
 
     def delete(self, request, reg_code: str):
         event, _, _ = _phase_guard(admin=True)
-        reg = PostcardRegistration.objects.filter(
-            event=event, reg_code=reg_code,
-        ).first() if event else None
+        reg, err = self._resolve(event, reg_code)
+        return err or _admin_delete_registration(request, event, reg)
+
+
+class AdminRegistrationByIdView(APIView):
+    """按单份提交 id 改/删（同一登记码多份提交时的唯一安全入口）。"""
+
+    permission_classes = [CanManagePostcard]
+
+    def patch(self, request, pk: int):
+        event, _, _ = _phase_guard(admin=True)
+        reg = PostcardRegistration.objects.filter(event=event, pk=pk).prefetch_related("items__barcode").first() if event else None
         if reg is None:
             raise Http404
-        for photo in PostcardPhoto.objects.filter(item__registration=reg):
-            photo.delete_file()
-        reg.delete()
-        _audit(event, request, "registration_delete", reg_code)
-        return Response(status=http_status.HTTP_204_NO_CONTENT)
+        return _admin_patch_registration(request, event, reg)
+
+    def delete(self, request, pk: int):
+        event, _, _ = _phase_guard(admin=True)
+        reg = PostcardRegistration.objects.filter(event=event, pk=pk).first() if event else None
+        if reg is None:
+            raise Http404
+        return _admin_delete_registration(request, event, reg)
 
 
 class AdminExportView(APIView):
@@ -995,7 +1196,7 @@ class AdminLookupView(APIView):
             "barcode": barcode,
             "item_status": item.status,
             "item_status_label": item.get_status_display(),
-            "registration": registration_summary(item.registration),
+            "registration": registration_summary(item.registration, force_code=True),
         })
 
 
@@ -1033,7 +1234,7 @@ class AdminConfirmView(APIView):
             "barcode": barcode,
             "already_reported": already,
             "item_status": item.status,
-            "registration": registration_summary(item.registration),
+            "registration": registration_summary(item.registration, force_code=True),
         })
 
 
@@ -1062,7 +1263,7 @@ class AdminUnreportView(APIView):
         return Response({
             "barcode": barcode,
             "item_status": item.status,
-            "registration": registration_summary(item.registration),
+            "registration": registration_summary(item.registration, force_code=True),
         })
 
 
@@ -1300,6 +1501,7 @@ class AdminReviewQueueView(APIView):
                 "photo_ids": [p.pk for p in photos if p.file],
                 "ai_verdict": verdict,
                 "registration": {
+                    "registration_id": reg.pk,
                     "reg_code": reg.reg_code,
                     "sender_name": reg.sender_name,
                     "grade_label": reg.grade_label,

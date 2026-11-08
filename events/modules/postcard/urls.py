@@ -11,6 +11,10 @@ urlpatterns = [
     path("portal/", views.PortalView.as_view(), name="postcard-portal"),
     path("register/", views.RegisterView.as_view(), name="postcard-register"),
     path("my/", views.MyRegistrationsView.as_view(), name="postcard-my"),
+    # 轮询凭证（审核中不泄露 6 位码）：只读状态 / 申请复核 / 清失败照片
+    path("my/token/<str:token>/", views.MyTokenStatusView.as_view(), name="postcard-token-status"),
+    path("my/token/<str:token>/review-request/", views.MyTokenReviewRequestView.as_view(), name="postcard-token-review"),
+    path("my/token/<str:token>/purge-photos/", views.MyTokenPhotoPurgeView.as_view(), name="postcard-token-purge"),
     # 用户侧查询入口（按登记码 / 寄出人姓名，2026-11-08）
     path("lookup/", views.LookupView.as_view(), name="postcard-lookup"),
     path("my/<str:reg_code>/", views.MyRegistrationDetailView.as_view(), name="postcard-my-detail"),
@@ -26,6 +30,7 @@ urlpatterns = [
     path("admin/barcodes/pdf/", views.AdminBarcodesPdfView.as_view(), name="postcard-admin-barcodes-pdf"),
     path("admin/records/", views.AdminRecordsView.as_view(), name="postcard-admin-records"),
     path("admin/registrations/<str:reg_code>/", views.AdminRegistrationDetailView.as_view(), name="postcard-admin-registration"),
+    path("admin/registrations/by-id/<int:pk>/", views.AdminRegistrationByIdView.as_view(), name="postcard-admin-registration-by-id"),
     path("admin/export/", views.AdminExportView.as_view(), name="postcard-admin-export"),
     path("admin/stats/", views.AdminStatsView.as_view(), name="postcard-admin-stats"),
     path("admin/lookup/", views.AdminLookupView.as_view(), name="postcard-admin-lookup"),

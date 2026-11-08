@@ -73,7 +73,7 @@ export default function RecordsTab() {
     setNotice("");
     setBusy(true);
     try {
-      await postcardAdminApi.updateRegistration(editing.registration.reg_code, form);
+      await postcardAdminApi.updateRegistration(editing.registration.registration_id, form);
       setEditing(null);
       setNotice("登记单已更新。");
       await load();
@@ -90,7 +90,7 @@ export default function RecordsTab() {
     setNotice("");
     setBusy(true);
     try {
-      await postcardAdminApi.updateRegistration(row.registration.reg_code, { status: "cancelled" });
+      await postcardAdminApi.updateRegistration(row.registration.registration_id, { status: "cancelled" });
       setNotice("登记单已取消。");
       await load();
     } catch (e) {
@@ -106,7 +106,7 @@ export default function RecordsTab() {
     setNotice("");
     setBusy(true);
     try {
-      await postcardAdminApi.deleteRegistration(row.registration.reg_code);
+      await postcardAdminApi.deleteRegistration(row.registration.registration_id);
       setNotice("登记单已删除。");
       await load();
     } catch (e) {
