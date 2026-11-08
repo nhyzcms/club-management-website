@@ -826,6 +826,32 @@ class AdminConfigTest(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
+    def test_multipart_json_schools(self):
+        """前端 FormData 只能把寄达校清单序列化成 JSON 串提交（含公告 PDF 时必走 multipart）。"""
+        now = timezone.now()
+        resp = self.client.put(
+            "/events/postcard/admin/config/",
+            {
+                "title": "t",
+                "start_at": now.isoformat(),
+                "end_at": (now + timedelta(days=30)).isoformat(),
+                "allowed_grades": ["g1"],
+                "destination_schools": json.dumps(
+                    [{"region": "黄浦区", "name": "光明中学"}], ensure_ascii=False,
+                ),
+                "announcement_pdf": SimpleUploadedFile(
+                    "a.pdf", b"%PDF-1.4\n%fake\n", "application/pdf",
+                ),
+            },
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(
+            resp.json()["destination_schools"],
+            [{"region": "黄浦区", "name": "光明中学"}],
+        )
+        self.assertTrue(resp.json()["has_announcement_pdf"])
+
 
 class AdminRecordsAndOpsTest(TestCase):
     """记录管理 / 导出 / 统计 / 签收三件套 / 审计。"""
