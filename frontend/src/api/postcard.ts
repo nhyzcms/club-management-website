@@ -114,6 +114,16 @@ export const postcardApi = {
       `/my/${encodeURIComponent(regCode)}/?fingerprint=${encodeURIComponent(fingerprint)}`,
     ),
 
+  /**
+   * 用户侧查询（2026-11-08）：q = 6 位登记码 → 完整摘要（能力凭证，可直接改）；
+   * q = 寄出人姓名 → 掩码摘要（reg_code 形如 82****、无照片，需完整码才能改）。
+   */
+  lookup: (q: string) =>
+    request<{ kind: "code" | "name"; results: PostcardRegistrationSummary[] }>(
+      "/lookup/",
+      { method: "POST", body: JSON.stringify({ q }) },
+    ),
+
   /** 修改自己的登记（仅寄出人信息；条码与照片不可改——实物已印好）。 */
   update: (
     regCode: string,

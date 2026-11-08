@@ -16,6 +16,7 @@ vi.mock("../api/postcard", () => ({
     my: vi.fn(),
     register: vi.fn(),
     detail: vi.fn(),
+    lookup: vi.fn(),
     update: vi.fn(),
     cancel: vi.fn(),
     requestReview: vi.fn(),
@@ -330,4 +331,50 @@ describe("PostcardPage · 登记码发放规则（2026-11-08 用户指定）", (
     expect(await screen.findByText("登记成功")).toBeTruthy();
     expect(screen.getByText("824617")).toBeTruthy();
   }, 20000);
+});
+
+describe("PostcardPage · 查询入口（登记码 / 姓名）", () => {
+  async function query(text: string) {
+    fireEvent.change(screen.getByPlaceholderText("6 位登记码，或寄出人姓名"), { target: { value: text } });
+    fireEvent.click(screen.getByRole("button", { name: "查询" }));
+  }
+
+  it("登记码查询：返回完整记录，可直接修改 / 取消", async () => {
+    mockedPortal.mockResolvedValue(portalData());
+    vi.mocked(postcardApi.lookup).mockResolvedValue({ kind: "code", results: [regData()] });
+    renderPage();
+    await screen.findByText("查询登记情况");
+
+    await query("654321");
+
+    expect(await screen.findByText("找到登记记录，可直接在此修改或取消：")).toBeTruthy();
+    expect(screen.getByText("654321")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "修改" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "取消登记" })).toBeTruthy();
+  });
+
+  it("姓名查询：只给掩码登记码与提示，无修改入口", async () => {
+    mockedPortal.mockResolvedValue(portalData());
+    vi.mocked(postcardApi.lookup).mockResolvedValue({ kind: "name", results: [regData({ reg_code: "65****" })] });
+    renderPage();
+    await screen.findByText("查询登记情况");
+
+    await query("张三");
+
+    expect(await screen.findByText("按姓名找到 1 条登记：")).toBeTruthy();
+    expect(screen.getByText("登记码 65****")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "修改" })).toBeNull();
+    expect(screen.getByText(/姓名查询只显示掩码登记码/)).toBeTruthy();
+  });
+
+  it("查询无结果给出提示", async () => {
+    mockedPortal.mockResolvedValue(portalData());
+    vi.mocked(postcardApi.lookup).mockResolvedValue({ kind: "code", results: [] });
+    renderPage();
+    await screen.findByText("查询登记情况");
+
+    await query("000000");
+
+    expect(await screen.findByText(/没有找到该登记码对应的记录/)).toBeTruthy();
+  });
 });

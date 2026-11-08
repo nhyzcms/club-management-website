@@ -11,6 +11,8 @@ urlpatterns = [
     path("portal/", views.PortalView.as_view(), name="postcard-portal"),
     path("register/", views.RegisterView.as_view(), name="postcard-register"),
     path("my/", views.MyRegistrationsView.as_view(), name="postcard-my"),
+    # 用户侧查询入口（按登记码 / 寄出人姓名，2026-11-08）
+    path("lookup/", views.LookupView.as_view(), name="postcard-lookup"),
     path("my/<str:reg_code>/", views.MyRegistrationDetailView.as_view(), name="postcard-my-detail"),
     path("my/<str:reg_code>/review-request/", views.MyReviewRequestView.as_view(), name="postcard-my-review-request"),
     path("my/<str:reg_code>/purge-photos/", views.MyPhotoPurgeView.as_view(), name="postcard-my-purge-photos"),

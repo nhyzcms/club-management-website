@@ -11,6 +11,7 @@ import AppShell from "../components/AppShell";
 import MobilePage from "../components/MobilePage";
 import RegisterForm from "../components/postcard/RegisterForm";
 import HistorySection from "../components/postcard/HistorySection";
+import LookupBox from "../components/postcard/LookupBox";
 import SuggestionForm from "../components/postcard/SuggestionForm";
 import { failedReviewRegCodes, needsReviewPoll, reviewOutcomeOf } from "../components/postcard/pure";
 import { getPostcardFingerprint } from "../utils/fingerprint";
@@ -341,6 +342,19 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
           />
         </section>
       )}
+
+      <section className="pc-card">
+        <h3 className="pc-card-title">查询登记情况</h3>
+        <p className="muted pc-lookup-hint">
+          换了设备或清过浏览器？用 6 位登记码或寄出人姓名找回登记。
+        </p>
+        <LookupBox
+          portal={portal}
+          fingerprint={fingerprint}
+          isMobile={isMobile}
+          onChanged={() => void loadHistory()}
+        />
+      </section>
 
       <section className="pc-card">
         <div className="pc-history-head">

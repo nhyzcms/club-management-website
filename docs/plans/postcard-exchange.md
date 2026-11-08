@@ -9,7 +9,7 @@
 |---|---|---|---|
 | #1 后端核心 | `feature/postcard-backend-core` | 模型 + 5 阶段状态机 + 条码生成/PDF + 登记 CRUD/搜索/导出 + 统计 + 权限 + 限流 + 审计 + 照片安全管线 + 测试 | 已完成（63 测试全绿，待 CI） |
 | #2 AI 与复核 | `feature/postcard-ai-review`（stacked on #1） | AI 客户端(OpenAI 兼容) + 配置/样例 + AI 审核流 + 人工复核台 + 照片自动删除 + 管理员邮件告警 + 测试 | 已完成（113 模块测试全绿，待 CI） |
-| #3 前端用户侧 | `feature/postcard-portal`（stacked on #2） | 主页按钮(新标签页) + `/#/postcard` 独立页 5 状态 + 登记表单(扫码/照片/下拉) + 历史 + 建议 + 深色纯黑适配 | 已完成（30 前端测试全绿，待 CI；含 portal 载荷补 `announcement_body`/年级键值对/条目照片 id 三处小改） |
+| #3 前端用户侧 | `feature/postcard-portal`（stacked on #2） | 主页按钮(新标签页) + `/#/postcard` 独立页 5 状态 + 登记表单(扫码/照片/下拉) + 历史 + **查询入口(登记码/姓名)** + 建议 + 深色纯黑适配 | 已完成（42 前端测试全绿，待 CI；含 portal 载荷补 `announcement_body`/年级键值对/条目照片 id，及登记码发放时机与小查询端点） |
 | #4 前端管理侧 | （stacked on #3） | 活动配置 + 条码导出 UI + AI 配置/样例 + 复核台 + 记录管理/导出 + 统计图表 + 签收扫码页 + 截图 + README | 未开始 |
 
 stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自动改指 main。
@@ -70,7 +70,7 @@ stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自�
 |---|---|
 | CSRF | DRF SessionAuthentication 自带校验（全站现状） |
 | SQL 注入 | 全程 Django ORM 参数化，零裸 SQL |
-| 越权 IDOR | 历史/修改按 ncdid + 指纹哈希 + 登录用户过滤；**改记录必须出示 6 位登记码**；管理端命名权限 |
+| 越权 IDOR | 历史列表按 ncdid + 指纹哈希 + 登录用户三轨归集；**登记码即能力凭证**（2026-11-08 起任何设备凭 6 位码可查/改/取消/申请复核，码不对一律 404）；姓名查询只回掩码码；双轨限流防枚举（查询 20/min·设备 + 300/h·IP，凭证端点 30/min·设备 + 120/h·IP）；管理端命名权限 |
 | 文件上传 | 魔数校验 → Pillow 重编码（**压缩至最长边 1280 / 质量 80**，EXIF 自动剥离）→ `PRIVATE_MEDIA_ROOT` 私有存储 → 短期签名 URL 仅审核台可达 |
 | 速率限制 | 登记 / 照片 / 建议 按 IP + 设备双轨限流（复用 `common/throttles.py`） |
 | 人机验证 | 登记提交挂 Turnstile（复用 `turnstile.ts`） |
