@@ -179,16 +179,21 @@ def item_review_info(item) -> dict:
     """条目 → 审核状态摘要（两面照片状态由 ai 层保证同进同出，取首张即可）。
 
     ``mismatched`` 即「告知用户哪里填错」的数据源（ai_verdict.mismatched_items）。
+    ``photos`` 供用户侧历史记录构造鉴权照片 URL（PhotoView：登记码 + 三轨归属）。
     """
     photos = list(item.photos.all())
     if not photos:
-        return {"review_state": None, "review_label": None, "mismatched": [], "comment": ""}
+        return {
+            "review_state": None, "review_label": None, "mismatched": [], "comment": "",
+            "photos": [],
+        }
     verdict = next((p.ai_verdict for p in photos if p.ai_verdict), None) or {}
     return {
         "review_state": photos[0].review_state,
         "review_label": photos[0].get_review_state_display(),
         "mismatched": verdict.get("mismatched_items") or [],
         "comment": verdict.get("comment") or "",
+        "photos": [{"id": p.pk, "side": p.side} for p in photos],
     }
 
 

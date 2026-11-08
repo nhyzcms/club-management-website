@@ -70,6 +70,10 @@ from .serializers import (
     registration_summary,
 )
 from .throttles import (
+    CodeAccessDeviceThrottle,
+    CodeAccessIPThrottle,
+    LookupDeviceThrottle,
+    LookupIPThrottle,
     RegisterDeviceThrottle,
     RegisterIPThrottle,
     SuggestionDeviceThrottle,
@@ -178,6 +182,9 @@ class PortalView(APIView):
             "regions": [],
             "schools": [],
             "announcement_pdf": False,
+            # 公告正文：入库前已 bleach 白名单净化（AdminConfigView PUT），
+            # 这里原样下发，前端直接渲染。
+            "announcement_body": "",
         }
         if event is not None:
             payload["event"] = {
@@ -190,9 +197,10 @@ class PortalView(APIView):
             payload["progress"] = state.progress_nodes(event, config)
         if config is not None:
             payload["announcement_pdf"] = bool(config.announcement_pdf)
+            payload["announcement_body"] = config.announcement_body or ""
             # 表单元数据只在「登记中」对普通用户开放；管理员任何阶段都要（配置预览）。
             if state.can_register(phase) or is_admin:
-                payload["grades"] = config.grade_labels
+                payload["grades"] = config.grade_options()
                 payload["regions"] = config.regions()
                 payload["schools"] = config.destination_schools or []
         return Response(payload)
@@ -348,17 +356,18 @@ class MyRegistrationsView(APIView):
 
 
 def _get_own_registration(request, reg_code: str) -> PostcardRegistration:
-    """按登记码（能力凭证）+ 三轨归属取自己的登记单；不命中一律 404。
+    """按登记码（能力凭证）取登记单；码不命中一律 404（不泄露存在性）。
 
+    2026-11-08 起（用户要求「换设备也能凭码查/改」）：登记码本身就是唯一
+    能力凭证——不再强制三轨命中（`/my/` 列表仍按 ncdid/指纹/登录用户归集）。
+    6 位数字的枚举风险由视图层双轨限流兜底（30/min 设备 + 120/h IP）。
     MyRegistrationDetailView / 复核申请 / sendBeacon 清理三个用户侧入口共用。
     """
     event, _, _ = _phase_guard()
     if event is None:
         raise Http404
-    fp_hash = _fingerprint_hash(request.query_params.get("fingerprint") or request.data.get("fingerprint") or "")
     reg = (
         PostcardRegistration.objects.filter(event=event, reg_code=reg_code)
-        .filter(_identity_filters(request, fp_hash))
         .prefetch_related("items__barcode", "items__photos")
         .first()
     )
@@ -367,13 +376,68 @@ def _get_own_registration(request, reg_code: str) -> PostcardRegistration:
     return reg
 
 
-class MyRegistrationDetailView(APIView):
-    """查看/修改/取消自己的一条登记：URL 携带登记码（能力凭证）+ 三轨归属校验。
+class LookupView(APIView):
+    """用户侧查询入口（2026-11-08 用户要求）：按登记码或寄出人姓名查登记单。
 
-    非本人或码不对一律 404——不泄露记录存在性（IDOR 防护）。
+    - **q = 6 位数字** → 登记码即能力凭证：返回**完整**摘要（含 reg_code），
+      前端据此直接改 / 取消 / 申请复核（`/my/<code>/` 同为凭证通道）；
+    - **q = 姓名（2~64 字，精确匹配）** → 只返回**掩码**摘要（reg_code →
+      ``82****``、照片列表清空）：用于确认「登记是否成功 / 什么状态」，
+      修改必须出示完整登记码——否则任何人凭姓名就能改别人记录。
+
+    双轨限流（设备 20/min + IP 300/h）防枚举；姓名不命中返回空列表，
+    不区分「无此人」与「无记录」（不泄露他人是否存在登记）。
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [LookupIPThrottle, LookupDeviceThrottle]
+
+    def post(self, request):
+        q = (request.data.get("q") or "").strip()
+        if not q:
+            return Response({"detail": "请输入 6 位登记码或寄出人姓名"}, status=400)
+        event, _, _ = _phase_guard()
+        if event is None:
+            return Response({"kind": "code" if _REGCODE_RE.fullmatch(q) else "name", "results": []})
+        if _REGCODE_RE.fullmatch(q):
+            reg = (
+                PostcardRegistration.objects.filter(event=event, reg_code=q)
+                .prefetch_related("items__barcode", "items__photos")
+                .first()
+            )
+            return Response(
+                {"kind": "code", "results": [registration_summary(reg)] if reg else []}
+            )
+        if len(q) < 2:
+            return Response({"detail": "姓名至少 2 个字"}, status=400)
+        if len(q) > 64:
+            return Response({"detail": "姓名过长，请核对后重试"}, status=400)
+        qs = (
+            PostcardRegistration.objects.filter(event=event, sender_name=q)
+            .prefetch_related("items__barcode", "items__photos")
+            .order_by("-created_at")[:20]
+        )
+        return Response({"kind": "name", "results": [_masked_summary(r) for r in qs]})
+
+
+def _masked_summary(reg: PostcardRegistration) -> dict:
+    """姓名查询结果的掩码摘要：登记码只留前 2 位，照片需要完整码才能取。"""
+    data = registration_summary(reg)
+    data["reg_code"] = f"{reg.reg_code[:2]}****"
+    for item in data.get("items", []):
+        item["photos"] = []
+    return data
+
+
+class MyRegistrationDetailView(APIView):
+    """查看/修改/取消自己的一条登记：URL 携带登记码（能力凭证）。
+
+    任何设备凭码可操作（2026-11-08 用户要求）；码不命中一律 404——
+    不泄露记录存在性（IDOR 防护），枚举由双轨限流兜底。
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [CodeAccessIPThrottle, CodeAccessDeviceThrottle]
 
     def _get_own(self, request, reg_code: str):
         return _get_own_registration(request, reg_code)
@@ -411,10 +475,11 @@ class MyRegistrationDetailView(APIView):
 class MyReviewRequestView(APIView):
     """申请人工复核（AI 判不匹配后）：ai_failed 的条目 → manual_pending。
 
-    本人三轨 + 登记码（同 MyRegistrationDetailView）；非本人 404。
+    凭证 = URL 里的登记码（同 MyRegistrationDetailView）；码不对 404。
     """
 
     permission_classes = [AllowAny]
+    throttle_classes = [CodeAccessIPThrottle, CodeAccessDeviceThrottle]
 
     def post(self, request, reg_code: str):
         reg = _get_own_registration(request, reg_code)
@@ -448,6 +513,7 @@ class MyPhotoPurgeView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    throttle_classes = [CodeAccessIPThrottle, CodeAccessDeviceThrottle]
 
     def post(self, request, reg_code: str):
         reg = _get_own_registration(request, reg_code)
@@ -503,7 +569,7 @@ class AnnouncementPdfView(APIView):
 
 
 class PhotoView(APIView):
-    """照片鉴权下发：复核权限，或「本人三轨命中 + 出示登记码」。
+    """照片鉴权下发：复核权限，或「出示登记码」（登记码即能力凭证，2026-11-08）。
 
     重编码后一律 JPEG，Content-Type 固定 image/jpeg（无用户可控面）。
     """
@@ -526,13 +592,7 @@ class PhotoView(APIView):
         ):
             reg = photo.item.registration
             code = (request.query_params.get("reg_code") or "").strip()
-            fp_hash = _fingerprint_hash(request.query_params.get("fingerprint") or "")
             if not _REGCODE_RE.fullmatch(code) or code != reg.reg_code:
-                return HttpResponseForbidden("无权访问该照片")
-            own = PostcardRegistration.objects.filter(
-                _identity_filters(request, fp_hash),
-            ).filter(pk=reg.pk).exists()
-            if not own:
                 return HttpResponseForbidden("无权访问该照片")
         resp = FileResponse(photo.file.open("rb"), content_type="image/jpeg")
         resp["X-Content-Type-Options"] = "nosniff"

@@ -311,12 +311,25 @@ class PortalTest(TestCase):
         data = resp.json()
         self.assertEqual(data["phase"], "registering")
         self.assertTrue(data["can_register"])
-        self.assertEqual(data["grades"], ["高一", "高二", "高三"])
+        # 年级下拉 = 键值对（value 即登记接口的 grade 键；PR3 前端表单直接消费）
+        self.assertEqual(
+            data["grades"],
+            [{"value": "g1", "label": "高一"}, {"value": "g2", "label": "高二"},
+             {"value": "g3", "label": "高三"}],
+        )
         self.assertEqual(len(data["schools"]), 2)
         self.assertEqual(data["classes"], list(range(1, 9)))
         # 寄达区 = 写死的 16 区固定清单（顺序即展示顺序）
         self.assertEqual(data["regions"][:3], ["浦东新区", "宝山区", "崇明区"])
         self.assertEqual(len(data["regions"]), 16)
+
+    def test_announcement_body_served(self):
+        """公告正文随 portal 下发（PR3 用户侧渲染；入库前已 bleach 净化）。"""
+        event, config = _config_event()
+        config.announcement_body = "<p>活动公告内容</p>"
+        config.save(update_fields=["announcement_body"])
+        data = self.client.get("/events/postcard/portal/").json()
+        self.assertEqual(data["announcement_body"], "<p>活动公告内容</p>")
 
     def test_non_registering_hides_metadata(self):
         now = timezone.now()
@@ -338,7 +351,11 @@ class PortalTest(TestCase):
         client.force_authenticate(user=admin)
         data = client.get("/events/postcard/portal/").json()
         self.assertTrue(data["is_admin"])
-        self.assertEqual(data["grades"], ["高一", "高二", "高三"])
+        self.assertEqual(
+            data["grades"],
+            [{"value": "g1", "label": "高一"}, {"value": "g2", "label": "高二"},
+             {"value": "g3", "label": "高三"}],
+        )
 
 
 class RegisterFlowTest(TestCase):
@@ -496,7 +513,7 @@ class RegisterFlowTest(TestCase):
 
 
 class MyRecordsAndIDORTest(TestCase):
-    """归属三轨 + 登记码能力凭证 + IDOR（非本人一律 404）。"""
+    """归属三轨（列表归集）+ 登记码即能力凭证（详情/改/取消，任何设备凭码可用）。"""
 
     def setUp(self):
         cache.clear()
@@ -521,6 +538,12 @@ class MyRecordsAndIDORTest(TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["reg_code"], self.reg_code)
         self.assertEqual(len(results[0]["items"]), 2)
+        # PR3：条目摘要带照片 id/side——用户侧历史记录据此构造鉴权照片 URL
+        first = results[0]["items"][0]
+        self.assertEqual(
+            sorted(p["side"] for p in first["photos"]), ["back", "front"],
+        )
+        self.assertTrue(all(p["id"] for p in first["photos"]))
 
     def test_my_list_by_fingerprint(self):
         client = APIClient()  # 无 device cookie，靠指纹
@@ -533,10 +556,18 @@ class MyRecordsAndIDORTest(TestCase):
         resp = client.get("/events/postcard/my/")
         self.assertEqual(resp.json()["results"], [])
 
-    def test_detail_requires_ownership(self):
+    def test_detail_by_code_any_device(self):
+        """2026-11-08 起：登记码即凭证——换设备凭码可查（用户要求）。"""
         client = APIClient()
         client.cookies["club_device"] = DEVICE_B
         resp = client.get(f"/events/postcard/my/{self.reg_code}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["reg_code"], self.reg_code)
+
+    def test_detail_unknown_code_404(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.get("/events/postcard/my/000000/")
         self.assertEqual(resp.status_code, 404)  # 不泄露存在性
 
     def test_edit_own_record(self):
@@ -549,10 +580,19 @@ class MyRecordsAndIDORTest(TestCase):
         self.assertEqual(self.reg.sender_name, "李四")
         self.assertEqual(self.reg.class_no, 5)
 
-    def test_edit_by_other_rejected(self):
+    def test_edit_by_code_any_device(self):
+        """换设备凭码可改（登记码即凭证）。"""
         client = APIClient()
         client.cookies["club_device"] = DEVICE_B
-        resp = client.patch(f"/events/postcard/my/{self.reg_code}/", {"sender_name": "黑客"})
+        resp = client.patch(f"/events/postcard/my/{self.reg_code}/", {"sender_name": "李四"})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.reg.refresh_from_db()
+        self.assertEqual(self.reg.sender_name, "李四")
+
+    def test_edit_unknown_code_404(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.patch("/events/postcard/my/000000/", {"sender_name": "黑客"})
         self.assertEqual(resp.status_code, 404)
         self.reg.refresh_from_db()
         self.assertEqual(self.reg.sender_name, "张三")
@@ -569,10 +609,12 @@ class MyRecordsAndIDORTest(TestCase):
         url = f"/events/postcard/photo/{photo.pk}/"
         # 匿名无凭证 → 403
         self.assertEqual(APIClient().get(url).status_code, 403)
-        # 他人设备 + 正确登记码 → 403
+        # 他人设备 + 正确登记码 → 200（登记码即凭证）
         client = APIClient()
         client.cookies["club_device"] = DEVICE_B
-        self.assertEqual(client.get(f"{url}?reg_code={self.reg_code}").status_code, 403)
+        self.assertEqual(client.get(f"{url}?reg_code={self.reg_code}").status_code, 200)
+        # 他人设备 + 错误登记码 → 403
+        self.assertEqual(client.get(f"{url}?reg_code=000000").status_code, 403)
         # 本人设备 + 登记码 → 200
         resp = self.client.get(f"{url}?reg_code={self.reg_code}")
         self.assertEqual(resp.status_code, 200)
@@ -583,6 +625,73 @@ class MyRecordsAndIDORTest(TestCase):
         rc = APIClient()
         rc.force_authenticate(user=reviewer)
         self.assertEqual(rc.get(url).status_code, 200)
+
+
+class LookupTest(TestCase):
+    """用户侧查询入口：登记码 → 完整摘要；姓名 → 掩码摘要（需完整码才能改）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001"])
+        _add_sample(self.event)
+        self.reg = _make_registration(self.event, ["1000001"])
+        self.client = APIClient()
+        # 预置设备 Cookie：否则首个请求计入 IP 轨、之后计入设备轨（限流计数
+        # 会多放行 1 次），测试对不上；真实浏览器同理（首访响应才种 Cookie）。
+        self.client.cookies["club_device"] = DEVICE_A
+
+    def test_lookup_by_code_full_summary(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": self.reg.reg_code})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertEqual(data["kind"], "code")
+        self.assertEqual(len(data["results"]), 1)
+        row = data["results"][0]
+        self.assertEqual(row["reg_code"], self.reg.reg_code)
+        self.assertEqual(row["sender_name"], "李四")
+        self.assertEqual(len(row["items"]), 1)
+        self.assertTrue(row["items"][0]["photos"])  # 完整码可见照片 id
+
+    def test_lookup_by_code_from_any_device(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.post("/events/postcard/lookup/", {"q": self.reg.reg_code})
+        self.assertEqual(len(resp.json()["results"]), 1)
+
+    def test_lookup_by_name_masked(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": "李四"})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertEqual(data["kind"], "name")
+        self.assertEqual(len(data["results"]), 1)
+        row = data["results"][0]
+        # 姓名查询只给掩码，不能据此改他人记录
+        self.assertEqual(row["reg_code"], f"{self.reg.reg_code[:2]}****")
+        self.assertEqual(row["items"][0]["photos"], [])
+
+    def test_lookup_by_name_exact_match_only(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": "王"})
+        self.assertEqual(resp.status_code, 400)  # 至少 2 字
+        resp = self.client.post("/events/postcard/lookup/", {"q": "王五"})
+        self.assertEqual(resp.json()["results"], [])
+
+    def test_lookup_unknown_code_empty(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": "000000"})
+        self.assertEqual(resp.json(), {"kind": "code", "results": []})
+
+    def test_lookup_empty_rejected(self):
+        resp = self.client.post("/events/postcard/lookup/", {"q": ""})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_lookup_throttled(self):
+        for _ in range(20):
+            self.assertEqual(
+                self.client.post("/events/postcard/lookup/", {"q": "李四"}).status_code, 200,
+            )
+        self.assertEqual(
+            self.client.post("/events/postcard/lookup/", {"q": "李四"}).status_code, 429,
+        )
 
 
 class SuggestionTest(TestCase):
@@ -1317,10 +1426,17 @@ class UserReviewRequestTest(TestCase):
         resp = self.client.post(f"/events/postcard/my/{self.reg.reg_code}/review-request/")
         self.assertEqual(resp.status_code, 400)
 
-    def test_not_owner_404(self):
+    def test_code_authorizes_any_device(self):
+        """登记码即凭证：换设备凭码可申请复核。"""
         client = APIClient()
         client.cookies["club_device"] = DEVICE_B
         resp = client.post(f"/events/postcard/my/{self.reg.reg_code}/review-request/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_unknown_code_404(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.post("/events/postcard/my/000000/review-request/")
         self.assertEqual(resp.status_code, 404)
 
 
@@ -1366,10 +1482,20 @@ class PhotoPurgeAndGCTest(TestCase):
         )
         self.assertEqual(resp.status_code, 200, resp.content)
 
-    def test_not_owner_404(self):
+    def test_code_authorizes_any_device(self):
+        """登记码即凭证：换设备凭码可触发关页清理（仅删自己失败照片）。"""
+        lifecycle_mod.settle_item_photos(
+            self.reg.items.first(), PostcardPhoto.REVIEW_AI_FAILED,
+        )
         client = APIClient()
         client.cookies["club_device"] = DEVICE_B
         resp = client.post(f"/events/postcard/my/{self.reg.reg_code}/purge-photos/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+    def test_unknown_code_404(self):
+        client = APIClient()
+        client.cookies["club_device"] = DEVICE_B
+        resp = client.post("/events/postcard/my/000000/purge-photos/")
         self.assertEqual(resp.status_code, 404)
 
     def test_gc_ended_event_purges_all(self):

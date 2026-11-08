@@ -53,3 +53,42 @@ class SuggestionDeviceThrottle(_DeviceOrIPThrottle):
 
     def get_rate(self):
         return self.RATE
+
+
+# —— 用户侧查询（按登记码 / 寄出人姓名，2026-11-08 用户要求）——
+# 读端点，防的是「枚举」而不是「刷量」：设备轨卡脚本频率，IP 轨放宽给
+# 学校 NAT（整层楼共用一个出口）。真人查询频率远低于阈值。
+
+
+class LookupIPThrottle(IPLimitThrottle):
+    scope = "postcard_lookup_ip"
+    RATE = "300/hour"
+
+    def get_rate(self):
+        return self.RATE
+
+
+class LookupDeviceThrottle(_DeviceOrIPThrottle):
+    scope = "postcard_lookup_dev"
+    RATE = "20/min"
+
+    def get_rate(self):
+        return self.RATE
+
+
+# 「登记码即能力凭证」端点（详情 / 改 / 取消 / 复核申请 / 关页清理）：
+# 凭证只有 6 位数字，必须卡枚举。真人低频，阈值可收得很紧。
+class CodeAccessIPThrottle(IPLimitThrottle):
+    scope = "postcard_code_ip"
+    RATE = "120/hour"
+
+    def get_rate(self):
+        return self.RATE
+
+
+class CodeAccessDeviceThrottle(_DeviceOrIPThrottle):
+    scope = "postcard_code_dev"
+    RATE = "30/min"
+
+    def get_rate(self):
+        return self.RATE
