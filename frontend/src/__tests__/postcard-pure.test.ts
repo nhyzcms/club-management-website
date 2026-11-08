@@ -4,6 +4,7 @@ import {
   buildRegisterFormData,
   checkPhotoFile,
   failedReviewRegCodes,
+  failedReviewTokens,
   hasAiFailedItem,
   needsReviewPoll,
   reviewOutcomeOf,
@@ -130,7 +131,10 @@ describe("checkPhotoFile（照片预检）", () => {
 
 function reg(overrides: Partial<PostcardRegistrationSummary> = {}): PostcardRegistrationSummary {
   return {
+    id: 1,
     reg_code: "654321",
+    code_granted: true,
+    access_token: "tok-654321",
     sender_name: "张三",
     grade: "g1",
     grade_label: "高一",
@@ -208,5 +212,22 @@ describe("reviewOutcomeOf（登记码发放规则，2026-11-08 用户指定）",
     expect(reviewOutcomeOf(withItems(it_("pending")))).toEqual({ kind: "pending" });
     expect(reviewOutcomeOf(withItems(it_("pending"), it_("ai_passed")))).toEqual({ kind: "pending" });
     expect(reviewOutcomeOf(reg())).toEqual({ kind: "pending" });
+  });
+});
+
+describe("failedReviewTokens（未发码时的清理凭证）", () => {
+  const it_ = (state: string) => ({
+    id: 1, barcode: "1234567", status: "registered", status_label: "已登记",
+    review_state: state, review_label: "", mismatched: [], comment: "", photos: [],
+  });
+
+  it("只收集终态失败提交的 access_token，且跳过空串", () => {
+    const regs = [
+      reg({ id: 1, reg_code: "82****", code_granted: false, access_token: "tok-a", items: [it_("ai_failed")] }),
+      reg({ id: 2, reg_code: "654321", code_granted: true, access_token: "tok-b", items: [it_("ai_passed")] }),
+      reg({ id: 3, reg_code: "82****", code_granted: false, access_token: "", items: [it_("manual_failed")] }),
+      reg({ id: 4, reg_code: "82****", code_granted: false, access_token: "tok-d", status: "cancelled", items: [it_("ai_failed")] }),
+    ];
+    expect(failedReviewTokens(regs)).toEqual(["tok-a"]);
   });
 });

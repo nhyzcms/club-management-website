@@ -43,13 +43,16 @@ const PHOTO_VISIBLE_STATES = new Set([
  * 取消 / 申请人工复核。登记码即能力凭证，展示时突出提醒保存。
  */
 export default function HistorySection({ regs, portal, fingerprint, isMobile, onChanged }: Props) {
-  const [editing, setEditing] = useState<string | null>(null);
-  const [confirmingCancel, setConfirmingCancel] = useState<string | null>(null);
-  const [busyCode, setBusyCode] = useState<string | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const [hiddenPhotos, setHiddenPhotos] = useState<Set<number>>(new Set());
+  // 整批取消（同一登记码下全部提交，不可逆）：需重新输入 6 位码才可提交。
+  const [batchCode, setBatchCode] = useState<string | null>(null);
+  const [batchInput, setBatchInput] = useState("");
 
-  // 修改表单草稿（按 reg_code 存）
+  // 修改表单草稿（按提交存）
   const [draft, setDraft] = useState({
     sender_name: "", grade: "", class_no: "", dest_region: "", dest_school: "",
   });
@@ -59,7 +62,7 @@ export default function HistorySection({ regs, portal, fingerprint, isMobile, on
   const dangerBtn = isMobile ? "m-btn-ghost" : "btn btn-ghost btn-sm";
 
   const startEdit = (reg: PostcardRegistrationSummary) => {
-    setEditing(reg.reg_code);
+    setEditing(reg.id);
     setNotice("");
     setDraft({
       sender_name: reg.sender_name,
@@ -70,58 +73,85 @@ export default function HistorySection({ regs, portal, fingerprint, isMobile, on
     });
   };
 
-  const saveEdit = async (regCode: string) => {
-    if (busyCode) return;
+  const saveEdit = async (reg: PostcardRegistrationSummary) => {
+    if (busyId) return;
     if (!draft.sender_name.trim()) {
       setNotice("姓名不能为空");
       return;
     }
-    setBusyCode(regCode);
+    setBusyId(reg.id);
     setNotice("");
     try {
-      await postcardApi.update(regCode, {
+      await postcardApi.update(reg.reg_code, {
         sender_name: draft.sender_name.trim(),
         grade: draft.grade,
         class_no: Number(draft.class_no),
         dest_region: draft.dest_region,
         dest_school: draft.dest_school,
-      }, fingerprint);
+      }, fingerprint, reg.id);
       setEditing(null);
       onChanged();
     } catch (err: any) {
       setNotice(err?.message || "保存失败，请稍后重试。");
     } finally {
-      setBusyCode(null);
+      setBusyId(null);
     }
   };
 
-  const cancelReg = async (regCode: string) => {
-    if (busyCode) return;
-    setBusyCode(regCode);
+  /** 取消单份提交（不可逆，卡片内二次确认）。 */
+  const cancelReg = async (reg: PostcardRegistrationSummary) => {
+    if (busyId) return;
+    setBusyId(reg.id);
     setNotice("");
     try {
-      await postcardApi.cancel(regCode, fingerprint);
+      await postcardApi.cancel(reg.reg_code, fingerprint, "one", reg.id);
       setConfirmingCancel(null);
       onChanged();
     } catch (err: any) {
       setNotice(err?.message || "取消失败，请稍后重试。");
     } finally {
-      setBusyCode(null);
+      setBusyId(null);
     }
   };
 
-  const requestReview = async (regCode: string) => {
-    if (busyCode) return;
-    setBusyCode(regCode);
+  /** 整批取消：同一登记码下的全部提交（不可逆，需重新输入 6 位码）。 */
+  const cancelBatch = async (regCode: string) => {
+    if (busyId) return;
+    if (batchInput.trim() !== regCode) {
+      setNotice("输入的登记码不一致，未执行整批取消。");
+      return;
+    }
+    setBusyId(-1);
     setNotice("");
     try {
-      const d = await postcardApi.requestReview(regCode, fingerprint);
+      const d = await postcardApi.cancel(regCode, fingerprint, "all");
+      const n = (d as any).cancelled_count ?? 1;
+      setNotice(`已取消该登记码下的 ${n} 份提交。`);
+      setBatchCode(null);
+      setBatchInput("");
+      onChanged();
+    } catch (err: any) {
+      setNotice(err?.message || "整批取消失败，请稍后重试。");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const requestReview = async (reg: PostcardRegistrationSummary) => {
+    if (busyId) return;
+    setBusyId(reg.id);
+    setNotice("");
+    try {
+      // 已发码走 6 位码；未发码（AI 判不匹配）用登记的轮询凭证。
+      const d = reg.code_granted
+        ? await postcardApi.requestReview(reg.reg_code, fingerprint)
+        : await postcardApi.requestReviewByToken(reg.access_token || "");
       setNotice(d.message);
       onChanged();
     } catch (err: any) {
       setNotice(err?.message || "提交复核失败，请稍后重试。");
     } finally {
-      setBusyCode(null);
+      setBusyId(null);
     }
   };
 
@@ -149,16 +179,21 @@ export default function HistorySection({ regs, portal, fingerprint, isMobile, on
     <div className="pc-history">
       {notice && <p className="pc-history-notice">{notice}</p>}
       {regs.map((reg) => {
-        const isEditing = editing === reg.reg_code;
-        const isCancelling = confirmingCancel === reg.reg_code;
-        const isBusy = busyCode === reg.reg_code;
-        const canModify = reg.status !== "cancelled";
+        const isEditing = editing === reg.id;
+        const isCancelling = confirmingCancel === reg.id;
+        const isBusy = busyId === reg.id;
+        // 未发码（审核未通过）时只读：能力凭证还没发放，不给改/取消入口。
+        const canModify = reg.status !== "cancelled" && reg.code_granted;
+        const batchCount = regs.filter((r) => r.reg_code === reg.reg_code).length;
         return (
-          <article key={reg.reg_code} className={"pc-reg" + (reg.status === "cancelled" ? " is-cancelled" : "")}>
+          <article key={reg.id} className={"pc-reg" + (reg.status === "cancelled" ? " is-cancelled" : "")}>
             <header className="pc-reg-head">
               <div className="pc-reg-code-wrap">
                 <span className="pc-reg-code-label">登记码</span>
                 <span className="pc-reg-code tnum">{reg.reg_code}</span>
+                {!reg.code_granted && (
+                  <span className="pc-reg-code-hint">审核通过后发放</span>
+                )}
               </div>
               <span className={STATUS_BADGE_CLASS[reg.status] || "pc-badge"}>{reg.status_label}</span>
             </header>
@@ -231,7 +266,7 @@ export default function HistorySection({ regs, portal, fingerprint, isMobile, on
                   </div>
                 </div>
                 <div className="pc-reg-actions">
-                  <button type="button" className={primaryBtn} disabled={isBusy} onClick={() => void saveEdit(reg.reg_code)}>
+                  <button type="button" className={primaryBtn} disabled={isBusy} onClick={() => void saveEdit(reg)}>
                     {isBusy ? "保存中…" : "保存修改"}
                   </button>
                   <button type="button" className={ghostBtn} onClick={() => setEditing(null)}>
@@ -285,33 +320,40 @@ export default function HistorySection({ regs, portal, fingerprint, isMobile, on
                     </li>
                   ))}
                 </ul>
-                {canModify && (
+                {(canModify || hasAiFailedItem(reg)) && (
                   <div className="pc-reg-actions">
-                    <button type="button" className={ghostBtn} onClick={() => startEdit(reg)}>
-                      修改
-                    </button>
+                    {canModify && (
+                      <button type="button" className={ghostBtn} onClick={() => startEdit(reg)}>
+                        修改
+                      </button>
+                    )}
                     {hasAiFailedItem(reg) && (
                       <button
                         type="button"
                         className={primaryBtn}
                         disabled={isBusy}
-                        onClick={() => void requestReview(reg.reg_code)}
+                        onClick={() => void requestReview(reg)}
                       >
                         {isBusy ? "提交中…" : "申请人工复核"}
                       </button>
                     )}
-                    {isCancelling ? (
+                    {canModify && (isCancelling ? (
                       <>
-                        <button type="button" className={dangerBtn} disabled={isBusy} onClick={() => void cancelReg(reg.reg_code)}>
-                          {isBusy ? "取消中…" : "确认取消（不可恢复）"}
+                        <button type="button" className={dangerBtn} disabled={isBusy} onClick={() => void cancelReg(reg)}>
+                          {isBusy ? "取消中…" : "确认取消本份（不可恢复）"}
                         </button>
                         <button type="button" className={ghostBtn} onClick={() => setConfirmingCancel(null)}>
                           返回
                         </button>
                       </>
                     ) : (
-                      <button type="button" className={dangerBtn} onClick={() => setConfirmingCancel(reg.reg_code)}>
-                        取消登记
+                      <button type="button" className={dangerBtn} onClick={() => setConfirmingCancel(reg.id)}>
+                        取消本份
+                      </button>
+                    ))}
+                    {canModify && batchCount > 1 && (
+                      <button type="button" className={dangerBtn} onClick={() => { setBatchCode(reg.reg_code); setBatchInput(""); }}>
+                        取消整批（{batchCount} 份）
                       </button>
                     )}
                   </div>
@@ -321,6 +363,35 @@ export default function HistorySection({ regs, portal, fingerprint, isMobile, on
           </article>
         );
       })}
+      {batchCode && (
+        <div className="pc-batch-cancel" role="alertdialog" aria-label="整批取消确认">
+          <p>
+            将取消登记码 <strong className="tnum">{batchCode}</strong> 下的全部提交，且不可恢复。
+            请输入该登记码确认：
+          </p>
+          <div className="pc-inline">
+            <input
+              className="input tnum"
+              inputMode="numeric"
+              maxLength={6}
+              value={batchInput}
+              onChange={(e) => setBatchInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              aria-label="输入登记码确认整批取消"
+            />
+            <button
+              type="button"
+              className={dangerBtn}
+              disabled={busyId !== null || batchInput.trim() !== batchCode}
+              onClick={() => void cancelBatch(batchCode)}
+            >
+              确认整批取消
+            </button>
+            <button type="button" className={ghostBtn} onClick={() => { setBatchCode(null); setBatchInput(""); }}>
+              返回
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

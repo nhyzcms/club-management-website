@@ -13,7 +13,7 @@ import RegisterForm from "../components/postcard/RegisterForm";
 import HistorySection from "../components/postcard/HistorySection";
 import LookupBox from "../components/postcard/LookupBox";
 import SuggestionForm from "../components/postcard/SuggestionForm";
-import { failedReviewRegCodes, needsReviewPoll, reviewOutcomeOf } from "../components/postcard/pure";
+import { failedReviewTokens, needsReviewPoll, reviewOutcomeOf } from "../components/postcard/pure";
 import { getPostcardFingerprint } from "../utils/fingerprint";
 import { isMobileDevice } from "../utils/device";
 import "../styles/postcard.css";
@@ -86,9 +86,10 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
   const [regs, setRegs] = useState<PostcardRegistrationSummary[] | null>(null);
   /** 提交后的审核状态机：审核中 → 发码（AI 通过 / 转人工）或 不发码（判不匹配）。 */
   const [submitState, setSubmitState] = useState<
-    | { kind: "reviewing"; regCode: string }
+    // 审核中 / 未通过时服务端不发登记码，前端用 access_token 轮询与申请复核。
+    | { kind: "reviewing"; token: string; regCode: string | null }
     | { kind: "granted"; regCode: string; via: "ai" | "manual" }
-    | { kind: "rejected"; regCode: string; mismatched: string[]; comment: string }
+    | { kind: "rejected"; token: string; regCode: string | null; mismatched: string[]; comment: string }
     | null
   >(null);
   const [reviewTimedOut, setReviewTimedOut] = useState(false);
@@ -146,8 +147,8 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
   // （24h TTL 服务端兜底，方案 §7）。用 ref 读最新列表，监听器只挂一次。
   useEffect(() => {
     const onHide = () => {
-      for (const code of failedReviewRegCodes(regsRef.current || [])) {
-        purgePhotosBeacon(code, fingerprint);
+      for (const token of failedReviewTokens(regsRef.current || [])) {
+        purgePhotosBeacon(token);
       }
     };
     window.addEventListener("pagehide", onHide);
@@ -171,19 +172,22 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
     setReviewTimedOut(false);
     setModalError("");
     void loadHistory();
-    if (result.review.state === "manual_pending") {
-      // AI 未配置 / 不可用：同步转人工 → 立即发码
-      setSubmitState({ kind: "granted", regCode: result.reg_code, via: "manual" });
+    // 服务端权威：code_granted 为真才亮码（转人工 / 已通过）；否则只拿轮询凭证。
+    if (result.code_granted && result.reg_code) {
+      setSubmitState({
+        kind: "granted",
+        regCode: result.reg_code,
+        via: result.review.state === "manual_pending" ? "manual" : "ai",
+      });
     } else {
-      // AI 后台审核中：先不亮码，轮询等结论
-      setSubmitState({ kind: "reviewing", regCode: result.reg_code });
+      setSubmitState({ kind: "reviewing", token: result.access_token, regCode: result.reg_code });
     }
   };
 
   /** 审核中轮询：2s 一次、最多 20 次（约 40s），出结论即停。 */
   useEffect(() => {
     if (!submitState || submitState.kind !== "reviewing") return;
-    const regCode = submitState.regCode;
+    const token = submitState.token;
     let tries = 0;
     let stopped = false;
     const timer = window.setInterval(async () => {
@@ -196,19 +200,20 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
         return;
       }
       try {
-        const reg = await postcardApi.detail(regCode, fingerprint);
+        const reg = await postcardApi.statusByToken(token);
         const outcome = reviewOutcomeOf(reg);
         if (outcome.kind === "granted") {
           stopped = true;
           window.clearInterval(timer);
-          setSubmitState({ kind: "granted", regCode, via: outcome.via });
+          setSubmitState({ kind: "granted", regCode: reg.reg_code, via: outcome.via });
           void loadHistory();
         } else if (outcome.kind === "rejected") {
           stopped = true;
           window.clearInterval(timer);
           setSubmitState({
             kind: "rejected",
-            regCode,
+            token,
+            regCode: reg.code_granted ? reg.reg_code : null,
             mismatched: outcome.mismatched,
             comment: outcome.comment,
           });
@@ -222,17 +227,19 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [submitState, fingerprint, loadHistory]);
+  }, [submitState, loadHistory]);
 
   /** 判不匹配 → 申请人工复核：转 manual_pending 后立即发码（同「转人工」规则）。 */
   const requestManualReview = async () => {
     if (!submitState || submitState.kind !== "rejected" || requestingReview) return;
-    const regCode = submitState.regCode;
+    const token = submitState.token;
     setRequestingReview(true);
     setModalError("");
     try {
-      await postcardApi.requestReview(regCode, fingerprint);
-      setSubmitState({ kind: "granted", regCode, via: "manual" });
+      await postcardApi.requestReviewByToken(token);
+      // 转人工后服务端立即发码：再拉一次状态拿真码。
+      const reg = await postcardApi.statusByToken(token);
+      setSubmitState({ kind: "granted", regCode: reg.reg_code, via: "manual" });
       pollCountRef.current = 0;
       void loadHistory();
     } catch (err: any) {

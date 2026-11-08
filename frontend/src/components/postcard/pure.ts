@@ -111,6 +111,22 @@ export function needsReviewPoll(regs: PostcardRegistrationSummary[]): boolean {
   );
 }
 
+/**
+ * 终态失败（ai_failed / manual_failed）提交的轮询凭证：关页 sendBeacon 清照片用。
+ * 未发放登记码的提交没有明文码，清理只能走 token（2026-11-08 起）。
+ */
+export function failedReviewTokens(regs: PostcardRegistrationSummary[]): string[] {
+  return (regs || [])
+    .filter((r) =>
+      r.status !== "cancelled" &&
+      r.items.some(
+        (it) => it.review_state === "ai_failed" || it.review_state === "manual_failed",
+      ),
+    )
+    .map((r) => r.access_token || "")
+    .filter((t) => t.length > 0);
+}
+
 /** 终态失败（ai_failed / manual_failed）的登记单号：关页 sendBeacon 清照片用。 */
 export function failedReviewRegCodes(regs: PostcardRegistrationSummary[]): string[] {
   return (regs || [])

@@ -48,7 +48,7 @@ stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自�
 |---|---|
 | `PostcardConfig` | Event 一对一。可参与年级、寄达校清单、`ship_at`/`distribute_at` 节点、公告附件(PDF)。`Meta.permissions` 声明 `manage_postcard` / `review_postcard` 两个命名工作流权限。**寄达区下拉 = `REGION_CHOICES` 写死的上海市 16 区固定清单（顺序固定，2026-11-08 用户指定）**；寄达校下拉按所选区从清单过滤，登记校验要求 (区, 校) 配对命中 |
 | `PostcardBarcode` | event + 7 位随机数字，`(event, code)` 唯一（单活动内不重复，跨活动可复用） |
-| `PostcardRegistration` | 6 位随机登记码（单活动唯一，**防 IDOR 的能力凭证**）、姓名、年级(高一~高三)、班级(1-8)、寄达区、寄达校、状态、`device_id`(ncdid) / `fingerprint_hash` / 登录用户 三轨归属 |
+| `PostcardRegistration` | 一次**提交**（同一发件人可多次提交）。6 位登记码：**同一发件人（姓名 + 年级 + 班级，2026-11-08 用户指定）在活动内共用**、`(event, reg_code)` 只建索引不唯一；`access_token` = 单次提交的轮询凭证（审核未过时不发码）。姓名、年级、班级、寄达区、寄达校、状态、`device_id`(ncdid) / `fingerprint_hash` / 登录用户 三轨归属 |
 | `PostcardItem` | 登记单内每张明信片，绑条码（`(event, barcode)` 唯一 → 一条码一明信片）；一次登记可多张；同寄出人自动聚合展示 |
 | `PostcardPhoto` | 正/反面照片，私有存储，审核状态机（PR2 起 AI 用） |
 | `PostcardAIConfig` | base_url / api_key(写后不可读) / model / 自定义请求头 JSON / 超时（PR2） |
@@ -70,7 +70,7 @@ stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自�
 |---|---|
 | CSRF | DRF SessionAuthentication 自带校验（全站现状） |
 | SQL 注入 | 全程 Django ORM 参数化，零裸 SQL |
-| 越权 IDOR | 历史列表按 ncdid + 指纹哈希 + 登录用户三轨归集；**登记码即能力凭证**（2026-11-08 起任何设备凭 6 位码可查/改/取消/申请复核，码不对一律 404）；姓名查询只回掩码码；双轨限流防枚举（查询 20/min·设备 + 300/h·IP，凭证端点 30/min·设备 + 120/h·IP）；管理端命名权限 |
+| 越权 IDOR | 历史列表按 ncdid + 指纹哈希 + 登录用户归集，**指纹必须与设备/登录同时命中**（单轨指纹可被复制，2026-11-08 收紧）；**登记码即能力凭证**（任何设备凭 6 位码可查/改/取消/申请复核，码不对一律 404）；**未达发放条件时服务端只回掩码 + `access_token`**，不提前泄露能力凭证；姓名查询只回掩码码；双轨限流防枚举（查询 20/min·设备 + 300/h·IP，凭证端点 30/min·设备 + 120/h·IP）；管理端命名权限，多份同码时管理端只接受按提交 id 操作 |
 | 文件上传 | 魔数校验 → Pillow 重编码（**压缩至最长边 1280 / 质量 80**，EXIF 自动剥离）→ `PRIVATE_MEDIA_ROOT` 私有存储 → 短期签名 URL 仅审核台可达 |
 | 速率限制 | 登记 / 照片 / 建议 按 IP + 设备双轨限流（复用 `common/throttles.py`） |
 | 人机验证 | 登记提交挂 Turnstile（复用 `turnstile.ts`） |
@@ -99,6 +99,14 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 - Redis 计数器跟踪**连续 5 个用户失败** → `send_mail` 通知所有绑定邮箱的管理员；
 - 照片生命周期：AI/人工通过 → 立即删；复核失败 → 用户关标签页 `sendBeacon` 删 + 24h TTL 兜底；
   活动结束 → 全量清除（状态翻转触发 + 周期兜底）。登记数据永久保留，除非管理员手动删。
+
+### 7.2 共用登记码（批次 1，2026-11-08）
+
+- **同一发件人 = 姓名 + 年级 + 班级**（用户指定 B 方案）：再次提交复用首份的 6 位码，每次提交仍是独立行（各自的寄达校 / 审核状态）。跨设备/跨账号复用同码会写一条 `code_reused_cross_track` 审计（冒名追查）。
+- **发码门禁落在服务端**：存在失败条目 → 掩码；已转人工 / 全部通过 → 真码；仍在 AI 审核 → 掩码 + 下发 `access_token`。前端审核中轮询 `/my/token/<token>/`，不再提前拿码。
+- 用户侧操作：`/my/<code>/` 支持 `?id=` 指定单份；取消支持 `scope=one|all`，整批取消前端需重新输入 6 位码（不可逆二次验证）。
+- 管理端：记录行带 `registration_id`，改/删走 `admin/registrations/by-id/<id>/`；按码操作在多份提交时返回 400。
+- 登记截止后 portal 仍下发年级 / 16 区 / 学校清单（历史「修改」可用）；用户改登记与登记同一套区校校验；已取消条目不再阻塞登记单状态联动。
 
 ### 7.1 管理端前端（PR4）
 
