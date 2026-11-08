@@ -12,6 +12,20 @@ permissions:
   contents: read
 
 jobs:
+  docs-guard:
+    name: docs-guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: docs/ 不得出现在 main
+        run: |
+          if [ -d docs ] && [ -n "$(ls -A docs)" ]; then
+            echo "::error::docs/ 已迁出到 documentation 分支维护；请把文档提交到该分支，main 只放代码与运行时资源。"
+            exit 1
+          fi
+          echo "OK：main 不含 docs/"
+
   backend:
     name: backend
     runs-on: ubuntu-24.04

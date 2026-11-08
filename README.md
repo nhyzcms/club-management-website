@@ -80,7 +80,7 @@
   （BSD 3-Clause）、著作权人与官网 / 开源地址超链接。**只在 App 壳内可达**：「我的 → 更多」
   的入口按 `isAppShell()` 出现，浏览器手输地址会被送回 `/#/m/me`，手机版网站上不存在这一页
   （`frontend/src/pages/MobileAboutAppPage.tsx`、`frontend/src/utils/aboutApp.ts`）
-- 明信片互寄（2026-11-07 起，`events` 形态模块 `modules/postcard`，方案 `docs/plans/postcard-exchange.md`）：
+- 明信片互寄（2026-11-07 起，`events` 形态模块 `modules/postcard`，方案见 `documentation` 分支 `docs/plans/postcard-exchange.md`）：
   独立页 `/#/postcard`（主页按钮新标签页打开）。活动五阶段（未开始 → 登记中 → 已寄出 →
   下发中 → 已结束）由管理员配置的节点时间**惰性推导**；仅「登记中」开放登记，其余阶段只读
   公告与进度。登记：扫码/手输 **7 位 Code128 条码**（管理员预生成 1500~10000 张、步进 500，
@@ -137,7 +137,7 @@
 - 前端：React 19 / TypeScript / Webpack 5
 - 数据库：SQLite（默认开发/生产都可用）
 - 依赖管理：uv（Python） + npm（前端）
-- 运行方式：Django 直接托管前端产物；生产为 Nginx + Gunicorn ASGI（`UvicornWorker`，**1 worker**，无 Redis；见 [ADR 0015](docs/adr/0015-channels-without-redis.md)）
+- 运行方式：Django 直接托管前端产物；生产为 Nginx + Gunicorn ASGI（`UvicornWorker`，**1 worker**，无 Redis；见 [ADR 0015](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/adr/0015-channels-without-redis.md)）
 
 ## 3. 快速开始
 
@@ -188,7 +188,6 @@ club-management-website/
 ├── attachments/          # 附件和上传处理
 ├── common/               # 公共组件、站点策略等
 ├── config/               # Django settings / urls / ASGI/WSGI
-├── docs/                 # 项目文档
 ├── exam_board/           # 考试看板（批次课表 + 题目误刊广播）
 ├── frontend/             # React 前端源代码与构建输出
 ├── messaging/            # 评论区 / 私信 / 通知 / 横幅公告
@@ -209,14 +208,17 @@ club-management-website/
 
 ## 5. 文档导航
 
-- 完整文档索引：[`docs/README.md`](docs/README.md)
+文档不在本分支维护：[`documentation` 分支](https://github.com/nhyzcms/club-management-website/tree/documentation/docs) 只放 `docs/`。
+这样文档更新不会占用发布通道——`main` 每次推送都会触发一次 release（生产更新包）。
+
+- 完整文档索引：[`docs/README.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/README.md)
 - 协作者 / AI 助手指引：[`CLAUDE.md`](CLAUDE.md)（改动流程、环境限制、工具链）
-- 快速开始：[`docs/getting-started.md`](docs/getting-started.md) · 配置参考：[`docs/configuration.md`](docs/configuration.md)
-- API 参考：[`docs/api/README.md`](docs/api/README.md)（各模块分册见 `docs/api/`）
-- 架构：[`docs/architecture/overview.md`](docs/architecture/overview.md) · [`docs/architecture/frontend.md`](docs/architecture/frontend.md)
-- 指南：`docs/guides/`（访问控制 / 身份认证 / 安全验证 / 账号与安全 / 审核系统 / 问卷）
-- 运维：[`docs/operations/deployment.md`](docs/operations/deployment.md) · [`docs/operations/data-root.md`](docs/operations/data-root.md) · [`docs/operations/admin-guide.md`](docs/operations/admin-guide.md)
-- ADR 设计记录：[`docs/adr/`](docs/adr/)
+- 快速开始：[`docs/getting-started.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/getting-started.md) · 配置参考：[`docs/configuration.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/configuration.md)
+- API 参考：[`docs/api/README.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/api/README.md)（各模块分册见 `documentation` 分支的 `docs/api/`）
+- 架构：[`docs/architecture/overview.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/architecture/overview.md) · [`docs/architecture/frontend.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/architecture/frontend.md)
+- 指南：`documentation` 分支的 `docs/guides/`（访问控制 / 身份认证 / 安全验证 / 账号与安全 / 审核系统 / 问卷）
+- 运维：[`docs/operations/deployment.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/deployment.md) · [`docs/operations/data-root.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/data-root.md) · [`docs/operations/admin-guide.md`](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/admin-guide.md)
+- ADR 设计记录：[`docs/adr/`](https://github.com/nhyzcms/club-management-website/tree/documentation/docs/adr)
 - GitHub Wiki（对外入口）：<https://github.com/nhyzcms/club-management-website/wiki>
 
 ## 6. 主要入口和 URL
@@ -228,7 +230,7 @@ club-management-website/
 - 互动：`/activities/`
 - 活动（限时，`events`）：`/events/`；门户 `/#/events`、`/#/events/:id`
 - 明信片互寄（`events` 形态模块 `postcard`）：`/events/postcard/`；用户页 `/#/postcard`、
-  管理端 `/#/postcard/admin`、签收 `/#/postcard/receive`（方案与交接文档：`docs/plans/postcard-exchange.md`）
+  管理端 `/#/postcard/admin`、签收 `/#/postcard/receive`（方案与交接文档：`documentation` 分支的 `docs/plans/postcard-exchange.md`）
 - 审核（发布审核 / 意见反馈 / 举报）：`/reviews/`
 - 教程：`/tutorials/`
 - 招聘：`/recruitment/`
@@ -307,17 +309,17 @@ sudo ./scripts/install.sh                # 一键部署生产环境
   手机版考试看板只保留管理员的「考试日程编辑」，不渲染看板本体。
   提高 `MIN_SHELL_VERSION_CODE` 等于把老壳用户挡在门外（只留「暂时继续」），
   只有在老壳真的会让网站出错时才动它；改完记得同步 app 仓库的 `docs/FEATURE-MATRIX.md`。
-- **账号注销是软删除**（[ADR-0027](docs/adr/0027-account-deletion.md)）：`Profile.deleted_at` 标记，
+- **账号注销是软删除**（[ADR-0027](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/adr/0027-account-deletion.md)）：`Profile.deleted_at` 标记，
   只清邮箱 / 头像 / 身份证明材料 / 会话等敏感信息；`User`、`Profile`、`MemberIdentity`（社员编号）
   行永不删除。新增「删除用户」类功能时先读该 ADR，不要物理删账号。
 
 如果你是第一次接手这个项目，建议先读：
 
-1. [docs/getting-started.md](docs/getting-started.md)
-2. [docs/architecture/overview.md](docs/architecture/overview.md)
-3. [docs/api/README.md](docs/api/README.md)
-4. [docs/operations/deployment.md](docs/operations/deployment.md)
-5. [docs/operations/admin-guide.md](docs/operations/admin-guide.md)
+1. [docs/getting-started.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/getting-started.md)
+2. [docs/architecture/overview.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/architecture/overview.md)
+3. [docs/api/README.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/api/README.md)
+4. [docs/operations/deployment.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/deployment.md)
+5. [docs/operations/admin-guide.md](https://github.com/nhyzcms/club-management-website/blob/documentation/docs/operations/admin-guide.md)
 
 ## 9. 许可证
 
