@@ -2072,3 +2072,48 @@ class RegisterThrottleRateTest(TestCase):
 
         self.assertEqual(RegisterIPThrottle.RATE, "60/hour")
         self.assertEqual(RegisterDeviceThrottle.RATE, "10/hour")
+
+
+class StatsExcludeCancelledTest(TestCase):
+    """统计口径：已取消不计入总数与分布（2026-11-08 定）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _barcodes(self.event, ["1000001", "1000002"])
+        self.reg = _make_registration(self.event, ["1000001", "1000002"])
+        items = list(self.reg.items.order_by("pk"))
+        items[1].status = PostcardItem.STATUS_CANCELLED
+        items[1].save(update_fields=["status"])
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+
+    def test_cancelled_excluded_from_totals(self):
+        data = self.client.get("/events/postcard/admin/stats/").json()
+        self.assertEqual(data["items"]["total"], 1)
+        self.assertEqual(data["items"]["cancelled"], 1)
+        self.assertEqual(data["by_school"][0]["total"], 1)
+        self.assertEqual(sum(g["total"] for g in data["by_grade"]), 1)
+        self.assertEqual(sum(d["total"] for d in data["by_day"]), 1)
+
+
+class AIRetryAttemptsTest(TestCase):
+    """「5 次重试机会」= 1 次初始 + 5 次重试（共 6 次尝试）。"""
+
+    def test_six_attempts_then_manual(self):
+        cache.clear()
+        event, _ = _config_event()
+        _barcodes(event, ["1000001"])
+        _ai_config()
+        reg = _make_registration(event, ["1000001"])
+        calls = {"n": 0}
+
+        def always_fail(*args, **kwargs):
+            calls["n"] += 1
+            raise ai_mod.AIReviewError("down")
+
+        with mock.patch.object(ai_mod, "call_once", side_effect=always_fail), \
+                mock.patch.object(ai_mod, "_sleep", lambda *_a, **_k: None):
+            stats = ai_mod.review_registration(reg)
+        self.assertEqual(calls["n"], 6)
+        self.assertEqual(stats["manual"], 1)

@@ -28,7 +28,7 @@ export default function AITab() {
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
-  const [timeout, setTimeoutSec] = useState(30);
+  const [timeout, setTimeoutSec] = useState(20);
   const [headersText, setHeadersText] = useState("{}");
   const [blacklistText, setBlacklistText] = useState("");
 
@@ -48,7 +48,7 @@ export default function AITab() {
       setEnabled(Boolean(cfg.enabled));
       setBaseUrl(cfg.base_url || "");
       setModel(cfg.model || "");
-      setTimeoutSec(cfg.timeout_seconds ?? 30);
+      setTimeoutSec(cfg.timeout_seconds ?? 20);
       setHeadersText(JSON.stringify(cfg.extra_headers || {}, null, 2));
       setBlacklistText((cfg.ip_blacklist || []).join("\n"));
       setSamples(sm.results);

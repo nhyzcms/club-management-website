@@ -40,9 +40,9 @@ from django.utils import timezone
 
 from .models import PostcardAIConfig, PostcardAISample, PostcardItem, PostcardPhoto, PostcardRegistration
 
-#: 总调用机会 = 1 次初始 + 4 次退避重试（需求：5 次重试机会）。
-RETRY_ATTEMPTS = 5
-RETRY_BACKOFF = (1, 2, 4, 8)
+#: 「5 次重试机会」= 1 次初始调用 + 5 次退避重试（共 6 次尝试，2026-11-08 用户确认）。
+RETRY_ATTEMPTS = 6
+RETRY_BACKOFF = (1, 2, 4, 8, 16)
 
 #: 后台 AI 线程并发上限（每进程；2C2G 服务器保护，登记侧已有双轨限流）。
 REVIEW_CONCURRENCY = 2
@@ -184,7 +184,7 @@ def call_once(cfg: PostcardAIConfig, messages: list) -> dict:
         url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=cfg.timeout_seconds or 30) as resp:
+        with urllib.request.urlopen(request, timeout=cfg.timeout_seconds or 20) as resp:
             body = json.loads(resp.read().decode("utf-8", "replace"))
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         raise AIReviewError(f"network: {type(exc).__name__}") from exc
@@ -439,7 +439,7 @@ def test_connection(cfg: PostcardAIConfig) -> dict:
     )
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=min(cfg.timeout_seconds or 30, 20)) as resp:
+        with urllib.request.urlopen(req, timeout=min(cfg.timeout_seconds or 20, 20)) as resp:
             body = json.loads(resp.read().decode("utf-8", "replace"))
         text = body["choices"][0]["message"]["content"]
         latency = int((time.monotonic() - started) * 1000)

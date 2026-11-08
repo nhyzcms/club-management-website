@@ -14,6 +14,8 @@ permissions:
 jobs:
   docs-guard:
     name: docs-guard
+    # 只在 main（push / 目标为 main 的 PR）检查：documentation 分支的 PR 本来就该带 docs/。
+    if: github.event_name == 'push' || github.base_ref == 'main'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

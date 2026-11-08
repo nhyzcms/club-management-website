@@ -369,7 +369,7 @@ class PostcardAIConfig(models.Model):
     model = models.CharField("模型名", max_length=128, blank=True, default="")
     # 自定义请求头：{"x-api-key": "..."} 等（部分兼容服务不用 Bearer）。
     extra_headers = models.JSONField("自定义请求头", default=dict, blank=True)
-    timeout_seconds = models.PositiveSmallIntegerField("单次调用超时（秒）", default=30)
+    timeout_seconds = models.PositiveSmallIntegerField("单次调用超时（秒）", default=20)
     ip_blacklist = models.JSONField("动漫黑名单 IP 清单", default=_default_ip_blacklist, blank=True)
     enabled = models.BooleanField("启用 AI 审核", default=False)
     created_at = models.DateTimeField(auto_now_add=True)
