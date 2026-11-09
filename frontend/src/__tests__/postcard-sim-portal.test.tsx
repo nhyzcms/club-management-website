@@ -167,25 +167,58 @@ describe("模拟环境 · 历史 / 查询 / 改 / 取消", () => {
     expect(byName.results[0].items[0].photos).toEqual([]);
   });
 
-  it("改寄出人信息 / 取消单份与整批", () => {
+  it("改寄出人信息；取消是「按份提交」而不是按单张明信片（与后端同口径）", () => {
     const state = seeded();
     const codes = state.barcodes.slice(0, 2).map((b) => b.code);
-    const res = submit(state, codes);
+    const res = submit(state, codes); // 一次提交 2 张 → 一条登记单
+    const regCode = res.reg_code as string;
     const reg = state.registrations[0];
 
-    const regCode = res.reg_code as string;
-    const updated = updateOwnRegistration(state, regCode, { sender_name: "王五", class_no: 5 }, NOW);
+    const updated = updateOwnRegistration(
+      state, regCode, { sender_name: "王五", class_no: 5 }, reg.id, NOW,
+    );
     expect(updated.sender_name).toBe("王五");
     expect(updated.class_no).toBe(5);
 
-    const one = cancelOwnRegistration(state, regCode, "one", reg.items[0].id, NOW);
-    expect(one.items[0].status).toBe("cancelled");
-    expect(one.items[1].status).toBe("registered");
-    expect(one.status).toBe("registered");
+    // 取消这一份提交 → 该条提交的 2 张一起作废（后端 r.items.update(...)）
+    const cancelled = cancelOwnRegistration(state, regCode, "one", reg.id, NOW);
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.items.every((it) => it.status === "cancelled")).toBe(true);
+  });
 
-    const all = cancelOwnRegistration(state, regCode, "all", undefined, NOW);
-    expect(all.status).toBe("cancelled");
-    expect(all.items.every((it) => it.status === "cancelled")).toBe(true);
+  it("同一发件人再次提交：复用同一登记码，但生成新的登记单", () => {
+    const state = seeded();
+    const first = submit(state, [state.barcodes[0].code]);
+    const second = submit(state, [state.barcodes[1].code]);
+    expect(second.reg_code).toBe(first.reg_code);
+    expect(state.registrations).toHaveLength(2);
+    expect(state.registrations[0].id).not.toBe(state.registrations[1].id);
+    // 该码对应 2 份提交，查询会都返回
+    const byCode = lookupRegistrations(state, first.reg_code as string);
+    expect(byCode.results).toHaveLength(2);
+    // 只取消一份 → 另一份不受影响
+    cancelOwnRegistration(state, first.reg_code as string, "one", state.registrations[0].id, NOW);
+    expect(state.registrations[0].status).toBe("cancelled");
+    expect(state.registrations[1].status).toBe("registered");
+  });
+
+  it("改/取消的校验：已取消不能改、多份提交必须指定 id、学校要在清单里", () => {
+    const state = seeded();
+    const first = submit(state, [state.barcodes[0].code]);
+    submit(state, [state.barcodes[1].code]);
+    const regCode = first.reg_code as string;
+
+    // 两份提交时不给 id → 拒绝
+    expect(() => updateOwnRegistration(state, regCode, { class_no: 2 }, undefined, NOW)).toThrow(/多份提交/);
+    // 学校不在清单 → 拒绝
+    expect(() =>
+      updateOwnRegistration(state, regCode, { dest_school: "不存在的中学" }, state.registrations[0].id, NOW),
+    ).toThrow(/学校清单/);
+    // 取消后不能再改
+    cancelOwnRegistration(state, regCode, "one", state.registrations[0].id, NOW);
+    expect(() =>
+      updateOwnRegistration(state, regCode, { class_no: 2 }, state.registrations[0].id, NOW),
+    ).toThrow(/已取消/);
   });
 
   it("申请人工复核：把 ai_failed 拉回 manual_pending", () => {
