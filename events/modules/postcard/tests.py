@@ -2614,3 +2614,57 @@ class SimDryRunNoAuditTest(TestCase):
             )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertTrue(PostcardAuditLog.objects.filter(action="schools_import").exists())
+
+
+class AICallThrottleTest(TestCase):
+    """AI 端点限流：一次请求 = 一次真花钱的模型调用。
+
+    「管理端不限流」的前提是低频 + 已鉴权，但这两个按钮被连点 / 脚本重放时
+    账单和 worker 都吃不消（与导入海报同一个理由）。
+    """
+
+    def setUp(self):
+        cache.clear()
+        _config_event()
+        _ai_config()
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def test_ai_test_throttled_at_60_per_hour(self):
+        body = json.dumps({"choices": [{"message": {"content": "正常"}}]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ):
+            for _ in range(60):
+                resp = self.client.post("/events/postcard/admin/ai/test/", {}, format="json")
+                self.assertEqual(resp.status_code, 200, resp.content)
+            denied = self.client.post("/events/postcard/admin/ai/test/", {}, format="json")
+        self.assertEqual(denied.status_code, 429)
+
+    def test_ai_explain_throttled_at_10_per_hour(self):
+        with mock.patch("events.modules.postcard.ai.explain_sample", return_value="理解"):
+            for _ in range(10):
+                image = SimpleUploadedFile("s.jpg", _jpeg_bytes(), "image/jpeg")
+                resp = self.client.post(
+                    "/events/postcard/admin/ai/explain/", {"image": image}, format="multipart",
+                )
+                self.assertEqual(resp.status_code, 200, resp.content)
+            image = SimpleUploadedFile("s.jpg", _jpeg_bytes(), "image/jpeg")
+            denied = self.client.post(
+                "/events/postcard/admin/ai/explain/", {"image": image}, format="multipart",
+            )
+        self.assertEqual(denied.status_code, 429)

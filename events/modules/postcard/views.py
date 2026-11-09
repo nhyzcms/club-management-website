@@ -73,6 +73,8 @@ from .serializers import (
     registration_summary,
 )
 from .throttles import (
+    AIExplainThrottle,
+    AITestThrottle,
     CodeAccessDeviceThrottle,
     CodeAccessIPThrottle,
     SchoolsImportThrottle,
@@ -1524,6 +1526,8 @@ class AdminAITestView(APIView):
     """
 
     permission_classes = [CanManagePostcard]
+    # 一次请求 = 一次真实模型调用，连点 / 重放会真花钱（同导入海报的理由）。
+    throttle_classes = [AITestThrottle]
 
     def post(self, request):
         from . import ai
@@ -1678,6 +1682,8 @@ class AdminAIExplainUploadView(APIView):
     """
 
     permission_classes = [CanManagePostcard]
+    # 一张图 + 一次长输出，管理员连点也会真花钱（与导入海报同档）。
+    throttle_classes = [AIExplainThrottle]
 
     def post(self, request):
         from types import SimpleNamespace
