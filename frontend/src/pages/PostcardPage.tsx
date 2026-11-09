@@ -17,6 +17,7 @@ import { failedReviewTokens, needsReviewPoll, reviewOutcomeOf } from "../compone
 import { getPostcardFingerprint } from "../utils/fingerprint";
 import { isMobileDevice } from "../utils/device";
 import "../styles/postcard.css";
+import { enterSim, isSimRoute } from "../postcardSim/session";
 
 /**
  * 明信片互寄独立页（`/#/postcard`，主页按钮新标签页打开）。
@@ -80,6 +81,8 @@ function ProgressStepper({ nodes }: { nodes: PostcardProgressNode[] }) {
 }
 
 function PostcardContent({ isMobile }: { isMobile: boolean }) {
+  // 模拟环境（?sim=1）：渲染期装载内存沙箱；幂等，且必须早于子组件的 effect。
+  if (isSimRoute()) enterSim();
   const fingerprint = useMemo(getPostcardFingerprint, []);
   const [portal, setPortal] = useState<PostcardPortal | null>(null);
   const [loadError, setLoadError] = useState(false);

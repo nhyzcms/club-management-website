@@ -9,7 +9,7 @@ import RecordsTab from "../components/postcard/admin/RecordsTab";
 import StatsTab from "../components/postcard/admin/StatsTab";
 import MiscTab from "../components/postcard/admin/MiscTab";
 import { isMobileDevice } from "../utils/device";
-import { SIM_BADGE_TEXT, enterSim, exitSim, isSimRoute } from "../postcardSim/session";
+import { SIM_BADGE_TEXT, enterSim, isSimRoute } from "../postcardSim/session";
 import "../styles/postcard-admin.css";
 
 const TABS = [
@@ -55,12 +55,8 @@ export default function PostcardAdminPage() {
     document.title = sim ? "明信片管理（模拟环境） · 南汇一中传媒社" : "明信片管理 · 南汇一中传媒社";
   }, [sim]);
 
-  // 退出模拟 / 离开本页 → 卸下沙箱，内存数据随之丢弃。
-  useEffect(() => {
-    if (!sim) return undefined;
-    return () => exitSim();
-  }, [sim]);
-
+  // 沙箱的卸载统一交给 <PostcardSimHost>（按 URL 判定）：页面卸载时不能卸，
+  // 否则「模拟管理端 → 模拟用户端」这一步会把内存数据顺手清掉。
   // 手机端横向 tab 条会溢出：选中的 tab 滚进可视区。
   useEffect(() => {
     const el = document.querySelector<HTMLElement>(`.pa-tab[data-active="true"]`);
@@ -88,6 +84,16 @@ export default function PostcardAdminPage() {
             {sim ? (
               <>
                 模拟环境：这里的填写与操作全部只存在于本标签页内存，退出或刷新即清空，不会写入正式数据。
+                {/* 模拟里的三个入口都带着 ?sim=1：走的是同一份内存沙箱，不是正式页面。 */}
+                <a className="pa-inline-link" href="#/postcard?sim=1">
+                  用户端页面
+                </a>
+                <a className="pa-inline-link" href="#/postcard/receive?sim=1">
+                  签收扫码
+                </a>
+                <a className="pa-inline-link" href="#/reviews?kind=postcard&sim=1">
+                  去审核台复核
+                </a>
                 <button type="button" className="pa-inline-link pa-inline-btn" onClick={leaveSim}>
                   退出模拟
                 </button>

@@ -6,6 +6,7 @@ import { postcardAdminApi, type ReceiptPayload } from "../api/postcardAdmin";
 import { errMessage, fmtTime } from "../components/postcard/admin/pure";
 import { isMobileDevice } from "../utils/device";
 import "../styles/postcard-admin.css";
+import { enterSim, isSimRoute } from "../postcardSim/session";
 
 /**
  * 签收扫码（`/#/postcard/receive`）：扫明信片上的 7 位 Code-128 或手填条码。
@@ -15,6 +16,8 @@ import "../styles/postcard-admin.css";
  * 误签可回退（已报寄 → 已登记），同样留审计。
  */
 export default function PostcardReceivePage() {
+  // 模拟环境（?sim=1）：渲染期装载内存沙箱；幂等，且必须早于子组件的 effect。
+  if (isSimRoute()) enterSim();
   const isMobile = isMobileDevice();
   const [barcode, setBarcode] = useState("");
   const [payload, setPayload] = useState<ReceiptPayload | null>(null);
@@ -72,7 +75,7 @@ export default function PostcardReceivePage() {
           <h1 className="pa-title">明信片签收</h1>
           <p className="pa-sub">
             扫明信片上的条码，核对信息后确认签收。
-            <a className="pa-inline-link" href="#/postcard/admin">
+            <a className="pa-inline-link" href={isSimRoute() ? "#/postcard/admin?sim=1" : "#/postcard/admin"}>
               返回管理端
             </a>
           </p>

@@ -10,6 +10,7 @@ import MascotHost from "./components/mascot/MascotHost";
 import { useEmbedMode } from "./embed";
 import { api } from "./api/client";
 import { fetchSitePolicy } from "./api/sitePolicy";
+import PostcardSimHost from "./postcardSim/SimHost";
 import { isAppShell, isMobileDevice } from "./utils/device";
 
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
@@ -120,6 +121,7 @@ export default function App() {
 
   return (
     <HashRouter>
+      <PostcardSimHost />
       <LoginModalProvider>
       <SessionGuard>
       <Suspense fallback={<Loading />}>

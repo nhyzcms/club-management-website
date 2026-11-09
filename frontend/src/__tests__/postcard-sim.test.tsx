@@ -207,7 +207,7 @@ describe("模拟环境 · 配置与条码", () => {
     expect(statsOf(state).items.total).toBe(0);
     expect(state.audit.map((a) => a.action)).toContain("config_save");
     pushAudit(state, "demo", "x", { a: 1 });
-    expect(state.audit.at(-1)?.user).toBe("模拟环境");
+    expect(state.audit[state.audit.length - 1]?.user).toBe("模拟环境");
     state.registrations.push({
       id: 99,
       reg_code: "123456",
@@ -217,14 +217,20 @@ describe("模拟环境 · 配置与条码", () => {
       dest_region: "浦东新区",
       dest_school: "建平中学",
       status: "registered",
+      code_granted: true,
+      access_token: "sim-99",
+      fingerprint: "fp-test",
       created_at: "2026-11-09T08:00:00.000Z",
+      updated_at: "2026-11-09T08:00:00.000Z",
       items: [
         {
           id: 100,
           barcode: "1234567",
           status: "registered",
-          review_state: "none",
+          review_state: "manual_pending",
           ai_verdict: null,
+          mismatched: [],
+          comment: "",
           photos: [],
         },
       ],
