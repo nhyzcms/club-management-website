@@ -1520,6 +1520,7 @@ class AdminAITestView(APIView):
 
     模拟环境可带临时参数（base_url / model / api_key / extra_headers /
     timeout_seconds）：只用于本次请求，不写库——正式管理端不传即可。
+    再带 ``dry_run: true`` 时连审计都不写（模拟演练不该污染正式审计日志）。
     """
 
     permission_classes = [CanManagePostcard]
@@ -1529,6 +1530,8 @@ class AdminAITestView(APIView):
 
         cfg = PostcardAIConfig.load()
         overrides = request.data if isinstance(request.data, dict) else {}
+        # 模拟环境（前端 `?sim=1`）：dry_run=true 表示这次只是演练，不落审计。
+        dry_run = bool(overrides.get("dry_run"))
         if overrides:
             cfg = _AIConfigView(cfg, overrides)
         if (
@@ -1543,7 +1546,7 @@ class AdminAITestView(APIView):
             })
         result = ai.test_connection(cfg)
         event, _, _ = _phase_guard(admin=True)
-        if event is not None:
+        if event is not None and not dry_run:
             _audit(event, request, "ai_test", "ai-config", {
                 "ok": bool(result.get("ok")),
                 "latency_ms": result.get("latency_ms"),
@@ -1767,7 +1770,9 @@ class AdminSchoolsImportView(APIView):
                 {"detail": "AI 识别失败，请稍后重试，或手动添加学校"}, status=502,
             )
         event, _, _ = _phase_guard(admin=True)
-        if event is not None:
+        # 模拟环境只借用识别能力，不该在正式审计里留痕（dry_run 由前端模拟层带上）。
+        dry_run = str(request.data.get("dry_run") or "").lower() in ("1", "true", "yes")
+        if event is not None and not dry_run:
             _audit(event, request, "schools_import", "schools", {
                 "recognized": len(result["schools"]),
                 "skipped": len(result["skipped"]),
