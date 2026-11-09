@@ -1,6 +1,6 @@
 # 评论与消息 API
 
-评论区（宿主为新闻 / 互动 / 任务）、1:1 私信、站内通知、全站禁言、横幅公告，以及推送用 WebSocket。
+评论区（宿主为新闻 / 活动 / 任务）、1:1 私信、站内通知、全站禁言、横幅公告，以及推送用 WebSocket。
 
 > 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0005 访问控制原则](../adr/0005-access-control-principle.md)、[ADR-0010 运行时站点策略](../adr/0010-runtime-site-policy.md)、[ADR-0015 Channels 无 Redis：WebSocket 只推送](../adr/0015-channels-without-redis.md)、[ADR-0016 评论区与私信会话分离](../adr/0016-comment-thread-vs-dm.md)、[ADR-0017 统一审核系统](../adr/0017-unified-moderation-system.md)
 
@@ -9,8 +9,8 @@
 **通用规则速查**
 
 - 评论区状态：`open`（开放）/ `muted`（评论区禁言：已有评论可见，不能再发言）/ `closed`（彻底关闭：普通读者看不到该区，协管仍可看可管）。
-- 谁可见宿主，谁就可见其评论区：未公开新闻的评论区不对公众开放；互动按自身可见性；任务评论区需登录。`closed` 后仅协管可见。
-- 拧状态 / 墓碑删评论：**宿主主人**（news 作者 / activity、task 创建人）或持 `messaging.manage_comment_thread`；不随「管理新闻 / 互动 / 任务」自动获得。
+- 谁可见宿主，谁就可见其评论区：未公开新闻的评论区不对公众开放；活动按自身可见性；任务评论区需登录。`closed` 后仅协管可见。
+- 拧状态 / 墓碑删评论：**宿主主人**（news 作者 / activity、task 创建人）或持 `messaging.manage_comment_thread`；不随「管理新闻 / 活动 / 任务」自动获得。
 - 撤回窗口 3 分钟（评论与私信一致）；评论已有回复则不能撤回。
 - 站点策略开关：`comments_enabled` 关闭 → 发评论 403「评论功能已关闭」；`dms_enabled` 关闭 → 发 / 发起私信 403「私信功能已关闭」（`get_policy()`，ADR-0010）。
 - 未认证（`IsVerified`）与全站禁言（`IsNotMuted`）只拦**写**动作；被禁言者仍可登录、阅读、接收。
@@ -270,7 +270,7 @@
 
 `payload` 为 JSON 对象，字段随类别不同（见下表）；`actor_id` / `actor_username` 在系统自动事件（如禁言到期）中缺省。落库时按收件人订阅偏好（`/messaging/notification-preferences/`）投递外发通道（如邮件）：默认**异步**（进程内队列 + 守护线程，失败按退避重试至多 5 次、超限落 `failed` 留痕，不影响站内通知；重启残漏由周期扫描补投）；`NOTIFICATIONS_DELIVERY_ASYNC=0` 可回退旧同步投递。见 [ADR-0024](../adr/0024-async-notification-delivery.md)。
 
-**未读聚合（同一事项只提示一次）**：通知源可声明**聚合键**（``源:事件:事项``，实现见 `messaging/notifications/registry.py`）。同一聚合键在**未读**期间只保留一条通知：后续同事项不新建行，只并入既有那条（`payload.count` 累加、`last_at` 刷新），并再推一次 `notification` 事件（前端据此刷新列表与徽标）；**被读掉之后**下一条同事项才重新通知。聚合命中的不重复外发（邮件等）——“一个未读事项 = 至多一封邮件”。目前只有私信声明了聚合键（`dm:new_message:<会话 id>`），其余源每条事件各自一条通知。
+**未读聚合（同一事项只提示一次）**：通知源可声明**聚合键**（``源:事件:事项``，实现见 `messaging/notifications/registry.py`）。同一聚合键在**未读**期间只保留一条通知：后续同事项不新建行，只并入既有那条（`payload.count` 累加、`last_at` 刷新），并再推一次 `notification` 事件（前端据此刷新列表与徽标）；**被读掉之后**下一条同事项才重新通知。聚合命中的不重复外发（邮件等）——“一个未读事项 = 至多一封邮件”。目前私信（`dm:new_message:<会话 id>`）与明信片待复核（`<event_id>:<reg_code>`）声明了聚合键，其余源每条事件各自一条通知。
 
 | category | event | 触发 | payload（公共字段之外）|
 |---|---|---|---|
@@ -280,6 +280,7 @@
 | `announcement` | `published` | 全站弹窗公告发布（收件人 = 该受众内启用账号；可在通知里回看原文）| `announcement_id`、`title`、`url`（`/announcements/{id}`，前端 `/#/announcements/{id}`）、`audience`、`file_kind`（pdf / docx / null）、`summary` |
 | `validity` | `expiring_2m` / `expiring_1m` | 认证 / 管理员身份**到期前**两个月 / 一个月（到期会降权，见[身份认证指南](../guides/certification.md#到期前提醒降权预警））| `channel`、`channel_label`、`level`、`expires_on`、`days_left`、`url`（认证面板）|
 | `review` | `approved` / `rejected` / `removed` | 发布审核通过 / 驳回 / 下架（通知宿主主人）| `type`（news / activity / tutorial）、`id`、`url` |
+| `review` | `postcard_submitted` | 新明信片登记待人工复核（按 `events.review_postcard` 动态投递，`manage_postcard` 一并收信）| `type`=`postcard`、`id`、`title`、`group`、`url`=`/reviews?kind=postcard` |
 | `review` | `closed` | 署名意见反馈了结 | `type` = `feedback`、`id`、`url`（有 note 时附 `reason`）|
 | `discipline` | `muted` / `mute_lifted` / `mute_expired` | 全站禁言授予 / 解除 / 到期惰性解除 | `mute_id`（`muted` 另附 `reason`、`ends_at`）|
 

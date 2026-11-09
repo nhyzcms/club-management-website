@@ -23,7 +23,7 @@
 | GET | /news/news/hot/ | 公开 | — | 热门阅读前 5 |
 | GET | /news/news/tags/ | 公开 | — | 标签云（仅被公开新闻引用），带新闻数 |
 | GET | /news/news/overview/ | 公开 | — | 社团概览：成员数 / 作品数 |
-| GET | /news/news/feed/ | 公开 | — | 首页「社团动态」聚合（新闻 + 互动，登录另含任务） |
+| GET | /news/news/feed/ | 公开 | — | 首页「社团动态」聚合（新闻 + 活动，登录另含任务） |
 
 审核轴说明：`review_status` 取值 `pending` / `approved` / `rejected` / `removed`，无审核行时为 `null`；列表只出 `approved`，`mine` 与作者预览不受限。站点策略 `content_review_enabled` 关闭时新建即 `approved`。**已过审新闻再改标题 / 摘要 / 正文 / 封面 / 标签会退回 `pending` 重新入审**（免审发布者与关闭审核的站点除外）；只改 `featured` / `is_published` 不触发。
 
@@ -327,7 +327,7 @@
 
 **查询参数**：`limit`（整数，默认 6，钳制在 1–20）。
 
-返回 `{featured, items}`：`featured` 为头条（同 `featured/`：仅 `featured=true` 的新闻，没有则为 `null`），且不计入 `items`；`items` 是新闻 + 互动（登录时另含未完结任务）的混排：**已结束（closed / archived）的互动整体沉底**，其余按时间倒序，同一档内按发布时间（互动取 `created_at`）倒序——后发布的在上面；再按类型打散（打散只在同一档内进行，不会把已结束互动换回前排）。互动只投影公开字段。
+返回 `{featured, items}`：`featured` 为头条（同 `featured/`：仅 `featured=true` 的新闻，没有则为 `null`），且不计入 `items`；`items` 是新闻 + 活动（登录时另含未完结任务）的混排：**已结束（closed / archived）的活动整体沉底**，其余按时间倒序，同一档内按发布时间（活动取 `created_at`）倒序——后发布的在上面；再按类型打散（打散只在同一档内进行，不会把已结束活动换回前排）。活动只投影公开字段。
 
 **响应 `200 OK`**
 
@@ -353,4 +353,4 @@
 }
 ```
 
-任务项仅登录下发；访客不可见仅成员受众的调研互动。无内容时 `featured` 为 `null`、`items` 为 `[]`。
+任务项仅登录下发；访客不可见仅成员受众的调研活动。无内容时 `featured` 为 `null`、`items` 为 `[]`。

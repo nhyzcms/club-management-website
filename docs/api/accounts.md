@@ -75,7 +75,7 @@
 | POST | `/auth/identity-reviews/{pk}/approve/` | 登录 | `accounts.can_review_identity` | 通过身份审核 |
 | POST | `/auth/identity-reviews/{pk}/reject/` | 登录 | `accounts.can_review_identity` | 驳回身份审核 |
 | POST | `/auth/identity-reviews/{pk}/disable/` | 登录 | `accounts.can_review_identity` | 停用账号 |
-| GET | `/auth/inbox/` | 已认证 | — | 待办收件箱（互动债 + 任务债） |
+| GET | `/auth/inbox/` | 已认证 | — | 待办收件箱（活动债 + 任务债） |
 | GET | `/auth/users/` | 登录 | — | 用户列表（`?search=` 搜人） |
 | GET | `/auth/users/{id}/profile/` | 登录 | — | 他人主页资料（按查看者身份裁剪） |
 | GET | `/auth/users/{id}/content/` | 登录 | — | 用户内容 tab（按查看者身份裁剪） |
@@ -212,7 +212,7 @@
       "can_edit_about": false, "can_manage_panoramas": false, "can_manage_exam": false, "can_review_content": false,
       "can_review_identity": false, "can_force_publish": false, "can_manage_comment_thread": false, "can_mute_user": false,
       "can_manage_announcement": false, "can_manage_announcements": false, "can_review_password_reset": false,
-      "can_manage_events": false
+      "can_manage_events": false, "can_manage_postcard": false, "can_review_postcard": false
     }},
   "must_change_password": false,
   "role": {"label": "用户", "variant": "user"},
@@ -238,7 +238,8 @@
 | can_review_identity | `accounts.can_review_identity` | can_force_publish | `reviews.force_publish` |
 | can_manage_comment_thread | `messaging.manage_comment_thread` | can_mute_user | `reviews.mute_user` |
 | can_manage_announcement | `messaging.manage_announcement` | can_manage_announcements | `announcements.manage_announcements` |
-| can_review_password_reset | `accounts.review_password_reset` | can_manage_events | `events.manage_events` |
+| can_review_password_reset | `accounts.review_password_reset` | can_manage_events | `events.manage_events`（通用模块已下线） |
+| can_manage_postcard | `events.manage_postcard` | can_review_postcard | `events.review_postcard` 或 `events.manage_postcard` 或超管 |
 
 ### 更新资料 / 修改密码
 
@@ -567,7 +568,7 @@
 
 `GET /auth/inbox/`
 
-**认证**：已认证（DRF `IsVerified`，未登录 / 未认证 403）；**权限**：—。混合时间线：48 小时内截止的互动债置顶（`end_at` 升序），其余按 `updated_at` 降序；不分页（直接返回全量信封）。私信未读不进待办。
+**认证**：已认证（DRF `IsVerified`，未登录 / 未认证 403）；**权限**：—。混合时间线：48 小时内截止的活动债置顶（`end_at` 升序），其余按 `updated_at` 降序；不分页（直接返回全量信封）。私信未读不进待办。
 
 **响应 `200 OK`**
 
@@ -583,7 +584,7 @@
 }
 ```
 
-`kind` ∈ `activity` / `task`；`reason` ∈ `vote`（待投票）/ `submit`（待投稿）/ `complete`（待完成）/ `approve_completion`（待验收）/ `approve_claim`（待批认领），判定见 `activities/debt.py` 与 `tasks/debt.py`。`activity` / `task` 为对应模块列表序列化器的完整对象（此处摘录关键字段）：见[互动 API](activities.md)、[任务 API](tasks.md)；`conversation` 恒为 `null`（预留形状）。
+`kind` ∈ `activity` / `task`；`reason` ∈ `vote`（待投票）/ `submit`（待投稿）/ `complete`（待完成）/ `approve_completion`（待验收）/ `approve_claim`（待批认领），判定见 `activities/debt.py` 与 `tasks/debt.py`。`activity` / `task` 为对应模块列表序列化器的完整对象（此处摘录关键字段）：见[活动 API](activities.md)、[任务 API](tasks.md)；`conversation` 恒为 `null`（预留形状）。
 
 ### 用户列表
 
@@ -627,7 +628,7 @@
                   "can_edit_about": false, "can_manage_panoramas": false, "can_manage_exam": false, "can_review_content": false,
                   "can_review_identity": false, "can_force_publish": false, "can_manage_comment_thread": false, "can_mute_user": false,
                   "can_manage_announcement": false, "can_manage_announcements": false,
-                  "can_review_password_reset": false},
+                  "can_review_password_reset": false, "can_manage_postcard": false, "can_review_postcard": false},
   "groups": ["信息组"]
 }
 ```

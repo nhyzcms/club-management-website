@@ -87,8 +87,9 @@
 |---|---|---|
 | 账号与认证 | [accounts](accounts.md) | 注册 / 登录 / 认证 / 资料 / 能力投影 |
 | 新闻 | [news](news.md) | 社团新闻，发布审核门控 |
-| 互动 | [activities](activities.md) | 众议 / 征集 / 展示 / 调研四类互动与问卷 |
-| 活动（限时） | [events](events.md) | 时间窗 + 状态机；形态模块由 `module_key` 指向 |
+| 活动 | [activities](activities.md) | 众议 / 征集 / 展示 / 调研四类活动与问卷 |
+| 明信片互寄 | [postcard](postcard.md) | `events` 形态模块：登记 / AI 审核 / 复核 / 条码 / 签收 / 多届 |
+| 活动壳（内部） | [events](events.md) | 仅形态模块宿主，无通用 CRUD |
 | 任务 | [tasks](tasks.md) | 任务与标签，状态机流转 |
 | 教程 | [tutorials](tutorials.md) | 教程文章与收藏 |
 | 消息与评论 | [messaging](messaging.md) | 评论 / 私信 / 通知 / 横幅 |

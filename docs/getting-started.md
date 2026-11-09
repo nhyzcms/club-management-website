@@ -5,7 +5,7 @@
 
 ## 项目是什么
 
-南汇一中传媒社的内部协作平台。它是一个 **Django 单体应用**：DRF 提供 JSON API，Django admin 提供后台管理，前端是一个 **React 单页应用（SPA）**，构建产物由 Django 直接托管（不需要单独部署前端服务）。功能覆盖账号与认证、任务协作、互动（众议 / 征集 / 展示 / 调研）、活动（限时，含明信片互寄）、新闻与教程发布、发布审核与意见反馈、评论与私信、通知与横幅公告、考试看板等社团日常运营场景。完整清单见 [功能总览](features.md)。
+南汇一中传媒社的内部协作平台。它是一个 **Django 单体应用**：DRF 提供 JSON API，Django admin 提供后台管理，前端是一个 **React 单页应用（SPA）**，构建产物由 Django 直接托管（不需要单独部署前端服务）。功能覆盖账号与认证、任务协作、活动（众议 / 征集 / 展示 / 调研）、明信片互寄、新闻与教程发布、发布审核与意见反馈、评论与私信、通知与横幅公告、考试看板等社团日常运营场景。完整清单见 [功能总览](features.md)。
 
 ## 技术栈
 
@@ -106,7 +106,7 @@ uv run python manage.py check                           # 项目配置自检
 
 测试期有两项专门的提速设置（仅 `TESTING=True` 生效，零生产影响）：密码哈希切 MD5、邮件走内存后端。详见 [配置参考 §2.8](configuration.md)。
 
-浏览器 E2E（Playwright，chromium）是「真实浏览器里的整栈冒烟」，现已覆盖前端全部模块与关键路由：登录 / 注册与社员认领 / 安全验证 / 账号有效期 / 新闻（含封面上传、编辑器插图）/ 互动（含发起时设计问卷）/ 活动（限时）/ 考试看板 / 问卷 / 审核台 / 消息 / 反馈 / 个人中心 / 移动版 / 未知路由重定向等。
+浏览器 E2E（Playwright，chromium）是「真实浏览器里的整栈冒烟」，现已覆盖前端全部模块与关键路由：登录 / 注册与社员认领 / 安全验证 / 账号有效期 / 新闻（含封面上传、编辑器插图）/ 活动（含发起时设计问卷）/ 明信片互寄 / 考试看板 / 问卷 / 审核台 / 消息 / 反馈 / 个人中心 / 移动版 / 未知路由重定向等。
 
 ```bash
 cd frontend
@@ -124,10 +124,11 @@ cd frontend
 npm test            # 一次性运行（vitest run）
 npm run test:watch  # 监视模式
 ```
-CI 配置见 `.github/workflows/ci.yml`，触发条件为 push 到 `main` 或任意 PR；四个必跑 job 加一个发布 job：
+CI 配置见 `.github/workflows/ci.yml`，触发条件为 push 到 `main` 或任意 PR；五个必跑 job 加一个发布 job：
 
 | Job | 触发 | 步骤 |
 |---|---|---|
+| `docs-guard` | push 到 `main` / 目标为 `main` 的 PR | 断言 `main` 不含 `docs/`——文档已迁到独立的 `documentation` 分支维护，避免每次文档提交都触发一次 release |
 | `backend` | push 到 `main` / 任意 PR | `astral-sh/setup-uv`（python 3.14）→ `uv sync --frozen` → `uv run python manage.py test` |
 | `frontend` | 同上 | Node 22 → `npm ci && npm run build`（工作目录 `frontend`）→ 断言 `frontend/dist/surveyjs/survey.core.min.js` 存在 → 上传 `frontend-dist` artifact（保留 1 天） |
 | `frontend-test` | 同上 | Node 22 → `npm ci` → `npm test`（Vitest 单元 / 组件测试，工作目录 `frontend`） |
@@ -178,8 +179,8 @@ club-management-website/
 ├── config/            # Django 项目配置：settings.py / urls.py / asgi.py / wsgi.py
 ├── accounts/          # 账号、登录、邮箱认证、身份审核、会话、能力投影
 ├── about/             # 关于页内容
-├── activities/        # 互动（众议 / 征集 / 展示 / 调研）与问卷
-├── events/            # 活动（限时、参与者之间可发生关系）
+├── activities/        # 活动（众议 / 征集 / 展示 / 调研）与问卷
+├── events/            # 活动壳 + 形态模块（明信片互寄）
 ├── attachments/       # 统一附件与 tus 可续传上传
 ├── common/            # 站点策略、维护模式、富文本清洗、更新守护进程
 ├── exam_board/        # 考试看板（批次课表 + 题目误刊广播）
@@ -228,7 +229,7 @@ club-management-website/
 
 | 文档 | 内容 |
 |---|---|
-| `CONTEXT.md` | 领域术语表（任务、互动、众议、征集、展示、调研、作品……） |
+| `CONTEXT.md` | 领域术语表（任务、活动、众议、征集、展示、调研、作品……） |
 | `CLAUDE.md` | 命令速查与访问控制原则（权限词汇、能力投影） |
 | `docs/architecture/frontend.md` | SPA 的路由表、API 客户端约定、构建与产物细节 |
 | `docs/api/` | 各 app 的接口文档 |

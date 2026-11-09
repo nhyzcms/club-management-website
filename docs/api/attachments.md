@@ -7,7 +7,7 @@
 ## 模块约定
 
 - **挂载前缀**：`config/urls.py` 把 `attachments/urls.py` 挂在 `/attachments/`（`SimpleRouter`，资源前缀为空 → `/attachments/` 与 `/attachments/{id}/`）；`attachments/tus_urls.py` 挂在 `/uploads/`（`TusAPIRouter`，注册 `files` → `/uploads/files/` 与 `/uploads/files/{guid}/`）。
-- **父级注册表**（`attachments/create.py` 的 `PARENTS`）：`task` / `feedback` / `news` 是**增量父级**（`endpoint=True`，HTTP 与 tus 可用）；`submission`（作品）/ `exhibit`（展品）**不是** HTTP 父级——投稿 / 布展是原子批量，由互动侧适配器调用同一创建接缝（[ADR-0012](../adr/0012-attachment-create-seam.md)）。
+- **父级注册表**（`attachments/create.py` 的 `PARENTS`）：`task` / `feedback` / `news` 是**增量父级**（`endpoint=True`，HTTP 与 tus 可用）；`submission`（作品）/ `exhibit`（展品）**不是** HTTP 父级——投稿 / 布展是原子批量，由活动侧适配器调用同一创建接缝（[ADR-0012](../adr/0012-attachment-create-seam.md)）。
 - **权限单一抽象规则**（[ADR-0002](../adr/0002-unified-attachment-endpoint-and-permission.md)）：操作者须为该父级的**创建者**、或**活跃参与者**、或持该父级**管理权限**者。父级差异：
 
   | 父级 | 创建者 | 活跃参与者 | 管理权限 |
@@ -15,8 +15,8 @@
   | 任务 | `creator` | 进行中（`in_progress`）时的负责人 / 协作者（`tasks.lifecycle.is_active_participant`） | `tasks.manage_tasks` |
   | 意见反馈 | `creator`（署名反馈） | 无 | `reviews.read_feedback` |
   | 新闻 | `author` | 无 | `news.manage_news` |
-  | 作品 | —（注册表无创建者字段） | 无 | 互动发起人，或 `activities.manage_activity`，或 `activities.review_collection` |
-  | 展品 | —（同上） | 无 | 互动发起人（策展人），或 `activities.manage_activity` |
+  | 作品 | —（注册表无创建者字段） | 无 | 活动发起人，或 `activities.manage_activity`，或 `activities.review_collection` |
+  | 展品 | —（同上） | 无 | 活动发起人（策展人），或 `activities.manage_activity` |
 
 - **反馈 carve-out**（[ADR-0004](../adr/0004-feedback-media-tus-resumable-upload.md)）：**上传**仅**署名创建者**且反馈仍 `pending`（持 `read_feedback` 的社长被排除）；**删除**在 `pending` 时沿用通用规则——故社长对反馈附件「能删不能传」。**审结（`closed`）后证据附件仅 `reviews.read_feedback` 持有者可删**（上传者本人也不行，`403 反馈已了结，证据附件仅处理人可删除`），防止审计链断裂；审结同时锁死上传。
 - **回收**：父级删除 → 外键 `CASCADE` 逐行删附件 → `post_delete` 信号同步删磁盘文件（无需定时任务）；删除附件行同路径。举报案不挂附件。
@@ -164,7 +164,7 @@
 | 任务 | 任务详情 `attachments`（`tasks.serializers`） | 完整 `AttachmentSerializer`（含 `uploaded_by` / `uploaded_at`） |
 | 意见反馈 | 反馈详情 `attachments`（`reviews.serializers`） | 同上 |
 | 新闻 | 新闻详情 `attachments`（`news.serializers.NewsAttachmentSerializer`） | 精简：`id` / `file_url` / `file_type` / `file_name` / `file_size`（详情匿名可读，故不含 `uploaded_by`） |
-| 作品 / 展品 | 互动详情内对应对象的 `files` 字段（`activities.serializers` 的 `SubmissionSerializer` / `ExhibitSerializer`） | 完整 `AttachmentSerializer` |
+| 作品 / 展品 | 活动详情内对应对象的 `files` 字段（`activities.serializers` 的 `SubmissionSerializer` / `ExhibitSerializer`） | 完整 `AttachmentSerializer` |
 
 客户端上传大文件（`attachmentApi.uploadLarge`）完成后接口返回 `void`——须**重新拉取父级详情**才能拿到新附件；同步上传则直接返回新建的 `Attachment`（响应体字段同上传端点）。
 

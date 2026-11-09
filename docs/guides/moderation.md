@@ -1,37 +1,38 @@
 # 审核系统指南
 
-本指南讲**审核系统**（`reviews` app，职员入口 `/reviews`）的定位、五张桌子各自处理什么、权限怎么分、状态机与处置结果是什么。逐字段的接口说明见 [审核系统 API](../api/reviews.md)；身份审核的端点在 accounts（`/auth/identity-reviews/`）、密码重置在 `/auth/password-reset-requests/`，见 [账号 API](../api/accounts.md)。
+本指南讲**审核系统**（`reviews` app，职员入口 `/reviews`）的定位、六张桌子各自处理什么、权限怎么分、状态机与处置结果是什么。逐字段的接口说明见 [审核系统 API](../api/reviews.md)；身份审核的端点在 accounts（`/auth/identity-reviews/`）、密码重置在 `/auth/password-reset-requests/`，见 [账号 API](../api/accounts.md)。明信片复核的接口在 `events/modules/postcard/`，见[明信片互寄 API](../api/postcard.md)。
 
 相关设计记录：[ADR-0017：统一审核系统](../adr/0017-unified-moderation-system.md)、[ADR-0003：不抽共享生命周期基类](../adr/0003-no-shared-task-proposal-lifecycle-base.md)、[ADR-0005：访问控制原则](../adr/0005-access-control-principle.md)、[ADR-0009：统一审核轴](../adr/0009-portal-review-about-tutorials.md)、[ADR-0004：署名反馈媒体上传](../adr/0004-feedback-media-tus-resumable-upload.md)。
 
 ## 一、它是什么，不是什么
 
-**审核系统是职员的应用/入口，不是第四种案件。** 台面上有五张桌子，各处理一类事、各有各的状态机，**互不混行**：
+**审核系统是职员的应用/入口，不是第四种案件。** 台面上有六张桌子，各处理一类事、各有各的状态机，**互不混行**：
 
 | 桌 | 实体 | 一句话定位 | 状态机 |
 |---|---|---|---|
-| **发布审核** | `Review` | 一条正交的通用审核轴，门控新闻 / 互动 / 教程的**公开展示** | `pending` → `approved` / `rejected`；`approved` → `removed`（可再 `approve`） |
+| **发布审核** | `Review` | 一条正交的通用审核轴，门控新闻 / 活动 / 教程的**公开展示** | `pending` → `approved` / `rejected`；`approved` → `removed`（可再 `approve`） |
 | **意见反馈** | `Feedback` | 无对象投递箱：建议 / 投诉 / 其他 | `pending` → `closed` |
-| **举报案** | `ReportCase` + `ReportFiling` | 有对象的调查票：新闻 / 互动 / 教程 / 评论 / 用户 | `open` → `dismissed` / `upheld` |
+| **举报案** | `ReportCase` + `ReportFiling` | 有对象的调查票：新闻 / 活动 / 教程 / 评论 / 用户 | `open` → `dismissed` / `upheld` |
 | **身份审核** | `Verification`（manual 通道） | 人工审批通道的证明材料审核（既有桌，仍独立） | `pending` → `approved` / `rejected`；另有账号停用 |
 | **密码重置** | `PasswordResetRequest` | 忘记密码的线下复核：核对身份证明 → 批准重置 / 驳回 | `pending` → `approved` / `rejected` |
+| **明信片复核** | `PostcardPhoto`（`events` 形态模块） | AI 判不匹配 / 转人工的明信片照片复核与签收入口 | `pending` / `ai_failed` / `manual_pending` → `manual_passed` / `manual_failed` |
 
 > **术语红线**：「审核」专指发布审核这条轴；**「复审」是征集作品的录用 / 退稿**（`Submission.review_status`），与本系统是两回事。写文档、起变量名时不要互借。
 >
-> **历史包袱**：「申报 (Proposal)」已卸掉——原「活动」模块更名为「互动」，意见反馈吸收进本系统。现存文档若写「申报」，只作迁移动线指针，不是活概念。
+> **历史包袱**：「申报 (Proposal)」已卸掉，意见反馈吸收进本系统。2026-10 曾把 `activities` 改称「互动」、把通用 `events` 模块叫「活动」；该改名已于 2026-11 撤销——当今用户可见的「活动」就是 `activities`。现存旧文档若写「互动」，按当今「活动」理解。
 
-## 二、五张桌的定位与处理流程
+## 二、六张桌的定位与处理流程
 
 > **浏览与跳过**：每张桌一次呈现一条。处理动作完成后自动进入下一条；不处理当前条目时，可点「下一条」跳过它继续浏览队列（已跳过 / 已处理的条目本轮不再出现；切桌、切状态或刷新页面后重新从头开始）。
 
 ### 1. 发布审核（Review）
 
-**一条 Review 恰好挂一个父级**（新闻 / 互动 / 教程），通过 `ContentTarget` 的 `(kind, object_id)` 锚定，不用 GenericFK（见 [ADR-0045](../adr/0045-content-target.md)）。它表示「这条内容可否公开」。**活动（限时，`events`）当前不接入本审核轴**：发布即按自身可见性公开展示。
+**一条 Review 恰好挂一个父级**（新闻 / 活动 / 教程），通过 `ContentTarget` 的 `(kind, object_id)` 锚定，不用 GenericFK（见 [ADR-0045](../adr/0045-content-target.md)）。它表示「这条内容可否公开」。**`events` 的明信片互寄不接入本审核轴**：它的照片复核在「明信片」桌单独处理（AI / 人工），与发布审核的通过 / 驳回无关；Event 壳发布即按自身可见性展示。
 
-**它是正交的可见性轴，不是对象生命周期。** 互动照常按自己的 `scheduled` / `open` / `closed` 推进，教程照常入库，新闻照常写——只有**公开展示**受审核门控。因此：
+**它是正交的可见性轴，不是对象生命周期。** 活动照常按自己的 `scheduled` / `open` / `closed` 推进，教程照常入库，新闻照常写——只有**公开展示**受审核门控。因此：
 
-- 公开列表 / 详情只放行 `approved` 的条目（互动另允许尚无审核行的存量夹具）；
-- **作者预览**：对象创建者（新闻作者 / 互动发起人 / 教程上传者）能看到自己的待审 / 驳回 / 下架条目及评语（前端 `AuthorReviewBanner` 提示「仅作者与审核员可见，尚未对公众公开」），走各自的 `mine` 端点；
+- 公开列表 / 详情只放行 `approved` 的条目（活动另允许尚无审核行的存量夹具）；
+- **作者预览**：对象创建者（新闻作者 / 活动发起人 / 教程上传者）能看到自己的待审 / 驳回 / 下架条目及评语（前端 `AuthorReviewBanner` 提示「仅作者与审核员可见，尚未对公众公开」），走各自的 `mine` 端点；
 - `reviews.moderate` 持有者在详情里能看到**全部**条目。
 
 **处理流程**：
@@ -40,7 +41,7 @@
    - 创建者持 `reviews.force_publish`（免审发布）→ 直接 `approved`；
    - 站点策略 `content_review_enabled` 关闭 → 等同免审，直接 `approved`（**已有待审条目不受影响**）；
    - 否则 `pending`，进队列。
-2. 审核员在 `/reviews` 的新闻 / 互动 / 教程桌（三张子桌共用一条队列）逐条处理：**不能批准自己创建的内容**（`403 不能审核自己创建的内容`；`reviews.force_publish` 的创建即通过路径不受影响，走的是另一条代码路径）：
+2. 审核员在 `/reviews` 的新闻 / 活动 / 教程桌（三张子桌共用一条队列）逐条处理：**不能批准自己创建的内容**（`403 不能审核自己创建的内容`；`reviews.force_publish` 的创建即通过路径不受影响，走的是另一条代码路径）：
    - **通过** → `approved`，对象随即对公众可见；评语选填；
    - **驳回** → `rejected`，对象保持不公开；**评语必填**，作者会在预览里看到；
    - **下架** → `removed`（仅对已通过项），对象从公开列表 / 详情消失；评语选填。
@@ -63,9 +64,9 @@
 
 ### 3. 举报案（ReportCase / ReportFiling）
 
-**有对象的调查票**。举报对象是五类之一：新闻 / 互动 / 教程 / 评论 / 用户（可空 FK + 恰好一个父级的 CheckConstraint，同样不用 GenericFK）。
+**有对象的调查票**。举报对象是五类之一：新闻 / 活动 / 教程 / 评论 / 用户（可空 FK + 恰好一个父级的 CheckConstraint，同样不用 GenericFK）。
 
-- **谁能举报**：**已认证**成员（登录且任一认证通道通过）对**作为普通读者可见、且非自己**的对象提交。公众从对象上的举报按钮进入（`ReportButton` 挂在新闻 / 互动 / 教程详情、评论、用户主页）。
+- **谁能举报**：**已认证**成员（登录且任一认证通道通过）对**作为普通读者可见、且非自己**的对象提交。公众从对象上的举报按钮进入（`ReportButton` 挂在新闻 / 活动 / 教程详情、评论、用户主页）。
 - **一对象一进行中案**：同一时刻每对象至多一张 `open` 案（五条部分唯一约束）。第二人举报会作为**新的一份举报**（`ReportFiling`）附到该案上，不另开案；每举报人每案至多一份（重复举报同一对象被拒），每用户每天限 N 条（站点策略 `reports_per_user_per_day`，默认 10）。
 - 举报**无附件、无撤回**；举报人不会收到处理结果通知（处置结果对对象生效，如禁言会写纪律通知）。
 
@@ -99,6 +100,16 @@
 - 只能处理 `pending`；重复处理 409 `already_reviewed`；**不能审批自己的申请**（403 `cannot_review_self`）。
 - 申请与队列的接口细节见[账号 API](../api/accounts.md)「手动重置密码」。
 
+### 6. 明信片复核（明信片桌）
+
+`events` 形态模块自己的复核队列，接口在 `/events/postcard/admin/review/`（详见[明信片互寄 API](../api/postcard.md)）。它**不是** `Review` 发布审核轴，也不走 `reviews` 状态机；桌只是统一挂在 `/reviews` 入口下。
+
+- 队列按**条目（一张明信片）**聚合：登记人 / 年级 / 班级 / 寄达校 + 正反面照片 + AI 判定详情；
+- 状态筛选：**待人工**（`manual_pending`）/ **AI 不匹配**（`ai_failed`）/ 全部；
+- 动作：**通过** → `manual_passed`，照片文件立即删除并按规则亮登记码；**不通过** → `manual_failed`，照片留 24h TTL；
+- 只有 `manual_pending` / `ai_failed` 可处理，其余 400；判定全量落审计；
+- 权限：`events.review_postcard`（复核 / 签收）或 `events.manage_postcard`（管理隐含复核）；有新申请时给持有者发站内信，同一登记码的未读通知聚合为一条。
+
 ## 三、正交审核轴：门控公开，不改生命周期
 
 这是理解整个系统最重要的一条：
@@ -107,10 +118,10 @@
 
 具体表现：
 
-- 互动的排期、投票、投稿、作答、结算全按 `activities/lifecycle.py` 走，审核不阻断；审核通过前只是「访客/成员看不到、也参与不了」。
+- 活动的排期、投票、投稿、作答、结算全按 `activities/lifecycle.py` 走，审核不阻断；审核通过前只是「访客/成员看不到、也参与不了」。
 - 教程入库即入库，未过审只是不在公共库出现；上传者从「我的上传」看到自己的全部条目与审核徽章。
 - 新闻的 `is_published` 是**生命周期轴**（发布开关），与审核轴**相乘**：公开读要求「已发布 + 已过审」，两者互不替代。
-- **不要**把审核状态并进新闻 / 互动的状态机，也**不要**用审核行去表达「有人投诉了什么」——后者是举报案。两条查询、两套授权，分开才清楚（ADR-0017 被否方案）。
+- **不要**把审核状态并进新闻 / 活动的状态机，也**不要**用审核行去表达「有人投诉了什么」——后者是举报案。两条查询、两套授权，分开才清楚（ADR-0017 被否方案）。
 
 ## 四、关键权限与分配思路
 
@@ -124,12 +135,14 @@
 | `reviews.handle_report` | 查看并处理举报案（驳回 / 成立并处置） | `can_handle_reports` |
 | `accounts.can_review_identity` | 身份审核：通过 / 驳回 / 停用账号 | `can_review_identity` |
 | `accounts.review_password_reset` | 密码重置申请：批准（重置为一次性随机临时密码 + 强制改密 + 吊销会话）/ 驳回 | `can_review_password_reset` |
+| `events.review_postcard` | 明信片复核 / 签收（`manage_postcard` 隐含复核） | `can_review_postcard` |
+| `events.manage_postcard` | 明信片配置 / 条码 / 记录 / 导出 / 统计 / AI / 海报导入 | `can_manage_postcard` |
 
 **分配思路**（默认偏粗，ADR-0005 决策 5）：
 
 - **审核与免审正交、可分别分配**：A 只会审、B 会审+免审、C 只免审——三种组合都成立。`moderate` 默认随「社长」组播种；`force_publish` **不**默认授予任何人。
 - **反馈与举报的持有者现实中可以不同**，所以是独立权限；关闭反馈不另拆 approve 权限（持有者不会不同）。
-- **五桌按对应 `can_*` 显隐**：`/reviews` 顶部只出现你有权限的桌；五桌全无权限时页面直接给「你没有审核权限。」前端入口（用户菜单「审核队列」）也按同一组布尔显隐。
+- **六桌按对应 `can_*` 显隐**：`/reviews` 顶部只出现你有权限的桌；六桌全无权限时页面直接给「你没有审核权限。」前端入口（用户菜单「审核队列」）也按同一组布尔显隐。
 - **`handle_report` 足够处理举报**：成立处置**不要求**操作者同时持 `reviews.moderate` / `messaging.manage_comment_thread` / `reviews.mute_user`（ADR-0017 决策 4）——处理举报的人与发稿审核 / 禁言的人可以不是同一批，再查会卡住默认处置。
 - **但举报轴有两条职责分离边界**（审计 #277）：① 举报人**不能处理自己提交的举报**（`uphold` / `dismiss` 都拒，400「不能处理自己提交的举报」）——否则「自己立案 → 自己成立」一条权限就能处罚任何人，与审核轴「不能批准自己创建的内容」、身份轴「不能停用自己」同一条原则；② 禁言**不能落在超管或持有 `handle_report` 的账号**上——同级之间不能互相处罚。
 
@@ -153,7 +166,7 @@
 
 | 对象 | 默认处置 | 说明 |
 |---|---|---|
-| 新闻 / 互动 / 教程 | 对应审核行置**下架**（`removed`） | 无审核行或非「通过」时**不动该行、只结案**；已下架则幂等；下架评语用处理说明 |
+| 新闻 / 活动 / 教程 | 对应审核行置**下架**（`removed`） | 无审核行或非「通过」时**不动该行、只结案**；已下架则幂等；下架评语用处理说明 |
 | 评论 | **墓碑删除**（`delete_comment_for_report`） | 跳过 `can_manage_thread`，已删则幂等 |
 | 用户 | **全站禁言**（`mute_user_for_report`） | 跳过 `mute_user` 权限；仍禁自禁、已禁言、**超管 / 同级 `handle_report` 持有者**则拒；`ends_at` 省略即**永久** |
 
@@ -163,9 +176,9 @@
 
 ## 六、前端入口：`/reviews` 队列
 
-前端页面 `ReviewQueuePage.tsx`，路由 `/reviews`（需登录），用户菜单「审核队列」；手机 UA 下改道到手机版 `/m/review`（独立实现，五张桌与规则一致；取数与「跳过已浏览条目」逻辑与桌面共用 `frontend/src/utils/reviewDesk.ts`，勿在两端各写一份）。
+前端页面 `ReviewQueuePage.tsx`，路由 `/reviews`（需登录），用户菜单「审核队列」；手机 UA 下改道到手机版 `/m/review`（独立实现，六张桌与规则一致；取数与「跳过已浏览条目」逻辑与桌面共用 `frontend/src/utils/reviewDesk.ts`，勿在两端各写一份）。
 
-- **分桌**：顶部 chip 按权限铺开——身份 / 密码重置 / 新闻 / 互动 / 教程 / 意见反馈 / 举报案；每桌下再按状态过滤（待审 / 已通过 / 已驳回 / 已下架、待处理 / 已了结、进行中 / 已驳回 / 成立并处置、待认证 / 已通过 / 已驳回、待处理 / 已批准 / 已驳回）。
+- **分桌**：顶部 chip 按权限铺开——身份 / 密码重置 / 明信片 / 新闻 / 活动 / 教程 / 意见反馈 / 举报案；每桌下再按状态过滤（待审 / 已通过 / 已驳回 / 已下架、待处理 / 已了结、进行中 / 已驳回 / 成立并处置、待认证 / 已通过 / 已驳回、待处理 / 已批准 / 已驳回、明信片待人工 / AI 不匹配 / 全部）。
 - **一屏一条**：每桌一次只取一条（自动跳过刚处理的那条），处理完**自动进入下一条**（约 900ms 闪一下结果徽章），适合连续清队列。
 - **桌内动作**：
   - 发布审核桌（`ReviewPreview`）：渲染对象正文与媒体，给「通过 / 驳回（评语必填）/ 下架」；可「新标签打开」跳公开页。
@@ -173,6 +186,7 @@
   - 举报桌：列出全部举报（举报人 + 理由 + 时间），给「驳回」（理由必填）/「成立并处置」（处理说明选填；用户对象时可选「永久禁言」或填结束时间）。
   - 身份桌：证明材料大图 +「通过 / 驳回 / 停用账号」（停用需确认）。
   - 密码重置桌：申请人、账号、联系方式、身份证明大图 +「批准重置 / 驳回」（批准前请先核对证明与账号）。
+  - 明信片桌（`PostcardReviewPane`）：登记信息 + 正反面照片 + AI 判定详情，给「通过 / 不通过」；通过即删照片并亮登记码。
 - **后台补充**：Django admin 里 `Review` / `Feedback` / `ReportCase` 三张表都有登记（`reviews/admin.py`），发布审核桌还支持批量动作；身份桌在 `accounts` admin 有对应的批量审核动作。日常操作建议优先用 `/reviews`（一屏一条、自动前进），后台留给批量与排查。
 
 ## 七、操作建议
@@ -189,6 +203,6 @@
 - [审核系统 API](../api/reviews.md) — 三个资源（`/reviews/reviews/`、`/reviews/feedbacks/`、`/reviews/reports/`）的端点与字段
 - [账号 API](../api/accounts.md) — 身份审核队列 `/auth/identity-reviews/` 与能力投影 `can_*`
 - [评论与消息 API](../api/messaging.md) — 全站禁言、评论区状态、通知
-- [新闻 API](../api/news.md) / [互动 API](../api/activities.md) / [教程 API](../api/tutorials.md) — 各对象的审核投影（`review_status` / `review_comment`、作者预览）
-- [问卷系统指南](surveys.md) — 调研互动的作答与审核门控
+- [新闻 API](../api/news.md) / [活动 API](../api/activities.md) / [教程 API](../api/tutorials.md) — 各对象的审核投影（`review_status` / `review_comment`、作者预览）
+- [问卷系统指南](surveys.md) — 调研活动的作答与审核门控
 - [ADR-0017](../adr/0017-unified-moderation-system.md) / [ADR-0003](../adr/0003-no-shared-task-proposal-lifecycle-base.md) / [ADR-0005](../adr/0005-access-control-principle.md)

@@ -1,6 +1,6 @@
 # 明信片互寄 · 实施方案与交接文档
 
-> 状态：**已完成**（2026-11-08，批次 1–4 全部合并）。本文是唯一权威方案落点：任何开发者 / agent 读本文即可接手。
+> 状态：**已完成**（2026-11-08，批次 1–4 全部合并）；交付后的增量见 §10「交付记录」。本文是唯一权威方案落点：任何开发者 / agent 读本文即可接手。
 > 需求提出：2026-11-07（用户）；方案批准：2026-11-07（用户逐条认可，含第五节 4 处解释）。
 
 ## 0. 进度看板
@@ -53,7 +53,7 @@ stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自�
 |---|---|
 | `PostcardConfig` | Event 一对一。可参与年级、寄达校清单、`ship_at`/`distribute_at` 节点、公告附件(PDF)。`Meta.permissions` 声明 `manage_postcard` / `review_postcard` 两个命名工作流权限。**寄达区下拉 = `REGION_CHOICES` 写死的上海市 16 区固定清单（顺序固定，2026-11-08 用户指定）**；寄达校下拉按所选区从清单过滤，登记校验要求 (区, 校) 配对命中 |
 | `PostcardBarcode` | event + 7 位随机数字，`(event, code)` 唯一（单活动内不重复，跨活动可复用） |
-| `PostcardRegistration` | 一次**提交**（同一发件人可多次提交）。6 位登记码：**同一发件人（姓名 + 年级 + 班级，2026-11-08 用户指定）在活动内共用**、`(event, reg_code)` 只建索引不唯一；`access_token` = 单次提交的轮询凭证（审核未过时不发码）。姓名、年级、班级、寄达区、寄达校、状态、`device_id`(ncdid) / `fingerprint_hash` / 登录用户 三轨归属 |
+| `PostcardRegistration` | 一次**提交**（同一发件人可多次提交）。6 位登记码：**同一发件人（姓名 + 年级 + 班级，2026-11-08 用户指定）在活动内共用**、`(event, reg_code)` 只建索引不唯一；`access_token` = 单次提交的轮询凭证（审核未过时不发码）。姓名、年级、班级、寄达区、寄达校、状态、`device_id`（`club_device` cookie）/ `fingerprint_hash` / 登录用户 三轨归属 |
 | `PostcardItem` | 登记单内每张明信片，绑条码（`(event, barcode)` 唯一 → 一条码一明信片）；一次登记可多张；同寄出人自动聚合展示 |
 | `PostcardPhoto` | 正/反面照片，私有存储，审核状态机（PR2 起 AI 用） |
 | `PostcardAIConfig` | base_url / api_key(写后不可读) / model / 自定义请求头 JSON / 超时（PR2） |
@@ -95,7 +95,7 @@ stacked PR 约定：后一个 base 指前一个；前一个合并后 GitHub 自�
 Code128=`reportlab`（`accounts/member_barcode.py`）；中文字体=`activities/fonts/NotoSansSC.ttf`；
 Excel=`openpyxl`；净化=`bleach`（`common/rich_text.py`）；摄像头扫码=`barcode-detector`（支持 code_128）；
 Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`common/throttles.py`；
-设备 Cookie=`ncdid`（`DeviceIDMiddleware`）；私有存储=`PRIVATE_MEDIA_ROOT`；缓存=Redis；邮件=`EMAIL_BACKEND`。
+设备 Cookie=`club_device`（`accounts/utils.py`，ADR-0028 多端登录复用）；私有存储=`PRIVATE_MEDIA_ROOT`；缓存=Redis；邮件=`EMAIL_BACKEND`。
 
 ## 7. AI 管线（PR2）
 
@@ -162,7 +162,7 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 2. 「后台自动整个同一寄出人的明信片」= 自动**整合**（聚合展示）。
 3. 签收页扫**明信片上的 7 位条码**，命中展示所属登记单信息，确认后置「已报寄」；
    未命中提示「明信片未登记，请先登记！」。
-4. 指纹 = 轻量 JS 指纹（canvas / 屏幕 / UA / 时区哈希），与 ncdid Cookie 双轨并用，服务端只存哈希。
+4. 指纹 = 轻量 JS 指纹（canvas / 屏幕 / UA / 时区哈希），与 `club_device` Cookie 双轨并用，服务端只存哈希。
 5. **登记码发放时机（2026-11-08 用户指定）**：AI 审核通过后才在「登记成功」弹窗亮码；
    AI 不可用转人工复核 → 立即发码（不等人工结果）；AI 判不匹配 → 不发码、告知具体错项，
    用户申请人工复核转人工后立即发码。审核中弹窗显示「审核中」，前端 2s 轮询、40s 封顶。
@@ -174,3 +174,15 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 - AI 调用带超时（默认 20s）+ 重试上限（1+5），绝不挂起 worker；
 - 导出接口仅管理员 + 限流；
 - 不在生产服务器跑测试 / 构建（CI：docs-guard / backend / frontend / frontend-test / e2e）。
+
+## 10. 交付记录（批次之后）
+
+| PR | 内容 |
+|---|---|
+| #305 | README 精简为定位 + 亮点 + 入口 |
+| #306 | 撤销「互动」改名、恢复单一「活动」入口、下线通用 `events` CRUD；`Event` 只作明信片壳 |
+| #307 | 补齐 `ContentTarget.kind` 与 `Notification.category` 的 choices 迁移 |
+| #309 | 海报 AI 导入寄达校 + 区内编号排序与检索 |
+| #310 → #311 | 管理端「模拟活动」模拟环境（PR1）合入后整体回滚，未保留 |
+
+运维增量：`scripts/install.sh` 新增 `club-postcard-gc.timer`（每小时跑 `postcard_photo_gc`，做活动结束全清 / 失败照片 24h TTL / 卡死 pending 转人工）。文档增量：新增 [明信片互寄 API](../api/postcard.md) 与 [明信片互寄指南](../guides/postcard.md)，`events` 通用模块文档改为壳说明。

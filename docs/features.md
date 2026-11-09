@@ -2,7 +2,7 @@
 
 本页回答「系统能做什么」，按业务域列出**全部**能力与规则落点。三条配套线索：
 
-- **术语**：任务、互动、众议、征集、展示、调研、作品……见 [CONTEXT.md](https://github.com/nhyzcms/club-management-website/blob/main/CONTEXT.md)
+- **术语**：任务、活动、众议、征集、展示、调研、作品……见 [CONTEXT.md](https://github.com/nhyzcms/club-management-website/blob/main/CONTEXT.md)
 - **设计取舍**：每条能力背后的「为什么」见 [ADR](adr/)
 - **接口细节**：字段、权限、错误码见 [API 参考](api/README.md)
 
@@ -59,9 +59,9 @@
 
 ---
 
-## 3. 互动（`activities`）
+## 3. 活动（`activities`）
 
-「互动」是**星形结构**：中心向成员发起，成员各自交回票 / 作品 / 展品 / 答卷，参与者之间没有关系。四种类型：
+「活动」是**星形结构**：中心向成员发起，成员各自交回票 / 作品 / 展品 / 答卷，参与者之间没有关系。四种类型：
 
 | 类型 | 成员做什么 | 结算 |
 |---|---|---|
@@ -79,13 +79,13 @@
 
 ---
 
-## 4. 活动（`events`）
+## 4. 重大活动（`events` 壳）
 
-「活动」与「互动」是两种东西：活动**允许参与者之间发生关系**（配对 / 组队 / 互评 / 接力），有明确起止时间窗，到点自动关闭。
+2026-11 起 `events` **不再提供通用活动 CRUD**（`/#/events` 页面与 `EventViewSet` 已下线），只保留 `Event` 壳与严格状态机，供形态模块使用。当前唯一形态是**明信片互寄**。
 
-- `Event` 只提供**壳**（标题 / 简介 / 正文 / 时间窗 / 状态 / 可见性）与严格状态机：`draft → scheduled → active → ended → archived`（[lifecycle.py](https://github.com/nhyzcms/club-management-website/blob/main/events/lifecycle.py)）。
-- 具体形态放 `events/modules/<key>/`，由 `module_key` 指向；`module_key` 为空 = 纯展示型活动（公告性质）。
-- 门户：`/#/events`、`/#/events/:id`；手机版 `/#/m/events`（筛选 chips + 加载更多）。
+- `Event` 提供**壳**（标题 / 简介 / 正文 / 时间窗 / 状态 / 可见性）与状态机：`draft → scheduled → active → ended → archived`（[lifecycle.py](https://github.com/nhyzcms/club-management-website/blob/main/events/lifecycle.py)）。
+- 具体形态放 `events/modules/<key>/`，由 `module_key` 指向；`module_key` 为空 = 纯展示型壳。
+- 用户入口：明信片互寄 `/#/postcard`（主页 / 手机版首页「重大活动」）；不再有 `/#/events` 页面。
 
 ### 明信片互寄（`events/modules/postcard`）
 
@@ -112,7 +112,7 @@
 
 ## 5. 问卷系统（[ADR-0014](adr/0014-questionnaire-independent.md)）
 
-SurveyJS 问卷本体独立于互动：**发起互动时即可设计**，创建后也能补题、作答、按作答内容检索、统计与导出；支持 panel 与选项内子题。调研互动只是作答入口，问卷后台才是阅读与导出入口。规则见 [问卷指南](guides/surveys.md)。
+SurveyJS 问卷本体独立于活动：**发起活动时即可设计**，创建后也能补题、作答、按作答内容检索、统计与导出；支持 panel 与选项内子题。调研活动只是作答入口，问卷后台才是阅读与导出入口。规则见 [问卷指南](guides/surveys.md)。
 
 ---
 
@@ -129,7 +129,7 @@ SurveyJS 问卷本体独立于互动：**发起互动时即可设计**，创建�
 ## 7. 协作
 
 - **任务**：可指派负责人与协作者，状态机 `待处理 → 进行中 → 待验收 → 完成 / 取消`；带标签。
-- **评论区**（宿主为新闻 / 互动 / 任务）：三态 `open` / `muted`（已有评论可见、不能再发言）/ `closed`（仅协管可见）；嵌套上限、**3 分钟撤回**、墓碑删除（[ADR-0016](adr/0016-comment-thread-vs-dm.md)）。
+- **评论区**（宿主为新闻 / 活动 / 任务）：三态 `open` / `muted`（已有评论可见、不能再发言）/ `closed`（仅协管可见）；嵌套上限、**3 分钟撤回**、墓碑删除（[ADR-0016](adr/0016-comment-thread-vs-dm.md)）。
 - **私信**：1:1 会话，与评论区分离；App 壳收到原生 WS 新消息时派发 `club:unread` 常量事件驱动红点。
 - **意见反馈**：提交后进入审核台「意见反馈」桌。
 
@@ -137,13 +137,13 @@ SurveyJS 问卷本体独立于互动：**发起互动时即可设计**，创建�
 
 ## 8. 审核（[ADR-0017](adr/0017-unified-moderation-system.md)）
 
-统一的一套队列，桌面 `/#/reviews`，手机 `/#/m/review`。核心是五张桌，另加一张明信片复核桌：
+统一的一套队列，桌面 `/#/reviews`，手机 `/#/m/review`。共六张桌：
 
 | 桌 | 处理什么 |
 |---|---|
 | 身份 | 学生 / 教师身份认证申请（人工通道） |
 | 密码重置 | 忘记密码的手动重置申请 |
-| 内容 | 新闻 / 互动 / 教程发布送审（三张子桌共用一条队列） |
+| 内容 | 新闻 / 活动 / 教程发布送审（三张子桌共用一条队列） |
 | 意见反馈 | 用户反馈 |
 | 举报案 | 评论 / 内容举报；成立时按对象执行默认处置（内容下架 / 评论墓碑 / 全站禁言） |
 | 明信片 | AI 判定不匹配的登记复核（双面照片 + AI 结论 + 通过 / 不通过 + 备注） |
@@ -197,8 +197,8 @@ SurveyJS 问卷本体独立于互动：**发起互动时即可设计**，创建�
 | `/auth/` | 账号与认证 |
 | `/tasks/` | 任务 |
 | `/news/` · `/tutorials/` | 新闻 · 教程 |
-| `/activities/` | 互动（`/#/activity`） |
-| `/events/` | 活动（限时）；`/events/postcard/` 为明信片模块 |
+| `/activities/` | 活动（`/#/activity`） |
+| `/events/` | 活动壳（无通用 CRUD）；`/events/postcard/` 为明信片模块 |
 | `/reviews/` | 审核台 |
 | `/recruitment/` | 招生与加入 |
 | `/messaging/` | 评论 / 私信 / 通知 / 横幅 |
@@ -214,8 +214,8 @@ SurveyJS 问卷本体独立于互动：**发起互动时即可设计**，创建�
 
 ```text
 accounts/     账号、登录、认证、会话、能力投影
-activities/   互动（众议/征集/展示/调研）与问卷
-events/       活动（限时）+ 形态模块 modules/postcard
+activities/   活动（众议/征集/展示/调研）与问卷
+events/       活动壳 + 形态模块 modules/postcard（通用 CRUD 已下线）
 about/        关于页五块内容
 announcements/全站弹窗公告与已读台账
 attachments/  统一附件与 tus 可续传上传
@@ -225,7 +225,7 @@ messaging/    评论区 / 私信 / 通知 / 横幅
 news/         新闻
 panorama/     校园全景图（瓦片化）
 recruitment/  招生与加入
-reviews/      统一审核队列（五张桌 + 明信片桌）
+reviews/      统一审核队列（六张桌）
 tasks/        任务与标签
 tutorials/    教程
 frontend/     React SPA（src/ · e2e/ · dist/）

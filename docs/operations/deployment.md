@@ -26,6 +26,7 @@ Nginx
 - WebSocket 两条：`/ws/messaging/`（须登录，推私信 / 通知 / 当前评论区）与 `/ws/exam-board/`（匿名可连，教室看板课表与题目误刊广播，[ADR-0018](../adr/0018-exam-board-batch-and-public-ws.md)）。
 - 前端 `frontend/dist/` 由 Django 的 `TEMPLATES["DIRS"]` 直接渲染，`STATICFILES_DIRS` 收集其静态资源；**没有独立的前端服务**。
 - 更新守护进程与 Gunicorn 同生命周期：停 `club` 时 systemd 清整个 cgroup，因此没有单独的 `club-updater.service`（`scripts/install.sh` 会停用并移除历史遗留的该 unit）。
+- 明信片照片清理由独立的 **`club-postcard-gc.timer`**（hourly，`Persistent=true`）驱动 `manage.py postcard_photo_gc`；它与 web 服务生命周期解耦，安装脚本自动创建并启用。
 - 维护拦截是**文件旗标** `run/MAINTENANCE`，中间件只读文件、不读数据库——保证 `migrate` 期间不会死锁 SQLite。
 
 ### Nginx 两段协议
@@ -248,10 +249,11 @@ sudo ./scripts/install.sh
 6. 执行 `migrate` 与 `collectstatic --noinput`，写 `run/applied-release`（就地安装取 `git rev-parse HEAD`；独立安装取包名里的 SHA）。
 7. 创建第一个超级用户（已存在超管则跳过；`createsuperuser --noinput`）。
 8. 写 `/etc/systemd/system/club.service`（`Type=notify`、`ExecStart=$DIR/start.sh`、`ExecReload=/bin/kill -s HUP $MAINPID`、`Restart=on-failure`）。
-9. 写 Nginx 站点（Debian 布局建软链并删 `default`；RHEL 布局把 `default.conf` 改名 `.disabled`），`nginx -t` 后 reload。
-10. 写 `/etc/sudoers.d/club`：服务用户免密执行 `systemctl start|stop|restart|reload|is-active club`（含 `is-active --quiet`，更新器健康检查用）。
-11. `systemctl daemon-reload && systemctl enable --now club`。
-12. SELinux 处于 Enforcing / Permissive 时给 `staticfiles` / `static` / `media` / `run` 打标签并放行 `httpd_can_network_connect`；有 firewalld 则放行 `http`。
+9. 写 `/etc/systemd/system/club-postcard-gc.service` + `.timer`（每小时运行 `manage.py postcard_photo_gc`，`Persistent=true`、随机延迟 ≤300s）并启用 timer。
+10. 写 Nginx 站点（Debian 布局建软链并删 `default`；RHEL 布局把 `default.conf` 改名 `.disabled`），`nginx -t` 后 reload。
+11. 写 `/etc/sudoers.d/club`：服务用户免密执行 `systemctl start|stop|restart|reload|is-active club`（含 `is-active --quiet`，更新器健康检查用）。
+12. `systemctl daemon-reload && systemctl enable --now club`。
+13. SELinux 处于 Enforcing / Permissive 时给 `staticfiles` / `static` / `media` / `run` 打标签并放行 `httpd_can_network_connect`；有 firewalld 则放行 `http`。
 
 ### 3.3 安装后的收尾
 
@@ -359,6 +361,14 @@ uv run python manage.py sweep_survey_uploads --apply     # 确认后删除（文
 uv run python manage.py sweep_survey_uploads --days 14   # 放宽保留窗口（默认 7 天）
 ```
 
+明信片照片回收（安装脚本已配 `club-postcard-gc.timer` 每小时执行；幂等，可手动补跑）：
+
+```bash
+uv run python manage.py postcard_photo_gc
+```
+
+它做三件事：活动结束 → 照片文件全量清除（登记数据保留）；终态失败照片超 24h → 删文件；`pending` 卡死超 1h → 转人工复核。输出 JSON 统计（`ended_events_purged` / `ttl_purged` / `stale_pending_to_manual`）。
+
 Nginx 侧：
 
 ```bash
@@ -448,7 +458,7 @@ cat /opt/club/run/applied-release
 |---|---|---|
 | 数据库（SQLite） | `<安装目录>/db.sqlite3` | 缺省部署的全部业务数据 |
 | 数据库（PostgreSQL） | 本机 `club` 库（与站点同机） | `DB_ENGINE=postgresql` 时的全部业务数据 |
-| 公开媒体 | `<数据根>/media/` | 头像、新闻封面、互动图片、教程、附件、考试误刊等 |
+| 公开媒体 | `<数据根>/media/` | 头像、新闻封面、活动图片、教程、附件、考试误刊等 |
 | 私有媒体 | `<数据根>/private_media/` | 身份证明（`IdentityProof`），**不在** `MEDIA_ROOT` 内，由鉴权视图服务 |
 | 离线 IP 库 | `<安装目录>/data/ip2region_v4.xdb`（或 `IP2REGION_DB` 指向） | 约 11 MB，**不入 git**；不参与更新器同步，换机时需单独放回。缺失时登录事件只记 IP、不解析城市 |
 | App 分发 | `<数据根>/app-update/` | App 更新产物（manifest.json / latest.apk），nginx `/app-update/` 只读服务 |

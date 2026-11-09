@@ -61,7 +61,7 @@ frontend/
 │   ├── embed.ts           # ?embed=1 判定（useEmbedMode）
 │   ├── turnstile.ts       # Cloudflare Turnstile 按需加载与 useTurnstile
 │   ├── pages/             # 路由页面（PascalCase，*Page.tsx）
-│   │   ├── activity/      # 互动详情壳与面板：Collection/Exhibition/Deliberation/Survey
+│   │   ├── activity/      # 活动详情壳与面板：Collection/Exhibition/Deliberation/Survey
 │   │   └── review/        # 审核预览组件（ReviewPreview）
 │   ├── components/        # 跨页共享组件（布局、守卫、评论、消息、编辑器…）
 │   │   ├── profile/       # 个人中心面板（资料/密码/会话/认证/权限/禁言…）
@@ -85,8 +85,8 @@ frontend/
 
 `components/` 分组职责（不逐个穷举）：
 
-- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`UserMenu`（顶栏头像菜单：`个人中心 / 私信 / 通知 / 待办 / 任务 / 互动 / 反馈 / 审核队列` 按能力裁剪，**「后台管理」只在 `utils/roles.ts::canAccessAdmin(role.variant)` 为真时出现**，即 `admin` / `superadmin` 两种 `is_staff` 徽章）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`、`ShellVersionGate`（App 壳版本闸门：版本码过低时提示下载新版 APK，可暂时跳过）、`AnnouncementHost`（全站弹窗公告宿主：进入站点后拉 `/announcements/active/` 逐条弹，关闭即记已读）。
-- **内容与互动**：`CommentSection`（评论树，含协管 UI）、`MessageThread`（私信/任务讨论线程）、`Avatar`、`ReportButton`、`AuthorReviewBanner`（作者视角审核状态横幅）、`Pagination`、`ArticleToc`（正文目录）、`ClubFeed` + `feed/FeedCards`（首页动态流）。
+- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`UserMenu`（顶栏头像菜单：`个人中心 / 私信 / 通知 / 待办 / 任务 / 活动 / 反馈 / 审核队列` 按能力裁剪，**「后台管理」只在 `utils/roles.ts::canAccessAdmin(role.variant)` 为真时出现**，即 `admin` / `superadmin` 两种 `is_staff` 徽章）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`、`ShellVersionGate`（App 壳版本闸门：版本码过低时提示下载新版 APK，可暂时跳过）、`AnnouncementHost`（全站弹窗公告宿主：进入站点后拉 `/announcements/active/` 逐条弹，关闭即记已读）。
+- **内容与活动**：`CommentSection`（评论树，含协管 UI）、`MessageThread`（私信/任务讨论线程）、`Avatar`、`ReportButton`、`AuthorReviewBanner`（作者视角审核状态横幅）、`Pagination`、`ArticleToc`（正文目录）、`ClubFeed` + `feed/FeedCards`（首页动态流）。
 - **表单与编辑器**：`RichTextEditor`（Tiptap 封装）、`DocxPreview`、`UserSearchSelect`（用户搜索选择器）、`MentionField`（@ 提及）、`CommentThreadStatusField`（评论线程开关）、`PasswordInput`、`SurveyFill`。
 - **视图部件**：`TaskGantt`（frappe-gantt 甘特）、`TaskTimeline`（任务时间线）。
 - **看板娘**：`mascot/MascotHost`、`mascot/loadWidget`（懒加载 chunk）、`mascot/speak`（气泡喊话）。
@@ -115,10 +115,8 @@ frontend/
 | `/m` | `MobileHomePage` |  | 手机版首页 |
 | `/m/news` | `MobileNewsPage` |  | 手机版新闻列表 |
 | `/m/news/:id` | `MobileNewsDetailPage` |  | 手机版新闻详情 |
-| `/m/activity` | `MobileActivityPage` |  | 手机版互动列表 |
-| `/m/activity/:id` | `MobileActivityDetailPage` |  | 手机版互动详情（众议投票 / 调研作答 / 展示画廊） |
-| `/m/events` | `MobileEventsPage` |  | 手机版活动列表（限时；筛选 chips + 加载更多） |
-| `/m/events/:id` | `MobileEventDetailPage` |  | 手机版活动详情（时间窗 / 正文 / 组织者；到点自动关闭） |
+| `/m/activity` | `MobileActivityPage` |  | 手机版活动列表 |
+| `/m/activity/:id` | `MobileActivityDetailPage` |  | 手机版活动详情（众议投票 / 调研作答 / 展示画廊） |
 | `/m/tutorials` | `MobileTutorialsPage` |  | 手机版教程列表 |
 | `/m/tutorials/:id` | `MobileTutorialDetailPage` |  | 手机版教程详情（视频 / 文档 / 收藏） |
 | `/m/join` | `MobileJoinPage` |  | 手机版加入（公告 + 阅读确认） |
@@ -138,16 +136,16 @@ frontend/
 | `/news/new` | `NewsFormPage` | ✅ | 新建/编辑共用表单 |
 | `/news/:id` | `NewsDetailPage` |  | 新闻详情（正文 + 评论 + 附件） |
 | `/news/:id/edit` | `NewsFormPage` | ✅ | 编辑新闻 |
-| `/activity` | `ActivityListPage` |  | 互动列表 |
+| `/activity` | `ActivityListPage` |  | 活动列表 |
 | `/activity/new` | `ActivityFormPage` | ✅ | 新建/编辑共用表单 |
-| `/activity/:id` | `ActivityDetailPage` |  | 互动详情（内部壳 `ActivityDetailShell`，按类型挂面板） |
-| `/activity/:id/edit` | `ActivityFormPage` | ✅ | 编辑互动 |
+| `/activity/:id` | `ActivityDetailPage` |  | 活动详情（内部壳 `ActivityDetailShell`，按类型挂面板） |
+| `/activity/:id/edit` | `ActivityFormPage` | ✅ | 编辑活动 |
 | `/activity/:id/survey-edit` | `SurveyEditorPage` | ✅ | 问卷编辑（复用 `SurveyCreatorPage`） |
 | `/activity/:id/survey-responses` | `SurveyResponsesPage` | ✅ | 答复列表 |
 | `/activity/:id/survey-stats` | `SurveyStatsPage` | ✅ | 答复统计（survey-analytics 仪表盘） |
-| `/events` | `EventsPage` |  | 活动列表（限时；按状态分 tab）；手机 UA 由 `MobileAware` 改道到 `/m/events` |
-| `/events/new` | `EventFormPage` | ✅ | 发起活动（创建恒为草稿） |
-| `/events/:id` | `EventDetailRoute` → `EventDetailPage` |  | 活动详情；手机 UA 重定向到 `/m/events/:id` |
+| `/postcard` | `PostcardPage` |  | 明信片互寄用户页（独立页；主页「重大活动」入口） |
+| `/postcard/admin` | `PostcardAdminPage` | ✅ | 明信片管理端（配置 / 条码 / AI / 复核 / 记录 / 统计 / 建议与审计） |
+| `/postcard/receive` | `PostcardReceivePage` | ✅ | 明信片签收扫码页 |
 | `/tasks` | `TaskListPage` | ✅ | 任务列表（列表/时间线/甘特视图切换）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
 | `/tasks/new` | `TaskFormPage` | ✅ | 新建任务（独立布局，不含全站外壳） |
 | `/tasks/:id` | `TaskDetailPage` | ✅ | 任务详情（动作按钮由 `available_actions` 驱动）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
@@ -155,7 +153,7 @@ frontend/
 | `/messages` | `MessagePage` | ✅ | 私信（无选中会话） |
 | `/messages/:id` | `MessagePage` | ✅ | 私信（指定会话） |
 | `/notifications` | `NotificationsPage` | ✅ | 通知中心；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
-| `/inbox` | `InboxPage` | ✅ | 「待办」聚合（任务/互动/私信等 kind 合并）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
+| `/inbox` | `InboxPage` | ✅ | 「待办」聚合（任务/活动/私信等 kind 合并）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
 | `/feedback` | `FeedbackPage` |  | 意见反馈（匿名可提交） |
 | `/feedback/:id` | `FeedbackDetailPage` | ✅ | 反馈详情与处理 |
 | `/reviews` | `ReviewQueuePage` | ✅ | 审核队列（内容/身份/反馈/举报分栏）；手机 UA 由 `MobileAware` 改道到对应 `/m` 页面 |
@@ -184,7 +182,7 @@ frontend/
 
 ### 手机版工作台（2026-10-18）
 
-手机版不再是「只能看新闻/互动」的只读站点：审核台、待办、通知、任务列表与详情都有 `/m` 专属实现。
+手机版不再是「只能看新闻/活动」的只读站点：审核台、待办、通知、任务列表与详情都有 `/m` 专属实现。
 
 - **入口**：`MobileMePage` 按权限分组渲染「工作 / 常用 / 更多」；首页九宫格对登录用户追加「任务」「待办」，2026-11 起新增「活动」「查询」两格。
 - **改道**：`App.tsx` 的 `MobileAware` 在手机 UA 下把 `/reviews`、`/inbox`、`/notifications`、`/tasks`、`/tasks/:id`
@@ -193,7 +191,7 @@ frontend/
 - **刷新改道**：`utils/uaSwitch.ts` 的 `TO_MOBILE` / `TO_DESKTOP` 也登记了这批页面
   （含 `/tasks/:id` 的数字 id 特判），否则切换 UA 类别刷新时会掉回 `/m` 首页。
 - **共用逻辑**：审核台的取数与「跳过已浏览条目」规则抽到 `src/utils/reviewDesk.ts`，桌面 `ReviewQueuePage`
-  与手机 `MobileReviewPage` 共用 `deskTabs()` / `firstIdentity()` / `firstContent()` / `firstFeedback()` / `firstReport()`。
+  与手机 `MobileReviewPage` 共用 `deskTabs()` / `firstIdentity()` / `firstContent()` / `firstFeedback()` / `firstReport()` / `firstPostcard()`。
   新增审核桌时必须改这一处，否则两端会漂移（`src/utils/__tests__/reviewDesk.test.ts` 锁定顺序与可见性）。
 - **页面框架**：二级页统一用 `components/MobilePage.tsx`（返回 + 标题 + 右侧操作 + 底部 tab）；
   样式在 `styles/mobile-work.css`（`mw-` 前缀），审核内容预览直接复用 `ReviewPreview`，
@@ -203,7 +201,7 @@ frontend/
 
 ### 手机版补齐与 App 壳（2026-11）
 
-- **活动（限时）**：`/m/events` 与 `/m/events/:id`（筛选 chips + 加载更多）；桌面 `/events`、`/events/:id` 在手机 UA 下改道，`utils/uaSwitch.ts` 同步登记。
+- **明信片互寄**：用户页 `/#/postcard` 为独立页，主页「重大活动」与手机版首页「重大活动」直接进入（浏览器新标签页、App 壳内同窗口；没有 `/m/postcard` 专属路由，页面自身自适应）；管理端 `/#/postcard/admin`、签收 `/#/postcard/receive` 均为登录守卫页。
 - **按 UA 切换版式（不跳转）**：社员查询 `/v`（含 `?q=` 深链接，落地自动查一次）与意见反馈 `/feedback` 直接渲染手机版版式，结果卡与扫码校验页同源。
 - **「我的」精简**：别处能到达的入口不重复列——任务 / 待办 / 社员查询走首页九宫格，全景图走「关于我们」，登录设备 / 注销账号收进「个人资料」；「我的」只留通知、私信、个人资料、意见反馈、课表、关于我们，加上按权限出现的审核台 / 考试日程编辑 / 后台管理。
 - **考试看板**：`/exam` 手机端不呈现看板本体（按教室大屏设计）；持 `can_manage_exam` 的账号从「我的 → 工作 → 考试日程编辑」进入纯编辑面板（`is-mobile-edit`：抽屉改文档流、科目表横向滚动），其他账号显示「请用大屏打开」。看板偏好（看板娘 / 提示音 / 语音播报）自 2026-11 起**默认全关**；`examBoard/prefs.ts` 版本升到 v3，旧 v2 记录统一按「未选择」一次性落成关闭。
@@ -214,7 +212,7 @@ frontend/
 
 | 场景 | 组件 |
 |------|------|
-| 互动详情（`ActivityDetailShell` 按互动类型挂面板） | `activity/CollectionPanel`（征集）、`activity/ExhibitionPanel`（展览）、`activity/DeliberationPanel`（审议）、`activity/SurveyPanel`（调研问卷） |
+| 活动详情（`ActivityDetailShell` 按活动类型挂面板） | `activity/CollectionPanel`（征集）、`activity/ExhibitionPanel`（展览）、`activity/DeliberationPanel`（审议）、`activity/SurveyPanel`（调研问卷） |
 | 审核队列预览 | `pages/review/ReviewPreview` |
 | 首页「社团概览」社员查询 | `member/MemberLookup`（结果弹窗复用 `member/MemberResultCard`，与 `/#/v/:code` 公开校验页共用同一结果卡） |
 | 个人中心（`UserProfile` 的 tab 面板） | `profile/ProfileHero`、`ProfileSideNav`、`ProfileTabs`、`ProfileEditPanel`、`VerificationPanel`、`PasswordPanel`、`SessionsPanel`、`ContentListPanel`、`PermissionsPanel`、`MuteUserPanel` |
@@ -231,8 +229,8 @@ URL 查询参数约定（hash 部分之后）：tab 状态用查询参数（如 
 | `api/client.ts` | `/auth` | 登录/登出/`me`/资料/改密/密码重置/注册/邮箱认证/会话列表/用户检索/社员查询（含额度）/收件箱；`api/security.ts` 另封装安全中心（设备 / 登录记录 / TOTP / 恢复代码） |
 | `api/news.ts` | `/news` | 列表/详情/我的/增删改/图片上传/featured/hot/tags/overview/feed |
 | `api/tasks.ts` | `/tasks` | 任务 CRUD、认领/审批/完成/指派等动作、标签 |
-| `api/activities.ts` | `/activities` | 互动 CRUD、生命周期动作、问卷 schema、征集/展品 |
-| `api/events.ts` | `/events` | 活动（限时）列表 / 详情 / 创建 / 编辑 / 发布 / 归档 |
+| `api/activities.ts` | `/activities` | 活动 CRUD、生命周期动作、问卷 schema、征集/展品 |
+| `api/postcard.ts` / `api/postcardAdmin.ts` | `/events/postcard` | 公开侧：门户 / 登记 / 查询 / 历史；管理侧：配置 / 条码 / AI / 复核 / 记录 / 统计 / 签收 |
 | `api/messaging.ts` | `/messaging` | 私信会话、通知、评论线程、未读数、横幅公告 |
 | `api/reviews.ts` / `api/feedback.ts` / `api/reports.ts` | `/reviews` | 发布审核、意见反馈、举报案 |
 | `api/identityReviews.ts` | `/auth` | 身份审核（预约认证、证明投递） |
@@ -305,8 +303,8 @@ try {
 | `can_manage_news` | 新闻列表的新建/编辑入口；`NewsFormPage` 打开前预检 |
 | `can_review_content` / `can_review_identity` | 审核队列入口（`AppShell`）；新闻列表的审核入口；`ReviewQueuePage` 分栏 |
 | `can_view_feedback` / `can_handle_reports` | 反馈详情可见性；审核队列入口与反馈/举报分栏 |
-| `can_change_activity` | 互动详情管理动作（编辑/生命周期）；`SurveyEditorPage` 编辑权限（或本人创建） |
-| `can_review_collections` | 互动征集复审（`CollectionPanel` 的 isReviewer） |
+| `can_change_activity` | 活动详情管理动作（编辑/生命周期）；`SurveyEditorPage` 编辑权限（或本人创建） |
+| `can_review_collections` | 活动征集复审（`CollectionPanel` 的 isReviewer） |
 | `can_edit_about` | 关于页/首页编辑入口；`JoinEditorPage` 问卷编辑权限 |
 | `can_manage_panoramas` | 全景游览页的「管理全景图」入口与全景图管理页（导入/编辑/删除/重切） |
 | `can_manage_exam` | 考试看板管理态（编辑考试/批次） |
@@ -314,7 +312,7 @@ try {
 | `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_force_publish` / `can_manage_comment_thread` / `can_manage_announcement` / `can_manage_announcements` / `can_review_password_reset` | 主要在个人中心「权限」面板（`PermissionsPanel`）中展示说明；相关操作由后端校验。`can_review_password_reset` 另决定审核台「密码重置」桌与「审核台」入口显隐 |
 
 - `components/profile/PermissionsPanel.tsx` 集中维护全部 `can_*` 的中文标签与说明（新增能力字段时在此补一行）。
-- 另一类投影是**资源随附的服务器计算标志**：任务详情的 `available_actions` 决定操作按钮（`TaskDetailPage`——按钮显隐完全由后端给出，前端不自行推导生命周期）；互动详情的 `schema_editable` 决定问卷是否可编辑（叠加 `canManage`）；评论线程的 `can_manage` 决定协管按钮（`CommentSection`）。
+- 另一类投影是**资源随附的服务器计算标志**：任务详情的 `available_actions` 决定操作按钮（`TaskDetailPage`——按钮显隐完全由后端给出，前端不自行推导生命周期）；活动详情的 `schema_editable` 决定问卷是否可编辑（叠加 `canManage`）；评论线程的 `can_manage` 决定协管按钮（`CommentSection`）。
 - 身份徽章：`me.role.variant/label`（`visitor/user/admin/superadmin`）驱动「未认证」提醒条（`visitor` 时显示，点击跳 `/profile?tab=verification`）与后台入口（见「移动版」）；`profile.is_verified` 门禁私信/待办入口的可见性。
 - 用户渲染：共享用户形状（`SimpleUserSerializer` 语义——`avatar` 相对路径、显示名 `nickname || username`）由 `components/Avatar.tsx` 落实：`avatar` 为空时渲染首字符默认头像；`user.permissions` 只出现在当前用户接口，其它用户的引用对象不含 `can_*`。
 
@@ -324,17 +322,16 @@ try {
 
 | 路由 | 页面 | 内容 |
 |------|------|------|
-| `/m` | `MobileHomePage` | 顶栏 + hero + 四宫格快捷入口 + 新闻/互动卡片流 |
+| `/m` | `MobileHomePage` | 顶栏 + hero + 四宫格快捷入口 + 新闻/活动卡片流 |
 | `/m/news` · `/m/news/:id` | `MobileNewsPage` · `MobileNewsDetailPage` | 新闻列表与详情（头图 / 正文 / 相关阅读 / 图片大图） |
-| `/m/activity` · `/m/activity/:id` | `MobileActivityPage` · `MobileActivityDetailPage` | 互动列表与详情（信息徽章 / 众议投票 / 调研作答 / 展示画廊；受限互动给登录入口） |
-| `/m/events` · `/m/events/:id` | `MobileEventsPage` · `MobileEventDetailPage` | 活动列表与详情（限时、到点自动关闭；筛选 chips + 加载更多） |
+| `/m/activity` · `/m/activity/:id` | `MobileActivityPage` · `MobileActivityDetailPage` | 活动列表与详情（信息徽章 / 众议投票 / 调研作答 / 展示画廊；受限活动给登录入口） |
 | `/m/tutorials` · `/m/tutorials/:id` | `MobileTutorialsPage` · `MobileTutorialDetailPage` | 教程列表与详情（视频播放 / 文档下载 / 收藏） |
 | `/m/join` · `/m/join/form` | `MobileJoinPage` · `MobileJoinFormPage` | 加入公告（阅读确认）与自我介绍问卷（SurveyJS） |
 | `/m/me` | `MobileMePage` | 「我的」：资料卡 + 工作 / 常用服务入口 + 外观切换 + 登录/退出 |
 | `/m/review` · `/m/inbox` · `/m/notifications` · `/m/tasks` · `/m/tasks/:id` | `MobileReviewPage` 等 | 工作台：审核台 / 待办 / 通知 / 任务列表与详情（见「手机版工作台」） |
 
 - 手机版内闭环：首页快捷格、列表卡片与「更多」一律指向 `/m/*`——列表进详情、教程、加入都不跳出手机版。
-- 共享外壳：样式 `styles/mobile.css`（`.m-app` 作用域：topbar / 渐变 hero / 四宫格快捷入口 / 卡片流 / 固定底部 tab），每个页面自渲染 `<MobileTabBar />`（`components/MobileTabBar.tsx`，四个 tab：首页/互动/新闻/我的，`NavLink` 指向 `/m/*`，首页用 `end` 精确匹配）。
+- 共享外壳：样式 `styles/mobile.css`（`.m-app` 作用域：topbar / 渐变 hero / 四宫格快捷入口 / 卡片流 / 固定底部 tab），每个页面自渲染 `<MobileTabBar />`（`components/MobileTabBar.tsx`，四个 tab：首页/活动/新闻/我的，`NavLink` 指向 `/m/*`，首页用 `end` 精确匹配）。
 - 未读红点：底部 tab、首页铃铛与「我的」入口的未读数字（私信 + 通知）来自 `api/unreadBadges.ts` 的模块级 store（30 s 轮询 + 窗口可见 / 聚焦刷新 + App 壳 `club:unread` 事件）。
 - 自动改道：`HomeRoute` 在根路径用 `utils/device.ts::isMobileDevice()`（UA 正则命中 iPhone/Android/Windows Phone 等）判断手机浏览器，渲染 `<Navigate to="/m" replace />`；深链接、桌面端与「请求桌面站点」模式不受影响。
 - UA 变化改道：`index.tsx` 在 React 渲染前调用 `utils/uaSwitch.ts::applyUaSwitch()`，把当前 UA 归为三档（`app` / `mobile` / `desktop`，见 `device.ts::classifyUserAgent`）并与 `localStorage` 里的上一次类别比较。**只在跨「移动侧 / 桌面侧」变化时**跳一次：变成移动侧 → 手机版等价页（`/news/:id` → `/m/news/:id`，无对应页面则 `/m`），变成桌面侧 → 桌面版等价页（`/m/me` → `/profile`，其余回落 `/`）。只比类别不比字符串，浏览器版本号升级、壳版本升级都不会误跳；类别不变时深链接保持原样。跳转用 `history.replaceState` 改 hash，不新增历史记录、不产生闪屏。
@@ -345,7 +342,7 @@ try {
 
 Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?embed=1`）时，URL 带 `embed=1`。判定集中在 `src/embed.ts::useEmbedMode()`（读 hash 路由的 query）：
 
-- `PageChrome` 在 embed 时返回 `<div className="cs embed-root">`，跳过 `AppShell` 的顶栏/菜单/页脚——详情类页面（新闻/教程/互动）因此可在 iframe 中干净渲染；
+- `PageChrome` 在 embed 时返回 `<div className="cs embed-root">`，跳过 `AppShell` 的顶栏/菜单/页脚——详情类页面（新闻/教程/活动）因此可在 iframe 中干净渲染；
 - `App.tsx` 的 `MaybeMascot` 在 embed 时不渲染看板娘；`AppShell` 自身也有 embed 早退分支兜底。
 
 服务端配合 `X_FRAME_OPTIONS = "SAMEORIGIN"`（`config/settings.py`）：允许同站 iframe 嵌入，同时保持对第三方点击劫持的防护。

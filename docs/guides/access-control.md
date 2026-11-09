@@ -25,10 +25,10 @@
 | 权限代号 | 含义 |
 |---|---|
 | `news.manage_news` | 管理新闻 |
-| `activities.manage_activity` | 可管理任意互动 |
+| `activities.manage_activity` | 可管理任意活动 |
 | `activities.review_collection` | 可复审征集作品 |
-| `events.manage_events` | 可管理任意活动（限时） |
-| `events.manage_event_types` | 可装载 / 卸载活动形态（模块注册表预留，暂无 API 消费） |
+| `events.manage_postcard` | 可管理明信片互寄（配置 / 条码 / 记录 / 导出 / 统计 / AI） |
+| `events.review_postcard` | 可复核与签收明信片（`manage_postcard` 隐含复核） |
 | `tasks.manage_tasks` | 管理任务 |
 | `tasks.assign_task` | 指派任务 |
 | `common.manage_tags` | 管理标签（新闻与任务共用） |
@@ -46,6 +46,8 @@
 | `messaging.manage_announcement` | 管理横幅公告 |
 | `announcements.manage_announcements` | 发布 / 管理全站弹窗公告（含已读统计） |
 | `reviews.mute_user` | 全站禁言（禁言服务已迁入 `reviews` 应用） |
+
+> `events.manage_events` / `events.manage_event_types` 仍保留在 `Event` 模型元数据与能力投影里（`can_manage_events`），但通用活动 CRUD 下线后**没有 API 消费**；明信片的管理与复核使用上面两个命名权限。
 
 > 完整清单（含 Django 默认 CRUD）可在 Django Admin 的「组」页面查看。拆新权限的三条触发：**持有者现实中可能不同** / **前端要门禁独立 affordance** / **需独立审计**——任一满足才拆，否则并入最粗的已有权限（默认偏粗）。
 
@@ -65,7 +67,7 @@
 ## 能力投影（前端契约）
 
 - 后端把 `has_perm` 派生为**语义化 `can_*` 布尔**，随 `GET /auth/me/` 返回；`permissions` 字段**恒列全量键（true / false 都在）**，前端从不接触 `news.manage_news` 这类原始代号。
-- 当前全量 20 键：
+- 当前全量 22 键：
 
 | 能力键 | 来源权限 |
 |---|---|
@@ -88,7 +90,9 @@
 | `can_manage_announcements` | `announcements.manage_announcements` |
 | `can_review_password_reset` | `accounts.review_password_reset` |
 | `can_mute_user` | `reviews.mute_user` |
-| `can_manage_events` | `events.manage_events` |
+| `can_manage_events` | `events.manage_events`（通用活动 CRUD 已下线，当前无消费端） |
+| `can_manage_postcard` | `events.manage_postcard` |
+| `can_review_postcard` | `events.review_postcard` 或 `events.manage_postcard` 或超管 |
 
 - 能力是**纯角色投影**（“凭你的角色能不能做 X”）；对象级判断（“能不能动**这条**”）由前端拿 `is_owner` / 对象字段另行组合（如编辑按钮显隐 = `can_manage_tasks || is_creator`）。
 - 契约测试钉死「后端能力键集合 == 前端标签表键集合」，防止静默漂移。
