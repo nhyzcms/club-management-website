@@ -253,6 +253,8 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
       if (Object.keys(state.ai.extra_headers).length) overrides.extra_headers = state.ai.extra_headers;
       if (state.ai.ip_blacklist.length) overrides.ip_blacklist = state.ai.ip_blacklist;
       if (state.ai.api_key) overrides.api_key = state.ai.api_key;
+      // dry_run：模拟环境的演练不写正式审计（后端据此跳过 _audit）。
+      overrides.dry_run = true;
       return request<{ ok: boolean; error?: string; latency_ms?: number; model?: string; reply?: string }>(
         "/admin/ai/test/",
         { method: "POST", body: JSON.stringify(overrides) },
@@ -294,6 +296,7 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
     importSchools: (image: File) => {
       const fd = new FormData();
       fd.set("image", image);
+      fd.set("dry_run", "1");
       return request<SchoolsImportResult>("/admin/schools/import/", { method: "POST", body: fd });
     },
 

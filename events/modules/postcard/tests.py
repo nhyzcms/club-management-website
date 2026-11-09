@@ -2533,3 +2533,84 @@ class AIExplainUploadTest(TestCase):
         upload = SimpleUploadedFile("s.jpg", _jpeg_bytes(), content_type="image/jpeg")
         resp = client.post(self.url, {"image": upload}, format="multipart")
         self.assertEqual(resp.status_code, 403)
+
+
+class SimDryRunNoAuditTest(TestCase):
+    """模拟环境（前端 `?sim=1`）：AI 相关调用带 dry_run，正式审计不留痕。
+
+    模拟层唯一会真打的三个后端接口里，「测试连接」「导入海报」原本会写 `ai_test` /
+    `schools_import` 审计——管理员在模拟里点两下就会在正式审计日志里留下假记录，
+    与「模拟不与正式联动」的红线冲突。带 `dry_run` 时跳过审计，其余行为不变。
+    """
+
+    def setUp(self):
+        cache.clear()
+        _config_event()
+        _ai_config()
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+
+        def read(self):
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def test_ai_test_dry_run_skips_audit(self):
+        body = json.dumps({"choices": [{"message": {"content": "正常"}}]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ):
+            resp = self.client.post(
+                "/events/postcard/admin/ai/test/",
+                {"base_url": "https://temp.example.com/v1", "model": "temp", "dry_run": True},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.json()["ok"])
+        self.assertFalse(PostcardAuditLog.objects.filter(action="ai_test").exists())
+
+    def test_ai_test_without_dry_run_audits(self):
+        body = json.dumps({"choices": [{"message": {"content": "正常"}}]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ):
+            resp = self.client.post("/events/postcard/admin/ai/test/", {}, format="json")
+        self.assertTrue(resp.json()["ok"])
+        self.assertTrue(PostcardAuditLog.objects.filter(action="ai_test").exists())
+
+    def test_schools_import_dry_run_skips_audit(self):
+        fake = {
+            "schools": [{"region": "浦东新区", "name": "建平中学", "no": 1}],
+            "skipped": [],
+            "missing_no": 0,
+        }
+        image = SimpleUploadedFile("poster.jpg", _jpeg_bytes(size=(120, 120)), "image/jpeg")
+        with mock.patch("events.modules.postcard.ai.extract_schools", return_value=fake):
+            resp = self.client.post(
+                "/events/postcard/admin/schools/import/",
+                {"image": image, "dry_run": "1"},
+                format="multipart",
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(len(resp.json()["schools"]), 1)
+        self.assertFalse(PostcardAuditLog.objects.filter(action="schools_import").exists())
+
+    def test_schools_import_without_dry_run_audits(self):
+        fake = {"schools": [], "skipped": [], "missing_no": 0}
+        image = SimpleUploadedFile("poster.jpg", _jpeg_bytes(size=(120, 120)), "image/jpeg")
+        with mock.patch("events.modules.postcard.ai.extract_schools", return_value=fake):
+            resp = self.client.post(
+                "/events/postcard/admin/schools/import/", {"image": image}, format="multipart",
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(PostcardAuditLog.objects.filter(action="schools_import").exists())
