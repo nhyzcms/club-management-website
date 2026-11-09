@@ -3,6 +3,7 @@ import {
   SIM_BADGE_TEXT,
   enterSim,
   exitSim,
+  exitSimAndReload,
   isPostcardSurface,
   isSimMode,
   isSimRoute,
@@ -64,10 +65,7 @@ export default function PostcardSimHost() {
       <button
         type="button"
         className="pc-sim-dock-exit"
-        onClick={() => {
-          exitSim();
-          window.location.hash = "#/postcard";
-        }}
+        onClick={() => exitSimAndReload("#/postcard")}
       >
         退出模拟
       </button>

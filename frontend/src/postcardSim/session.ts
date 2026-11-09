@@ -51,6 +51,19 @@ export function exitSim(): void {
   installPostcardSimApi(null);
 }
 
+/**
+ * 退出模拟并回到正式环境。
+ *
+ * 必须 **reload**：只卸载沙箱的话，已经渲染出来的页面还留着模拟数据（用户页
+ * 不会重新取数），看起来像是「退出了但数据还在」。刷新是最省事也最不会出错的
+ * 做法——沙箱本来就在内存里，刷新即清空，与需求一致。
+ */
+export function exitSimAndReload(hash = "#/postcard/admin"): void {
+  exitSim();
+  if (window.location.hash !== hash) window.location.hash = hash;
+  window.location.reload();
+}
+
 /** 沙箱是否已装载（与 URL 无关：进了模拟就一直有效，直到退出 / 刷新）。 */
 export function isSimActive(): boolean {
   return installed !== null;

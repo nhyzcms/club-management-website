@@ -46,6 +46,7 @@ import {
   archiveSeason,
   photoDataUrl,
   randomRegCode,
+  REVIEW_LABELS,
   recordsPage,
   saveConfig,
   statsOf,
@@ -334,23 +335,22 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
       for (const reg of state.registrations) {
         const item = reg.items.find((i) => i.id === itemId);
         if (!item) continue;
-        item.review_state = decision === "pass" ? "approved" : "manual_failed";
+        item.review_state = decision === "pass" ? "manual_passed" : "manual_failed";
         if (decision === "pass") {
-          // 通过即删照片（与正版生命周期一致）。
+          // 通过即删照片（与正式环境的生命周期一致）。
           item.photos = [];
         }
+        // 人工判定覆盖 AI 判定，但保留原判定供追溯（后端 AdminReviewDecisionView 同口径）。
         item.ai_verdict = {
-          ...(item.ai_verdict || {}),
           manual: { decision, note },
+          ai_verdict: item.ai_verdict,
         };
-        if (decision === "fail") {
-          reg.status = "cancelled";
-          item.status = "cancelled";
-        }
+        // 注意：这里**不改**登记单 / 明信片状态。后端只改照片的复核态，
+        // 「人工不通过」不等于「取消登记」——之前模拟里把它一并取消是错的。
         return {
           item_id: itemId,
           review_state: item.review_state,
-          review_label: decision === "pass" ? "人工通过" : "人工不通过",
+          review_label: REVIEW_LABELS[item.review_state],
         };
       }
       throw new SimError("复核条目不存在。", 404);

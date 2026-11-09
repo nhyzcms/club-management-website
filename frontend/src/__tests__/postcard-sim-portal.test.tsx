@@ -125,7 +125,7 @@ describe("模拟环境 · 登记", () => {
     state.ai.model = "gpt-4o-mini";
     state.ai.api_key_set = true;
     const res = submit(state, [state.barcodes[0].code], 2);
-    expect(res.review.state).toBe("approved");
+    expect(res.review.state).toBe("ai_passed");
     expect(state.registrations[0].items[0].photos).toHaveLength(0);
   });
 
@@ -234,6 +234,36 @@ describe("模拟环境 · 三端联动（登记 → 审核台 → 签收 → 统
 
     expect(statsOf(state).items.reported).toBe(1);
     expect(statsOf(state).destination_schools).toBe(1);
+  });
+
+  it("复核不通过只改复核态，不取消登记单（与后端同口径）", async () => {
+    const state = seeded();
+    const admin = createSimPostcardAdminApi(state);
+    const user = createSimPostcardUserApi(state);
+    await user.register(
+      (() => {
+        const fd = new FormData();
+        fd.set("sender_name", "张三");
+        fd.set("grade", "g1");
+        fd.set("class_no", "3");
+        fd.set("dest_region", "浦东新区");
+        fd.set("dest_school", "建平中学");
+        fd.set("fingerprint", "fp-1");
+        fd.set("items", JSON.stringify([{ barcode: state.barcodes[0].code }]));
+        return fd;
+      })(),
+    );
+    const row = (await admin.reviewQueue(1, "manual_pending")).results[0];
+    await admin.reviewDecision(row.item_id, "fail", "照片与填写不一致");
+
+    const reg = state.registrations[0];
+    expect(reg.items[0].review_state).toBe("manual_failed");
+    expect(reg.items[0].ai_verdict?.manual).toEqual({ decision: "fail", note: "照片与填写不一致" });
+    // 关键：登记单与明信片状态不变（后端 AdminReviewDecisionView 只动照片复核态）
+    expect(reg.status).toBe("registered");
+    expect(reg.items[0].status).toBe("registered");
+    // 签收仍然可用，不会出现「该明信片所属登记已取消」
+    expect((await admin.lookup(row.barcode)).item_status).toBe("registered");
   });
 
   it("查询不存在的条码 → 明信片未登记", async () => {

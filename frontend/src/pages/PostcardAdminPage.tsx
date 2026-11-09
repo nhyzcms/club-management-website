@@ -9,7 +9,7 @@ import RecordsTab from "../components/postcard/admin/RecordsTab";
 import StatsTab from "../components/postcard/admin/StatsTab";
 import MiscTab from "../components/postcard/admin/MiscTab";
 import { isMobileDevice } from "../utils/device";
-import { SIM_BADGE_TEXT, enterSim, exitSim, isSimMode, isSimRoute } from "../postcardSim/session";
+import { SIM_BADGE_TEXT, enterSim, exitSimAndReload, isSimMode, isSimRoute } from "../postcardSim/session";
 import "../styles/postcard-admin.css";
 
 const TABS = [
@@ -71,10 +71,9 @@ export default function PostcardAdminPage() {
   };
 
   const leaveSim = () => {
-    // 明确退出：仅改 hash 不会清空（明信片页之间的切换要保留数据）。
-    exitSim();
-    setSim(false);
-    window.location.hash = "#/postcard/admin";
+    // 明确退出：仅改 hash 不会清空（明信片页之间的切换要保留数据），
+    // 而且已渲染的页面会留着模拟数据，所以卸载沙箱后直接刷新回正式环境。
+    exitSimAndReload("#/postcard/admin");
   };
 
   const content = (
