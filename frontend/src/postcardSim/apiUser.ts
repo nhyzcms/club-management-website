@@ -11,6 +11,8 @@ import type {
   PostcardRegistrationSummary,
   RegisterResult,
 } from "../api/postcard";
+import { POSTCARD_GRADES } from "../api/postcardAdmin";
+import { createRequest } from "../api/shared";
 import { PDF_MIME, buildPdf, bytesToDataUrl } from "./files";
 import {
   SimError,
@@ -23,12 +25,20 @@ import {
   photoDataUrl,
   portalOf,
   registrationSummary,
+  aiReady,
   requestManualReview,
   submitRegistration,
   updateOwnRegistration,
   type SimState,
   type SubmitItemInput,
+  type SimVerdict,
 } from "./state";
+
+const request = createRequest("/events/postcard");
+
+const GRADE_LABELS: Record<string, string> = Object.fromEntries(
+  POSTCARD_GRADES.map((g) => [g.value, g.label]),
+);
 
 /** 与后端 photos.MAX_EDGE / JPEG_QUALITY 同参数。 */
 const MAX_EDGE = 1280;
@@ -79,16 +89,14 @@ function readFileDataUrl(file: Blob): Promise<string> {
   });
 }
 
-/** 逐张读取 `photo_<i>_front/back` 并转成 data URL（模拟环境不落任何存储）。 */
-async function readPhotos(form: FormData, index: number): Promise<SubmitItemInput["photos"]> {
-  const photos: SubmitItemInput["photos"] = [];
+/** 取第 i 张明信片的两面原始文件（预览要原图上传，内存里再存压缩后的 data URL）。 */
+function readPhotoFiles(form: FormData, index: number): { side: "front" | "back"; file: Blob }[] {
+  const files: { side: "front" | "back"; file: Blob }[] = [];
   for (const side of ["front", "back"] as const) {
     const file = form.get(`photo_${index}_${side}`);
-    if (file instanceof Blob && file.size > 0) {
-      photos.push({ side, data_url: await photoToDataUrl(file) });
-    }
+    if (file instanceof Blob && file.size > 0) files.push({ side, file });
   }
-  return photos;
+  return files;
 }
 
 function announcementPdfUrl(state: SimState): string {
@@ -106,7 +114,24 @@ function announcementPdfUrl(state: SimState): string {
   return bytesToDataUrl(buildPdf(pages.length ? pages : [[""]]), PDF_MIME);
 }
 
-export function createSimPostcardUserApi(state: SimState): PostcardApi {
+export interface SimUserApiDeps {
+  /** 真调 `admin/ai/preview/` 拿判定；返回 null 表示 AI 不可用（转人工）。测试可注入。 */
+  previewAIReview?: (form: FormData) => Promise<SimVerdict | null>;
+}
+
+async function defaultPreviewAIReview(form: FormData): Promise<SimVerdict | null> {
+  const res = await request<{ ok: boolean; verdict?: SimVerdict; reason?: string }>(
+    "/admin/ai/preview/",
+    { method: "POST", body: form },
+  );
+  return res.ok && res.verdict ? res.verdict : null;
+}
+
+export function createSimPostcardUserApi(
+  state: SimState,
+  deps: SimUserApiDeps = {},
+): PostcardApi {
+  const previewAIReview = deps.previewAIReview ?? defaultPreviewAIReview;
   const api: PostcardApi = {
     portal: async () => portalOf(state),
 
@@ -118,9 +143,42 @@ export function createSimPostcardUserApi(state: SimState): PostcardApi {
       } catch {
         throw new SimError("提交的数据格式有误，请重试。");
       }
+      const senderName = String(form.get("sender_name") || "");
+      const grade = String(form.get("grade") || "");
+      const classNo = Number(form.get("class_no") || 0);
+      const destRegion = String(form.get("dest_region") || "");
+      const destSchool = String(form.get("dest_school") || "");
+
       const items: SubmitItemInput[] = [];
+      const verdicts: (SimVerdict | null)[] = [];
       for (let i = 0; i < parsed.length; i += 1) {
-        items.push({ barcode: String(parsed[i].barcode || ""), photos: await readPhotos(form, i) });
+        const barcode = String(parsed[i].barcode || "");
+        const files = readPhotoFiles(form, i);
+        const photos: SubmitItemInput["photos"] = [];
+        for (const f of files) {
+          photos.push({ side: f.side, data_url: await photoToDataUrl(f.file) });
+        }
+        items.push({ barcode, photos });
+
+        // 与正式流程一致：AI 配齐就真跑一次判定（不落库）；不配就直接转人工。
+        if (!aiReady(state)) {
+          verdicts.push(null);
+          continue;
+        }
+        const fd = new FormData();
+        fd.set("sender_name", senderName);
+        fd.set("grade_label", GRADE_LABELS[grade] || grade);
+        fd.set("class_no", String(classNo));
+        fd.set("dest_region", destRegion);
+        fd.set("dest_school", destSchool);
+        fd.set("barcode", barcode);
+        for (const f of files) fd.set(`photo_${f.side}`, f.file);
+        try {
+          verdicts.push(await previewAIReview(fd));
+        } catch {
+          // 调用失败 = 与正式环境的降级一致：转人工复核（不阻断登记）。
+          verdicts.push(null);
+        }
       }
       return submitRegistration(state, {
         sender_name: String(form.get("sender_name") || ""),
@@ -130,7 +188,7 @@ export function createSimPostcardUserApi(state: SimState): PostcardApi {
         dest_school: String(form.get("dest_school") || ""),
         fingerprint: String(form.get("fingerprint") || ""),
         items,
-      });
+      }, new Date(), verdicts);
     },
 
     my: async (fingerprint: string) => ({ results: myRegistrations(state, fingerprint) }),

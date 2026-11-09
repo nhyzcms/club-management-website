@@ -755,17 +755,30 @@ export interface SubmitRegistrationInput {
   items: SubmitItemInput[];
 }
 
+/** AI 判定结果（形状与后端 `ai.parse_verdict` 一致）。 */
+export interface SimVerdict {
+  matched: boolean;
+  mismatched_items?: string[];
+  blacklist_hit?: boolean;
+  blacklist_names?: string[];
+  comment?: string;
+}
+
 /**
  * 提交登记（POST /register/）。
  *
- * 模拟环境的口径：AI 配齐 → 直接判通过（照片随即删除，登记码立即发放）；
- * AI 没配 → 转人工复核（**同样立即发码**，与用户 2026-11-08 定的规则一致），
- * 这样管理员还能顺带把审核台那条链路走一遍。
+ * 2026-11-09 用户要求：模拟流程要和正式一模一样——所以登记也**真跑 AI 判定**
+ * （`verdicts` 由调用方先调 `admin/ai/preview/` 拿到，不落库）。规则照抄后端：
+ * - 判定通过 → `ai_passed`，照片随即删除，登记码立即发放；
+ * - 判不匹配 / 命中黑名单 → `ai_failed`，**不发码**（掩码），照片留着等复核；
+ * - AI 不可用 / 调用失败（verdict 为 null）→ 转人工 `manual_pending`，
+ *   但**立即发码**（用户 2026-11-08 定的规则）。
  */
 export function submitRegistration(
   state: SimState,
   input: SubmitRegistrationInput,
   now: Date = new Date(),
+  verdicts: (SimVerdict | null)[] = [],
 ): RegisterResult {
   const phase = phaseOf(state.event, state.config, now);
   if (phase !== "registering") throw new SimError("当前不在登记阶段，无法提交登记。");
@@ -789,7 +802,6 @@ export function submitRegistration(
     if (slot.registration_id !== null) throw new SimError(`条码 ${it.barcode} 已被登记，不能重复使用。`);
   }
 
-  const ready = aiReady(state);
   const regId = nextId(state);
   const nowIso = now.toISOString();
   // 「同一发件人」= 姓名 + 年级 + 班级（用户 2026-11-08 定的口径）：复用同一登记码，
@@ -800,10 +812,41 @@ export function submitRegistration(
       && r.grade === input.grade
       && r.class_no === Number(input.class_no),
   );
+
+  const items: SimItem[] = input.items.map((it, index) => {
+    const slot = state.barcodes.find((b) => b.code === it.barcode);
+    if (slot) slot.registration_id = regId;
+    const verdict = verdicts[index] ?? null;
+    const failed = Boolean(verdict && (verdict.blacklist_hit || !verdict.matched));
+    const passed = Boolean(verdict && !failed);
+    const photos = it.photos.map((p) => ({ id: nextId(state), side: p.side, data_url: p.data_url }));
+    return {
+      id: nextId(state),
+      barcode: it.barcode,
+      status: "registered",
+      review_state: failed ? "ai_failed" : passed ? "ai_passed" : "manual_pending",
+      ai_verdict: verdict
+        ? {
+            matched: verdict.matched,
+            mismatched_items: verdict.mismatched_items || [],
+            blacklist_hit: Boolean(verdict.blacklist_hit),
+            blacklist_names: verdict.blacklist_names || [],
+            comment: verdict.comment || "",
+          }
+        : null,
+      mismatched: failed ? [...(verdict?.mismatched_items || [])] : [],
+      comment: failed ? String(verdict?.comment || "") : "",
+      // 通过即删照片；判不匹配的照片留着等复核（正式环境同款生命周期）。
+      photos: passed ? [] : photos,
+    };
+  });
+
+  // 有失败条目 → 掩码（不发码）；否则（全通过 / 转人工）立即发码。
+  const codeGranted = !items.some((it) => it.review_state === "ai_failed");
   const reg: SimRegistration = {
     id: regId,
     reg_code: samePerson ? samePerson.reg_code : randomRegCode(state),
-    code_granted: true,
+    code_granted: codeGranted,
     access_token: `sim-${regId}-${Math.random().toString(36).slice(2, 10)}`,
     fingerprint: input.fingerprint,
     sender_name: input.sender_name.trim(),
@@ -814,44 +857,34 @@ export function submitRegistration(
     status: "registered",
     created_at: nowIso,
     updated_at: nowIso,
-    items: input.items.map((it) => {
-      const slot = state.barcodes.find((b) => b.code === it.barcode);
-      if (slot) slot.registration_id = regId;
-      return {
-        id: nextId(state),
-        barcode: it.barcode,
-        status: "registered",
-        review_state: ready ? "ai_passed" : "manual_pending",
-        ai_verdict: ready
-          ? { matched: true, mismatched: [], blacklist: [], comment: "模拟环境：AI 视为通过" }
-          : null,
-        mismatched: [],
-        comment: "",
-        // 通过即删照片（模拟里也遵守这条生命周期，教学时才不会记错）。
-        photos: ready
-          ? []
-          : it.photos.map((p) => ({ id: nextId(state), side: p.side, data_url: p.data_url })),
-      };
-    }),
+    items,
   };
   state.registrations.push(reg);
   pushAudit(state, "register", `registration:${reg.id}`, {
     items: reg.items.length,
-    review: ready ? "ai" : "manual",
+    review: codeGranted ? "passed_or_manual" : "ai_failed",
   }, now);
 
-  const state0: SimReviewState = ready ? "ai_passed" : "manual_pending";
+  const anyFailed = items.some((it) => it.review_state === "ai_failed");
+  const anyManual = items.some((it) => it.review_state === "manual_pending");
+  const reviewState: SimReviewState = anyFailed ? "ai_failed" : anyManual ? "manual_pending" : "ai_passed";
   return {
-    reg_code: reg.reg_code,
-    code_granted: true,
+    reg_code: codeGranted ? reg.reg_code : null,
+    code_granted: codeGranted,
     access_token: reg.access_token,
-    message: ready
-      ? "登记成功，照片已按规则删除。"
-      : "登记成功。当前未配置 AI 审核，已转人工复核。",
+    message: anyFailed
+      ? "照片与填写信息不一致，登记码暂不发放；可申请人工复核。"
+      : anyManual
+        ? "登记成功。AI 暂不可用，已转人工复核。"
+        : "登记成功，照片已按规则删除。",
     registration: registrationSummary(reg),
     review: {
-      state: state0,
-      hint: ready ? "AI 审核通过" : "等待管理员人工复核",
+      state: reviewState,
+      hint: anyFailed
+        ? "AI 判不匹配，等待你决定是否申请人工复核"
+        : anyManual
+          ? "等待管理员人工复核"
+          : "AI 审核通过",
     },
   };
 }
@@ -994,6 +1027,12 @@ export function requestManualReview(
     }
   }
   if (count === 0) throw new SimError("当前没有 AI 判定不匹配、需要人工复核的明信片。");
+  // 转人工后立即发码：不再有失败条目 → code_granted 置真（正式环境同口径）。
+  for (const reg of regs) {
+    if (!reg.items.some((it) => it.review_state === "ai_failed" || it.review_state === "manual_failed")) {
+      reg.code_granted = true;
+    }
+  }
   pushAudit(state, "my_review_request", `registration:${regs[0].id}`, { count }, now);
   return { message: "已提交人工复核，请耐心等待复核结果", count };
 }

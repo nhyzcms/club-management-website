@@ -39,13 +39,11 @@ import {
   configPayload,
   deleteRegistration as deleteReg,
   emptySimState,
-  findRegistration,
   generateBarcodes,
   newSeason,
   publish,
   archiveSeason,
   photoDataUrl,
-  randomRegCode,
   REVIEW_LABELS,
   syncRegistrationStatus,
   recordsPage,
@@ -172,27 +170,36 @@ function receiptOf(state: SimState, barcode: string): ReceiptPayload {
   throw new SimError("明信片未登记，请先登记！", 404);
 }
 
+/** 已播种过 AI 配置的 state（按对象身份记，避免重复请求）。 */
+const aiSeededStates = new WeakSet<SimState>();
+
+/**
+ * 把正式环境里已保存的 AI 参数带进模拟（只读、不含 api_key）。
+ *
+ * 管理端 tab 与用户端登记（要真调 `admin/ai/preview/`）都依赖它，所以抽成
+ * 独立函数；session 进入模拟时就预热一次。
+ */
+export async function seedSimAIConfig(state: SimState): Promise<void> {
+  if (aiSeededStates.has(state)) return;
+  aiSeededStates.add(state);
+  try {
+    const real = await realPostcardAdminApi.aiConfig();
+    state.ai.base_url = real.base_url || "";
+    state.ai.model = real.model || "";
+    state.ai.enabled = Boolean(real.enabled);
+    state.ai.timeout_seconds = real.timeout_seconds ?? 20;
+    state.ai.extra_headers = { ...(real.extra_headers || {}) };
+    state.ai.ip_blacklist = [...(real.ip_blacklist || [])];
+    state.ai.api_key_set = Boolean(real.api_key_set);
+  } catch {
+    // 正式环境还没配过 / 网络异常：保持空配置，模拟照常可用。
+  }
+}
+
 /** 造一个模拟管理端 API（共用传进来的内存 state；退出即整体丢弃）。 */
 export function createSimPostcardAdminApi(state: SimState = emptySimState()): PostcardAdminApi {
-  let aiSeeded = false;
-
   async function aiConfig(): Promise<AIConfig> {
-    if (!aiSeeded) {
-      aiSeeded = true;
-      // 带入正式环境里已保存的非敏感参数（api_key 永远拿不到，只告知是否已设置）。
-      try {
-        const real = await realPostcardAdminApi.aiConfig();
-        state.ai.base_url = real.base_url || "";
-        state.ai.model = real.model || "";
-        state.ai.enabled = Boolean(real.enabled);
-        state.ai.timeout_seconds = real.timeout_seconds ?? 20;
-        state.ai.extra_headers = { ...(real.extra_headers || {}) };
-        state.ai.ip_blacklist = [...(real.ip_blacklist || [])];
-        state.ai.api_key_set = Boolean(real.api_key_set);
-      } catch {
-        // 正式环境还没配过 / 网络异常：保持空配置，模拟照常可用。
-      }
-    }
+    await seedSimAIConfig(state);
     return {
       configured: Boolean(state.ai.base_url || state.ai.model),
       enabled: state.ai.enabled,

@@ -110,3 +110,42 @@ class SchoolsImportThrottle(IPLimitThrottle):
 
     def get_rate(self):
         return self.RATE
+
+
+class AITestThrottle(IPLimitThrottle):
+    """测试连接：一次请求 = 一次真实模型调用。
+
+    管理端一般不限流（低频 + 已鉴权），但「会真花钱」的按钮必须限——
+    与导入海报同一个理由：按钮卡住被连点 / 脚本重放，账单和 worker 都受不了。
+    配参数时管理员确实会反复测，所以比导入海报宽松。
+    """
+
+    scope = "postcard_ai_test"
+    RATE = "60/hour"
+
+    def get_rate(self):
+        return self.RATE
+
+
+class AIExplainThrottle(IPLimitThrottle):
+    """让 AI 读样例：一张图 + 一次长输出（成本与导入海报同档）。"""
+
+    scope = "postcard_ai_explain"
+    RATE = "10/hour"
+
+    def get_rate(self):
+        return self.RATE
+
+
+class AIReviewPreviewThrottle(IPLimitThrottle):
+    """模拟环境的「真调 AI 判定」：一次请求 = 一张明信片的两面照片 + 模型调用。
+
+    模拟登记本身就按张数计（一次最多 5 张），阈值放宽到 120/h，够演练一场
+    小型活动；同时避免被连点 / 重放当成免费额度刷。
+    """
+
+    scope = "postcard_ai_preview"
+    RATE = "120/hour"
+
+    def get_rate(self):
+        return self.RATE

@@ -9,7 +9,7 @@
  */
 import { installPostcardAdminSimApi, type PostcardAdminApi } from "../api/postcardAdmin";
 import { installPostcardSimApi, type PostcardApi } from "../api/postcard";
-import { createSimPostcardAdminApi } from "./api";
+import { createSimPostcardAdminApi, seedSimAIConfig } from "./api";
 import { createSimPostcardUserApi } from "./apiUser";
 import { emptySimState, type SimState } from "./state";
 
@@ -41,6 +41,8 @@ export function enterSim(): void {
   installPostcardAdminSimApi(admin);
   installPostcardSimApi(user);
   installed = { state, admin, user };
+  // 预热：把正式环境已保存的 AI 参数（不含 key）带进来，用户端登记才知道能不能真跑判定。
+  void seedSimAIConfig(state);
 }
 
 /** 退出模拟：卸下两个实现并丢弃内存数据（含已上传的照片 data URL）。 */
