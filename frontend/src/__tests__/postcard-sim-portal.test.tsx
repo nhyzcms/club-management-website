@@ -118,15 +118,68 @@ describe("模拟环境 · 登记", () => {
     expect(state.barcodes.filter((b) => b.registration_id !== null)).toHaveLength(2);
   });
 
-  it("AI 配齐 → 直接通过并删除照片", () => {
+  it("AI 判定通过 → ai_passed 并删除照片", () => {
     const state = seeded();
-    state.ai.enabled = true;
-    state.ai.base_url = "https://ai.example.com/v1";
-    state.ai.model = "gpt-4o-mini";
-    state.ai.api_key_set = true;
-    const res = submit(state, [state.barcodes[0].code], 2);
+    const res = submitRegistration(
+      state,
+      {
+        sender_name: "张三", grade: "g1", class_no: 3,
+        dest_region: "浦东新区", dest_school: "建平中学", fingerprint: "fp-1",
+        items: [{ barcode: state.barcodes[0].code, photos: [{ side: "front", data_url: "data:x" }] }],
+      },
+      NOW,
+      [{ matched: true, mismatched_items: [], blacklist_hit: false, blacklist_names: [], comment: "" }],
+    );
     expect(res.review.state).toBe("ai_passed");
+    expect(res.code_granted).toBe(true);
+    expect(state.registrations[0].items[0].review_state).toBe("ai_passed");
     expect(state.registrations[0].items[0].photos).toHaveLength(0);
+  });
+
+  it("AI 判不匹配 → ai_failed、不发码（掩码）、照片留着等复核", () => {
+    const state = seeded();
+    const res = submitRegistration(
+      state,
+      {
+        sender_name: "张三", grade: "g1", class_no: 3,
+        dest_region: "浦东新区", dest_school: "建平中学", fingerprint: "fp-1",
+        items: [{ barcode: state.barcodes[0].code, photos: [{ side: "front", data_url: "data:x" }] }],
+      },
+      NOW,
+      [{ matched: false, mismatched_items: ["寄达校写错"], blacklist_hit: false, blacklist_names: [], comment: "请核对寄达校" }],
+    );
+    expect(res.code_granted).toBe(false);
+    expect(res.reg_code).toBeNull();
+    expect(res.review.state).toBe("ai_failed");
+    const reg = state.registrations[0];
+    expect(reg.items[0].review_state).toBe("ai_failed");
+    expect(reg.items[0].mismatched).toEqual(["寄达校写错"]);
+    expect(reg.items[0].photos).toHaveLength(1);
+    // 列表里是掩码
+    expect(myRegistrations(state, "fp-1")[0].reg_code).toBe(`${reg.reg_code.slice(0, 2)}****`);
+
+    // 申请人工复核 → 转 manual_pending 并立即发码（正式环境同口径）
+    const out = requestManualReview(state, { regCode: reg.reg_code }, NOW);
+    expect(out.count).toBe(1);
+    expect(reg.items[0].review_state).toBe("manual_pending");
+    expect(reg.code_granted).toBe(true);
+    expect(myRegistrations(state, "fp-1")[0].reg_code).toBe(reg.reg_code);
+  });
+
+  it("命中黑名单也算不通过", () => {
+    const state = seeded();
+    const res = submitRegistration(
+      state,
+      {
+        sender_name: "张三", grade: "g1", class_no: 3,
+        dest_region: "浦东新区", dest_school: "建平中学", fingerprint: "fp-1",
+        items: [{ barcode: state.barcodes[0].code, photos: [] }],
+      },
+      NOW,
+      [{ matched: true, mismatched_items: [], blacklist_hit: true, blacklist_names: ["喜羊羊"], comment: "" }],
+    );
+    expect(res.code_granted).toBe(false);
+    expect(state.registrations[0].items[0].review_state).toBe("ai_failed");
   });
 
   it("条码不存在 / 已被占用 / 年级不在范围 都会被拒", () => {
@@ -297,6 +350,67 @@ describe("模拟环境 · 三端联动（登记 → 审核台 → 签收 → 统
     expect(reg.items[0].status).toBe("registered");
     // 签收仍然可用，不会出现「该明信片所属登记已取消」
     expect((await admin.lookup(row.barcode)).item_status).toBe("registered");
+  });
+
+  it("模拟登记逐张真调 AI 预览：判定直接决定发码与否", async () => {
+    const state = seeded();
+    state.ai.enabled = true;
+    state.ai.base_url = "https://ai.example.com/v1";
+    state.ai.model = "gpt-4o-mini";
+    state.ai.api_key_set = true;
+    const calls: string[] = [];
+    const user = createSimPostcardUserApi(state, {
+      previewAIReview: async (fd) => {
+        const barcode = String(fd.get("barcode"));
+        calls.push(barcode);
+        return barcode === state.barcodes[0].code
+          ? { matched: true, mismatched_items: [], blacklist_hit: false, blacklist_names: [], comment: "" }
+          : { matched: false, mismatched_items: ["寄达校写错"], blacklist_hit: false, blacklist_names: [], comment: "" };
+      },
+    });
+    const fd = new FormData();
+    fd.set("sender_name", "张三");
+    fd.set("grade", "g1");
+    fd.set("class_no", "3");
+    fd.set("dest_region", "浦东新区");
+    fd.set("dest_school", "建平中学");
+    fd.set("fingerprint", "fp-1");
+    fd.set("items", JSON.stringify([
+      { barcode: state.barcodes[0].code },
+      { barcode: state.barcodes[1].code },
+    ]));
+    const res = await user.register(fd);
+
+    expect(calls).toEqual([state.barcodes[0].code, state.barcodes[1].code]);
+    // 一张通过、一张不通过 → 整单不发码（掩码）
+    expect(res.code_granted).toBe(false);
+    expect(res.reg_code).toBeNull();
+    const reg = state.registrations[0];
+    expect(reg.items.map((it) => it.review_state)).toEqual(["ai_passed", "ai_failed"]);
+    expect(reg.items[1].mismatched).toEqual(["寄达校写错"]);
+  });
+
+  it("AI 未配齐时不发预览请求，直接转人工并发码", async () => {
+    const state = seeded(); // 默认 AI 未配置
+    let called = false;
+    const user = createSimPostcardUserApi(state, {
+      previewAIReview: async () => {
+        called = true;
+        return null;
+      },
+    });
+    const fd = new FormData();
+    fd.set("sender_name", "张三");
+    fd.set("grade", "g1");
+    fd.set("class_no", "3");
+    fd.set("dest_region", "浦东新区");
+    fd.set("dest_school", "建平中学");
+    fd.set("fingerprint", "fp-1");
+    fd.set("items", JSON.stringify([{ barcode: state.barcodes[0].code }]));
+    const res = await user.register(fd);
+    expect(called).toBe(false);
+    expect(res.code_granted).toBe(true);
+    expect(res.review.state).toBe("manual_pending");
   });
 
   it("查询不存在的条码 → 明信片未登记", async () => {

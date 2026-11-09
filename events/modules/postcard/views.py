@@ -74,6 +74,7 @@ from .serializers import (
 )
 from .throttles import (
     AIExplainThrottle,
+    AIReviewPreviewThrottle,
     AITestThrottle,
     CodeAccessDeviceThrottle,
     CodeAccessIPThrottle,
@@ -1670,6 +1671,56 @@ class AdminAISampleExplainView(APIView):
             return Response({"detail": detail}, status=502)
         _audit(event, request, "ai_sample_explain", f"sample#{pk}", {"ok": True, "chars": len(text)})
         return Response({"text": text})
+
+
+class AdminAIReviewPreviewView(APIView):
+    """模拟环境（前端 ``?sim=1``）用：按正式审核同一套 prompt 跑一次真实判定。
+
+    模拟环境的登记也要「和正式一样走 AI」：前端把表单 + 正反面照片发上来，
+    这里复用 ``ai.preview_judgement``（同一套 prompt 与严格 JSON 解析），但
+    **不建登记单、不存照片、不写审计**——只把判定结果回给浏览器。
+
+    AI 未配置 / 调用失败一律返回 ``ok: false``（HTTP 200），前端按「转人工复核」
+    处理，这与正式环境的降级路径一致。
+    """
+
+    permission_classes = [CanManagePostcard]
+    # 一次请求 = 两张照片 + 一次模型调用，按张数计但不该被重放刷额度。
+    throttle_classes = [AIReviewPreviewThrottle]
+
+    def post(self, request):
+        from . import ai
+        from .photos import PhotoRejected, validate_and_reencode
+
+        cfg = PostcardAIConfig.load()
+        if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
+            return Response({"ok": False, "reason": "ai_not_ready"})
+
+        photos = []
+        for field in ("photo_front", "photo_back"):
+            upload = request.FILES.get(field)
+            if upload is None:
+                continue
+            try:
+                photos.append(validate_and_reencode(upload).read())
+            except PhotoRejected as exc:
+                return Response({"detail": exc.reason}, status=400)
+
+        form = {
+            key: request.data.get(key)
+            for key in (
+                "sender_name", "grade_label", "class_no",
+                "dest_region", "dest_school", "barcode",
+            )
+        }
+        event, _, _ = _phase_guard(admin=True)
+        samples = list(event.postcard_ai_samples.all()[:4]) if event is not None else []
+        try:
+            verdict = ai.preview_judgement(cfg, form=form, photos=photos, samples=samples)
+        except ai.AIReviewError:
+            # 与正式审核一致：失败不外抛上游细节，前端按转人工处理。
+            return Response({"ok": False, "reason": "ai_error"})
+        return Response({"ok": True, "verdict": verdict})
 
 
 class AdminAIExplainUploadView(APIView):

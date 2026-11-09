@@ -2668,3 +2668,88 @@ class AICallThrottleTest(TestCase):
                 "/events/postcard/admin/ai/explain/", {"image": image}, format="multipart",
             )
         self.assertEqual(denied.status_code, 429)
+
+
+class AIReviewPreviewTest(TestCase):
+    """模拟环境的「真调 AI 判定」：同一套 prompt，但不落库、不存照片、不写审计。"""
+
+    URL = "/events/postcard/admin/ai/preview/"
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        _ai_config()
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+
+    @staticmethod
+    def _payload(**over):
+        data = {
+            "sender_name": "张三",
+            "grade_label": "高一",
+            "class_no": "3",
+            "dest_region": "浦东新区",
+            "dest_school": "建平中学",
+            "barcode": "1234567",
+        }
+        data.update(over)
+        data["photo_front"] = SimpleUploadedFile("f.jpg", _jpeg_bytes(), "image/jpeg")
+        data["photo_back"] = SimpleUploadedFile("b.jpg", _jpeg_bytes(), "image/jpeg")
+        return data
+
+    def test_preview_returns_verdict_and_writes_nothing(self):
+        verdict = {
+            "matched": False,
+            "mismatched_items": ["寄达校写错"],
+            "blacklist_hit": False,
+            "blacklist_names": [],
+            "comment": "请核对寄达校",
+        }
+        before = (
+            PostcardRegistration.objects.count(),
+            PostcardAuditLog.objects.count(),
+        )
+        with mock.patch(
+            "events.modules.postcard.ai.preview_judgement", return_value=verdict,
+        ) as preview:
+            resp = self.client.post(self.URL, self._payload(), format="multipart")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["verdict"]["mismatched_items"], ["寄达校写错"])
+        # 传给 AI 的是表单 + 两面照片
+        kwargs = preview.call_args.kwargs
+        self.assertEqual(kwargs["form"]["sender_name"], "张三")
+        self.assertEqual(len(kwargs["photos"]), 2)
+        # 零写入
+        self.assertEqual(
+            (PostcardRegistration.objects.count(), PostcardAuditLog.objects.count()), before,
+        )
+
+    def test_ai_not_ready(self):
+        PostcardAIConfig.objects.update(enabled=False)
+        resp = self.client.post(self.URL, self._payload(), format="multipart")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"ok": False, "reason": "ai_not_ready"})
+
+    def test_ai_error_degrades_to_manual(self):
+        with mock.patch(
+            "events.modules.postcard.ai.preview_judgement",
+            side_effect=ai_mod.AIReviewError("network: boom"),
+        ):
+            resp = self.client.post(self.URL, self._payload(), format="multipart")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"ok": False, "reason": "ai_error"})
+
+    def test_rejects_non_image(self):
+        payload = self._payload()
+        payload["photo_front"] = SimpleUploadedFile("x.jpg", b"<html>", "image/jpeg")
+        resp = self.client.post(self.URL, payload, format="multipart")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("仅支持", resp.json()["detail"])
+
+    def test_requires_manage_permission(self):
+        client = APIClient()
+        client.force_authenticate(user=_reviewer())
+        resp = client.post(self.URL, self._payload(), format="multipart")
+        self.assertEqual(resp.status_code, 403)

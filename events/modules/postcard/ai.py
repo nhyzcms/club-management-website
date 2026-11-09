@@ -138,18 +138,32 @@ def _image_part(filefield) -> dict:
         return {"type": "image_url", "image_url": {"url": _data_url(f.read())}}
 
 
-def build_messages(cfg: PostcardAIConfig, item: PostcardItem, samples: list) -> list:
-    """组装判定输入：登记信息 + 样例（图 + 说明）+ 用户正反面照片 + 黑名单规则。"""
-    reg = item.registration
+def _compose_messages(
+    cfg: PostcardAIConfig,
+    *,
+    sender_name: str,
+    grade_label: str,
+    class_no,
+    dest_region: str,
+    dest_school: str,
+    barcode: str,
+    sample_items: list,
+    photo_files: list,
+) -> list:
+    """判定输入的组装真源（正式审核与模拟演练共用，防止两套 prompt 漂移）。
+
+    ``sample_items`` = ``[(caption, image_filefield), ...]``；``photo_files`` =
+    已重编码的 JPEG 文件对象列表（正 / 反）。图片一律转 data URL。
+    """
     form_text = (
-        f"寄出人：{reg.sender_name}（{reg.grade_label} {reg.class_no}班）\n"
-        f"寄达区：{reg.dest_region}\n"
-        f"寄达校：{reg.dest_school}\n"
-        f"明信片条码：{item.barcode.code}"
+        f"寄出人：{sender_name}（{grade_label} {class_no}班）\n"
+        f"寄达区：{dest_region}\n"
+        f"寄达校：{dest_school}\n"
+        f"明信片条码：{barcode}"
     )
     blacklist = "、".join(cfg.ip_blacklist or []) or "（空）"
     sample_captions = "；".join(
-        (s.caption or "（无说明）") for s in samples
+        (caption or "（无说明）") for caption, _ in sample_items
     ) or "（无样例）"
     content = [
         {
@@ -170,15 +184,60 @@ def build_messages(cfg: PostcardAIConfig, item: PostcardItem, samples: list) -> 
             ),
         },
     ]
-    for s in samples[:4]:  # 样例最多 4 张，防 token 爆炸
-        content.append(_image_part(s.image))
-    for photo in item.photos.order_by("side"):
-        if photo.file:
-            content.append(_image_part(photo.file))
+    for _caption, image in sample_items[:4]:  # 样例最多 4 张，防 token 爆炸
+        content.append(_image_part(image))
+    for photo in photo_files:
+        content.append(_image_part(photo))
     return [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": content},
     ]
+
+
+def build_messages(cfg: PostcardAIConfig, item: PostcardItem, samples: list) -> list:
+    """组装判定输入：登记信息 + 样例（图 + 说明）+ 用户正反面照片 + 黑名单规则。"""
+    reg = item.registration
+    return _compose_messages(
+        cfg,
+        sender_name=reg.sender_name,
+        grade_label=reg.grade_label,
+        class_no=reg.class_no,
+        dest_region=reg.dest_region,
+        dest_school=reg.dest_school,
+        barcode=item.barcode.code,
+        sample_items=[(s.caption, s.image) for s in samples if s.image],
+        photo_files=[p.file for p in item.photos.order_by("side") if p.file],
+    )
+
+
+def build_preview_messages(cfg: PostcardAIConfig, *, form: dict, photos: list, samples: list) -> list:
+    """模拟环境（`?sim=1`）用：用同一套 prompt 组一次判定输入，**不碰数据库**。
+
+    ``photos`` 是重编码后的 JPEG 字节列表（ContentFile 已包装），
+    ``samples`` 是真实活动里的样例行（只读）。
+    """
+    from django.core.files.base import ContentFile
+
+    photo_files = [
+        ContentFile(content, name=f"sim-{index}.jpg") for index, content in enumerate(photos)
+    ]
+    return _compose_messages(
+        cfg,
+        sender_name=str(form.get("sender_name") or ""),
+        grade_label=str(form.get("grade_label") or ""),
+        class_no=form.get("class_no") or "",
+        dest_region=str(form.get("dest_region") or ""),
+        dest_school=str(form.get("dest_school") or ""),
+        barcode=str(form.get("barcode") or ""),
+        sample_items=[(s.caption, s.image) for s in samples if s.image],
+        photo_files=photo_files,
+    )
+
+
+def preview_judgement(cfg: PostcardAIConfig, *, form: dict, photos: list, samples: list) -> dict:
+    """模拟演练用的一次性判定：跑一次模型、返回判定，不落库、不写审计。"""
+    messages = build_preview_messages(cfg, form=form, photos=photos, samples=samples)
+    return parse_verdict(_post_chat(cfg, messages))
 
 
 def _post_chat(cfg: PostcardAIConfig, messages: list, max_tokens: int | None = None) -> str:

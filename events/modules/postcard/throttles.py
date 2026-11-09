@@ -135,3 +135,17 @@ class AIExplainThrottle(IPLimitThrottle):
 
     def get_rate(self):
         return self.RATE
+
+
+class AIReviewPreviewThrottle(IPLimitThrottle):
+    """模拟环境的「真调 AI 判定」：一次请求 = 一张明信片的两面照片 + 模型调用。
+
+    模拟登记本身就按张数计（一次最多 5 张），阈值放宽到 120/h，够演练一场
+    小型活动；同时避免被连点 / 重放当成免费额度刷。
+    """
+
+    scope = "postcard_ai_preview"
+    RATE = "120/hour"
+
+    def get_rate(self):
+        return self.RATE
