@@ -43,6 +43,8 @@ urlpatterns = [
     path("admin/audit/", views.AdminAuditView.as_view(), name="postcard-admin-audit"),
     path("admin/ai/config/", views.AdminAIConfigView.as_view(), name="postcard-admin-ai-config"),
     path("admin/ai/test/", views.AdminAITestView.as_view(), name="postcard-admin-ai-test"),
+    # 模拟环境用：临时上传一张样例图让 AI 解读（不落库）
+    path("admin/ai/explain/", views.AdminAIExplainUploadView.as_view(), name="postcard-admin-ai-explain"),
     path("admin/ai/samples/", views.AdminAISamplesView.as_view(), name="postcard-admin-ai-samples"),
     path("admin/ai/samples/<int:pk>/", views.AdminAISampleDetailView.as_view(), name="postcard-admin-ai-sample"),
     path("admin/ai/samples/<int:pk>/explain/", views.AdminAISampleExplainView.as_view(), name="postcard-admin-ai-sample-explain"),
