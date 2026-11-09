@@ -75,6 +75,7 @@ export default function AITab() {
   const [timeout, setTimeoutSec] = useState(20);
   const [headersText, setHeadersText] = useState("{}");
   const [blacklistText, setBlacklistText] = useState("");
+  const [promptPrefix, setPromptPrefix] = useState("");
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [modelsError, setModelsError] = useState("");
@@ -163,6 +164,7 @@ export default function AITab() {
       setTimeoutSec(cfg.timeout_seconds ?? 20);
       setHeadersText(JSON.stringify(cfg.extra_headers || {}, null, 2));
       setBlacklistText((cfg.ip_blacklist || []).join("\n"));
+      setPromptPrefix(cfg.prompt_prefix || "");
       setSamples(sm.results);
       if (cfg.base_url) {
         // 打开页面就按已保存配置拉一次清单；失败只提示，不影响其他功能。
@@ -255,6 +257,7 @@ export default function AITab() {
           .split("\n")
           .map((s) => s.trim())
           .filter(Boolean),
+        prompt_prefix: promptPrefix,
       });
       setApiKey("");
       setNotice("AI 配置已保存。");
@@ -458,6 +461,21 @@ export default function AITab() {
             placeholder={"喜羊羊\n熊出没"}
           />
         </label>
+        <label className="pa-field">
+          <span>前置提示词（每次 AI 请求都会作为系统提示词附在最前）</span>
+          <textarea
+            rows={6}
+            value={promptPrefix}
+            onChange={(e) => setPromptPrefix(e.target.value)}
+            placeholder={
+              "例如：你是南汇一中传媒社的明信片审核员。判断以学校实际填写要求为准，" +
+              "对学生使用简短、友善的中文说明。"
+            }
+          />
+        </label>
+        <p className="pa-hint">
+          留空则不附加。审图、样例解读、海报识别与「测试连接」都会带上这段提示词；换新一年度时随其余配置自动继承。
+        </p>
         <div className="pa-actions">
           <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void save()}>
             {saving ? "保存中…" : "保存 AI 配置"}

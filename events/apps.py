@@ -13,5 +13,6 @@ class EventsConfig(AppConfig):
         """
         try:
             from .modules.postcard import models as _postcard_models  # noqa: F401
+            from .modules.postcard import signals as _postcard_signals  # noqa: F401
         except ImportError:
             pass

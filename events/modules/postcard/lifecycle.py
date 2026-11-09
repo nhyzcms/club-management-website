@@ -87,6 +87,41 @@ def purge_event_photos(event: Event) -> int:
     return purged
 
 
+def purge_event_files(event: Event) -> dict:
+    """删除一届活动的全部物理文件（照片 / 样例图 / 公告 PDF），行不动。
+
+    ``Event.delete()`` 只级联删行、**不删私有存储里的文件**，所以删活动之前
+    必须走这里，否则留下永远查不到的孤儿文件。幂等，失败静默。
+    """
+    photos = purge_event_photos(event)
+    samples = 0
+    for sample in event.postcard_ai_samples.all():
+        sample.delete_file()
+        samples += 1
+    announcement_pdf = False
+    config = getattr(event, "postcard_config", None)
+    if config is not None and config.announcement_pdf:
+        try:
+            config.announcement_pdf.delete(save=False)
+            announcement_pdf = True
+        except Exception:  # noqa: BLE001 —— 文件已丢失不该挡住删库
+            pass
+    return {"photos": photos, "samples": samples, "announcement_pdf": announcement_pdf}
+
+
+def delete_season(event: Event) -> dict:
+    """管理员删除整届（整批）活动：清物理文件 → 清缓存 → 删 Event。
+
+    删 Event 会级联掉 config / 条码 / 登记 / 条目 / 照片行 / 建议 / 审计 /
+    样例行——即「该年度的全部数据」。不可恢复，入口必须带二次确认。
+    """
+    stats = purge_event_files(event)
+    # 惰性清理锁一并清掉，防同 pk 复用时的误判（SQLite 自增可能复用）。
+    cache.delete(_ENDED_PURGE_KEY.format(event_pk=event.pk))
+    event.delete()
+    return stats
+
+
 def maybe_purge_ended_event(event: Event | None, phase: str) -> None:
     """状态翻转惰性触发：phase 推导出「已结束」时清一次（cache 锁防重）。
 

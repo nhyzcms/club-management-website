@@ -184,6 +184,10 @@ class AIConfigInput(serializers.Serializer):
         child=serializers.CharField(max_length=128, trim_whitespace=True),
         required=False, allow_empty=True,
     )
+    # 前置提示词：多行文本，保留换行与缩进（不 trim），上限防超大 prompt 打爆 token。
+    prompt_prefix = serializers.CharField(
+        required=False, allow_blank=True, max_length=4000, trim_whitespace=False,
+    )
     enabled = serializers.BooleanField(required=False)
 
     def validate_base_url(self, value):

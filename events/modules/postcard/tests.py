@@ -2072,6 +2072,34 @@ class MultiSeasonTest(TestCase):
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(resp.json()["event"]["title"], "2027 明信片互寄")
 
+    def test_new_season_inherits_ai_config_but_clears_api_key(self):
+        PostcardAIConfig.objects.create(
+            base_url="https://api.example.com/v1",
+            api_key="sk-old",
+            model="demo-model",
+            extra_headers={"x-api-key": "header"},
+            timeout_seconds=42,
+            ip_blacklist=["喜羊羊"],
+            prompt_prefix="沿用去年的提示词",
+            enabled=True,
+        )
+
+        resp = self.client.post("/events/postcard/admin/new-season/")
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        cfg = PostcardAIConfig.load()
+        self.assertEqual(cfg.api_key, "")  # 唯一不继承的字段
+        self.assertEqual(cfg.base_url, "https://api.example.com/v1")
+        self.assertEqual(cfg.model, "demo-model")
+        self.assertEqual(cfg.extra_headers, {"x-api-key": "header"})
+        self.assertEqual(cfg.timeout_seconds, 42)
+        self.assertEqual(cfg.ip_blacklist, ["喜羊羊"])
+        self.assertEqual(cfg.prompt_prefix, "沿用去年的提示词")
+        self.assertTrue(cfg.enabled)
+
+        log = PostcardAuditLog.objects.get(action="new_season", event_id=resp.json()["event_id"])
+        self.assertTrue(log.detail["api_key_cleared"])
+
     def test_archive_endpoint(self):
         resp = self.client.post("/events/postcard/admin/archive/")
         self.assertEqual(resp.status_code, 200, resp.content)
@@ -2861,3 +2889,93 @@ class AIReviewPreviewTest(TestCase):
         client.force_authenticate(user=_reviewer())
         resp = client.post(self.URL, self._payload(), format="multipart")
         self.assertEqual(resp.status_code, 403)
+
+
+class AIPromptPrefixTest(TestCase):
+    """前置提示词：AI 设置页多行文本，每次请求前置为 system 消息（2026-11-09）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        self.admin = _admin()
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+    def test_config_roundtrip_keeps_newlines(self):
+        prefix = "第一行：用简体中文。\n第二行：只输出 JSON。"
+        resp = self.client.put("/events/postcard/admin/ai/config/", {
+            "base_url": "https://api.example.com/v1",
+            "model": "demo-model",
+            "prompt_prefix": prefix,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = self.client.get("/events/postcard/admin/ai/config/").json()
+        self.assertEqual(data["prompt_prefix"], prefix)
+        self.assertEqual(PostcardAIConfig.load().prompt_prefix, prefix)
+        log = PostcardAuditLog.objects.filter(action="ai_config_update").first()
+        self.assertEqual(log.detail["prompt_prefix_len"], len(prefix))
+
+    def test_partial_put_keeps_existing_prefix(self):
+        PostcardAIConfig.objects.create(prompt_prefix="保留我", base_url="https://a/v1", model="m")
+        resp = self.client.put("/events/postcard/admin/ai/config/", {"enabled": True}, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(PostcardAIConfig.load().prompt_prefix, "保留我")
+
+    def test_prefix_merged_into_first_system_message(self):
+        cfg = mock.Mock(prompt_prefix="总则：用简体中文")
+        messages = [
+            {"role": "system", "content": "细则"},
+            {"role": "user", "content": "hi"},
+        ]
+        merged = ai_mod._with_prefix(cfg, messages)
+        self.assertEqual(len(merged), 2)  # 合并而非新增 system（部分服务商只收一条）
+        self.assertEqual(merged[0]["content"], "总则：用简体中文\n\n细则")
+        self.assertEqual(merged[1], {"role": "user", "content": "hi"})
+
+    def test_prefix_prepended_without_system(self):
+        cfg = mock.Mock(prompt_prefix="总则")
+        merged = ai_mod._with_prefix(cfg, [{"role": "user", "content": "hi"}])
+        self.assertEqual(merged[0], {"role": "system", "content": "总则"})
+        self.assertEqual(len(merged), 2)
+
+    def test_blank_prefix_is_noop(self):
+        cfg = mock.Mock(prompt_prefix="   ")
+        messages = [{"role": "user", "content": "hi"}]
+        self.assertEqual(ai_mod._with_prefix(cfg, messages), messages)
+
+
+class DeleteSeasonTest(TestCase):
+    """Django admin 删除整届：物理文件与库内全部数据一并清除（2026-11-09）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        self.sample = _add_sample(self.event)
+        self.sample_name = self.sample.image.name
+
+    def test_delete_season_removes_event_and_files(self):
+        storage = self.sample.image.storage
+        self.assertTrue(storage.exists(self.sample_name))
+
+        stats = lifecycle_mod.delete_season(self.event)
+
+        self.assertEqual(stats["samples"], 1)
+        self.assertFalse(Event.objects.filter(pk=self.event.pk).exists())
+        self.assertFalse(PostcardConfig.objects.filter(event_id=self.event.pk).exists())
+        self.assertFalse(PostcardAISample.objects.filter(pk=self.sample.pk).exists())
+        self.assertFalse(storage.exists(self.sample_name))
+
+    def test_plain_event_delete_also_purges_files(self):
+        """任何删除入口（活动后台 / shell）都经 pre_delete 信号清私有文件。"""
+        storage = self.sample.image.storage
+        event_pk = self.event.pk
+        self.event.delete()
+        self.assertFalse(Event.objects.filter(pk=event_pk).exists())
+        self.assertFalse(storage.exists(self.sample_name))
+
+    def test_delete_season_leaves_other_events_alone(self):
+        other = Event.objects.create(
+            title="运动会", module_key="", start_at=timezone.now(), end_at=timezone.now(),
+        )
+        lifecycle_mod.delete_season(self.event)
+        self.assertTrue(Event.objects.filter(pk=other.pk).exists())

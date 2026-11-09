@@ -935,6 +935,9 @@ class AdminNewSeasonView(APIView):
 
     解决「上一届结束后无处配置下一届」：归档让 ``current_event`` 不再选中旧活动，
     新建的草稿立刻成为管理端的工作对象；旧登记数据仍保留在库里。
+
+    AI 配置是全局单例，新一届**自动继承**上一年度的配置；但 ``api_key`` 例外：
+    开新届时清空，需管理员重新填写（用户 2026-11-09 明确要求）。
     """
 
     permission_classes = [CanManagePostcard]
@@ -963,8 +966,17 @@ class AdminNewSeasonView(APIView):
             allowed_grades=(config.allowed_grades if config else []) or [],
             destination_schools=(config.destination_schools if config else []) or [],
         )
+        # AI 配置是全局单例 → 新一届天然继承上一年度的全部参数；只有 api_key
+        # 不继承（安全侧：换年度等于换一个凭证周期，需管理员重新填写）。
+        ai_cfg = PostcardAIConfig.load()
+        api_key_cleared = False
+        if ai_cfg is not None and ai_cfg.api_key:
+            ai_cfg.api_key = ""
+            ai_cfg.save(update_fields=["api_key", "updated_at"])
+            api_key_cleared = True
         _audit(new_event, request, "new_season", f"event#{new_event.pk}", {
             "previous_event": previous_pk,
+            "api_key_cleared": api_key_cleared,
         })
         return Response({
             "event_id": new_event.pk,
@@ -1446,6 +1458,7 @@ class AdminAIConfigView(APIView):
             "extra_headers": cfg.extra_headers or {},
             "timeout_seconds": cfg.timeout_seconds,
             "ip_blacklist": cfg.ip_blacklist or [],
+            "prompt_prefix": cfg.prompt_prefix or "",
             "api_key_set": bool(cfg.api_key),
         })
 
@@ -1459,6 +1472,7 @@ class AdminAIConfigView(APIView):
         cfg.extra_headers = data.get("extra_headers", cfg.extra_headers)
         cfg.timeout_seconds = data.get("timeout_seconds", cfg.timeout_seconds)
         cfg.ip_blacklist = data.get("ip_blacklist", cfg.ip_blacklist)
+        cfg.prompt_prefix = data.get("prompt_prefix", cfg.prompt_prefix)
         cfg.enabled = data.get("enabled", cfg.enabled)
         if data.get("api_key"):
             cfg.api_key = data["api_key"]  # 留空 = 保持原值（写后不可读）
@@ -1471,6 +1485,7 @@ class AdminAIConfigView(APIView):
                 "model": cfg.model,
                 "api_key_changed": bool(data.get("api_key")),
                 "blacklist_count": len(cfg.ip_blacklist or []),
+                "prompt_prefix_len": len(cfg.prompt_prefix or ""),
             })
         return Response({
             "configured": True,
@@ -1514,6 +1529,12 @@ class _AIConfigView:
         }
         self.timeout_seconds = max(5, min(120, timeout))
         self.ip_blacklist = list(getattr(base, "ip_blacklist", None) or [])
+        # 前置提示词：模拟环境沿用已保存的配置（可被本次请求临时覆盖）。
+        self.prompt_prefix = str(
+            data.get("prompt_prefix")
+            if data.get("prompt_prefix") is not None
+            else getattr(base, "prompt_prefix", "") or ""
+        )
 
 
 class AdminAITestView(APIView):

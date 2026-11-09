@@ -190,6 +190,7 @@ export async function seedSimAIConfig(state: SimState): Promise<void> {
     state.ai.timeout_seconds = real.timeout_seconds ?? 20;
     state.ai.extra_headers = { ...(real.extra_headers || {}) };
     state.ai.ip_blacklist = [...(real.ip_blacklist || [])];
+    state.ai.prompt_prefix = real.prompt_prefix || "";
     state.ai.api_key_set = Boolean(real.api_key_set);
   } catch {
     // 正式环境还没配过 / 网络异常：保持空配置，模拟照常可用。
@@ -206,6 +207,7 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
     if (state.ai.timeout_seconds) overrides.timeout_seconds = state.ai.timeout_seconds;
     if (Object.keys(state.ai.extra_headers).length) overrides.extra_headers = state.ai.extra_headers;
     if (state.ai.ip_blacklist.length) overrides.ip_blacklist = state.ai.ip_blacklist;
+    if (state.ai.prompt_prefix) overrides.prompt_prefix = state.ai.prompt_prefix;
     if (state.ai.api_key) overrides.api_key = state.ai.api_key;
     overrides.dry_run = true;
     return overrides;
@@ -222,6 +224,7 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
       extra_headers: { ...state.ai.extra_headers },
       timeout_seconds: state.ai.timeout_seconds,
       ip_blacklist: [...state.ai.ip_blacklist],
+      prompt_prefix: state.ai.prompt_prefix,
       api_key_set: state.ai.api_key_set,
     };
   }
@@ -258,6 +261,7 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
       if (patch.timeout_seconds !== undefined) state.ai.timeout_seconds = patch.timeout_seconds;
       if (patch.extra_headers !== undefined) state.ai.extra_headers = { ...patch.extra_headers };
       if (patch.ip_blacklist !== undefined) state.ai.ip_blacklist = [...patch.ip_blacklist];
+      if (patch.prompt_prefix !== undefined) state.ai.prompt_prefix = patch.prompt_prefix;
       if (patch.api_key) {
         state.ai.api_key = patch.api_key;
         state.ai.api_key_set = true;
