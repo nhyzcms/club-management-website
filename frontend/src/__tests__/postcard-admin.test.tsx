@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   clampBarcodeCount,
   errMessage,
@@ -208,5 +208,58 @@ describe("BarcodeTab", () => {
     const btn = screen.getByRole("button", { name: "覆盖生成新条码" }) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     expect(screen.getByText(/已有 3 个条码被登记占用/)).toBeTruthy();
+  });
+});
+
+describe("AI 配置预设", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("预设填入服务商参数并从 /models 拉模型列表，「其他」清空回自定义", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { postcardAdminApi } = await import("../api/postcardAdmin");
+    vi.spyOn(postcardAdminApi, "aiConfig").mockResolvedValue({
+      configured: false,
+      enabled: false,
+      ready: false,
+      base_url: "",
+      model: "",
+      extra_headers: {},
+      timeout_seconds: 20,
+      ip_blacklist: [],
+      api_key_set: false,
+    });
+    vi.spyOn(postcardAdminApi, "aiSamples").mockResolvedValue({
+      results: [],
+      sample_ready: false,
+    });
+    const aiModels = vi.spyOn(postcardAdminApi, "aiModels").mockResolvedValue({
+      ok: true,
+      models: ["deepseek-flash", "deepseek-v4-pro"],
+    });
+
+    const { default: AITab } = await import("../components/postcard/admin/AITab");
+    render(<AITab />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "DeepSeek" }));
+    expect((screen.getByRole("textbox", { name: /模型 ID/ }) as HTMLInputElement).value).toBe(
+      "deepseek-flash",
+    );
+    await waitFor(() => expect(aiModels).toHaveBeenCalledTimes(1));
+    expect(aiModels.mock.calls[0][0]).toMatchObject({
+      base_url: "https://api.deepseek.com/v1",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "OpenCode-GO" }));
+    expect((screen.getByRole("textbox", { name: /模型 ID/ }) as HTMLInputElement).value).toBe(
+      "deepseek-v4.1-flash",
+    );
+    const headers = screen.getByRole("textbox", {
+      name: /自定义请求头/,
+    }) as HTMLTextAreaElement;
+    expect(headers.value).toContain("x-opencode-session");
+    expect(headers.value).toContain("x-opencode-client");
+
+    fireEvent.click(screen.getByRole("button", { name: "其他" }));
+    expect((screen.getByRole("textbox", { name: /模型 ID/ }) as HTMLInputElement).value).toBe("");
   });
 });

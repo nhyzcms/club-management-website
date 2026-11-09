@@ -367,7 +367,7 @@ class PostcardAIConfig(models.Model):
         "Base URL（OpenAI 兼容，含 /v1）", max_length=256, blank=True, default="",
     )
     api_key = models.CharField("API Key", max_length=512, blank=True, default="")
-    model = models.CharField("模型名", max_length=128, blank=True, default="")
+    model = models.CharField("模型 ID", max_length=128, blank=True, default="")
     # 自定义请求头：{"x-api-key": "..."} 等（部分兼容服务不用 Bearer）。
     extra_headers = models.JSONField("自定义请求头", default=dict, blank=True)
     timeout_seconds = models.PositiveSmallIntegerField("单次调用超时（秒）", default=20)
