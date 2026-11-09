@@ -154,7 +154,8 @@ export function createSimPostcardUserApi(state: SimState): PostcardApi {
 
     lookup: async (q: string) => lookupRegistrations(state, q),
 
-    update: async (regCode, patch) => updateOwnRegistration(state, regCode, patch),
+    update: async (regCode, patch, _fingerprint, submissionId) =>
+      updateOwnRegistration(state, regCode, patch, submissionId),
 
     cancel: async (regCode, _fingerprint, scope = "one", submissionId) =>
       cancelOwnRegistration(state, regCode, scope, submissionId),

@@ -47,6 +47,7 @@ import {
   photoDataUrl,
   randomRegCode,
   REVIEW_LABELS,
+  syncRegistrationStatus,
   recordsPage,
   saveConfig,
   statsOf,
@@ -378,16 +379,23 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
       const reg = state.registrations.find((r) => r.items.some((i) => i.barcode === barcode));
       const item = reg?.items.find((i) => i.barcode === barcode);
       if (!reg || !item) throw new SimError("明信片未登记，请先登记！", 404);
+      if (item.status === "cancelled") throw new SimError("该明信片所属登记已取消，无法签收。");
+      if (item.status === "reported") {
+        const already = receiptOf(state, barcode);
+        return { ...already, already_reported: true };
+      }
       item.status = "reported";
-      reg.status = "reported";
+      // 登记单状态由条目联动（全部未取消的条目都报寄才算「已报寄」）。
+      syncRegistrationStatus(reg);
       return receiptOf(state, barcode);
     },
     unreport: async (barcode: string) => {
       const reg = state.registrations.find((r) => r.items.some((i) => i.barcode === barcode));
       const item = reg?.items.find((i) => i.barcode === barcode);
       if (!reg || !item) throw new SimError("明信片未登记，请先登记！", 404);
+      if (item.status !== "reported") throw new SimError("该条码不是已报寄状态。");
       item.status = "registered";
-      if (reg.items.every((i) => i.status === "registered")) reg.status = "registered";
+      syncRegistrationStatus(reg);
       return receiptOf(state, barcode);
     },
   };

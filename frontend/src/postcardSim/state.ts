@@ -306,8 +306,10 @@ export function saveConfig(
   const phase = phaseOf(state.event, state.config, now);
   const started = phase !== "not_started" && state.event?.status !== "draft";
   if (started && state.event) {
+    // 与后端 AdminConfigView 一致：壳字段 = 标题 / 简介 / 起止时间（2026-11-09 补齐 summary）。
     const shellChanged =
       input.title !== state.event.title
+      || (input.summary || "") !== state.event.summary
       || input.start_at !== state.event.start_at
       || (input.end_at || null) !== state.event.end_at;
     if (shellChanged) {
@@ -611,6 +613,17 @@ export function updateRegistration(
   return { reg_code: reg.reg_code };
 }
 
+/**
+ * 按条目联动登记单状态（镜像后端 `PostcardRegistration.sync_status_from_items`）：
+ * **全部未取消的条目**都报寄 → 登记单「已报寄」，否则「已登记」；已取消的单不动。
+ */
+export function syncRegistrationStatus(reg: SimRegistration): void {
+  if (reg.status === "cancelled") return;
+  const active = reg.items.filter((it) => it.status !== "cancelled");
+  const allReported = active.length > 0 && active.every((it) => it.status === "reported");
+  reg.status = allReported ? "reported" : "registered";
+}
+
 export function deleteRegistration(state: SimState, registrationId: number): void {
   const reg = findRegistration(state, registrationId);
   if (!reg) throw new SimError("登记单不存在。", 404);
@@ -779,9 +792,17 @@ export function submitRegistration(
   const ready = aiReady(state);
   const regId = nextId(state);
   const nowIso = now.toISOString();
+  // 「同一发件人」= 姓名 + 年级 + 班级（用户 2026-11-08 定的口径）：复用同一登记码，
+  // 但每次提交都是**独立的一条登记单**（真实环境就是这么存的，取消/改也按单来）。
+  const samePerson = state.registrations.find(
+    (r) =>
+      r.sender_name === input.sender_name.trim()
+      && r.grade === input.grade
+      && r.class_no === Number(input.class_no),
+  );
   const reg: SimRegistration = {
     id: regId,
-    reg_code: randomRegCode(state),
+    reg_code: samePerson ? samePerson.reg_code : randomRegCode(state),
     code_granted: true,
     access_token: `sim-${regId}-${Math.random().toString(36).slice(2, 10)}`,
     fingerprint: input.fingerprint,
@@ -843,8 +864,13 @@ export function myRegistrations(state: SimState, fingerprint: string): PostcardR
     .map((r) => registrationSummary(r));
 }
 
+/** 同一登记码可能对应多份提交（一条提交一条记录，与后端一致）。 */
+export function findRegistrationsByCode(state: SimState, regCode: string): SimRegistration[] {
+  return state.registrations.filter((r) => r.reg_code === regCode);
+}
+
 export function findRegistrationByCode(state: SimState, regCode: string): SimRegistration | null {
-  return state.registrations.find((r) => r.reg_code === regCode) ?? null;
+  return findRegistrationsByCode(state, regCode)[0] ?? null;
 }
 
 export function findRegistrationByToken(state: SimState, token: string): SimRegistration | null {
@@ -859,9 +885,9 @@ export function lookupRegistrations(
   const query = q.trim();
   if (!query) throw new SimError("请输入登记码或寄出人姓名。");
   if (/^\d{6}$/.test(query)) {
-    const hit = findRegistrationByCode(state, query);
-    if (!hit) throw new SimError("没有找到这个登记码，请核对。");
-    return { kind: "code", results: [registrationSummary(hit)] };
+    const hits = findRegistrationsByCode(state, query);
+    if (hits.length === 0) throw new SimError("没有找到这个登记码，请核对。");
+    return { kind: "code", results: hits.map((r) => registrationSummary(r)) };
   }
   const hits = state.registrations.filter((r) => r.sender_name.includes(query));
   if (hits.length === 0) throw new SimError("没有找到对应的登记记录。");
@@ -873,18 +899,44 @@ export function updateOwnRegistration(
   state: SimState,
   regCode: string,
   patch: Partial<Pick<SimRegistration, "sender_name" | "grade" | "class_no" | "dest_region" | "dest_school">>,
+  submissionId?: number,
   now: Date = new Date(),
 ): PostcardRegistrationSummary {
-  const reg = findRegistrationByCode(state, regCode);
-  if (!reg) throw new SimError("登记单不存在或登记码有误。", 404);
+  const regs = findRegistrationsByCode(state, regCode);
+  if (regs.length === 0) throw new SimError("登记单不存在或登记码有误。", 404);
+  if (!submissionId && regs.length > 1) {
+    // 后端同款：一个码下多份提交时必须指定 `id`，否则不知道该改哪一份。
+    throw new SimError("该登记码对应多份提交，请指定要修改的提交（id）。");
+  }
+  const reg = submissionId ? regs.find((r) => r.id === submissionId) : regs[0];
+  if (!reg) throw new SimError("这条提交不存在。", 404);
+  if (reg.status === "cancelled") throw new SimError("已取消的登记不能修改。");
+
+  const config = state.config;
+  if (patch.grade !== undefined) {
+    const allowed = config?.allowed_grades ?? [];
+    if (allowed.length && !allowed.includes(patch.grade)) {
+      throw new SimError("你的年级不在本次活动可参与范围内。");
+    }
+    reg.grade = patch.grade;
+  }
+  if (patch.dest_region !== undefined) {
+    if (!POSTCARD_REGIONS.includes(patch.dest_region)) throw new SimError("寄达区不在支持范围内。");
+    reg.dest_region = patch.dest_region;
+  }
+  if (patch.dest_school !== undefined) {
+    const schools = config?.destination_schools ?? [];
+    const name = patch.dest_school.trim();
+    if (schools.length && !schools.some((s) => s.region === (patch.dest_region ?? reg.dest_region) && s.name === name)) {
+      throw new SimError("寄达校不在本次活动支持的学校清单内。");
+    }
+    reg.dest_school = name;
+  }
   if (patch.sender_name !== undefined) {
     if (!patch.sender_name.trim()) throw new SimError("寄出人姓名不能为空。");
     reg.sender_name = patch.sender_name.trim();
   }
-  if (patch.grade !== undefined) reg.grade = patch.grade;
   if (patch.class_no !== undefined) reg.class_no = Number(patch.class_no);
-  if (patch.dest_region !== undefined) reg.dest_region = patch.dest_region;
-  if (patch.dest_school !== undefined) reg.dest_school = patch.dest_school.trim();
   reg.updated_at = now.toISOString();
   pushAudit(state, "my_update", `registration:${reg.id}`, { ...patch }, now);
   return registrationSummary(reg);
@@ -898,20 +950,25 @@ export function cancelOwnRegistration(
   submissionId?: number,
   now: Date = new Date(),
 ): PostcardRegistrationSummary {
-  const reg = findRegistrationByCode(state, regCode);
-  if (!reg) throw new SimError("登记单不存在或登记码有误。", 404);
-  if (scope === "all") {
+  const regs = findRegistrationsByCode(state, regCode);
+  if (regs.length === 0) throw new SimError("登记单不存在或登记码有误。", 404);
+  const targets =
+    scope === "all"
+      ? regs
+      : [submissionId ? regs.find((r) => r.id === submissionId) : regs[0]].filter(
+          (r): r is SimRegistration => Boolean(r),
+        );
+  if (targets.length === 0) throw new SimError("这条提交不存在。", 404);
+  const changed = targets.filter((r) => r.status !== "cancelled");
+  if (changed.length === 0) throw new SimError("该登记已是取消状态。");
+  for (const reg of changed) {
+    // 后端 cancel：整条提交（含其全部条目）一起作废。
     reg.status = "cancelled";
     for (const it of reg.items) it.status = "cancelled";
-  } else {
-    const target = submissionId ? reg.items.find((it) => it.id === submissionId) : reg.items[0];
-    if (!target) throw new SimError("要取消的明信片不存在。", 404);
-    target.status = "cancelled";
-    if (reg.items.every((it) => it.status === "cancelled")) reg.status = "cancelled";
+    reg.updated_at = now.toISOString();
+    pushAudit(state, "my_cancel", `registration:${reg.id}`, { scope, submissionId }, now);
   }
-  reg.updated_at = now.toISOString();
-  pushAudit(state, "my_cancel", `registration:${reg.id}`, { scope, submissionId }, now);
-  return registrationSummary(reg);
+  return registrationSummary(changed[0]);
 }
 
 /** 判不匹配 → 申请人工复核（转 manual_pending 并保持发码）。 */
@@ -920,21 +977,25 @@ export function requestManualReview(
   opts: { regCode?: string; token?: string },
   now: Date = new Date(),
 ): { message: string; count: number } {
-  const reg = opts.regCode
-    ? findRegistrationByCode(state, opts.regCode)
+  const regs = opts.regCode
+    ? findRegistrationsByCode(state, opts.regCode)
     : opts.token
-      ? findRegistrationByToken(state, opts.token)
-      : null;
-  if (!reg) throw new SimError("登记单不存在。", 404);
+      ? [findRegistrationByToken(state, opts.token)].filter((r): r is SimRegistration => Boolean(r))
+      : [];
+  if (regs.length === 0) throw new SimError("登记单不存在。", 404);
   let count = 0;
-  for (const it of reg.items) {
-    if (it.review_state === "ai_failed" || it.review_state === "manual_failed" || it.review_state === "pending") {
-      it.review_state = "manual_pending";
-      count += 1;
+  for (const reg of regs) {
+    for (const it of reg.items) {
+      // 后端只把 ai_failed 翻成 manual_pending（manual_failed / pending 不在此列）。
+      if (it.review_state === "ai_failed") {
+        it.review_state = "manual_pending";
+        count += 1;
+      }
     }
   }
-  pushAudit(state, "my_review_request", `registration:${reg.id}`, { count }, now);
-  return { message: count ? "已提交人工复核，我们会尽快处理。" : "当前没有待复核的明信片。", count };
+  if (count === 0) throw new SimError("当前没有 AI 判定不匹配、需要人工复核的明信片。");
+  pushAudit(state, "my_review_request", `registration:${regs[0].id}`, { count }, now);
+  return { message: "已提交人工复核，请耐心等待复核结果", count };
 }
 
 /** 照片下发（模拟里直接给 data URL；找不到给空串，<img> 会显示裂图）。 */
