@@ -351,6 +351,8 @@
 
 `POST admin/ai/test/`：用已保存配置发一次最小对话请求，返回 `{ok, latency_ms, model, reply}` 或 `{ok: false, error}`（HTTP 200，按 `ok` 展示；不回显密钥）。
 
+请求体可选覆盖（**只在本次请求生效，不落库**）：`base_url` / `model` / `api_key` / `extra_headers` / `timeout_seconds`；再带 `dry_run: true` 时**跳过审计**（模拟环境用，`#/postcard/admin?sim=1`）。
+
 审核管线：OpenAI 兼容 `/chat/completions`（urllib 实现，零 SDK），输入用户照片 + 管理员样例 + 规则 + 黑名单；输出严格 JSON（`matched` / `mismatched_items` / `blacklist_hit` / `blacklist_names` / `comment`）。最多 6 次调用机会、指数退避；全败转人工复核。连续 5 个用户失败会邮件告警所有绑定邮箱的管理员。
 
 ### 样例与海报导入
@@ -358,6 +360,7 @@
 - `GET admin/ai/samples/` → `{results: [{id, caption, has_image, created_at}], sample_ready}`；**活动至少一条样例才开放登记**。
 - `POST admin/ai/samples/`：`multipart`（`image` + `caption`），照片走与用户照片同一道安全管线。
 - `POST admin/ai/samples/<pk>/explain/`：让 AI 复述它对样例的理解（核对 AI 是否理解正确）；未启用 / 调用失败给人话错误。
+- `POST admin/ai/explain/`：**一次性**解读（模拟环境用）——`multipart`（`image` + `caption`），走同一套照片安全管线，复用上面的 prompt；**不落库、不留文件、不写审计**，返回 `{text}`。
 - `POST admin/schools/import/`：上传活动海报 → AI 识别参与学校、所在区与区内编号；**只回结果、不落库**，前端合并进配置表单、管理员核对后保存才生效。响应含 `schools` / `skipped` / `missing_no`；AI 未配置返回 `400 {code: "ai_not_configured"}`。
 
 ### 复核台
