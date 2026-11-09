@@ -363,6 +363,13 @@
 - `POST admin/ai/explain/`：**一次性**解读（模拟环境用）——`multipart`（`image` + `caption`），走同一套照片安全管线，复用上面的 prompt；**不落库、不留文件、不写审计**，返回 `{text}`。
 - `POST admin/schools/import/`：上传活动海报 → AI 识别参与学校、所在区与区内编号；**只回结果、不落库**，前端合并进配置表单、管理员核对后保存才生效。响应含 `schools` / `skipped` / `missing_no`；AI 未配置返回 `400 {code: "ai_not_configured"}`。
 
+### 模拟环境专用
+
+- `POST admin/ai/preview/`：**只给模拟环境用**（`#/postcard/admin?sim=1`）。`multipart`：`sender_name` / `grade_label` / `class_no` / `dest_region` / `dest_school` / `barcode` + 可选 `photo_front` / `photo_back`（走同一套照片安全管线）→ 用**与正式审核相同的 prompt 与解析**跑一次模型，返回 `{ok: true, verdict: {...}}`。
+  - **不建登记单、不存照片、不写审计**；
+  - AI 未配置 / 调用失败 → `{ok: false, reason: "ai_not_ready" | "ai_error"}`（HTTP 200），前端按「转人工复核」处理；
+  - 限流 120/h（一张明信片一次调用）。
+
 ### 复核台
 
 `GET admin/review/?state=manual_pending|ai_failed|`（空 = 全部待复核）：按**条目**聚合，返回 `{id, item_id, barcode, review_state, photo_ids, ai_verdict, registration}`，分页 20/页。
