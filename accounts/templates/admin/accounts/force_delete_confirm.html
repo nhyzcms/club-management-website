@@ -1,0 +1,55 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>强制彻底删除账号</h1>
+<p class="errornote">
+  此操作会<strong>物理删除</strong>账号及其个人数据，<strong>不可恢复</strong>。
+  仅后台审计表里会留一条「谁在何时删了哪个账号」的记录。
+</p>
+
+<table style="width:100%;margin:1em 0">
+  <thead><tr><th>账号</th><th>昵称</th><th>身份</th><th>可删</th></tr></thead>
+  <tbody>
+  {% for user, allowed, why in targets %}
+    <tr>
+      <td>{{ user.username }}（#{{ user.pk }}）</td>
+      <td>{{ user.profile.nickname|default:"—" }}</td>
+      <td>{% if user.is_superuser %}超级管理员{% elif user.is_staff %}管理员{% else %}普通账号{% endif %}</td>
+      <td>{% if allowed %}是{% else %}<span style="color:#ba2121">{{ why }}</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<form method="post">{% csrf_token %}
+  {% for user, allowed, why in targets %}{% if allowed %}
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ user.pk }}">
+  {% endif %}{% endfor %}
+  <input type="hidden" name="action" value="{{ action_name }}">
+  <input type="hidden" name="post" value="yes">
+
+  <fieldset class="module aligned">
+    <div class="form-row">
+      <label for="id_mode">内容处理：</label>
+      <select name="mode" id="id_mode">
+        {% for value, label in mode_choices %}
+          <option value="{{ value }}"{% if value == "keep" %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <div class="help">「保留内容并匿名化」= 新闻 / 任务 / 评论 / 私信保留，作者显示为「该用户已注销」；「彻底删除内容」= 连内容一起删。</div>
+    </div>
+    <div class="form-row">
+      <label for="id_reason">原因：</label>
+      <input type="text" name="reason" id="id_reason" maxlength="2000" style="width:60%">
+    </div>
+    <div class="form-row">
+      <label for="id_confirm">请输入「{{ confirm_text }}」：</label>
+      <input type="text" name="confirm" id="id_confirm" autocomplete="off" required>
+    </div>
+  </fieldset>
+
+  <div class="submit-row">
+    <input type="submit" class="default" value="确认彻底删除">
+    <a href="../" class="button cancel-link">取消</a>
+  </div>
+</form>
+{% endblock %}

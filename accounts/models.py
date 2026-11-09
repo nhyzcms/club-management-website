@@ -1091,3 +1091,41 @@ class StepUpEvent(models.Model):
 
     def __str__(self):
         return f"{self.user_id} · {self.scope} · {self.method} · {self.result}"
+
+
+class AccountDeletionLog(models.Model):
+    """彻底删除账号的审计记录（ADR-0052）。
+
+    被删账号已经不在 ``User`` 表里，所以目标只存 **id / username 标量快照**，不设外键；
+    操作者用 ``SET_NULL``——操作者日后自己被删，这条记录仍要能读。除此之外**不写**任何
+    个人数据（不含邮箱、实名、IP 归属等），只回答「谁在何时删了哪个账号、为什么、用的
+    哪种内容模式」。
+    """
+
+    MODE_PURGE = "purge"
+    MODE_KEEP = "keep"
+    MODE_CHOICES = (
+        (MODE_PURGE, "彻底删除内容"),
+        (MODE_KEEP, "保留内容并匿名化"),
+    )
+
+    actor = models.ForeignKey(
+        User, verbose_name="操作者", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="account_deletions_performed",
+    )
+    actor_username = models.CharField("操作者用户名快照", max_length=150, blank=True, default="")
+    target_id = models.IntegerField("被删账号 id")
+    target_username = models.CharField("被删账号用户名", max_length=150)
+    target_nickname = models.CharField("被删账号昵称快照", max_length=50, blank=True, default="")
+    mode = models.CharField("内容处理", max_length=8, choices=MODE_CHOICES, default=MODE_KEEP)
+    reason = models.TextField("原因", blank=True, default="")
+    ip = models.GenericIPAddressField("操作 IP", null=True, blank=True)
+    created_at = models.DateTimeField("时间", auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "彻底删除审计"
+        verbose_name_plural = "彻底删除审计"
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.target_username}(#{self.target_id}) by {self.actor_username or 'cli'}"

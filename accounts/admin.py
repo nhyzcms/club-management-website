@@ -4,13 +4,15 @@ from datetime import timedelta
 
 from django import forms
 from django.contrib import admin, messages
+from django.contrib.admin import helpers
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
 from django.db.models import F, OuterRef, Q, Subquery
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
+from django.template.response import TemplateResponse
 from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
@@ -33,6 +35,7 @@ from .member_roster import (
     plan_import,
 )
 from .models import (
+    AccountDeletionLog,
     AccountDevice,
     AccountIdentity,
     AccountLifecycle,
@@ -424,7 +427,10 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ("username", "email", "first_name", "last_name")
     ordering = ("username",)
     inlines = [ProfileInline, AccountIdentityInline, AccountLifecycleInline, VerificationInline]
-    actions = ["ban_users", "mute_users"]
+    actions = ["ban_users", "mute_users", "force_delete_accounts"]
+
+    #: 强制删除要逐字输入的确认口令（防止误点 / 手滑）。
+    FORCE_DELETE_CONFIRM_TEXT = "彻底删除"
 
     def get_queryset(self, request):
         # 已注销列读 user.lifecycle：一次性 select_related，避免列表 N+1。
@@ -470,6 +476,74 @@ class CustomUserAdmin(UserAdmin):
             except MessagingError:
                 skip += 1
         self.message_user(request, f"已禁言 {ok} 个账号。跳过 {skip} 个。")
+
+    @admin.action(description="强制彻底删除（不可恢复）")
+    def force_delete_accounts(self, request, queryset):
+        """物理删除账号（ADR-0052）：先出确认页，逐字输入口令后才执行。
+
+        管理员可删普通账号；删管理员 / 超管需要超级管理员（规则在
+        :func:`accounts.hard_delete.can_hard_delete` 里统一收口，这里只在确认页上
+        把不可删的标出来）。
+        """
+        from .hard_delete import (
+            MODE_CHOICES,
+            MODE_KEEP,
+            HardDeleteError,
+            can_hard_delete,
+            hard_delete_account,
+        )
+
+        if request.POST.get("post") != "yes":
+            targets = []
+            for user in queryset.select_related("profile"):
+                allowed, why = can_hard_delete(request.user, user)
+                targets.append((user, allowed, why))
+            context = {
+                **self.admin_site.each_context(request),
+                "title": "强制彻底删除账号",
+                "targets": targets,
+                "mode_choices": MODE_CHOICES,
+                "confirm_text": self.FORCE_DELETE_CONFIRM_TEXT,
+                "action_name": "force_delete_accounts",
+                "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
+                "opts": self.model._meta,
+                "media": self.media,
+            }
+            return TemplateResponse(
+                request, "admin/accounts/force_delete_confirm.html", context,
+            )
+
+        typed = (request.POST.get("confirm") or "").strip()
+        if typed != self.FORCE_DELETE_CONFIRM_TEXT:
+            self.message_user(
+                request,
+                f"未执行：确认文字应为「{self.FORCE_DELETE_CONFIRM_TEXT}」。",
+                level=messages.ERROR,
+            )
+            return HttpResponseRedirect(request.get_full_path())
+
+        mode = request.POST.get("mode") or MODE_KEEP
+        reason = (request.POST.get("reason") or "").strip()
+        ip = get_client_ip(request)
+
+        ok = skipped = 0
+        failures: list[str] = []
+        for user in queryset:
+            try:
+                hard_delete_account(
+                    user, actor=request.user, mode=mode, reason=reason, ip=ip,
+                )
+                ok += 1
+            except HardDeleteError as exc:
+                skipped += 1
+                failures.append(f"{user.username}：{exc.message}")
+        if ok:
+            self.message_user(request, f"已彻底删除 {ok} 个账号，审计记录已留存。")
+        for line in failures:
+            self.message_user(request, f"跳过 {line}", level=messages.WARNING)
+        if not ok and not skipped:
+            self.message_user(request, "没有可删除的账号。", level=messages.WARNING)
+        return HttpResponseRedirect(request.get_full_path())
 
 
 admin.site.unregister(User)
@@ -1064,6 +1138,29 @@ class AccountDeviceAdmin(admin.ModelAdmin):
             actor=request.user, target=None, scope="devices", ip=get_client_ip(request),
         )
         return super().changelist_view(request, extra_context)
+
+
+@admin.register(AccountDeletionLog)
+class AccountDeletionLogAdmin(admin.ModelAdmin):
+    """彻底删除审计：只读，不给增删改（记录本身就是取证用的）。"""
+
+    list_display = (
+        "created_at", "target_username", "target_id", "mode",
+        "actor_username", "ip",
+    )
+    list_filter = ("mode",)
+    search_fields = ("target_username", "actor_username")
+    date_hierarchy = "created_at"
+    ordering = ("-created_at", "-id")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(AdminAccessLog)
