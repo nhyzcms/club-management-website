@@ -74,6 +74,7 @@ from .serializers import (
 )
 from .throttles import (
     AIExplainThrottle,
+    AIModelsThrottle,
     AIReviewPreviewThrottle,
     AITestThrottle,
     CodeAccessDeviceThrottle,
@@ -1547,7 +1548,7 @@ class AdminAITestView(APIView):
         ):
             return Response({
                 "ok": False,
-                "error": "配置不完整：需要启用 AI、填写 Base URL 与模型名后才能测试",
+                "error": "配置不完整：需要启用 AI、填写 Base URL 与模型 ID 后才能测试",
             })
         result = ai.test_connection(cfg)
         event, _, _ = _phase_guard(admin=True)
@@ -1557,6 +1558,34 @@ class AdminAITestView(APIView):
                 "latency_ms": result.get("latency_ms"),
             })
         return Response(result)
+
+
+class AdminAIModelsView(APIView):
+    """拉取服务商的模型列表，供管理端「模型选择」下拉。
+
+    ``POST {base_url}/models`` 的代理：模型清单**只从服务商取**，不内置任何
+    写死清单（各家目录随订阅/版本变化）。与测试连接同样接受临时参数
+    （模拟环境 `?sim=1` 用本次填写的参数试拉，不落库、不写审计）。
+    只回 ``{ok, models}`` / ``{ok: false, error}``，绝不回显 api_key。
+    """
+
+    permission_classes = [CanManagePostcard]
+    throttle_classes = [AIModelsThrottle]
+
+    def post(self, request):
+        from . import ai
+
+        cfg = PostcardAIConfig.load()
+        overrides = request.data if isinstance(request.data, dict) else {}
+        if overrides:
+            cfg = _AIConfigView(cfg, overrides)
+        if cfg is None or not cfg.base_url.strip():
+            return Response({"ok": False, "error": "请先填写 Base URL"})
+        try:
+            models = ai.list_models(cfg)
+        except ai.AIModelsError as exc:
+            return Response({"ok": False, "error": str(exc)})
+        return Response({"ok": True, "models": models})
 
 
 class AdminAISamplesView(APIView):
@@ -1654,7 +1683,7 @@ class AdminAISampleExplainView(APIView):
         cfg = PostcardAIConfig.load()
         if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
             return Response(
-                {"detail": "AI 未启用或配置不完整：需要启用 AI、填写 Base URL 与模型名"},
+                {"detail": "AI 未启用或配置不完整：需要启用 AI、填写 Base URL 与模型 ID"},
                 status=400,
             )
         try:
@@ -1748,7 +1777,7 @@ class AdminAIExplainUploadView(APIView):
         cfg = PostcardAIConfig.load()
         if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
             return Response(
-                {"detail": "AI 未启用或配置不完整：需要启用 AI、填写 Base URL 与模型名"},
+                {"detail": "AI 未启用或配置不完整：需要启用 AI、填写 Base URL 与模型 ID"},
                 status=400,
             )
         try:

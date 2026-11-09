@@ -127,6 +127,19 @@ class AITestThrottle(IPLimitThrottle):
         return self.RATE
 
 
+class AIModelsThrottle(IPLimitThrottle):
+    """拉取模型列表：只读、不花钱，但会打到服务商并占 worker。
+
+    比测试连接宽松（管理员配参数时会反复刷新列表），仍要限住脚本重放。
+    """
+
+    scope = "postcard_ai_models"
+    RATE = "120/hour"
+
+    def get_rate(self):
+        return self.RATE
+
+
 class AIExplainThrottle(IPLimitThrottle):
     """让 AI 读样例：一张图 + 一次长输出（成本与导入海报同档）。"""
 

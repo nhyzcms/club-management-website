@@ -2471,6 +2471,114 @@ class AITestTempParamsTest(TestCase):
         self.assertEqual(resp.status_code, 403)
 
 
+class AdminAIModelsTest(TestCase):
+    """「模型选择」下拉的数据源：只把服务商 `/models` 的结果交给前端。
+
+    红线：不在后端/前端内置任何写死模型清单；失败文案要能指导管理员自查，
+    且绝不回显 api_key。
+    """
+
+    def setUp(self):
+        cache.clear()
+        _config_event()
+        _ai_config()
+        self.client = APIClient()
+        self.client.force_authenticate(user=_admin())
+
+    class _Resp:
+        def __init__(self, body):
+            self._body = body
+
+        def read(self, size=None):
+            return self._body if size is None else self._body[:size]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def _post(self, payload=None):
+        return self.client.post(
+            "/events/postcard/admin/ai/models/", payload or {}, format="json",
+        )
+
+    def test_returns_provider_models_deduped_and_sanitized(self):
+        body = json.dumps({"data": [
+            {"id": "deepseek-flash"}, {"id": "deepseek-v4-pro"},
+            {"id": "bad id!"}, {"id": "deepseek-flash"}, {"id": 123},
+        ]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ):
+            resp = self._post()
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.json()["ok"])
+        self.assertEqual(resp.json()["models"], ["deepseek-flash", "deepseek-v4-pro"])
+
+    def test_accepts_bare_list_of_ids(self):
+        body = json.dumps(["kimi-k3", "glm-5.3"]).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ):
+            resp = self._post()
+        self.assertEqual(resp.json()["models"], ["kimi-k3", "glm-5.3"])
+
+    def test_404_is_human_readable(self):
+        from urllib.error import HTTPError
+
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            side_effect=HTTPError("https://x/v1/models", 404, "Not Found", {}, None),
+        ):
+            resp = self._post()
+        data = resp.json()
+        self.assertFalse(data["ok"])
+        self.assertIn("没有 /models 接口", data["error"])
+
+    def test_non_json_is_reported(self):
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(b"<html>404</html>"),
+        ):
+            resp = self._post()
+        self.assertFalse(resp.json()["ok"])
+        self.assertIn("不是 JSON", resp.json()["error"])
+
+    def test_temp_params_and_custom_headers_are_used_but_not_saved(self):
+        body = json.dumps({"data": [{"id": "deepseek-v4.1-flash"}]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ) as urlopen:
+            resp = self._post({
+                "base_url": "https://opencode.ai/zen/go/v1",
+                "api_key": "sk-temp-key",
+                "extra_headers": {"x-opencode-session": "sess-1"},
+            })
+        self.assertTrue(resp.json()["ok"])
+        req = urlopen.call_args[0][0]
+        self.assertEqual(req.full_url, "https://opencode.ai/zen/go/v1/models")
+        self.assertEqual(req.get_header("Authorization"), "Bearer sk-temp-key")
+        self.assertEqual(req.get_header("X-opencode-session"), "sess-1")
+        cfg = PostcardAIConfig.load()
+        self.assertEqual(cfg.base_url, "https://ai.example.com/v1")
+        self.assertNotIn("sk-temp-key", json.dumps(resp.json()))
+
+    def test_requires_manage_permission(self):
+        client = APIClient()
+        client.force_authenticate(user=_reviewer())
+        resp = client.post("/events/postcard/admin/ai/models/", {}, format="json")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_throttle_rate_pinned(self):
+        from .throttles import AIModelsThrottle
+
+        self.assertEqual(AIModelsThrottle.RATE, "120/hour")
+
+
 class AIExplainUploadTest(TestCase):
     """模拟环境用：「让 AI 读样例」支持一次性上传（不落库、不留文件）。"""
 

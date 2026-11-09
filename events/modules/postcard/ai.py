@@ -55,6 +55,12 @@ RETRY_BACKOFF = (1, 2, 4, 8, 16)
 #: 后台 AI 线程并发上限（每进程；2C2G 服务器保护，登记侧已有双轨限流）。
 REVIEW_CONCURRENCY = 2
 
+#: 模型列表（`/models`）：最多读 512 KiB（2C2G 上防异常大响应吃内存），最多收 300 个。
+MODELS_MAX_BYTES = 512 * 1024
+MODELS_LIMIT = 300
+#: 合法模型 ID：字母数字开头，含 . _ : / @ + -（兼容 openai/xxx、厂商前缀等写法）。
+_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,127}$")
+
 #: 连续失败告警阈值 / 计数 TTL / 邮件冷却。
 FAIL_STREAK_THRESHOLD = 5
 FAIL_STREAK_TTL = 86400
@@ -84,6 +90,13 @@ class AIReviewError(Exception):
 
 class AIRetryExhausted(Exception):
     """5 次调用机会全部失败——转人工复核。"""
+
+
+class AIModelsError(Exception):
+    """拉取服务商模型列表失败。
+
+    ``str(exc)`` 是**可直接展示给管理员**的中文结论（不含 api_key、不含响应体）。
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -240,19 +253,29 @@ def preview_judgement(cfg: PostcardAIConfig, *, form: dict, photos: list, sample
     return parse_verdict(_post_chat(cfg, messages))
 
 
+def _request_headers(cfg: PostcardAIConfig) -> dict:
+    """所有出站请求的公共头真源（对话 / 模型列表 / 测试连接共用，防两处漂移）。
+
+    Authorization 走 Bearer；``extra_headers`` 后叠加，管理员可用它改成
+    x-api-key、补 x-opencode-session 这类服务商专属头（如 OpenCode Go）。
+    """
+    headers = {"Content-Type": "application/json"}
+    if cfg.api_key:
+        headers["Authorization"] = f"Bearer {cfg.api_key}"
+    for key, value in (cfg.extra_headers or {}).items():
+        # 管理员自定义头；只收 str:str，防类型注入。
+        if isinstance(key, str) and isinstance(value, str) and key.strip():
+            headers[key.strip()] = value
+    return headers
+
+
 def _post_chat(cfg: PostcardAIConfig, messages: list, max_tokens: int | None = None) -> str:
     """单次对话调用，返回模型回复正文。任何失败 raise AIReviewError。"""
     url = cfg.base_url.strip().rstrip("/") + "/chat/completions"
     payload = {"model": cfg.model.strip(), "messages": messages, "temperature": 0}
     if max_tokens:
         payload["max_tokens"] = max_tokens
-    headers = {"Content-Type": "application/json"}
-    if cfg.api_key:
-        headers["Authorization"] = f"Bearer {cfg.api_key}"
-    for key, value in (cfg.extra_headers or {}).items():
-        # 管理员自定义头（如 x-api-key）；只收 str:str，防类型注入。
-        if isinstance(key, str) and isinstance(value, str) and key.strip():
-            headers[key.strip()] = value
+    headers = _request_headers(cfg)
     request = urllib.request.Request(
         url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST",
     )
@@ -268,6 +291,59 @@ def _post_chat(cfg: PostcardAIConfig, messages: list, max_tokens: int | None = N
     if not isinstance(text, str) or not text.strip():
         raise AIReviewError("response: empty content")
     return text
+
+
+def list_models(cfg: PostcardAIConfig) -> list[str]:
+    """拉取服务商的模型列表（OpenAI 兼容 ``GET {base_url}/models``）。
+
+    管理端「模型选择」下拉的唯一数据源：**不在本地写死任何模型清单**，
+    各家目录随订阅/版本变化，写死必然过期。只回模型 ID，不落库、不回显 key。
+    任何失败 raise AIModelsError（中文结论可直接展示）。
+    """
+    base = (cfg.base_url or "").strip().rstrip("/")
+    if not base:
+        raise AIModelsError("请先填写 Base URL")
+    headers = _request_headers(cfg)
+    headers["Accept"] = "application/json"
+    timeout = max(5, min(int(cfg.timeout_seconds or 20), 20))
+    request = urllib.request.Request(base + "/models", headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            raw = resp.read(MODELS_MAX_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise AIModelsError(
+                "该服务没有 /models 接口（HTTP 404）：请手动填写模型 ID"
+            ) from exc
+        raise AIModelsError(_http_error_text(exc.code)) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise AIModelsError(f"无法连接服务（{type(exc).__name__}）：请检查 Base URL 与服务器出网") from exc
+    if len(raw) > MODELS_MAX_BYTES:
+        raise AIModelsError("模型列表响应过大，已放弃解析")
+    try:
+        body = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError as exc:
+        raise AIModelsError("服务返回的不是 JSON：Base URL 可能填错了") from exc
+
+    items = body.get("data") if isinstance(body, dict) else body
+    if not isinstance(items, list):
+        items = body.get("models") if isinstance(body, dict) else None
+    models: list[str] = []
+    seen: set[str] = set()
+    for item in items if isinstance(items, list) else []:
+        model_id = item.get("id") if isinstance(item, dict) else item
+        if not isinstance(model_id, str):
+            continue
+        model_id = model_id.strip()
+        if model_id in seen or not _MODEL_ID_RE.match(model_id):
+            continue
+        seen.add(model_id)
+        models.append(model_id)
+        if len(models) >= MODELS_LIMIT:
+            break
+    if not models:
+        raise AIModelsError("服务没有返回可用模型（/models 为空或结构不认识）：请手动填写模型 ID")
+    return models
 
 
 def call_once(cfg: PostcardAIConfig, messages: list) -> dict:
@@ -542,12 +618,7 @@ def test_connection(cfg: PostcardAIConfig) -> dict:
         "max_tokens": 8,
         "temperature": 0,
     }
-    headers = {"Content-Type": "application/json"}
-    if cfg.api_key:
-        headers["Authorization"] = f"Bearer {cfg.api_key}"
-    for key, value in (cfg.extra_headers or {}).items():
-        if isinstance(key, str) and isinstance(value, str) and key.strip():
-            headers[key.strip()] = value
+    headers = _request_headers(cfg)
 
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST",

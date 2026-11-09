@@ -95,6 +95,22 @@ export interface AIConfig {
   api_key_set?: boolean;
 }
 
+export interface AIModelsResult {
+  ok: boolean;
+  models?: string[];
+  error?: string;
+}
+
+/** 临时覆盖的 AI 连接参数（模拟环境 / 未保存草稿试连用，后端不落库）。 */
+export interface AIProbeInput {
+  base_url?: string;
+  api_key?: string;
+  model?: string;
+  extra_headers?: Record<string, string>;
+  timeout_seconds?: number;
+  dry_run?: boolean;
+}
+
 export interface AISample {
   id: number;
   caption: string;
@@ -330,6 +346,13 @@ const realPostcardAdminApi = {
       "/admin/ai/test/",
       { method: "POST", body: "{}" },
     ),
+
+  /** 拉取服务商模型列表（{base_url}/models），供「模型选择」下拉；不内置清单。 */
+  aiModels: (input: AIProbeInput = {}) =>
+    request<AIModelsResult>("/admin/ai/models/", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 
   aiSamples: () => request<{ results: AISample[]; sample_ready: boolean }>("/admin/ai/samples/"),
 

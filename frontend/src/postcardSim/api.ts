@@ -198,6 +198,19 @@ export async function seedSimAIConfig(state: SimState): Promise<void> {
 
 /** 造一个模拟管理端 API（共用传进来的内存 state；退出即整体丢弃）。 */
 export function createSimPostcardAdminApi(state: SimState = emptySimState()): PostcardAdminApi {
+  /** 模拟环境的 AI 临时参数：只随本次请求发给后端，不落库、不写审计。 */
+  function aiOverrides(): Record<string, unknown> {
+    const overrides: Record<string, unknown> = {};
+    if (state.ai.base_url) overrides.base_url = state.ai.base_url;
+    if (state.ai.model) overrides.model = state.ai.model;
+    if (state.ai.timeout_seconds) overrides.timeout_seconds = state.ai.timeout_seconds;
+    if (Object.keys(state.ai.extra_headers).length) overrides.extra_headers = state.ai.extra_headers;
+    if (state.ai.ip_blacklist.length) overrides.ip_blacklist = state.ai.ip_blacklist;
+    if (state.ai.api_key) overrides.api_key = state.ai.api_key;
+    overrides.dry_run = true;
+    return overrides;
+  }
+
   async function aiConfig(): Promise<AIConfig> {
     await seedSimAIConfig(state);
     return {
@@ -253,18 +266,17 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
     },
     testAIConfig: async () => {
       // 带临时参数：后端只在这次请求里用，不落库（不在模拟里写正式配置）。
-      const overrides: Record<string, unknown> = {};
-      if (state.ai.base_url) overrides.base_url = state.ai.base_url;
-      if (state.ai.model) overrides.model = state.ai.model;
-      if (state.ai.timeout_seconds) overrides.timeout_seconds = state.ai.timeout_seconds;
-      if (Object.keys(state.ai.extra_headers).length) overrides.extra_headers = state.ai.extra_headers;
-      if (state.ai.ip_blacklist.length) overrides.ip_blacklist = state.ai.ip_blacklist;
-      if (state.ai.api_key) overrides.api_key = state.ai.api_key;
-      // dry_run：模拟环境的演练不写正式审计（后端据此跳过 _audit）。
-      overrides.dry_run = true;
+      const overrides = aiOverrides();
       return request<{ ok: boolean; error?: string; latency_ms?: number; model?: string; reply?: string }>(
         "/admin/ai/test/",
         { method: "POST", body: JSON.stringify(overrides) },
+      );
+    },
+    aiModels: async () => {
+      // 与测试连接同口径：用模拟里填的参数真拉一次服务商 /models，不落库。
+      return request<{ ok: boolean; models?: string[]; error?: string }>(
+        "/admin/ai/models/",
+        { method: "POST", body: JSON.stringify(aiOverrides()) },
       );
     },
     aiSamples: async () => ({
