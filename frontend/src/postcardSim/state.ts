@@ -90,19 +90,26 @@ export interface SimBarcode {
   registration_id: number | null;
 }
 
+/**
+ * 复核状态（取值与后端 `PostcardPhoto.REVIEW_CHOICES` 逐字一致）：
+ * `pending / ai_passed / ai_failed / manual_pending / manual_passed / manual_failed`。
+ * 模拟里要照抄这套字符串，否则界面文案与真实环境对不上，教学时会记错。
+ */
 export type SimReviewState =
   | "pending"
-  | "approved"
-  | "manual_pending"
+  | "ai_passed"
   | "ai_failed"
+  | "manual_pending"
+  | "manual_passed"
   | "manual_failed";
 
 export const REVIEW_LABELS: Record<SimReviewState, string> = {
-  pending: "审核中",
-  approved: "AI 通过",
+  pending: "待审核",
+  ai_passed: "AI 通过",
+  ai_failed: "AI 不匹配",
   manual_pending: "待人工复核",
-  ai_failed: "AI 判不通过",
-  manual_failed: "人工判不通过",
+  manual_passed: "人工通过",
+  manual_failed: "人工不通过",
 };
 
 export interface SimPhoto {
@@ -793,7 +800,7 @@ export function submitRegistration(
         id: nextId(state),
         barcode: it.barcode,
         status: "registered",
-        review_state: ready ? "approved" : "manual_pending",
+        review_state: ready ? "ai_passed" : "manual_pending",
         ai_verdict: ready
           ? { matched: true, mismatched: [], blacklist: [], comment: "模拟环境：AI 视为通过" }
           : null,
@@ -812,7 +819,7 @@ export function submitRegistration(
     review: ready ? "ai" : "manual",
   }, now);
 
-  const state0: SimReviewState = ready ? "approved" : "manual_pending";
+  const state0: SimReviewState = ready ? "ai_passed" : "manual_pending";
   return {
     reg_code: reg.reg_code,
     code_granted: true,
