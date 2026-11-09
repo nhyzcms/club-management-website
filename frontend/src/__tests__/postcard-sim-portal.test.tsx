@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import {
   emptySimState,
   generateBarcodes,
@@ -257,6 +257,23 @@ describe("模拟环境 · 路由与安装", () => {
     exitSim();
     expect(isPostcardSim()).toBe(false);
     expect(isSimActive()).toBe(false);
+  });
+
+  it("用户页 ↔ 管理端来回切不丢沙箱；离开明信片这条链才清空", async () => {
+    const { isSimActive } = await import("../postcardSim/session");
+    window.location.hash = "#/postcard?sim=1";
+    render(<PostcardSimHost />);
+    expect(isSimActive()).toBe(true);
+
+    // 切到管理端（URL 没带 sim=1 也一样）：沙箱保留
+    window.location.hash = "#/postcard/admin";
+    await waitFor(() => expect(isSimActive()).toBe(true));
+    // 回用户页
+    window.location.hash = "#/postcard/receive";
+    await waitFor(() => expect(isSimActive()).toBe(true));
+    // 离开这条链 → 清空
+    window.location.hash = "#/news";
+    await waitFor(() => expect(isSimActive()).toBe(false));
   });
 
   it("非管理端的模拟页显示红底白字浮标；管理端不重复显示", () => {

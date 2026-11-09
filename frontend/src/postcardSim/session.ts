@@ -51,7 +51,26 @@ export function exitSim(): void {
   installPostcardSimApi(null);
 }
 
-/** 是否处于模拟环境（下载文件名等处判断）。 */
+/** 沙箱是否已装载（与 URL 无关：进了模拟就一直有效，直到退出 / 刷新）。 */
 export function isSimActive(): boolean {
   return installed !== null;
+}
+
+/**
+ * 当前是否处于「模拟模式」：URL 带 sim=1，或沙箱已经装着。
+ *
+ * 为什么要算后者：模拟里在用户页 ↔ 管理端之间来回切时不想丢数据，所以离开
+ * 带参 URL 后沙箱继续留着；这时界面仍然得显示「模拟环境」，否则用户会以为
+ * 自己在正式环境里操作。
+ */
+export function isSimMode(): boolean {
+  return isSimActive() || isSimRoute();
+}
+
+/** 明信片这条业务链上的页面：切换这些页面不清空沙箱。 */
+const SIM_SURFACES = [/^#\/postcard(\/|$)/, /^#\/reviews(\/|$)/, /^#\/m\/review(\/|$)/];
+
+export function isPostcardSurface(hash: string = window.location.hash): boolean {
+  const path = hash.split("?")[0];
+  return SIM_SURFACES.some((re) => re.test(path));
 }

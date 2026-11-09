@@ -17,7 +17,7 @@ import {
   type SimState,
 } from "../postcardSim/state";
 import { buildPdf, buildXlsx, bytesToDataUrl } from "../postcardSim/files";
-import { isSimRoute } from "../postcardSim/session";
+import { exitSim, isSimRoute } from "../postcardSim/session";
 import { isPostcardAdminSim, withSimFileSuffix } from "../api/postcardAdmin";
 import PostcardAdminPage from "../pages/PostcardAdminPage";
 
@@ -324,13 +324,16 @@ describe("模拟环境 · 路由与入口", () => {
     expect(screen.getByText("是否进入模拟操作")).toBeInTheDocument();
   });
 
-  it("模拟路由渲染红底白字徽标，并挂上内存沙箱；卸载即卸下", () => {
+  it("模拟路由渲染红底白字徽标，并挂上内存沙箱", () => {
     window.location.hash = "#/postcard/admin?sim=1";
     const { unmount } = render(<PostcardAdminPage />);
     expect(screen.getByText("模拟环境")).toHaveClass("pa-sim-badge");
     expect(screen.getByRole("button", { name: "退出模拟" })).toBeInTheDocument();
     expect(isPostcardAdminSim()).toBe(true);
+    // 卸载不再卸下沙箱：用户页 / 管理端之间来回切要保留数据，退出是显式动作
     unmount();
+    expect(isPostcardAdminSim()).toBe(true);
+    exitSim();
     expect(isPostcardAdminSim()).toBe(false);
   });
 });

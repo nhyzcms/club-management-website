@@ -9,7 +9,7 @@ import RecordsTab from "../components/postcard/admin/RecordsTab";
 import StatsTab from "../components/postcard/admin/StatsTab";
 import MiscTab from "../components/postcard/admin/MiscTab";
 import { isMobileDevice } from "../utils/device";
-import { SIM_BADGE_TEXT, enterSim, isSimRoute } from "../postcardSim/session";
+import { SIM_BADGE_TEXT, enterSim, exitSim, isSimMode, isSimRoute } from "../postcardSim/session";
 import "../styles/postcard-admin.css";
 
 const TABS = [
@@ -39,10 +39,12 @@ export default function PostcardAdminPage() {
   const [askingSim, setAskingSim] = useState(false);
   // 自己订阅 hashchange：本页不依赖 router 的 location（Route 在只变 search 时不一定
   // 重渲染，而模拟环境的开关正好只改 search）。
-  const [sim, setSim] = useState(() => isSimRoute());
+  // 模拟模式下（URL 带参，或沙箱已装着）本页一律走沙箱：从用户页切回管理端时
+  // URL 可能没带 sim=1，但沙箱还在——界面仍要标「模拟环境」，不能假装在正式环境。
+  const [sim, setSim] = useState(() => isSimMode());
 
   useEffect(() => {
-    const sync = () => setSim(isSimRoute());
+    const sync = () => setSim(isSimMode());
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
   }, []);
@@ -69,6 +71,9 @@ export default function PostcardAdminPage() {
   };
 
   const leaveSim = () => {
+    // 明确退出：仅改 hash 不会清空（明信片页之间的切换要保留数据）。
+    exitSim();
+    setSim(false);
     window.location.hash = "#/postcard/admin";
   };
 
