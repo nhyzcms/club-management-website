@@ -17,7 +17,7 @@ import {
   type SimState,
 } from "../postcardSim/state";
 import { buildPdf, buildXlsx, bytesToDataUrl } from "../postcardSim/files";
-import { isSimRoute } from "../postcardSim/session";
+import { exitSim, isSimRoute } from "../postcardSim/session";
 import { isPostcardAdminSim, withSimFileSuffix } from "../api/postcardAdmin";
 import PostcardAdminPage from "../pages/PostcardAdminPage";
 
@@ -207,7 +207,7 @@ describe("模拟环境 · 配置与条码", () => {
     expect(statsOf(state).items.total).toBe(0);
     expect(state.audit.map((a) => a.action)).toContain("config_save");
     pushAudit(state, "demo", "x", { a: 1 });
-    expect(state.audit.at(-1)?.user).toBe("模拟环境");
+    expect(state.audit[state.audit.length - 1]?.user).toBe("模拟环境");
     state.registrations.push({
       id: 99,
       reg_code: "123456",
@@ -217,14 +217,20 @@ describe("模拟环境 · 配置与条码", () => {
       dest_region: "浦东新区",
       dest_school: "建平中学",
       status: "registered",
+      code_granted: true,
+      access_token: "sim-99",
+      fingerprint: "fp-test",
       created_at: "2026-11-09T08:00:00.000Z",
+      updated_at: "2026-11-09T08:00:00.000Z",
       items: [
         {
           id: 100,
           barcode: "1234567",
           status: "registered",
-          review_state: "none",
+          review_state: "manual_pending",
           ai_verdict: null,
+          mismatched: [],
+          comment: "",
           photos: [],
         },
       ],
@@ -318,13 +324,16 @@ describe("模拟环境 · 路由与入口", () => {
     expect(screen.getByText("是否进入模拟操作")).toBeInTheDocument();
   });
 
-  it("模拟路由渲染红底白字徽标，并挂上内存沙箱；卸载即卸下", () => {
+  it("模拟路由渲染红底白字徽标，并挂上内存沙箱", () => {
     window.location.hash = "#/postcard/admin?sim=1";
     const { unmount } = render(<PostcardAdminPage />);
     expect(screen.getByText("模拟环境")).toHaveClass("pa-sim-badge");
     expect(screen.getByRole("button", { name: "退出模拟" })).toBeInTheDocument();
     expect(isPostcardAdminSim()).toBe(true);
+    // 卸载不再卸下沙箱：用户页 / 管理端之间来回切要保留数据，退出是显式动作
     unmount();
+    expect(isPostcardAdminSim()).toBe(true);
+    exitSim();
     expect(isPostcardAdminSim()).toBe(false);
   });
 });

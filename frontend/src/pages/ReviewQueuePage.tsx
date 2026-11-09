@@ -54,6 +54,7 @@ import {
 import "../styles/list.css";
 import "../styles/form.css";
 import "../styles/detail.css";
+import { enterSim, isSimRoute } from "../postcardSim/session";
 
 const ADVANCE_MS = 900;
 
@@ -67,6 +68,8 @@ function requestedKind(): DeskKind | null {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function ReviewQueuePage() {
+  // 模拟环境（?sim=1）：渲染期装载内存沙箱；幂等，且必须早于子组件的 effect。
+  if (isSimRoute()) enterSim();
   const navigate = useNavigate();
   const gen = useRef(0);
   // 本轮已浏览/已处理的条目（「下一条」与处理动作后前进都跳过它们），切桌/切状态时重置

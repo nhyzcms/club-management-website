@@ -44,6 +44,7 @@ import {
   newSeason,
   publish,
   archiveSeason,
+  photoDataUrl,
   randomRegCode,
   recordsPage,
   saveConfig,
@@ -169,9 +170,8 @@ function receiptOf(state: SimState, barcode: string): ReceiptPayload {
   throw new SimError("明信片未登记，请先登记！", 404);
 }
 
-/** 造一个模拟 API 实例（带自己的内存 state；退出即整体丢弃）。 */
-export function createSimPostcardAdminApi(): PostcardAdminApi {
-  const state = emptySimState();
+/** 造一个模拟管理端 API（共用传进来的内存 state；退出即整体丢弃）。 */
+export function createSimPostcardAdminApi(state: SimState = emptySimState()): PostcardAdminApi {
   let aiSeeded = false;
 
   async function aiConfig(): Promise<AIConfig> {
@@ -300,14 +300,14 @@ export function createSimPostcardAdminApi(): PostcardAdminApi {
       const rows: ReviewRow[] = [];
       for (const reg of state.registrations) {
         for (const item of reg.items) {
-          if (item.review_state === "none" || item.review_state === "approved") continue;
+          if (item.review_state !== "manual_pending" && item.review_state !== "ai_failed") continue;
           if (reviewState && item.review_state !== reviewState) continue;
           rows.push({
             id: item.id,
             item_id: item.id,
             barcode: item.barcode,
             review_state: item.review_state,
-            photo_ids: item.photos.map((_, i) => i + 1),
+            photo_ids: item.photos.map((p) => p.id),
             ai_verdict: item.ai_verdict,
             registration: {
               registration_id: reg.id,
@@ -334,7 +334,11 @@ export function createSimPostcardAdminApi(): PostcardAdminApi {
       for (const reg of state.registrations) {
         const item = reg.items.find((i) => i.id === itemId);
         if (!item) continue;
-        item.review_state = decision === "pass" ? "approved" : "rejected";
+        item.review_state = decision === "pass" ? "approved" : "manual_failed";
+        if (decision === "pass") {
+          // 通过即删照片（与正版生命周期一致）。
+          item.photos = [];
+        }
         item.ai_verdict = {
           ...(item.ai_verdict || {}),
           manual: { decision, note },
@@ -351,7 +355,7 @@ export function createSimPostcardAdminApi(): PostcardAdminApi {
       }
       throw new SimError("复核条目不存在。", 404);
     },
-    reviewPhotoUrl: () => "",
+    reviewPhotoUrl: (photoId: number) => photoDataUrl(state, photoId),
     // —— 登记记录 ——
     records: async (params: RecordQuery) => recordsPage(state, params),
     updateRegistration: async (registrationId: number, patch) => updateReg(state, registrationId, patch),

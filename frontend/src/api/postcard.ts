@@ -108,7 +108,7 @@ export interface RegisterResult {
   review: { state: string; hint: string };
 }
 
-export const postcardApi = {
+const realPostcardApi = {
   /** 独立页一站式状态（阶段 / 公告 / 进度 / 表单元数据）。 */
   portal: () => request<PostcardPortal>("/portal/"),
 
@@ -202,6 +202,41 @@ export const postcardApi = {
   announcementPdfUrl: () => "/events/postcard/announcement-pdf/",
 };
 
+/** 用户端 API 的形状（真实现与模拟实现都满足它）。 */
+export type PostcardApi = typeof realPostcardApi;
+
+/** 正式环境的真实现（模拟实现里需要调真实接口时用，绕过下面的 Proxy）。 */
+export { realPostcardApi };
+
+/** 当前挂着的模拟实现（`?sim=1` 时由 postcardSim/session.ts 装上）。 */
+let simApi: PostcardApi | null = null;
+
+export function installPostcardSimApi(api: PostcardApi | null): void {
+  simApi = api;
+}
+
+/** 是否处于模拟环境。 */
+export function isPostcardSim(): boolean {
+  return simApi !== null;
+}
+
+/**
+ * 用户端 API 入口。
+ *
+ * 正常情况直通真实现；模拟环境（`#/postcard?sim=1`）下整体路由到内存沙箱，
+ * 页面组件因此一行都不用改，界面与正式版天然一致。
+ */
+export const postcardApi: PostcardApi = new Proxy(realPostcardApi, {
+  get(target, prop, receiver) {
+    if (simApi) {
+      const impl = simApi as Record<PropertyKey, unknown>;
+      const value = impl[prop];
+      if (typeof value === "function") return (value as (...args: unknown[]) => unknown).bind(simApi);
+    }
+    return Reflect.get(target, prop, receiver);
+  },
+});
+
 /**
  * 关标签页清理失败照片（sendBeacon）。
  *
@@ -210,6 +245,8 @@ export const postcardApi = {
  * 发送（后端该端点豁免 CSRF，凭证在 URL 里）。
  */
 export function purgePhotosBeacon(token: string): void {
+  // 模拟环境的照片只存在内存里，退出即随页面销毁，不需要（也不该）打后端。
+  if (isPostcardSim()) return;
   try {
     const blob = new Blob(["{}"], { type: "application/json" });
     navigator.sendBeacon(

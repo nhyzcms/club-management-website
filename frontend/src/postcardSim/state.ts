@@ -13,6 +13,7 @@
  */
 import {
   POSTCARD_GRADES,
+  POSTCARD_REGIONS,
   type AdminConfig,
   type AdminConfigInput,
   type AdminSchool,
@@ -23,6 +24,13 @@ import {
   type StatsPayload,
   type SuggestionRow,
 } from "../api/postcardAdmin";
+import type {
+  PostcardItemSummary,
+  PostcardPortal,
+  PostcardProgressNode,
+  PostcardRegistrationSummary,
+  RegisterResult,
+} from "../api/postcard";
 
 export const PHASE_LABELS = {
   not_started: "未开始",
@@ -82,20 +90,49 @@ export interface SimBarcode {
   registration_id: number | null;
 }
 
+export type SimReviewState =
+  | "pending"
+  | "approved"
+  | "manual_pending"
+  | "ai_failed"
+  | "manual_failed";
+
+export const REVIEW_LABELS: Record<SimReviewState, string> = {
+  pending: "审核中",
+  approved: "AI 通过",
+  manual_pending: "待人工复核",
+  ai_failed: "AI 判不通过",
+  manual_failed: "人工判不通过",
+};
+
+export interface SimPhoto {
+  id: number;
+  side: "front" | "back";
+  /** 模拟环境的照片就是浏览器里的 data URL，不进任何存储。 */
+  data_url: string;
+}
+
 export interface SimItem {
   id: number;
   barcode: string;
   status: SimRegStatus;
-  /** 复核状态（模拟环境里只有管理员复核写的判定）。 */
-  review_state: "none" | "manual_pending" | "ai_failed" | "approved" | "rejected";
+  review_state: SimReviewState;
   ai_verdict: Record<string, any> | null;
-  /** 照片（data URL），只存在内存，刷新即丢。 */
-  photos: string[];
+  /** AI 判不匹配的填写项（面向用户的「哪里填错」）。 */
+  mismatched: string[];
+  comment: string;
+  photos: SimPhoto[];
 }
 
 export interface SimRegistration {
   id: number;
   reg_code: string;
+  /** 服务端权威：这条提交现在是否该亮码（模拟里转人工也立即发码）。 */
+  code_granted: boolean;
+  /** 轮询凭证（审核中/复核时用；模拟里同样给）。 */
+  access_token: string;
+  /** 归属三轨之一：浏览器指纹。 */
+  fingerprint: string;
   sender_name: string;
   grade: string;
   class_no: number;
@@ -103,6 +140,7 @@ export interface SimRegistration {
   dest_school: string;
   status: SimRegStatus;
   created_at: string;
+  updated_at: string;
   items: SimItem[];
 }
 
@@ -575,4 +613,346 @@ export function deleteRegistration(state: SimState, registrationId: number): voi
   }
   state.registrations = state.registrations.filter((r) => r.id !== registrationId);
   pushAudit(state, "registration_delete", `registration:${reg.id}`, { reg_code: reg.reg_code });
+}
+
+// ——————————————————————————————————————————————————————————————
+// 用户侧（PR2）：portal / 登记 / 历史 / 查询 / 改 / 取消 / 申请复核 / 建议
+// ——————————————————————————————————————————————————————————————
+
+/** 模拟环境的「AI 是否可用」：配置齐了才算，与后端的 ready 口径一致。 */
+export function aiReady(state: SimState): boolean {
+  return Boolean(state.ai.enabled && state.ai.base_url && state.ai.model && state.ai.api_key_set);
+}
+
+function progressOf(state: SimState, now: Date): PostcardProgressNode[] {
+  const event = state.event;
+  const config = state.config;
+  if (!event || !config) return [];
+  const nodes: { key: string; label: string; time: string | null }[] = [
+    { key: "start", label: "登记开始", time: event.start_at || null },
+    { key: "ship", label: "已寄出", time: config.ship_at },
+    { key: "distribute", label: "下发中", time: config.distribute_at },
+    { key: "end", label: "活动结束", time: event.end_at },
+  ];
+  return nodes.map((n) => ({
+    ...n,
+    reached: Boolean(n.time && now.getTime() >= new Date(n.time).getTime()),
+  }));
+}
+
+/** 一站式状态（GET /portal/）。用户端只认「登记中」可填，其余阶段只读。 */
+export function portalOf(state: SimState, now: Date = new Date()): PostcardPortal {
+  const phase = phaseOf(state.event, state.config, now);
+  const event = state.event;
+  return {
+    phase,
+    phase_label: PHASE_LABELS[phase],
+    // 模拟环境跳过「必须先上传填写样例」的门禁，否则练手前还要先造一张样例图。
+    can_register: phase === "registering",
+    is_admin: true,
+    sample_ready: state.samples.length > 0,
+    event: event
+      ? {
+          id: event.id,
+          title: event.title,
+          summary: event.summary,
+          start_at: event.start_at,
+          end_at: event.end_at,
+        }
+      : null,
+    progress: progressOf(state, now),
+    grades: (state.config?.allowed_grades ?? POSTCARD_GRADES.map((g) => g.value)).map((value) => ({
+      value,
+      label: GRADE_LABELS[value] || value,
+    })),
+    classes: Array.from({ length: 8 }, (_, i) => i + 1),
+    regions: [...POSTCARD_REGIONS],
+    schools: (state.config?.destination_schools ?? []).map((s) => ({ ...s })),
+    announcement_body: state.config?.announcement_body ?? "",
+    announcement_pdf: Boolean(state.config?.has_announcement_pdf),
+  };
+}
+
+function maskedCode(code: string): string {
+  return code.length >= 2 ? `${code.slice(0, 2)}****` : "****";
+}
+
+function itemSummary(item: SimItem): PostcardItemSummary {
+  return {
+    id: item.id,
+    barcode: item.barcode,
+    status: item.status,
+    status_label: REG_STATUS_LABELS[item.status],
+    review_state: item.review_state,
+    review_label: REVIEW_LABELS[item.review_state],
+    mismatched: [...item.mismatched],
+    comment: item.comment,
+    // 照片只在「还留着」时下发（通过后服务端会删，模拟里同步删掉）。
+    photos: item.photos.map((p) => ({ id: p.id, side: p.side })),
+  };
+}
+
+/** 登记单摘要（`mask=true` 时按姓名查询的口径：掩码 + 无照片，改不了）。 */
+export function registrationSummary(
+  reg: SimRegistration,
+  opts: { mask?: boolean } = {},
+): PostcardRegistrationSummary {
+  const mask = Boolean(opts.mask) || !reg.code_granted;
+  return {
+    id: reg.id,
+    reg_code: mask ? maskedCode(reg.reg_code) : reg.reg_code,
+    code_granted: reg.code_granted,
+    access_token: mask ? undefined : reg.access_token,
+    sender_name: reg.sender_name,
+    grade: reg.grade,
+    grade_label: GRADE_LABELS[reg.grade] || reg.grade,
+    class_no: reg.class_no,
+    dest_region: reg.dest_region,
+    dest_school: reg.dest_school,
+    status: reg.status,
+    status_label: REG_STATUS_LABELS[reg.status],
+    created_at: reg.created_at,
+    updated_at: reg.updated_at,
+    items: reg.items.map((it) => {
+      const s = itemSummary(it);
+      return mask ? { ...s, photos: [] } : s;
+    }),
+  };
+}
+
+export interface SubmitItemInput {
+  barcode: string;
+  photos: { side: "front" | "back"; data_url: string }[];
+}
+
+export interface SubmitRegistrationInput {
+  sender_name: string;
+  grade: string;
+  class_no: number;
+  dest_region: string;
+  dest_school: string;
+  fingerprint: string;
+  items: SubmitItemInput[];
+}
+
+/**
+ * 提交登记（POST /register/）。
+ *
+ * 模拟环境的口径：AI 配齐 → 直接判通过（照片随即删除，登记码立即发放）；
+ * AI 没配 → 转人工复核（**同样立即发码**，与用户 2026-11-08 定的规则一致），
+ * 这样管理员还能顺带把审核台那条链路走一遍。
+ */
+export function submitRegistration(
+  state: SimState,
+  input: SubmitRegistrationInput,
+  now: Date = new Date(),
+): RegisterResult {
+  const phase = phaseOf(state.event, state.config, now);
+  if (phase !== "registering") throw new SimError("当前不在登记阶段，无法提交登记。");
+  if (!input.sender_name.trim()) throw new SimError("寄出人姓名不能为空。");
+  if (!input.grade) throw new SimError("请选择年级。");
+  if (!input.class_no) throw new SimError("请选择班级。");
+  if (!input.dest_region || !input.dest_school.trim()) throw new SimError("请选择寄达区与寄达校。");
+  const config = state.config;
+  const allowed = config?.allowed_grades ?? [];
+  if (allowed.length && !allowed.includes(input.grade)) throw new SimError("该年级不在本次活动范围内。");
+  const schools = config?.destination_schools ?? [];
+  if (schools.length && !schools.some((s) => s.region === input.dest_region && s.name === input.dest_school.trim())) {
+    throw new SimError("寄达校不在本次活动清单里。");
+  }
+  if (input.items.length === 0) throw new SimError("请至少添加一张明信片。");
+  if (input.items.length > 5) throw new SimError("一次最多提交 5 张明信片。");
+
+  for (const it of input.items) {
+    const slot = state.barcodes.find((b) => b.code === it.barcode);
+    if (!slot) throw new SimError(`条码 ${it.barcode} 不在本次活动里，请核对后再填。`);
+    if (slot.registration_id !== null) throw new SimError(`条码 ${it.barcode} 已被登记，不能重复使用。`);
+  }
+
+  const ready = aiReady(state);
+  const regId = nextId(state);
+  const nowIso = now.toISOString();
+  const reg: SimRegistration = {
+    id: regId,
+    reg_code: randomRegCode(state),
+    code_granted: true,
+    access_token: `sim-${regId}-${Math.random().toString(36).slice(2, 10)}`,
+    fingerprint: input.fingerprint,
+    sender_name: input.sender_name.trim(),
+    grade: input.grade,
+    class_no: Number(input.class_no),
+    dest_region: input.dest_region,
+    dest_school: input.dest_school.trim(),
+    status: "registered",
+    created_at: nowIso,
+    updated_at: nowIso,
+    items: input.items.map((it) => {
+      const slot = state.barcodes.find((b) => b.code === it.barcode);
+      if (slot) slot.registration_id = regId;
+      return {
+        id: nextId(state),
+        barcode: it.barcode,
+        status: "registered",
+        review_state: ready ? "approved" : "manual_pending",
+        ai_verdict: ready
+          ? { matched: true, mismatched: [], blacklist: [], comment: "模拟环境：AI 视为通过" }
+          : null,
+        mismatched: [],
+        comment: "",
+        // 通过即删照片（模拟里也遵守这条生命周期，教学时才不会记错）。
+        photos: ready
+          ? []
+          : it.photos.map((p) => ({ id: nextId(state), side: p.side, data_url: p.data_url })),
+      };
+    }),
+  };
+  state.registrations.push(reg);
+  pushAudit(state, "register", `registration:${reg.id}`, {
+    items: reg.items.length,
+    review: ready ? "ai" : "manual",
+  }, now);
+
+  const state0: SimReviewState = ready ? "approved" : "manual_pending";
+  return {
+    reg_code: reg.reg_code,
+    code_granted: true,
+    access_token: reg.access_token,
+    message: ready
+      ? "登记成功，照片已按规则删除。"
+      : "登记成功。当前未配置 AI 审核，已转人工复核。",
+    registration: registrationSummary(reg),
+    review: {
+      state: state0,
+      hint: ready ? "AI 审核通过" : "等待管理员人工复核",
+    },
+  };
+}
+
+/** 历史登记（GET /my/）：按指纹归属。 */
+export function myRegistrations(state: SimState, fingerprint: string): PostcardRegistrationSummary[] {
+  return state.registrations
+    .filter((r) => !fingerprint || r.fingerprint === fingerprint)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .map((r) => registrationSummary(r));
+}
+
+export function findRegistrationByCode(state: SimState, regCode: string): SimRegistration | null {
+  return state.registrations.find((r) => r.reg_code === regCode) ?? null;
+}
+
+export function findRegistrationByToken(state: SimState, token: string): SimRegistration | null {
+  return state.registrations.find((r) => r.access_token === token) ?? null;
+}
+
+/** 用户侧查询（POST /lookup/）：6 位码 → 完整；姓名 → 掩码列表。 */
+export function lookupRegistrations(
+  state: SimState,
+  q: string,
+): { kind: "code" | "name"; results: PostcardRegistrationSummary[] } {
+  const query = q.trim();
+  if (!query) throw new SimError("请输入登记码或寄出人姓名。");
+  if (/^\d{6}$/.test(query)) {
+    const hit = findRegistrationByCode(state, query);
+    if (!hit) throw new SimError("没有找到这个登记码，请核对。");
+    return { kind: "code", results: [registrationSummary(hit)] };
+  }
+  const hits = state.registrations.filter((r) => r.sender_name.includes(query));
+  if (hits.length === 0) throw new SimError("没有找到对应的登记记录。");
+  return { kind: "name", results: hits.map((r) => registrationSummary(r, { mask: true })) };
+}
+
+/** 改自己的登记（仅寄出人信息；条码与照片不可改）。 */
+export function updateOwnRegistration(
+  state: SimState,
+  regCode: string,
+  patch: Partial<Pick<SimRegistration, "sender_name" | "grade" | "class_no" | "dest_region" | "dest_school">>,
+  now: Date = new Date(),
+): PostcardRegistrationSummary {
+  const reg = findRegistrationByCode(state, regCode);
+  if (!reg) throw new SimError("登记单不存在或登记码有误。", 404);
+  if (patch.sender_name !== undefined) {
+    if (!patch.sender_name.trim()) throw new SimError("寄出人姓名不能为空。");
+    reg.sender_name = patch.sender_name.trim();
+  }
+  if (patch.grade !== undefined) reg.grade = patch.grade;
+  if (patch.class_no !== undefined) reg.class_no = Number(patch.class_no);
+  if (patch.dest_region !== undefined) reg.dest_region = patch.dest_region;
+  if (patch.dest_school !== undefined) reg.dest_school = patch.dest_school.trim();
+  reg.updated_at = now.toISOString();
+  pushAudit(state, "my_update", `registration:${reg.id}`, { ...patch }, now);
+  return registrationSummary(reg);
+}
+
+/** 取消登记（scope=one 只撤该份提交；all 撤该码下全部）。不可恢复。 */
+export function cancelOwnRegistration(
+  state: SimState,
+  regCode: string,
+  scope: "one" | "all" = "one",
+  submissionId?: number,
+  now: Date = new Date(),
+): PostcardRegistrationSummary {
+  const reg = findRegistrationByCode(state, regCode);
+  if (!reg) throw new SimError("登记单不存在或登记码有误。", 404);
+  if (scope === "all") {
+    reg.status = "cancelled";
+    for (const it of reg.items) it.status = "cancelled";
+  } else {
+    const target = submissionId ? reg.items.find((it) => it.id === submissionId) : reg.items[0];
+    if (!target) throw new SimError("要取消的明信片不存在。", 404);
+    target.status = "cancelled";
+    if (reg.items.every((it) => it.status === "cancelled")) reg.status = "cancelled";
+  }
+  reg.updated_at = now.toISOString();
+  pushAudit(state, "my_cancel", `registration:${reg.id}`, { scope, submissionId }, now);
+  return registrationSummary(reg);
+}
+
+/** 判不匹配 → 申请人工复核（转 manual_pending 并保持发码）。 */
+export function requestManualReview(
+  state: SimState,
+  opts: { regCode?: string; token?: string },
+  now: Date = new Date(),
+): { message: string; count: number } {
+  const reg = opts.regCode
+    ? findRegistrationByCode(state, opts.regCode)
+    : opts.token
+      ? findRegistrationByToken(state, opts.token)
+      : null;
+  if (!reg) throw new SimError("登记单不存在。", 404);
+  let count = 0;
+  for (const it of reg.items) {
+    if (it.review_state === "ai_failed" || it.review_state === "manual_failed" || it.review_state === "pending") {
+      it.review_state = "manual_pending";
+      count += 1;
+    }
+  }
+  pushAudit(state, "my_review_request", `registration:${reg.id}`, { count }, now);
+  return { message: count ? "已提交人工复核，我们会尽快处理。" : "当前没有待复核的明信片。", count };
+}
+
+/** 照片下发（模拟里直接给 data URL；找不到给空串，<img> 会显示裂图）。 */
+export function photoDataUrl(state: SimState, photoId: number): string {
+  for (const reg of state.registrations) {
+    for (const item of reg.items) {
+      const hit = item.photos.find((p) => p.id === photoId);
+      if (hit) return hit.data_url;
+    }
+  }
+  return "";
+}
+
+/** 用户提交建议 → 进管理端的「建议与审计」tab。 */
+export function addSuggestion(
+  state: SimState,
+  content: string,
+  contact: string,
+  now: Date = new Date(),
+): void {
+  if (!content.trim()) throw new SimError("建议内容不能为空。");
+  state.suggestions.push({
+    id: nextId(state),
+    content: content.trim(),
+    contact: contact.trim(),
+    created_at: now.toISOString(),
+  });
 }

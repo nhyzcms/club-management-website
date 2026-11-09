@@ -52,6 +52,7 @@ import "../styles/list.css";
 import "../styles/detail.css";
 import "../styles/form.css";
 import "../styles/mobile-work.css";
+import { enterSim, isSimRoute } from "../postcardSim/session";
 
 /**
  * 手机版审核台（/#/m/review）。
@@ -66,6 +67,8 @@ const ADVANCE_MS = 900;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function MobileReviewPage() {
+  // 模拟环境（?sim=1）：渲染期装载内存沙箱；幂等，且必须早于子组件的 effect。
+  if (isSimRoute()) enterSim();
   const gen = useRef(0);
   // 本轮已浏览 / 已处理的条目： 「下一条」与处理动作后前进都跳过它们
   const visitedRef = useRef<Set<number>>(new Set());
