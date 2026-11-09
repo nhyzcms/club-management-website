@@ -56,6 +56,8 @@ export default function ConfirmModal({
         style={{
           background: "var(--bg)",
           color: "var(--fg)",
+          // 深色模式下 --bg 与页面底色几乎同色，没有描边弹窗会「糊」进背景里。
+          border: "1px solid var(--line)",
           borderRadius: 8,
           padding: 24,
           width: 420,

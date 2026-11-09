@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   emptySimState,
   generateBarcodes,
@@ -463,5 +463,26 @@ describe("模拟环境 · 路由与安装", () => {
     const second = render(<PostcardSimHost />);
     expect(screen.queryByText("模拟环境")).toBeNull();
     second.unmount();
+  });
+
+  it("浮条上的「退出模拟」也要二次确认", () => {
+    window.location.hash = "#/postcard?sim=1";
+    render(<PostcardSimHost />);
+    expect(isSimActive()).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "退出模拟" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("是否退出模拟操作")).toBeInTheDocument();
+    expect(isSimActive()).toBe(true);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "继续模拟" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(isSimActive()).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "退出模拟" }));
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "退出模拟" }),
+    );
+    expect(isSimActive()).toBe(false);
   });
 });

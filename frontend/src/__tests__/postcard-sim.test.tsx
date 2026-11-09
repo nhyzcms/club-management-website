@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import {
   barcodeSummary,
   configPayload,
@@ -334,6 +334,29 @@ describe("模拟环境 · 路由与入口", () => {
     unmount();
     expect(isPostcardAdminSim()).toBe(true);
     exitSim();
+    expect(isPostcardAdminSim()).toBe(false);
+  });
+
+  it("「退出模拟」要二次确认：取消保留沙箱，确认才卸载", () => {
+    window.location.hash = "#/postcard/admin?sim=1";
+    render(<PostcardAdminPage />);
+    expect(isPostcardAdminSim()).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "退出模拟" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("是否退出模拟操作")).toBeInTheDocument();
+    // 只弹窗、不动沙箱
+    expect(isPostcardAdminSim()).toBe(true);
+
+    // 取消：弹窗关掉，继续在模拟里
+    fireEvent.click(within(dialog).getByRole("button", { name: "继续模拟" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(isPostcardAdminSim()).toBe(true);
+
+    // 确认：沙箱卸载（随后 reload 回正式环境，jsdom 里只有卸载可断言）
+    fireEvent.click(screen.getByRole("button", { name: "退出模拟" }));
+    const again = screen.getByRole("alertdialog");
+    fireEvent.click(within(again).getByRole("button", { name: "退出模拟" }));
     expect(isPostcardAdminSim()).toBe(false);
   });
 });
