@@ -37,6 +37,8 @@ export default function PostcardAdminPage() {
   const isMobile = isMobileDevice();
   const [tab, setTab] = useState<TabKey>("config");
   const [askingSim, setAskingSim] = useState(false);
+  // 退出不可逆：先弹二次确认（2026-11-09 用户要求）。
+  const [askingExit, setAskingExit] = useState(false);
   // 自己订阅 hashchange：本页不依赖 router 的 location（Route 在只变 search 时不一定
   // 重渲染，而模拟环境的开关正好只改 search）。
   // 模拟模式下（URL 带参，或沙箱已装着）本页一律走沙箱：从用户页切回管理端时
@@ -98,7 +100,11 @@ export default function PostcardAdminPage() {
                 <a className="pa-inline-link" href="#/reviews?kind=postcard&sim=1">
                   去审核台复核
                 </a>
-                <button type="button" className="pa-inline-link pa-inline-btn" onClick={leaveSim}>
+                <button
+                  type="button"
+                  className="pa-inline-link pa-inline-btn"
+                  onClick={() => setAskingExit(true)}
+                >
                   退出模拟
                 </button>
               </>
@@ -186,6 +192,24 @@ export default function PostcardAdminPage() {
           <p>模拟环境与正式版界面一致，但所有数据只存在本标签页内存：</p>
           <p style={{ marginTop: 8 }}>
             仅供管理员教学演练与验收新功能，退出或刷新即清空，<b>不会写入也不会改动正式数据</b>。
+          </p>
+        </ConfirmModal>
+      )}
+      {askingExit && (
+        <ConfirmModal
+          title="是否退出模拟操作"
+          confirmLabel="退出模拟"
+          cancelLabel="继续模拟"
+          danger
+          onCancel={() => setAskingExit(false)}
+          onConfirm={leaveSim}
+        >
+          <p>
+            退出后，本标签页内存里的模拟数据（活动配置、条码、登记记录、照片等）会全部清空，
+            <b>且无法恢复</b>。
+          </p>
+          <p style={{ marginTop: 8 }}>
+            正式数据不受影响；如需继续演练，可重新点「模拟活动」进入。
           </p>
         </ConfirmModal>
       )}

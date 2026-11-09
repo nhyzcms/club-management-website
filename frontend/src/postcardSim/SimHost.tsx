@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ConfirmModal from "../components/ConfirmModal";
 import {
   SIM_BADGE_TEXT,
   enterSim,
@@ -29,13 +30,18 @@ export default function PostcardSimHost() {
   const [onAdmin, setOnAdmin] = useState(
     () => window.location.hash.split("?")[0] === "#/postcard/admin",
   );
+  // 退出是不可逆的（内存数据一丢就回不来），所以先弹二次确认（2026-11-09 用户要求）。
+  const [askingExit, setAskingExit] = useState(false);
 
   useEffect(() => {
     const sync = () => {
       const hash = window.location.hash;
       if (isSimRoute(hash)) enterSim();
       else if (!isPostcardSurface(hash)) exitSim();
-      setSim(isSimMode());
+      const active = isSimMode();
+      // 离开明信片链会隐式清空沙箱，这时确认框没必要再留着。
+      if (!active) setAskingExit(false);
+      setSim(active);
       setOnAdmin(hash.split("?")[0] === "#/postcard/admin");
     };
     window.addEventListener("hashchange", sync);
@@ -50,25 +56,45 @@ export default function PostcardSimHost() {
   if (!sim || onAdmin) return null;
 
   return (
-    <div className="pc-sim-dock" role="status">
-      <span className="pc-sim-dock-badge">{SIM_BADGE_TEXT}</span>
-      <span className="pc-sim-dock-text">数据只在本标签页内存里，退出即清空</span>
-      <button
-        type="button"
-        className="pc-sim-dock-exit"
-        onClick={() => {
-          window.location.hash = withSimParam("#/postcard/admin");
-        }}
-      >
-        管理端
-      </button>
-      <button
-        type="button"
-        className="pc-sim-dock-exit"
-        onClick={() => exitSimAndReload("#/postcard")}
-      >
-        退出模拟
-      </button>
-    </div>
+    <>
+      <div className="pc-sim-dock" role="status">
+        <span className="pc-sim-dock-badge">{SIM_BADGE_TEXT}</span>
+        <span className="pc-sim-dock-text">数据只在本标签页内存里，退出即清空</span>
+        <button
+          type="button"
+          className="pc-sim-dock-exit"
+          onClick={() => {
+            window.location.hash = withSimParam("#/postcard/admin");
+          }}
+        >
+          管理端
+        </button>
+        <button
+          type="button"
+          className="pc-sim-dock-exit"
+          onClick={() => setAskingExit(true)}
+        >
+          退出模拟
+        </button>
+      </div>
+      {askingExit && (
+        <ConfirmModal
+          title="是否退出模拟操作"
+          confirmLabel="退出模拟"
+          cancelLabel="继续模拟"
+          danger
+          onCancel={() => setAskingExit(false)}
+          onConfirm={() => exitSimAndReload("#/postcard")}
+        >
+          <p>
+            退出后，本标签页内存里的模拟数据（活动配置、条码、登记记录、照片等）会全部清空，
+            <b>且无法恢复</b>。
+          </p>
+          <p style={{ marginTop: 8 }}>
+            正式数据不受影响；如需继续演练，可从管理端重新进入模拟环境。
+          </p>
+        </ConfirmModal>
+      )}
+    </>
   );
 }
