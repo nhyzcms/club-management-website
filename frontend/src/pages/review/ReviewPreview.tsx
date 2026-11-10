@@ -113,7 +113,7 @@ function ActivityBody({ activity }: { activity: ActivityDetail }) {
           <span className="act-medal-ico">{phase.emoji}</span>
           {phase.label}
         </span>
-        {activity.type === "survey" && (
+        {activity.audience !== "members" && (
           <span className={"badge " + (activity.audience === "public" ? "badge-brand" : "badge-neutral")}>
             {AUDIENCE_LABELS[activity.audience]}
           </span>

@@ -10,7 +10,11 @@ export default function DeliberationPanel({
 }: ActivityPanelProps) {
   const [selected, setSelected] = useState<number[]>(a.my_selections ?? []);
   const total = a.total_ballots ?? 0;
-  const canVote = a.status === "open" && a.my_selections === null;
+  const needMember = a.audience === "member_only" && !a.viewer_is_member;
+  const canVote =
+    a.status === "open" &&
+    a.my_selections === null &&
+    (a.audience === "public" || (!!user && !needMember));
   const options = a.options ?? [];
   // 游客投票在启用 Turnstile 时逐票校验；成员按账号判重，不需要。
   const {
@@ -70,6 +74,11 @@ export default function DeliberationPanel({
         </>
       ) : (
         <>
+          {needMember && a.my_selections === null && (
+            <div className="hint" style={{ marginBottom: 8 }}>
+              本次投票仅社员可参与；你的账号尚未绑定社员名册，如需参与请联系社长或管理员。
+            </div>
+          )}
           {a.my_selections !== null && (
             <div className="hint" style={{ marginBottom: 8 }}>
               你投了：{a.my_selections.map((oid) => options.find((o) => o.id === oid)?.text).filter(Boolean).join("、")}

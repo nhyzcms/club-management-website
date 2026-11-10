@@ -83,12 +83,14 @@ export default function ActivityFormPage() {
     setEndAt(defaultEnd(t === "deliberation" ? 3 : 7));
   };
 
-  // 受众选择（调研=作答资格；众议/展示=投票资格——公开时游客可投）。创建后不可改。
+  // 受众选择（调研=作答资格；众议/展示=投票资格；征集=投稿资格——公开时游客可参与）。
+  // 创建后不可改。
   const audienceField = (hint: string) => (
     <div className="field">
       <label className="label">受众{editId ? "（已固定）" : ""}</label>
       <div className="seg" role="radiogroup">
         <button type="button" className="seg-btn" aria-selected={audience === "members"} disabled={!!editId} onClick={() => !editId && setAudience("members")}>仅成员</button>
+        <button type="button" className="seg-btn" aria-selected={audience === "member_only"} disabled={!!editId} onClick={() => !editId && setAudience("member_only")}>仅社员</button>
         <button type="button" className="seg-btn" aria-selected={audience === "public"} disabled={!!editId} onClick={() => !editId && setAudience("public")}>公开</button>
       </div>
       <div className="hint">{hint}</div>
@@ -131,6 +133,7 @@ export default function ActivityFormPage() {
       setPermanent(!!a.is_permanent);
       setEndAt(toLocalInput(a.end_at) || defaultEnd(a.type === "deliberation" ? 3 : 7));
       if (a.type === "collection") {
+        setAudience(a.audience || "members");
         setAllowedExt(a.allowed_extensions || "");
         setMaxSize(a.max_file_size ? String(Math.round(a.max_file_size / 1024 / 1024)) : "");
         setMaxFiles(a.max_files_per_submission);
@@ -216,6 +219,7 @@ export default function ActivityFormPage() {
           max_files_per_submission: maxFiles,
           max_submissions: maxSub.trim() ? parseInt(maxSub, 10) : null,
           review_enabled: reviewEnabled,
+          audience,
           start_at: toIso(startAt),
           end_at: permanent ? null : (toIso(endAt) ?? null),
           is_permanent: permanent,
@@ -354,7 +358,7 @@ export default function ActivityFormPage() {
                   <span>秘密投票 —— 仅聚合计数可见，个人投票明细仅超级管理员可见</span>
                 </label>
               </div>
-              {audienceField("公开：未登录访客也能投票（按设备防重复）；仅成员：须登录后投票。创建后不可改。")}
+              {audienceField("公开：未登录访客也能投票（按设备防重复）；仅成员：须登录后投票；仅社员：须登录且已绑定社员名册。创建后不可改。")}
             </>
           ) : type === "collection" ? (
             <>
@@ -378,6 +382,7 @@ export default function ActivityFormPage() {
                   <input className="input" type="number" min={1} value={maxSub} onChange={(e) => setMaxSub(e.target.value)} placeholder="不限" />
                 </div>
               </div>
+              {audienceField("公开 / 仅成员：均须登录并完成认证；仅社员：另须绑定社员名册。创建后不可改。")}
               {endAtField("收件截止")}
               <div className="field">
                 <label className="fb-attrib">
@@ -419,7 +424,7 @@ export default function ActivityFormPage() {
                   </div>
                 </div>
               )}
-              {audienceField("公开：未登录访客可浏览，启用投票时也能直接投票（按设备防重复）；仅成员：须登录。创建后不可改。")}
+              {audienceField("公开：未登录访客可浏览，启用投票时也能直接投票（按设备防重复）；仅成员：须登录；仅社员：须登录且已绑定社员名册。创建后不可改。")}
             </>
           ) : (
             <>
@@ -452,7 +457,7 @@ export default function ActivityFormPage() {
                     : "在弹层里增删题目，点「完成」后回填本页，题目会随「发起活动」一起创建。"}
                 </div>
               </div>
-              {audienceField("公开：访客可列出、打开、提交；仅成员：须登录。创建后不可改。问卷题目可在本页设计。")}
+              {audienceField("公开：访客可列出、打开、提交；仅成员：须登录；仅社员：须登录且已绑定社员名册。创建后不可改。问卷题目可在本页设计。")}
               {endAtField("征答截止")}
             </>
           )}

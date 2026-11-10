@@ -142,7 +142,22 @@ export default function SurveyResponsesPage() {
                 {data.results.map((row) => (
                   <li key={row.id} style={{ borderBottom: "1px solid var(--border, #eee)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "10px 0" }}>
-                      <span>{row.user_label}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        <span>{row.user_label}</span>
+                        {row.member ? (
+                          <>
+                            <span className="badge badge-brand">社员</span>
+                            <span className="muted" style={{ fontSize: 12 }}>
+                              {row.member.name}
+                              {row.member.class_no ? ` · ${row.member.class_no}` : ""}
+                              {` · ${row.member.code}`}
+                              {` · ${row.member.status_label}`}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="badge badge-neutral">未绑定名册</span>
+                        )}
+                      </span>
                       <span className="muted" style={{ fontSize: 13 }}>{new Date(row.submitted_at).toLocaleString("zh-CN")}</span>
                       <button
                         className="btn btn-ghost btn-sm"

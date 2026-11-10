@@ -34,11 +34,12 @@ export default function SurveyPanel({
   const canEditSchema = canManage && a.schema_editable;
   const surveyApproved = !a.review_status || a.review_status === "approved";
   const alreadySubmitted = a.my_response != null;
+  const needMember = a.audience === "member_only" && !a.viewer_is_member;
   const canFillSurvey =
     a.status === "open" &&
     surveyApproved &&
     !alreadySubmitted &&
-    (a.audience === "public" || !!user);
+    (a.audience === "public" || (!!user && !needMember));
 
   return (
     <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
@@ -83,6 +84,13 @@ export default function SurveyPanel({
       )}
       {a.status === "open" && !surveyApproved && (
         <p className="muted">审核通过后即可作答。</p>
+      )}
+      {a.status === "open" && surveyApproved && !alreadySubmitted && needMember && (
+        <p className="muted">
+          {user
+            ? "本调研仅社员可参与；你的账号尚未绑定社员名册，如需参与请联系社长或管理员。"
+            : "本调研仅社员可参与，请先登录。"}
+        </p>
       )}
       {a.status === "open" && surveyApproved && alreadySubmitted && (
         <p className="muted">你已经提交过了。</p>

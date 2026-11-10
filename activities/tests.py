@@ -24,6 +24,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient, APIRequestFactory
 
 from accounts.test_helpers import grant_verification
+from accounts.models import MemberIdentity
 from common.testing import set_policy
 from reviews.test_helpers import approve_activity
 
@@ -1601,6 +1602,23 @@ class SurveyActivityTest(TestCase):
                   {"audience": "public"})
         self.assertEqual(r.status_code, 400)
 
+    # ---- 受众：仅社员 ----
+
+    def test_member_only_respond_requires_member_identity(self):
+        aid = self._create(self.author, audience="member_only").data["id"]
+        blocked = self._respond(self.m1, aid)
+        self.assertEqual(blocked.status_code, 403)
+        self.assertIn("社员", blocked.data["detail"])
+        MemberIdentity.objects.create(
+            name="张三", admit_year=2024, cohort=2024, code="NH2024001", user=self.m1,
+        )
+        self.assertEqual(self._respond(self.m1, aid).status_code, 201)
+
+    def test_member_only_guest_cannot_respond(self):
+        aid = self._create(self.author, audience="member_only").data["id"]
+        # 访客连详情都看不到（queryset 对访客只放公开调研）→ 404
+        self.assertEqual(self._guest_respond(aid).status_code, 404)
+
     # ---- 访客：公开过审调研可列/开/交；仅成员与其他类型 404 ----
 
     def test_guest_list_retrieve_respond_public_approved_open(self):
@@ -1789,6 +1807,23 @@ class SurveyResponsesViewTest(TestCase):
         self.client.force_authenticate(user)
         return self.client.get(f"/activities/activities/{self.aid}/responses/")
 
+    def test_member_brief_included_for_bound_responder(self):
+        MemberIdentity.objects.create(
+            name="李四", class_no="高二3班", card_no="2009001", admit_year=2024,
+            cohort=2024, code="NH2024009", user=self.m1,
+            status=MemberIdentity.STATUS_GRADUATED,
+        )
+        self._respond(self.m1, {"q1": "a"})
+        self._respond(self.m2, {"q1": "b"})
+        rows = {r["user_label"]: r for r in self._responses(self.author).data["results"]}
+        member = rows["rm1"]["member"]
+        self.assertEqual(member["name"], "李四")
+        self.assertEqual(member["class_no"], "高二3班")
+        self.assertEqual(member["code"], "NH2024009")
+        self.assertEqual(member["status_label"], "已毕业")
+        self.assertNotIn("phone", member)
+        self.assertIsNone(rows["rm2"]["member"])
+
     def test_creator_sees_all(self):
         self._respond(self.m1, {"q1": "a"})
         self._respond(self.m2, {"q1": "b"})
@@ -1879,16 +1914,17 @@ class PublicVotingGuestTest(TestCase):
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.data["audience"], "public")
 
-    def test_create_collection_drops_audience(self):
+    def test_create_collection_keeps_audience(self):
+        # 2026-11：受众对四种活动类型都生效（征集=投稿资格），不再被丢弃。
         self.client.force_authenticate(self.author)
         resp = _publish_created(self.client.post(
             "/activities/activities/",
             data=json.dumps({"type": "collection", "title": "征集",
-                             "body": "<p>x</p>", "audience": "public"}),
+                             "body": "<p>x</p>", "audience": "member_only"}),
             content_type="application/json",
         ))
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.data["audience"], "members")  # 征集无受众语义，回落默认
+        self.assertEqual(resp.data["audience"], "member_only")
 
     def test_deliberation_audience_immutable(self):
         a = self._create()
