@@ -240,7 +240,10 @@
 | GET | `admin/suggestions/` | manage | 建议列表（分页） |
 | GET | `admin/audit/` | manage | 审计日志（分页、只读） |
 | GET / PUT | `admin/ai/config/` | manage | AI 审核配置（`api_key` 写后不可读） |
-| POST | `admin/ai/test/` | manage | 用已保存配置发一次最小请求 |
+| POST | `admin/ai/test/` | manage | 用已保存配置发一次最小请求（60/时） |
+| POST | `admin/ai/models/` | manage | 代理服务商 `{base_url}/models` 的模型清单（120/时） |
+| POST | `admin/ai/explain/` | manage | 一次性样例解读（不落库，10/时） |
+| POST | `admin/ai/preview/` | manage | 模拟环境真调一次审核判定（不落库 / 不存照片 / 不写审计，120/时） |
 | GET / POST | `admin/ai/samples/` | manage | 样例列表 / 上传 |
 | DELETE | `admin/ai/samples/<pk>/` | manage | 删除样例 |
 | POST | `admin/ai/samples/<pk>/explain/` | manage | 让 AI 复述对样例的理解 |
@@ -345,13 +348,13 @@
 
 ### AI 审核配置
 
-`GET admin/ai/config/` 只回 `{configured, enabled, ready, base_url, model, extra_headers, timeout_seconds, ip_blacklist, api_key_set}`——**`api_key` 永不回显**。`ready` = 启用 + `base_url` + `model` 齐备（部分兼容服务可免鉴权）。
+`GET admin/ai/config/` 只回 `{configured, enabled, ready, base_url, model, extra_headers, timeout_seconds, ip_blacklist, api_key_set}`——**`api_key` 永不回显**。`ready` = 启用 + `base_url` + `model` 齐备（部分兼容服务可免鉴权）。字段 `model` 在界面上叫「模型 ID」。
 
 `PUT admin/ai/config/`：`base_url`（http/https）、`api_key`（留空 = 保持原值）、`model`、`extra_headers`（字符串键值对）、`timeout_seconds`（5–120，默认 20）、`ip_blacklist`（动漫形象黑名单）、`enabled`。
 
-`POST admin/ai/test/`：用已保存配置发一次最小对话请求，返回 `{ok, latency_ms, model, reply}` 或 `{ok: false, error}`（HTTP 200，按 `ok` 展示；不回显密钥）。
+`POST admin/ai/test/`：用已保存配置发一次最小对话请求，返回 `{ok, latency_ms, model, reply}` 或 `{ok: false, error}`（HTTP 200，按 `ok` 展示；不回显密钥）。限 60 次/时。请求体可选覆盖（**只在本次请求生效，不落库**）：`base_url` / `model` / `api_key` / `extra_headers` / `timeout_seconds`；再带 `dry_run: true` 时**跳过审计**（模拟环境用，`#/postcard/admin?sim=1`）。
 
-请求体可选覆盖（**只在本次请求生效，不落库**）：`base_url` / `model` / `api_key` / `extra_headers` / `timeout_seconds`；再带 `dry_run: true` 时**跳过审计**（模拟环境用，`#/postcard/admin?sim=1`）。
+`POST admin/ai/models/`：代理服务商 `GET {base_url}/models`，可选带本次填写的 `base_url` / `api_key` / `extra_headers` / `timeout_seconds` 覆盖参数（模拟环境用，不落库）。只回 `{ok: true, models: ["…"]}` 或 `{ok: false, error}`；响应上限 512 KiB、模型 ID 经白名单校验；服务商无 `/models`（404）时提示手填模型 ID。**不内置写死清单**。限 120 次/时。
 
 审核管线：OpenAI 兼容 `/chat/completions`（urllib 实现，零 SDK），输入用户照片 + 管理员样例 + 规则 + 黑名单；输出严格 JSON（`matched` / `mismatched_items` / `blacklist_hit` / `blacklist_names` / `comment`）。最多 6 次调用机会、指数退避；全败转人工复核。连续 5 个用户失败会邮件告警所有绑定邮箱的管理员。
 
@@ -413,6 +416,7 @@ uv run python manage.py postcard_photo_gc
 
 - 用户页 `/#/postcard`（独立页；主页「重大活动」与手机版首页「重大活动」入口，浏览器新标签页打开、App 壳内同窗口路由）。
 - 管理端 `/#/postcard/admin`：六个分区——配置 / 条码 / AI / 记录 / 统计 / 建议与审计；复核并入 `/reviews` 的「明信片」桌。
+- 模拟环境 `/#/postcard/admin?sim=1`（管理端右上「模拟活动」）：前端内存沙箱，管理端六分区 + 用户端登记 / 查询 / 历史 + 复核 + 签收全链路可演练；退出 / 刷新即清空。AI 判定走 `admin/ai/preview/` 真跑（不落库）。
 - 签收页 `/#/postcard/receive`：扫 7 位条码定位并确认报寄。
 - 三个路由均挂 `ProtectedRoute`；管理端权限真源在服务端，前端只做 403 提示。
 - 审核台 `/#/reviews?kind=postcard`：复核并入统一审核台（桌面与手机版共用取数规则）。

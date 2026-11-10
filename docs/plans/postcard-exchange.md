@@ -191,6 +191,8 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 | #317 | 模拟环境 AI 演练 `dry_run`：不写正式审计 |
 | #318 | AI 端点限流：测试连接 60/h、读样例 10/h |
 | #319 | 模拟环境登记**真跑 AI 判定**（`admin/ai/preview/`，不落库），见 §11.3 |
+| #321 | 退出模拟前二次确认（误点退出会清空演练数据） |
+| #322 | AI 配置预设（DeepSeek / OpenCode-GO）+ 从服务商 `/models` 拉取模型清单（不内置写死列表） |
 
 运维增量：`scripts/install.sh` 新增 `club-postcard-gc.timer`（每小时跑 `postcard_photo_gc`，做活动结束全清 / 失败照片 24h TTL / 卡死 pending 转人工）。文档增量：新增 [明信片互寄 API](../api/postcard.md) 与 [明信片互寄指南](../guides/postcard.md)，`events` 通用模块文档改为壳说明。
 
@@ -205,7 +207,7 @@ Word 导入=`mammoth`；图表=`chart.js`；人机验证=Turnstile；限流=`com
 - 生命周期：
   - 进入：URL 带 `sim=1`；
   - **保持**：在明信片这条链（`#/postcard`、`/postcard/admin`、`/postcard/receive`、`#/reviews`、`#/m/review`）之间切换**不卸载**，URL 没带参数也继续用沙箱——用户页 ↔ 管理端来回跳不丢测试数据（用户 2026-11-09 要求）；
-  - 退出：点「退出模拟」→ 卸载沙箱并 `reload` 回正式环境（不 reload 的话已渲染页面会残留模拟数据）；离开这条链同样卸载；刷新 / 关标签页天然清空。
+  - 退出：点「退出模拟」→ **二次确认**（#321）→ 卸载沙箱并 `reload` 回正式环境（不 reload 的话已渲染页面会残留模拟数据）；离开这条链同样卸载；刷新 / 关标签页天然清空。
 
 ### 11.2 实现方式（页面零改动）
 
