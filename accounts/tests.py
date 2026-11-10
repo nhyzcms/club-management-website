@@ -993,7 +993,7 @@ class UserProfileViewTest(TestCase):
         for k in ("avatar", "nickname", "bio"):
             self.assertIn(k, data["profile"])
         self.assertIn("role", data)
-        self.assertEqual(data["viewer"], {"is_owner": False, "is_admin": False})
+        self.assertEqual(data["viewer"], {"is_owner": False, "is_admin": False, "is_member": False})
         self.assertNotIn("email", data["user"])
         self.assertNotIn("birthday", data["profile"])
         self.assertNotIn("gender", data["profile"])
