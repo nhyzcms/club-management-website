@@ -342,11 +342,11 @@ const realPostcardAdminApi = {
     return request<SchoolsImportResult>("/admin/schools/import/", { method: "POST", body: fd });
   },
 
-  /** 测试连接：用已保存的配置发一次最小对话请求（不回显 api_key）。 */
-  testAIConfig: () =>
+  /** 测试连接：用传入的草稿参数发一次最小对话请求（不落库、不回显 api_key）。 */
+  testAIConfig: (input: AIProbeInput = {}) =>
     request<{ ok: boolean; error?: string; latency_ms?: number; model?: string; reply?: string }>(
       "/admin/ai/test/",
-      { method: "POST", body: "{}" },
+      { method: "POST", body: JSON.stringify(input) },
     ),
 
   /** 拉取服务商模型列表（{base_url}/models），供「模型选择」下拉；不内置清单。 */

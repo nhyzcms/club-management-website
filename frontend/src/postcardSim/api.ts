@@ -17,6 +17,7 @@ import {
   type AdminConfig,
   type AdminConfigInput,
   type AIConfig,
+  type AIProbeInput,
   type AISample,
   type AuditRow,
   type BarcodeSummary,
@@ -213,6 +214,17 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
     return overrides;
   }
 
+  /**
+   * 组件传来的草稿（预设 / 手填、尚未保存）优先，空值不覆盖已保存配置。
+   * 只读 state 会把空的旧值发出去，后端就回「请先填写 Base URL」。
+   */
+  function probeOverrides(input: AIProbeInput = {}): Record<string, unknown> {
+    const draft = Object.fromEntries(
+      Object.entries(input).filter(([, v]) => v !== undefined && v !== null && v !== ""),
+    );
+    return { ...aiOverrides(), ...draft, dry_run: true };
+  }
+
   async function aiConfig(): Promise<AIConfig> {
     await seedSimAIConfig(state);
     return {
@@ -268,19 +280,18 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
       }
       return aiConfig();
     },
-    testAIConfig: async () => {
+    testAIConfig: async (input = {}) => {
       // 带临时参数：后端只在这次请求里用，不落库（不在模拟里写正式配置）。
-      const overrides = aiOverrides();
       return request<{ ok: boolean; error?: string; latency_ms?: number; model?: string; reply?: string }>(
         "/admin/ai/test/",
-        { method: "POST", body: JSON.stringify(overrides) },
+        { method: "POST", body: JSON.stringify(probeOverrides(input)) },
       );
     },
-    aiModels: async () => {
+    aiModels: async (input = {}) => {
       // 与测试连接同口径：用模拟里填的参数真拉一次服务商 /models，不落库。
       return request<{ ok: boolean; models?: string[]; error?: string }>(
         "/admin/ai/models/",
-        { method: "POST", body: JSON.stringify(aiOverrides()) },
+        { method: "POST", body: JSON.stringify(probeOverrides(input)) },
       );
     },
     aiSamples: async () => ({
