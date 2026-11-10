@@ -13,7 +13,7 @@ from django.db.models import F, OuterRef, Q, Subquery
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.template.response import TemplateResponse
-from django.urls import path
+from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
@@ -45,6 +45,7 @@ from .models import (
     IdentityImportBatch,
     IdentityProof,
     LoginEvent,
+    MemberEquipment,
     MemberIdentity,
     Profile,
     SecurityQuestion,
@@ -421,12 +422,34 @@ class VerificationInline(admin.TabularInline):
         return ro
 
 
+class MemberEquipmentInline(admin.TabularInline):
+    """用户详情页内嵌「我的设备」：管理员点开社员即可看到其登记物品。
+
+    只读展示（新增/修改走社员自己的个人中心）；允许删除明显不合适的条目。
+    """
+
+    model = MemberEquipment
+    fk_name = "user"
+    extra = 0
+    fields = ("name", "created_at", "updated_at")
+    readonly_fields = ("name", "created_at", "updated_at")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 class CustomUserAdmin(UserAdmin):
     list_display = ("username", "email", "first_name", "last_name", "is_staff", "is_active", "deleted")
     list_filter = ("is_staff", "is_active", "lifecycle__deleted_at")
     search_fields = ("username", "email", "first_name", "last_name")
     ordering = ("username",)
-    inlines = [ProfileInline, AccountIdentityInline, AccountLifecycleInline, VerificationInline]
+    inlines = [
+        ProfileInline,
+        AccountIdentityInline,
+        AccountLifecycleInline,
+        VerificationInline,
+        MemberEquipmentInline,
+    ]
     actions = ["ban_users", "mute_users", "force_delete_accounts"]
 
     #: 强制删除要逐字输入的确认口令（防止误点 / 手滑）。
@@ -1180,3 +1203,30 @@ class AdminAccessLogAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(MemberEquipment)
+class MemberEquipmentAdmin(admin.ModelAdmin):
+    """社员设备（2026-11-10）：按社员浏览 / 搜索物品名，管理员可改名或删除。
+
+    入口：本列表，或用户详情页下方的「社员设备」内嵌（只读）。
+    """
+
+    list_display = ("name", "member", "cohort", "created_at", "updated_at")
+    list_filter = ("user__member_identity__cohort",)
+    search_fields = ("name", "user__username", "user__member_identity__name")
+    ordering = ("-updated_at", "-id")
+    list_per_page = 50
+
+    @admin.display(description="社员", ordering="user__username")
+    def member(self, obj):
+        identity = getattr(obj.user, "member_identity", None)
+        label = identity.name if identity else obj.user.username
+        return format_html(
+            '<a href="{}">{}</a>', reverse("admin:auth_user_change", args=[obj.user_id]), label,
+        )
+
+    @admin.display(description="届数", ordering="user__member_identity__cohort")
+    def cohort(self, obj):
+        identity = getattr(obj.user, "member_identity", None)
+        return identity.cohort if identity else "—"

@@ -1129,3 +1129,30 @@ class AccountDeletionLog(models.Model):
 
     def __str__(self):
         return f"{self.target_username}(#{self.target_id}) by {self.actor_username or 'cli'}"
+
+
+class MemberEquipment(models.Model):
+    """社员可提供给社团活动使用的设备（2026-11-10）。
+
+    需求只登记「物品名」一项：社员把家里能带到活动的相机、电脑、配件等填进来，
+    管理员在后台按社员浏览。**不与 ``AccountDevice``（登录设备）混淆**——那是安全
+    中心里的浏览器会话记录，这里是实物。
+
+    只要绑定了社员身份就允许填写（在册 / 已毕业 / 已退社一视同仁，用户 2026-11-10 定）。
+    """
+
+    user = models.ForeignKey(
+        User, verbose_name="社员账号", on_delete=models.CASCADE, related_name="member_equipment",
+    )
+    name = models.CharField("物品名", max_length=100)
+    created_at = models.DateTimeField("添加时间", auto_now_add=True)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        verbose_name = "社员设备"
+        verbose_name_plural = "社员设备"
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["user"], name="accounts_meq_user_idx")]
+
+    def __str__(self):
+        return f"{self.user.username} · {self.name}"

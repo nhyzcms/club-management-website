@@ -14,6 +14,7 @@ import ContentListPanel from "../components/profile/ContentListPanel";
 import PermissionsPanel from "../components/profile/PermissionsPanel";
 import VerificationPanel from "../components/profile/VerificationPanel";
 import MemberIdentityPanel from "../components/profile/MemberIdentityPanel";
+import EquipmentPanel from "../components/profile/EquipmentPanel";
 import SecurityPanel from "../components/profile/SecurityPanel";
 import MuteUserPanel from "../components/profile/MuteUserPanel";
 import NotificationPreferencesPanel from "../components/profile/NotificationPreferencesPanel";
@@ -27,6 +28,7 @@ const SELF_TABS = [
   { key: "profile", label: "资料编辑" },
   { key: "verification", label: "账号认证" },
   { key: "member", label: "社员身份" },
+  { key: "equipment", label: "我的设备" },
   { key: "account", label: "账号与安全" },
   { key: "notify", label: "通知" },
   { key: "news", label: "我的新闻", divider: true },
@@ -120,7 +122,7 @@ export default function UserProfile() {
   }
 
   const tabs = isOwner
-    ? SELF_TABS
+    ? SELF_TABS.filter((t) => t.key !== "equipment" || !!profile.viewer.is_member)
     : [
         { key: "news", label: "ta 的新闻" },
         { key: "activities", label: "ta 的活动" },
@@ -174,6 +176,7 @@ export default function UserProfile() {
               {active === "profile" && <ProfileEditPanel onSaved={onProfileSaved} />}
               {active === "verification" && <VerificationPanel />}
               {active === "member" && <MemberIdentityPanel />}
+              {active === "equipment" && profile.viewer.is_member && <EquipmentPanel />}
               {active === "security" && <SecurityPanel />}
               {active === "notify" && <NotificationPreferencesPanel />}
               {active === "password" && <PasswordPanel />}

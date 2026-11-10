@@ -50,6 +50,7 @@ from .member_codes import verify_signature
 from .member_roster import ClaimError, auto_bind_on_register, claim_candidates, claim_identity
 from .models import (
     AccountIdentity,
+    MemberEquipment,
     MemberIdentity,
     PasswordResetRequest,
     Profile,
@@ -796,6 +797,96 @@ def member_lookup_view(request):
         "results": [member_lookup.public_member_payload(row) for row in rows],
         "quota": quota,
     })
+
+
+# ---- 我的设备（2026-11-10）----
+# 社员登记「能带到社团活动用的物品」；只存物品名（用户明确要求最小字段）。
+# 与 AccountDevice（登录设备）无关。权限：已绑定社员身份即可（不看名册状态），
+# 只允许本人读写，管理员在 Django 后台浏览。
+
+MEMBER_EQUIPMENT_LIMIT = 30
+MEMBER_EQUIPMENT_NAME_MAX = 100
+
+
+def _is_member(user) -> bool:
+    return MemberIdentity.objects.filter(user=user).exists()
+
+
+def _equipment_payload(row: MemberEquipment) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+def _equipment_name(body) -> str | None:
+    """取并校验物品名：去首尾空白，1–100 字；不合法返回 None。"""
+    if not isinstance(body, dict):
+        return None
+    name = str(body.get("name") or "").strip()
+    if not name or len(name) > MEMBER_EQUIPMENT_NAME_MAX:
+        return None
+    return name
+
+
+@require_http_methods(["GET", "POST"])
+@login_required
+def member_equipment_view(request):
+    """我的设备列表 / 新增。非社员一律 403（前端也不显示入口）。"""
+    if not _is_member(request.user):
+        return JsonResponse(
+            {"error": "仅社员可以登记设备。", "reason": "members_only"}, status=403,
+        )
+
+    if request.method == "GET":
+        rows = MemberEquipment.objects.filter(user=request.user)
+        return JsonResponse({
+            "limit": MEMBER_EQUIPMENT_LIMIT,
+            "items": [_equipment_payload(row) for row in rows],
+        })
+
+    body = _json_body(request)
+    name = _equipment_name(body)
+    if name is None:
+        return JsonResponse(
+            {"error": f"请填写物品名（1–{MEMBER_EQUIPMENT_NAME_MAX} 字）。"}, status=400,
+        )
+    if MemberEquipment.objects.filter(user=request.user).count() >= MEMBER_EQUIPMENT_LIMIT:
+        return JsonResponse(
+            {"error": f"最多登记 {MEMBER_EQUIPMENT_LIMIT} 项设备，请先删掉不再提供的。"},
+            status=400,
+        )
+    row = MemberEquipment.objects.create(user=request.user, name=name)
+    return JsonResponse({"item": _equipment_payload(row)}, status=201)
+
+
+@require_http_methods(["PATCH", "DELETE"])
+@login_required
+def member_equipment_detail_view(request, pk):
+    """改名 / 删除自己的一条设备。别人的条目按不存在处理（404）。"""
+    if not _is_member(request.user):
+        return JsonResponse(
+            {"error": "仅社员可以登记设备。", "reason": "members_only"}, status=403,
+        )
+    row = MemberEquipment.objects.filter(pk=pk, user=request.user).first()
+    if row is None:
+        return JsonResponse({"error": "设备不存在。"}, status=404)
+
+    if request.method == "DELETE":
+        row.delete()
+        return JsonResponse({"ok": True})
+
+    body = _json_body(request)
+    name = _equipment_name(body)
+    if name is None:
+        return JsonResponse(
+            {"error": f"请填写物品名（1–{MEMBER_EQUIPMENT_NAME_MAX} 字）。"}, status=400,
+        )
+    row.name = name
+    row.save(update_fields=["name", "updated_at"])
+    return JsonResponse({"item": _equipment_payload(row)})
 
 
 # ---- 安全验证（Step-up，ADR-0026）----
@@ -1871,6 +1962,7 @@ def user_profile_view(request, id):
             "viewer": {
                 "is_owner": False,
                 "is_admin": profile_view_for(request.user, viewed).is_admin,
+                "is_member": False,
             },
         })
 
@@ -1891,7 +1983,11 @@ def user_profile_view(request, id):
             "bio": profile.bio,
         },
         "role": _public_role_for(viewed, request.user),
-        "viewer": {"is_owner": visibility.is_owner, "is_admin": visibility.is_admin},
+        "viewer": {
+            "is_owner": visibility.is_owner,
+            "is_admin": visibility.is_admin,
+            "is_member": _is_member(viewed),
+        },
     }
 
     if visibility.can_see_private:

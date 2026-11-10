@@ -34,6 +34,9 @@ urlpatterns = [
     path("member/claim/", views.member_claim_view, name="member_claim"),
     path("member/check/", views.member_check_view, name="member_check"),
     path("member/lookup/", views.member_lookup_view, name="member_lookup"),
+    # 我的设备（社员登记可带到活动的物品；管理员在 Django 后台查看）。
+    path("member/equipment/", views.member_equipment_view, name="member_equipment"),
+    path("member/equipment/<int:pk>/", views.member_equipment_detail_view, name="member_equipment_detail"),
     path("stepup/", views.stepup_status_view, name="stepup_status"),
     path("stepup/email/send/", views.stepup_email_send_view, name="stepup_email_send"),
     path("stepup/verify/", views.stepup_verify_view, name="stepup_verify"),
