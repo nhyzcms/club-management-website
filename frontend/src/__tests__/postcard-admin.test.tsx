@@ -299,4 +299,42 @@ describe("AI 配置预设", () => {
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0][0]).toMatchObject({ prompt_prefix: "新的\n提示词" });
   });
+
+  it("「测试连接」带当前填写（未保存）的参数，而不是只发空对象", async () => {
+    const { postcardAdminApi } = await import("../api/postcardAdmin");
+    vi.spyOn(postcardAdminApi, "aiConfig").mockResolvedValue({
+      configured: false,
+      enabled: false,
+      ready: false,
+      base_url: "",
+      model: "",
+      extra_headers: {},
+      timeout_seconds: 20,
+      ip_blacklist: [],
+      api_key_set: false,
+    });
+    vi.spyOn(postcardAdminApi, "aiSamples").mockResolvedValue({
+      results: [],
+      sample_ready: false,
+    });
+    vi.spyOn(postcardAdminApi, "aiModels").mockResolvedValue({ ok: true, models: [] });
+    const testAI = vi.spyOn(postcardAdminApi, "testAIConfig").mockResolvedValue({
+      ok: true,
+      latency_ms: 12,
+      model: "deepseek-flash",
+      reply: "pong",
+    });
+
+    const { default: AITab } = await import("../components/postcard/admin/AITab");
+    render(<AITab />);
+    fireEvent.click(await screen.findByRole("button", { name: "DeepSeek" }));
+    fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
+
+    await waitFor(() => expect(testAI).toHaveBeenCalledTimes(1));
+    expect(testAI.mock.calls[0][0]).toMatchObject({
+      base_url: "https://api.deepseek.com/v1",
+      model: "deepseek-flash",
+      timeout_seconds: 60,
+    });
+  });
 });

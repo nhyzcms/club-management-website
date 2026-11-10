@@ -198,7 +198,7 @@ export default function AITab() {
       headers["x-opencode-session"] = opencodeSessionId();
     }
     setError("");
-    setNotice(`已填入「${preset.label}」预设：填好 API Key 后保存，再点「测试连接」。`);
+    setNotice(`已填入「${preset.label}」预设：填好 API Key 后点「测试连接」验证，通过再保存。`);
     setBaseUrl(preset.baseUrl);
     setModel(preset.model);
     setHeadersText(JSON.stringify(headers, null, 2));
@@ -269,14 +269,22 @@ export default function AITab() {
     }
   };
 
-  /** 测试连接：只测「已保存」的配置（未保存的改动不在服务端）。 */
+  /** 测试连接：用当前页面填写的参数（含未保存改动）真发一次请求，后端不落库。 */
   const runTest = async () => {
+    const headers = parseHeaders();
+    if (!headers) return;
     setTesting(true);
     setTestResult(null);
     setError("");
     setNotice("");
     try {
-      const d = await postcardAdminApi.testAIConfig();
+      const d = await postcardAdminApi.testAIConfig({
+        base_url: baseUrl.trim(),
+        model: model.trim(),
+        extra_headers: headers,
+        timeout_seconds: timeout,
+        ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
+      });
       if (d.ok) {
         setTestResult({
           ok: true,
@@ -484,7 +492,7 @@ export default function AITab() {
             {testing ? "测试中…" : "测试连接"}
           </button>
         </div>
-        <p className="pa-hint">测试连接使用已保存的配置；改了参数请先保存再测试。</p>
+        <p className="pa-hint">测试连接使用当前填写的参数（不落库）；保存后才会对正式审核生效。</p>
         {testResult && (
           <p className={testResult.ok ? "pa-ok" : "pa-error"} role="status">
             {testResult.ok ? "✅ " : "❌ "}

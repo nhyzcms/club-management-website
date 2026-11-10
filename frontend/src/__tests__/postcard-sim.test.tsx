@@ -17,6 +17,7 @@ import {
   type SimState,
 } from "../postcardSim/state";
 import { buildPdf, buildXlsx, bytesToDataUrl } from "../postcardSim/files";
+import { createSimPostcardAdminApi } from "../postcardSim/api";
 import { exitSim, isSimRoute } from "../postcardSim/session";
 import { isPostcardAdminSim, withSimFileSuffix } from "../api/postcardAdmin";
 import PostcardAdminPage from "../pages/PostcardAdminPage";
@@ -239,6 +240,50 @@ describe("模拟环境 · 配置与条码", () => {
     expect(statsOf(state).destination_schools).toBe(1);
     expect(updateRegistration(state, 99, { status: "reported" }).reg_code).toBe("123456");
     expect(state.registrations[0].items[0].status).toBe("reported");
+  });
+});
+
+describe("模拟环境 · AI 模型清单带草稿参数", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("预设填的 base_url 还没保存时也要发给后端（只读 state 会拿到空值）", async () => {
+    const state = emptySimState();
+    state.ai.base_url = "https://saved.example.com/v1";
+    const api = createSimPostcardAdminApi(state);
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ ok: true, models: ["deepseek-flash"] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    // 草稿优先：预设刚填的地址覆盖 state 里的旧值
+    const draft = await api.aiModels({
+      base_url: "https://api.deepseek.com/v1",
+      extra_headers: { "x-opencode-session": "s" },
+      timeout_seconds: 60,
+      dry_run: true,
+    });
+    expect(draft.models).toEqual(["deepseek-flash"]);
+    const first = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(first.base_url).toBe("https://api.deepseek.com/v1");
+    expect(first.extra_headers).toEqual({ "x-opencode-session": "s" });
+    expect(first.timeout_seconds).toBe(60);
+    expect(first.dry_run).toBe(true);
+
+    // 没给草稿时，仍用模拟里已保存的配置兜底
+    await api.aiModels({});
+    const second = JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body));
+    expect(second.base_url).toBe("https://saved.example.com/v1");
+
+    // 测试连接同口径：也要带草稿，否则后端会回「配置不完整」
+    await api.testAIConfig({ base_url: "https://api.deepseek.com/v1", model: "deepseek-flash" });
+    const third = JSON.parse(String((fetchMock.mock.calls[2][1] as RequestInit).body));
+    expect(third.base_url).toBe("https://api.deepseek.com/v1");
+    expect(third.model).toBe("deepseek-flash");
+    expect(third.dry_run).toBe(true);
   });
 });
 
