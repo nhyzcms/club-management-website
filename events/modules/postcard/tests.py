@@ -2979,3 +2979,48 @@ class DeleteSeasonTest(TestCase):
         )
         lifecycle_mod.delete_season(self.event)
         self.assertTrue(Event.objects.filter(pk=other.pk).exists())
+
+
+class SeasonAdminDeleteTest(TestCase):
+    """Django admin 年度批次页：先回确认页，确认后才删（2026-11-10）。"""
+
+    def setUp(self):
+        cache.clear()
+        self.event, _ = _config_event()
+        self.sample = _add_sample(self.event)
+        self.config = self.event.postcard_config
+        self.root = User.objects.create_superuser(
+            username=f"root-{uuid.uuid4().hex[:8]}", password="root-pass-123", email="root@example.com",
+        )
+
+    def _client(self):
+        from django.test import Client
+
+        client = Client()
+        client.force_login(self.root)
+        return client
+
+    def test_action_needs_confirmation_before_delete(self):
+        url = "/admin/events/postcardconfig/"
+        resp = self._client().post(url, {
+            "action": "delete_season",
+            "_selected_action": [self.config.pk],
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, self.event.title)
+        self.assertContains(resp, "确认删除互寄年度批次")
+        # 第一次提交只出确认页，不删任何东西
+        self.assertTrue(Event.objects.filter(pk=self.event.pk).exists())
+
+    def test_confirmed_action_deletes_season_and_files(self):
+        storage = self.sample.image.storage
+        url = "/admin/events/postcardconfig/"
+        resp = self._client().post(url, {
+            "action": "delete_season",
+            "post": "yes",
+            "_selected_action": [self.config.pk],
+        }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Event.objects.filter(pk=self.event.pk).exists())
+        self.assertFalse(PostcardConfig.objects.filter(pk=self.config.pk).exists())
+        self.assertFalse(storage.exists(self.sample.image.name))

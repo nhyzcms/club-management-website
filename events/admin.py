@@ -4,7 +4,9 @@
 整届活动的全部数据（用户 2026-11-09 要求）。
 """
 from django.contrib import admin, messages
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.db.models import Count
+from django.template.response import TemplateResponse
 
 from .models import Event
 from .modules.postcard import lifecycle as postcard_lifecycle
@@ -92,6 +94,29 @@ class PostcardSeasonAdmin(admin.ModelAdmin):
 
     @admin.action(description="删除该年度互寄批次（含全部数据，不可恢复）", permissions=["delete"])
     def delete_season(self, request, queryset):
+        """两步删除：先回确认页（Django 自带 action 不会自动确认），确认后才真删。"""
+        if request.POST.get("post") != "yes":
+            rows = [
+                {
+                    "pk": config.pk,
+                    "title": config.event.title,
+                    "registrations": getattr(config, "registration_total", 0),
+                    "barcodes": getattr(config, "barcode_total", 0),
+                }
+                for config in queryset.select_related("event")
+            ]
+            return TemplateResponse(
+                request,
+                "admin/events/postcardconfig/delete_season_confirmation.html",
+                {
+                    **self.admin_site.each_context(request),
+                    "title": "确认删除互寄年度批次",
+                    "rows": rows,
+                    "action": "delete_season",
+                    "action_checkbox_name": ACTION_CHECKBOX_NAME,
+                    "opts": self.model._meta,
+                },
+            )
         for config in queryset.select_related("event"):
             event = config.event
             title = event.title
@@ -103,3 +128,4 @@ class PostcardSeasonAdmin(admin.ModelAdmin):
                 "登记、条码、审计等数据已随活动一并删除。",
                 level=messages.WARNING,
             )
+        return None
