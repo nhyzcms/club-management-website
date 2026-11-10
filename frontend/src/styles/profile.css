@@ -133,3 +133,23 @@
 .ps-hint { font-size: 13px; flex-shrink: 0; }
 .ps-history { margin-top: var(--s-3); border-top: 1px solid var(--line); padding-top: var(--s-3); }
 .ps-history summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+
+/* ---- 我的设备（社员登记可带到活动的物品，2026-11-10）---- */
+.equip-intro { margin: 0 0 var(--s-4); font-size: 13px; line-height: 1.7; }
+.equip-add { display: flex; gap: var(--s-2); }
+.equip-add .input { flex: 1; min-width: 0; }
+.equip-count { margin: var(--s-2) 0 0; text-align: right; }
+.equip-list { list-style: none; margin: var(--s-4) 0 0; padding: 0; border-top: 1px solid var(--line); }
+.equip-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-3) 0; border-bottom: 1px solid var(--line); }
+.equip-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.equip-name { overflow-wrap: anywhere; }
+.equip-time { font-size: 12px; }
+.equip-actions { display: flex; gap: var(--s-2); flex-shrink: 0; }
+.equip-edit { flex: 1; min-width: 0; }
+
+@media (max-width: 640px) {
+  .equip-add { flex-direction: column; }
+  .equip-row { flex-direction: column; align-items: flex-start; }
+  .equip-actions { width: 100%; }
+  .equip-actions .btn { flex: 1; }
+}

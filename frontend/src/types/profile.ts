@@ -12,7 +12,7 @@ export interface UserProfileData {
     gender?: string;
   };
   role: { label: string; variant: RoleVariant };
-  viewer: { is_owner: boolean; is_admin: boolean };
+  viewer: { is_owner: boolean; is_admin: boolean; is_member?: boolean };
   permissions?: Record<string, boolean>;
   groups?: string[];
 }

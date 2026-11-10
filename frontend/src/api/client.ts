@@ -67,6 +67,15 @@ export const api = {
   memberLookup: (q: string) =>
     request("/member/lookup/", { method: "POST", body: JSON.stringify({ q }) }),
 
+  // 我的设备（社员登记可带到活动的物品；只有本人与管理员可见）。
+  memberEquipment: () => request("/member/equipment/"),
+  addMemberEquipment: (name: string) =>
+    request("/member/equipment/", { method: "POST", body: JSON.stringify({ name }) }),
+  renameMemberEquipment: (id: number, name: string) =>
+    request(`/member/equipment/${id}/`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  deleteMemberEquipment: (id: number) =>
+    request(`/member/equipment/${id}/`, { method: "DELETE" }),
+
   verifyEmail: (uid: string, token: string) =>
     request(`/verify-email/?uid=${encodeURIComponent(uid)}&token=${encodeURIComponent(token)}`),
 
