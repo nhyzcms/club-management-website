@@ -372,6 +372,9 @@ class PostcardAIConfig(models.Model):
     extra_headers = models.JSONField("自定义请求头", default=dict, blank=True)
     timeout_seconds = models.PositiveSmallIntegerField("单次调用超时（秒）", default=20)
     ip_blacklist = models.JSONField("动漫黑名单 IP 清单", default=_default_ip_blacklist, blank=True)
+    #: 前置提示词：每次 AI 请求都作为第一条 system 消息前置（审图 / 样例解读 /
+    #: 海报识别 / 测试连接统一生效，见 ai._with_prefix）。空 = 不附加。
+    prompt_prefix = models.TextField("前置提示词", blank=True, default="")
     enabled = models.BooleanField("启用 AI 审核", default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

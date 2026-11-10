@@ -164,6 +164,8 @@ export interface SimAIConfig {
   timeout_seconds: number;
   extra_headers: Record<string, string>;
   ip_blacklist: string[];
+  /** 每次 AI 请求都会前置的系统提示词（空 = 不附加）。 */
+  prompt_prefix: string;
   /** 只在内存里活着；除「测试连接」外不外发。 */
   api_key: string;
   api_key_set: boolean;
@@ -206,6 +208,7 @@ export function emptySimState(): SimState {
       timeout_seconds: 20,
       extra_headers: {},
       ip_blacklist: [],
+      prompt_prefix: "",
       api_key: "",
       api_key_set: false,
     },
@@ -391,7 +394,14 @@ export function newSeason(state: SimState): { event_id: number; previous_event: 
   // 新一届从零开始发条码：旧条码属于上一届。
   state.barcodes = [];
   state.registrations = [];
-  pushAudit(state, "new_season", `event:${id}`, { previous_event: previous });
+  // 与正式环境一致：AI 配置继承，但 API Key 不继承（需重新填写）。
+  const apiKeyCleared = Boolean(state.ai.api_key || state.ai.api_key_set);
+  state.ai.api_key = "";
+  state.ai.api_key_set = false;
+  pushAudit(state, "new_season", `event:${id}`, {
+    previous_event: previous,
+    api_key_cleared: apiKeyCleared,
+  });
   return { event_id: id, previous_event: previous };
 }
 

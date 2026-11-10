@@ -1,0 +1,28 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+  <p>以下批次会被<strong>永久删除</strong>，不可恢复：</p>
+  <ul>
+    {% for row in rows %}
+      <li>
+        <strong>{{ row.title }}</strong>
+        —— 登记单 {{ row.registrations }} 个、条码 {{ row.barcodes }} 个
+      </li>
+    {% endfor %}
+  </ul>
+  <p>
+    活动配置、寄达校清单、登记记录、明信片条目、照片（含私有存储中的原文件）、
+    条码、建议、AI 样例与审计日志将随活动一并删除。
+  </p>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="{{ action }}">
+    <input type="hidden" name="post" value="yes">
+    {% for row in rows %}
+      <input type="hidden" name="{{ action_checkbox_name }}" value="{{ row.pk }}">
+    {% endfor %}
+    <input type="submit" class="default" value="确认删除">
+    <a href="{% url 'admin:events_postcardconfig_changelist' %}" class="button cancel-link">取消</a>
+  </form>
+{% endblock %}

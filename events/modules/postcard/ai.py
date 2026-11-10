@@ -269,10 +269,29 @@ def _request_headers(cfg: PostcardAIConfig) -> dict:
     return headers
 
 
+def _with_prefix(cfg: PostcardAIConfig, messages: list) -> list:
+    """把「前置提示词」并入第一条 system 消息（每次 AI 请求统一生效）。
+
+    单点注入（``_post_chat``）而不是各 prompt 组装函数各改一遍：审图 / 样例解读 /
+    海报识别 / 测试连接都吃同一份提示词，杜绝漏一处。合并而非新增一条 system，
+    是因为部分 OpenAI 兼容服务只接受单条 system 消息。空 = 原样返回。
+    """
+    prefix = (getattr(cfg, "prompt_prefix", "") or "").strip()
+    if not prefix:
+        return messages
+    if messages and messages[0].get("role") == "system" and isinstance(messages[0].get("content"), str):
+        first = messages[0]
+        return [
+            {"role": "system", "content": f"{prefix}\n\n{first['content']}"},
+            *messages[1:],
+        ]
+    return [{"role": "system", "content": prefix}, *messages]
+
+
 def _post_chat(cfg: PostcardAIConfig, messages: list, max_tokens: int | None = None) -> str:
     """单次对话调用，返回模型回复正文。任何失败 raise AIReviewError。"""
     url = cfg.base_url.strip().rstrip("/") + "/chat/completions"
-    payload = {"model": cfg.model.strip(), "messages": messages, "temperature": 0}
+    payload = {"model": cfg.model.strip(), "messages": _with_prefix(cfg, messages), "temperature": 0}
     if max_tokens:
         payload["max_tokens"] = max_tokens
     headers = _request_headers(cfg)
@@ -614,7 +633,7 @@ def test_connection(cfg: PostcardAIConfig) -> dict:
     url = cfg.base_url.strip().rstrip("/") + "/chat/completions"
     payload = {
         "model": cfg.model.strip(),
-        "messages": [{"role": "user", "content": "只回复两个字：正常"}],
+        "messages": _with_prefix(cfg, [{"role": "user", "content": "只回复两个字：正常"}]),
         "max_tokens": 8,
         "temperature": 0,
     }

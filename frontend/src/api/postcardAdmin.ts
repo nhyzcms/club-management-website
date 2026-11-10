@@ -92,6 +92,7 @@ export interface AIConfig {
   extra_headers?: Record<string, string>;
   timeout_seconds?: number;
   ip_blacklist?: string[];
+  prompt_prefix?: string;
   api_key_set?: boolean;
 }
 
@@ -330,6 +331,7 @@ const realPostcardAdminApi = {
     extra_headers: Record<string, string>;
     timeout_seconds: number;
     ip_blacklist: string[];
+    prompt_prefix: string;
   }>) =>
     request<AIConfig>("/admin/ai/config/", { method: "PUT", body: JSON.stringify(patch) }),
 

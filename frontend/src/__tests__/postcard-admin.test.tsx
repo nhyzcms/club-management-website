@@ -262,4 +262,41 @@ describe("AI 配置预设", () => {
     fireEvent.click(screen.getByRole("button", { name: "其他" }));
     expect((screen.getByRole("textbox", { name: /模型 ID/ }) as HTMLInputElement).value).toBe("");
   });
+
+  it("前置提示词是多行文本，随保存一起提交", async () => {
+    const { postcardAdminApi } = await import("../api/postcardAdmin");
+    vi.spyOn(postcardAdminApi, "aiConfig").mockResolvedValue({
+      configured: true,
+      enabled: true,
+      ready: true,
+      base_url: "",
+      model: "demo-model",
+      extra_headers: {},
+      timeout_seconds: 20,
+      ip_blacklist: [],
+      prompt_prefix: "第一行\n第二行",
+      api_key_set: true,
+    });
+    vi.spyOn(postcardAdminApi, "aiSamples").mockResolvedValue({
+      results: [],
+      sample_ready: true,
+    });
+    const save = vi
+      .spyOn(postcardAdminApi, "saveAIConfig")
+      .mockResolvedValue({ configured: true });
+
+    const { default: AITab } = await import("../components/postcard/admin/AITab");
+    render(<AITab />);
+
+    const box = (await screen.findByRole("textbox", {
+      name: /前置提示词/,
+    })) as HTMLTextAreaElement;
+    expect(box.tagName).toBe("TEXTAREA");
+    expect(box.value).toBe("第一行\n第二行");
+
+    fireEvent.change(box, { target: { value: "新的\n提示词" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存 AI 配置" }));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0]).toMatchObject({ prompt_prefix: "新的\n提示词" });
+  });
 });
