@@ -43,7 +43,9 @@ export default function CollectionPanel({
   const [comments, setComments] = useState<Record<number, string>>({});
   const isOwner = !!user && a.creator?.id === user.id;
   const isReviewer = !!user && (!!user.can_review_collections || isOwner);
-  const canSubmit = a.status === "collecting" && !a.my_submission && !hideSubmit;
+  const needMember = a.audience === "member_only" && !a.viewer_is_member;
+  const canSubmit =
+    a.status === "collecting" && !a.my_submission && !hideSubmit && !!user && !needMember;
 
   const doReview = async (sid: number, decision: "accepted" | "rejected") => {
     setBusy(true); setError("");
@@ -63,6 +65,16 @@ export default function CollectionPanel({
           <li>最大征集数量：{a.max_submissions ?? "不限"}{a.max_submissions && a.submissions ? `（已收 ${a.submissions.length}）` : ""}</li>
         </ul>
       </div>
+
+      {a.status === "collecting" && !a.my_submission && !hideSubmit && needMember && (
+        <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+          <div className="hint">
+            {user
+              ? "本次征集仅社员可投稿；你的账号尚未绑定社员名册，如需参与请联系社长或管理员。"
+              : "本次征集仅社员可投稿，请先登录。"}
+          </div>
+        </div>
+      )}
 
       {canSubmit && (
         <CollectionSubmitCard

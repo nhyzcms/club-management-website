@@ -10,6 +10,7 @@ from django.contrib.auth.models import AnonymousUser, Permission, User
 from django.test import TestCase
 from django.utils import timezone
 
+from accounts.models import MemberIdentity
 from accounts.test_helpers import grant_verification
 
 from .lifecycle import (
@@ -263,6 +264,43 @@ class CanRespondTest(TestCase):
 
     def test_non_survey_blocks_respond(self):
         self.assertFalse(can_respond(self.deliberation, self.user))
+
+    def test_member_only_blocks_authenticated_without_roster(self):
+        activity = make_survey_activity(
+            status=OPEN, title="mo", audience="member_only",
+        )
+        self.assertFalse(can_respond(activity, self.user))
+
+    def test_member_only_allows_bound_member_even_if_graduated(self):
+        activity = make_survey_activity(
+            status=OPEN, title="mo2", audience="member_only",
+        )
+        MemberIdentity.objects.create(
+            name="张三", admit_year=2020, cohort=2020, code="NH2020001",
+            user=self.user, status=MemberIdentity.STATUS_GRADUATED,
+        )
+        self.assertTrue(can_respond(activity, self.user))
+
+
+class MemberOnlyAudienceTest(TestCase):
+    """受众=仅社员对众议投票同样生效（生命周期守卫层）。"""
+
+    def setUp(self):
+        self.user = grant_verification(User.objects.create_user(username="mv", password="x"))
+        self.activity = Activity.objects.create(
+            type="deliberation", status=OPEN, title="众议",
+            audience="member_only", max_choices_per_voter=1,
+        )
+
+    def test_vote_blocked_without_roster(self):
+        self.assertFalse(can_vote(self.activity, self.user))
+
+    def test_vote_allowed_after_binding(self):
+        MemberIdentity.objects.create(
+            name="李四", admit_year=2024, cohort=2024, code="NH2024002",
+            user=self.user,
+        )
+        self.assertTrue(can_vote(self.activity, self.user))
 
 
 class ArchiveTest(TestCase):

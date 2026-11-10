@@ -114,11 +114,14 @@ export default function MobileActivityDetailPage() {
     const isExhibition = a.type === "exhibition";
     const options = a.options ?? [];
     const total = a.total_ballots ?? 0;
-    const canVote = isDeliberation && a.status === "open" && a.my_selections === null;
+    const needMember = a.audience === "member_only" && !a.viewer_is_member;
+    const canVote =
+      isDeliberation && a.status === "open" && a.my_selections === null &&
+      (a.audience === "public" || (!!user && !needMember));
     const surveyApproved = !a.review_status || a.review_status === "approved";
     const canFillSurvey =
       isSurvey && a.status === "open" && surveyApproved && a.my_response == null &&
-      (a.audience === "public" || !!user);
+      (a.audience === "public" || (!!user && !needMember));
 
     body = (
       <article className="m-detail">
@@ -170,6 +173,9 @@ export default function MobileActivityDetailPage() {
               </>
             ) : (
               <>
+                {needMember && a.my_selections === null && (
+                  <p className="m-hint">本次投票仅社员可参与；你的账号尚未绑定社员名册。</p>
+                )}
                 {a.my_selections !== null && (
                   <p className="m-hint">你投了：{a.my_selections.map((oid) => options.find((o) => o.id === oid)?.text).filter(Boolean).join("、")}</p>
                 )}
@@ -195,6 +201,11 @@ export default function MobileActivityDetailPage() {
             <h3>问卷</h3>
             {a.status === "scheduled" && <p className="m-hint">调研尚未开始，开始后即可作答。</p>}
             {a.status === "open" && !surveyApproved && <p className="m-hint">审核通过后即可作答。</p>}
+            {a.status === "open" && surveyApproved && a.my_response == null && needMember && (
+              <p className="m-hint">
+                {user ? "本调研仅社员可参与；你的账号尚未绑定社员名册。" : "本调研仅社员可参与，请先登录。"}
+              </p>
+            )}
             {a.status === "open" && surveyApproved && a.my_response != null && <p className="m-hint">你已经提交过了。</p>}
             {a.status === "closed" && (
               <p className="m-hint">征答已结束。{a.response_count != null ? `已收到 ${a.response_count} 份作答。` : ""}</p>

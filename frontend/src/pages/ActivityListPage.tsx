@@ -131,7 +131,7 @@ export default function ActivityListPage() {
                     <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
                     {ACTIVITY_TYPE_META[a.type].label}
                   </span>
-                  {a.type === "survey" && a.audience && (
+                  {a.audience && a.audience !== "members" && (
                     <span className={"badge " + (a.audience === "public" ? "badge-brand" : "badge-neutral")}>
                       {AUDIENCE_LABELS[a.audience]}
                     </span>

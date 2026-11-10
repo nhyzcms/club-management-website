@@ -8,7 +8,7 @@ import os
 import uuid
 from datetime import timedelta
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
@@ -46,6 +46,7 @@ from .lifecycle import (
     can_rate,
     can_respond,
     can_submit,
+    has_member_identity,
     accepting_submissions,
     collection_close_target,
     maybe_close_collection_on_cap,
@@ -92,6 +93,28 @@ def _parse_extensions(raw):
     if not raw:
         return set()
     return {p.strip().lower() for p in raw.split(",") if p.strip()}
+
+
+def _member_brief(row):
+    """作答者的社员身份快照（未绑定 → None）。
+
+    只取姓名 / 班级 / 识别码 / 状态：回答「是谁、哪一届名册里的谁」；
+    手机号等认领凭据不出现在作答列表。
+    """
+    user = row.user
+    if user is None:
+        return None
+    try:
+        identity = user.member_identity
+    except ObjectDoesNotExist:
+        return None
+    return {
+        "name": identity.name,
+        "class_no": identity.class_no,
+        "code": identity.code,
+        "status": identity.status,
+        "status_label": identity.get_status_display(),
+    }
 
 
 class ActivityViewSet(viewsets.ModelViewSet):
@@ -271,6 +294,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "仅成员可投票，请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
             if not is_verified(user):
                 return Response({"detail": "请先完成账号认证后再投票。"}, status=status.HTTP_403_FORBIDDEN)
+            if activity.audience == "member_only" and not has_member_identity(user):
+                return Response(
+                    {"detail": "该活动仅社员可参与，你的账号尚未绑定社员身份。"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         elif user is None:
             # 游客投票：设备号可轮换（ADR-0019），配置了 Turnstile 时逐票校验，
             # 把脚本刷票的成本抬到「每票解一次挑战」。
@@ -300,7 +328,14 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "仅调研可以作答"}, status=status.HTTP_400_BAD_REQUEST)
             if activity.status != OPEN:
                 return Response({"detail": "当前不可作答"}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"detail": "仅成员可作答，请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
+            if not request.user.is_authenticated:
+                return Response({"detail": "仅成员可作答，请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
+            if activity.audience == "member_only" and not has_member_identity(request.user):
+                return Response(
+                    {"detail": "该活动仅社员可参与，你的账号尚未绑定社员身份。"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            return Response({"detail": "当前不可作答"}, status=status.HTTP_400_BAD_REQUEST)
         answers = request.data.get("answers")
         if not isinstance(answers, dict):
             return Response({"detail": "answers 须为 JSON 对象"}, status=status.HTTP_400_BAD_REQUEST)
@@ -347,7 +382,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
         user = request.user
         is_manager = activity.creator_id == user.pk or user.has_perm("activities.manage_activity")
         rows = (
-            questionnaire.responses.select_related("user").all()
+            questionnaire.responses.select_related("user", "user__member_identity").all()
             if is_manager
             else questionnaire.responses.filter(user=user)
         )
@@ -371,6 +406,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
                     row.user.username if row.user_id
                     else (f"访客 · {row.device_id[:8]}" if row.device_id else "访客")
                 ),
+                # 社员身份（名册快照）：仅姓名 / 班级 / 识别码 / 状态。
+                # 手机号是认领校验凭据，绝不下发到作答列表。
+                "member": _member_brief(row),
                 "answers": answers,
                 "submitted_at": row.submitted_at,
                 "matches": matches,
@@ -395,6 +433,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
             # collecting（快照滞后），照 status 判会给出错误文案「当前不可投稿」。
             if not accepting_submissions(activity):
                 return Response({"detail": "征集已结束收件"}, status=status.HTTP_400_BAD_REQUEST)
+            if activity.audience == "member_only" and not has_member_identity(request.user):
+                return Response(
+                    {"detail": "该活动仅社员可参与，你的账号尚未绑定社员身份。"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             return Response({"detail": "当前不可投稿"}, status=status.HTTP_400_BAD_REQUEST)
         if Submission.objects.filter(activity=activity, submitter=request.user).exists():
             return Response({"detail": "你已经提交过作品了（一人一作品）"}, status=status.HTTP_400_BAD_REQUEST)

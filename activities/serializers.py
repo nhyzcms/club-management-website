@@ -12,7 +12,7 @@ from tasks.serializers import CommentThreadHostMixin, SimpleUserSerializer  # �
 
 from .debt import owed_for
 from .device import device_id_from_request
-from .lifecycle import can_edit_schema, initial_status
+from .lifecycle import can_edit_schema, has_member_identity, initial_status
 from .models import (
     Activity,
     Ballot,
@@ -178,6 +178,8 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
     my_response = serializers.SerializerMethodField()
     response_count = serializers.SerializerMethodField()
     schema_editable = serializers.SerializerMethodField()
+    # 受众=仅社员时，前端据此提前禁用参与按钮（不必等提交后才 403）
+    viewer_is_member = serializers.SerializerMethodField()
     schema = serializers.JSONField(required=False)
     # 众议写侧：创建时给选项文本（开放即锁定，无后续编辑）
     option_texts = serializers.ListField(
@@ -194,6 +196,7 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
             "review_enabled", "voting_enabled",
             "audience", "schema", "my_response", "response_count", "schema_editable",
+            "viewer_is_member",
             "options", "ballots", "my_selections", "total_ballots",
             "my_submission", "submissions",
             "exhibits",
@@ -203,9 +206,13 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
         ]
         read_only_fields = [
             "creator", "status", "review_status", "review_comment", "owed",
-            "my_response", "response_count", "schema_editable",
+            "my_response", "response_count", "schema_editable", "viewer_is_member",
             "created_at", "updated_at",
         ]
+
+    def get_viewer_is_member(self, obj):
+        request = self.context.get("request")
+        return has_member_identity(getattr(request, "user", None))
 
     def get_review_status(self, obj):
         return status_of(obj)
@@ -238,9 +245,7 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
         activity_type = attrs.get("type") or getattr(self.instance, "type", None)
         if activity_type != "survey":
             attrs.pop("schema", None)
-        # 受众：调研=作答资格；众议/展示=投票资格（公开时游客可投）。征集无受众语义。
-        if activity_type not in ("survey", "deliberation", "exhibition"):
-            attrs.pop("audience", None)
+        # 受众：作答 / 投票 / 投稿资格——四种活动类型都生效，不再按类型丢弃。
         # 开始 < 截止（两者都给时；update 取实例现值兜底 partial）
         start_at = attrs.get("start_at", getattr(self.instance, "start_at", None))
         # 长期活动（不设截止）：is_permanent 与 end_at 二选一——

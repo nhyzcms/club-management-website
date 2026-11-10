@@ -4,7 +4,7 @@ import type { ThreadStatus } from "./messaging";
 // 活动（ADR 0007 / 0011）：众议 / 征集 / 展示 / 调研。独立于申报（反馈）。
 
 export type ActivityType = "deliberation" | "collection" | "exhibition" | "survey";
-export type SurveyAudience = "public" | "members";
+export type SurveyAudience = "public" | "members" | "member_only";
 export type ActivityStatus =
   | "scheduled" // 排期：start_at 之前，待开始
   | "open" // 众议：投票中
@@ -103,6 +103,7 @@ export interface ActivityDetail {
   my_response: Record<string, unknown> | null; // 当前身份（登录用户或访客设备）的作答；未答为 null
   response_count: number | null; // 作答总数（不作答列表；非调研为 null）
   schema_editable: boolean; // 调研 Schema 可否改（生命周期；非调研为 false）
+  viewer_is_member: boolean; // 当前登录账号是否已绑定社员名册（仅社员受众的参与门禁）
   created_at: string;
   updated_at: string;
 }
@@ -115,9 +116,19 @@ export interface SurveyResponseMatch {
   snippet: string;
 }
 
+/** 作答者的社员身份快照（未绑定名册为 null；手机号不下发）。 */
+export interface SurveyResponseMember {
+  name: string;
+  class_no: string;
+  code: string;
+  status: "active" | "graduated" | "left";
+  status_label: string;
+}
+
 export interface SurveyResponseRow {
   id: number;
   user_label: string;
+  member: SurveyResponseMember | null;
   answers: Record<string, unknown>;
   submitted_at: string;
   matches: SurveyResponseMatch[]; // 未检索时为空数组
@@ -202,6 +213,7 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
 export const AUDIENCE_LABELS: Record<SurveyAudience, string> = {
   public: "公开",
   members: "仅成员",
+  member_only: "仅社员",
 };
 
 // 活动类型勋章：emoji + 配色徽章（替换纯文字 type-tag）

@@ -113,16 +113,46 @@ def can_edit_schema(activity):
     return False
 
 
+def has_member_identity(user):
+    """是否拥有社员身份：账号已绑定社员名册（MemberIdentity）。
+
+    按 2026-11 口径，已毕业 / 已退社的名册行也算——受众判定看的是「是不是社员」，
+    不看其在册状态；状态只用于展示。延迟导入避免 accounts / activities 循环依赖。
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    from accounts.models import MemberIdentity
+
+    return MemberIdentity.objects.filter(user=user).exists()
+
+
+def audience_allows(activity, user, *, need_auth):
+    """受众门禁的单一事实源（``need_auth`` 表示调用方是否要求登录/认证）。
+
+    - public：任何人；
+    - members：须登录；
+    - member_only：须登录且绑定社员名册。
+    """
+    audience = activity.audience
+    if audience == "public":
+        return True
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if not need_auth:
+        return False
+    if audience == "member_only":
+        return has_member_identity(user)
+    return True
+
+
 def can_respond(activity, user):
-    """调研作答守卫：类型=调研、此刻进行中。公开受众任何人；仅成员须登录。
+    """调研作答守卫：类型=调研、此刻进行中、受众放行。
 
     审核通过由视图另判；已登录重复提交由视图 + 部分唯一约束收口。
     """
     if activity.type != "survey" or calc_state(activity) != OPEN:
         return False
-    if activity.audience == "public":
-        return True
-    return bool(getattr(user, "is_authenticated", False))
+    return audience_allows(activity, user, need_auth=True)
 
 
 # ---- 众议 --------------------------------------------------------------
@@ -131,11 +161,10 @@ def can_vote(activity, user):
     """投票守卫：类型与此刻状态（众议=进行中；展示=``voting_enabled`` 且进行中）+ 受众放行。
 
     受众 ``public``：任何人（含未登录游客——视图按设备标识判重、记录 IP）；
-    受众 ``members``：须已登录（认证轴由 ``IsVerified`` 在视图层把关）。
+    ``members``：须已登录；``member_only``：须登录且绑定社员名册
+    （认证轴由 ``IsVerified`` 在视图层把关）。
     """
-    if activity.audience != "public" and not (
-        user and getattr(user, "is_authenticated", False)
-    ):
+    if not audience_allows(activity, user, need_auth=True):
         return False
     state = calc_state(activity)
     if activity.type == "deliberation":
@@ -299,7 +328,11 @@ def can_submit(activity, user):
     ``end_at`` 仍能投稿，直到有人手动「结束收件」。现在时间窗交给
     :func:`state.accepting_submissions`，过期即刻停止收件。
     """
-    return user.is_authenticated and accepting_submissions(activity)
+    return (
+        user.is_authenticated
+        and accepting_submissions(activity)
+        and audience_allows(activity, user, need_auth=True)
+    )
 
 
 def collection_close_target(activity):

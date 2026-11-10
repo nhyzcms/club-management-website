@@ -231,9 +231,12 @@ class Activity(models.Model):
         ("exhibition", "展示"),
         ("survey", "调研"),
     ]
+    # 受众：public=游客可参与；members=须登录；member_only=须绑定社员名册
+    # （毕业 / 退社也算，2026-11 口径）。众议 / 征集 / 展示 / 调研通用。
     AUDIENCE_CHOICES = [
         ("public", "公开"),
         ("members", "仅成员"),
+        ("member_only", "仅社员"),
     ]
     # 状态语义随类型而异（状态机见 lifecycle.py）：
     #   排期：scheduled（待开始，start_at 之前）→ 到点开放
@@ -293,10 +296,10 @@ class Activity(models.Model):
     # 不建选项，仅赞/踩（ExhibitRating）。创建后不可改。
     voting_enabled = models.BooleanField("启用投票", default=False)
 
-    # 调研专属：受众。仅 type=survey 有意义；其他类型保持默认 members（门户仍仅成员可见）。
+    # 受众：调研=作答资格；众议/展示=投票资格；征集=投稿资格。
     # 创建后不可改（与展示 voting_enabled 同思路）。
     audience = models.CharField(
-        "受众", max_length=8, choices=AUDIENCE_CHOICES, default="members",
+        "受众", max_length=12, choices=AUDIENCE_CHOICES, default="members",
     )
     # 调研专属：指向独立问卷。其他类型为空。
     # **删除活动不会删除问卷**（2026-10 起）：问卷与作答是历史资产，
