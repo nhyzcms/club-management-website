@@ -1,0 +1,86 @@
+/* 壳最低版本闸门（区块 8）：全屏覆盖，颜色全部走 cobalt token，自动跟随深浅色。 */
+.shell-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 4000; /* 高于底部 tab / 公告弹窗，低于崩溃面板这类原生层 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+  background: var(--bg-soft);
+}
+
+.shell-gate-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 26px 22px 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--bg);
+  box-shadow: var(--sh-2, 0 12px 32px rgba(8, 15, 23, 0.16));
+  text-align: center;
+}
+
+.shell-gate-icon {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  /* 用 bg-soft + line 而不是 --brand-50：后者在深色 token 下是接近纯白的浅蓝，
+     整块图标底会亮得像张白纸（深色截图实测）。 */
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  color: var(--brand-600);
+}
+.shell-gate-icon svg { width: 26px; height: 26px; }
+
+.shell-gate-card h1 {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--fg);
+}
+
+.shell-gate-body {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+  text-align: left;
+}
+.shell-gate-body b { color: var(--fg); }
+
+.shell-gate-primary {
+  display: block;
+  margin-top: 20px;
+  padding: 13px 18px;
+  border-radius: 999px;
+  background: var(--brand-600);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+}
+.shell-gate-primary:active { background: var(--brand-700); }
+
+.shell-gate-hint {
+  margin-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--faint);
+  text-align: left;
+}
+
+.shell-gate-secondary {
+  margin-top: 16px;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: underline;
+}

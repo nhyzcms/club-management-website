@@ -1,0 +1,26 @@
+/* 模拟环境的全局浮标（用户端登记页 / 审核台 / 签收页；管理端用内联徽标）。
+ *
+ * 单独一个文件而不是塞进 postcard-admin.css：用户端页面不进管理端样式表，
+ * 2C2G / 3M 带宽下没必要为一个小浮标多拉 4KB。
+ * 红底白字与 `.pa-sim-badge` 同色系，深色模式压深一档。 */
+.pc-sim-dock {
+  position: fixed; right: 16px; bottom: 16px; z-index: 60;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 6px 12px; border-radius: 999px;
+  background: color-mix(in oklch, #dc2626 12%, var(--bg, #fff));
+  border: 1px solid color-mix(in oklch, #dc2626 45%, transparent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); font-size: 0.8rem;
+}
+.pc-sim-dock-badge {
+  padding: 2px 8px; border-radius: 6px; background: #dc2626; color: #fff;
+  font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;
+}
+:root[data-theme="dark"] .pc-sim-dock { background: color-mix(in oklch, #b91c1c 22%, var(--bg, #000)); }
+:root[data-theme="dark"] .pc-sim-dock-badge { background: #b91c1c; }
+.pc-sim-dock-text { color: var(--muted, #666); }
+.pc-sim-dock-exit {
+  border: 0; background: transparent; padding: 0; font: inherit; font-weight: 600;
+  color: var(--accent, #2563eb); cursor: pointer;
+}
+.pc-sim-dock-exit:hover { text-decoration: underline; }

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>校园全景 · 南汇一中传媒社</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #03101f; font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  #pano { position: fixed; inset: 0; width: 100%; height: 100%; }
+
+  /* 转场覆盖层 */
+  #fade { position: fixed; inset: 0; z-index: 18; opacity: 0; pointer-events: none; background: radial-gradient(120% 120% at 50% 30%, #04182e 0%, #02090f 70%, #01060c 100%); transition: opacity .35s ease; }
+  #fade.on { opacity: 1; pointer-events: auto; }
+
+  .ui-top { position: fixed; top: 0; left: 0; right: 0; padding: 18px 22px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; z-index: 10; display: none; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-logo { width: 34px; height: 34px; border-radius: 9px; border: 1px solid rgba(0,229,255,.6); box-shadow: 0 0 14px rgba(0,229,255,.35), inset 0 0 8px rgba(0,229,255,.18); display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: #00e5ff; background: rgba(3,16,31,.5); backdrop-filter: blur(6px); }
+  .brand-text { font-size: 14px; font-weight: 600; color: rgba(255,255,255,.92); letter-spacing: .04em; text-shadow: 0 0 12px rgba(0,229,255,.45); }
+  .brand-text small { display: block; font-size: 11px; font-weight: 400; color: rgba(255,255,255,.55); letter-spacing: .12em; text-shadow: none; }
+  .hint { font-size: 12px; color: rgba(255,255,255,.6); padding: 7px 13px; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(3,16,31,.45); backdrop-filter: blur(6px); letter-spacing: .06em; }
+
+  /* 场景按钮 */
+  .ui-bottom { position: fixed; bottom: 22px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 10; }
+  .chip { font-size: 12px; color: rgba(255,255,255,.85); padding: 7px 16px; border-radius: 999px; border: 1px solid rgba(0,229,255,.5); background: rgba(3,16,31,.6); backdrop-filter: blur(8px); box-shadow: 0 0 18px rgba(0,229,255,.22), inset 0 0 8px rgba(0,229,255,.12); letter-spacing: .08em; }
+  .chip b { color: #00e5ff; font-weight: 600; }
+  .nav { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; padding: 8px 12px; border-radius: 999px; background: rgba(3,16,31,.55); border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(10px); }
+  .nav button { width: 40px; height: 40px; min-width: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: rgba(255,255,255,.75); font-size: 14px; font-weight: 600; cursor: pointer; transition: all .25s ease; }
+  .nav button:hover { border-color: rgba(0,229,255,.65); color: #fff; box-shadow: 0 0 12px rgba(0,229,255,.3); }
+  .nav button.active { background: linear-gradient(135deg, rgba(0,229,255,.25), rgba(123,92,255,.25)); border-color: #00e5ff; color: #fff; box-shadow: 0 0 18px rgba(0,229,255,.45), inset 0 0 8px rgba(0,229,255,.2); }
+
+  #loader { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: radial-gradient(120% 120% at 50% 30%, #0a2340 0%, #03101f 60%, #010a14 100%); transition: opacity .6s ease; }
+  #loader.hide { opacity: 0; pointer-events: none; }
+  .ring { width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(0,229,255,.15); border-top-color: #00e5ff; border-right-color: #ff2d95; animation: spin 1s linear infinite; box-shadow: 0 0 20px rgba(0,229,255,.25); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loader-text { font-size: 13px; letter-spacing: .18em; color: rgba(255,255,255,.7); }
+  .loader-text em { font-style: normal; color: #00e5ff; }
+
+  .scene-tag { position: fixed; left: 22px; bottom: 22px; z-index: 10; font-size: 11px; letter-spacing: .14em; color: rgba(255,255,255,.4); writing-mode: vertical-lr; display: none; }
+  .grad-bar { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 15; background: linear-gradient(90deg, #00e5ff, #7b5cff, #ff2d95, #00e5ff); background-size: 200% 100%; animation: flow 14s linear infinite; opacity: .8; }
+  @keyframes flow { from { background-position: 0% 0; } to { background-position: 200% 0; } }
+
+  @media (max-width: 640px) {
+    .hint { display: none; }
+    .ui-top { padding: 12px 14px; }
+    .scene-tag { display: none; }
+    .nav button { width: 36px; height: 36px; min-width: 36px; font-size: 13px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ring, .grad-bar { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="pano"></div>
+<div id="fade"></div>
+<div class="grad-bar"></div>
+<div id="sceneTag" class="scene-tag" style="display:none;"></div>
+<div class="ui-bottom">
+  <div class="chip">场景 <b id="sceneNum">1</b> / 7</div>
+  <div class="nav" id="nav"></div>
+</div>
+<div id="loader">
+  <div class="ring"></div>
+  <div class="loader-text">正在载入全景 · <em>请稍候</em></div>
+</div>
+
+<script src="marzipano.js"></script>
+<script>
+(function() {
+  try {
+    var SCENES = [
+      { url: 'pano_1.jpg', label: '1' },
+      { url: 'pano_2.jpg', label: '2' },
+      { url: 'pano_3.jpg', label: '3' },
+      { url: 'pano_4.jpg', label: '4' },
+      { url: 'pano_5.jpg', label: '5' },
+      { url: 'pano_6.jpg', label: '6' },
+      { url: 'pano_7.jpg', label: '7' }
+    ];
+    var W = 10000, H = 5000;
+
+    var viewer = new Marzipano.Viewer(document.getElementById('pano'), { stageType: 'css' });
+    var scenes = SCENES.map(function(data) {
+      var source = Marzipano.ImageUrlSource.fromString(data.url);
+      var geometry = new Marzipano.EquirectGeometry([{ width: W, height: H }]);
+      var limiter = Marzipano.RectilinearView.limit.traditional(W, 100 * Math.PI / 180);
+      var view = new Marzipano.RectilinearView({ yaw: 0, pitch: 0, fov: 100 * Math.PI / 180 }, limiter);
+      return viewer.createScene({ source: source, geometry: geometry, view: view, pinFirstLevel: true });
+    });
+
+    var current = 0;
+    var transitioning = false;
+    var fade = document.getElementById('fade');
+    var loader = document.getElementById('loader');
+
+    function updateUI(i) {
+      document.getElementById('sceneNum').textContent = String(i + 1);
+      document.getElementById('sceneTag').textContent = 'SCENE 0' + String(i + 1) + ' / 07';
+      var btns = document.querySelectorAll('.nav button');
+      for (var k = 0; k < btns.length; k++) btns[k].classList.toggle('active', k === i);
+    }
+
+    function fadeIn(cb) {
+      fade.classList.add('on');
+      setTimeout(cb, 360);
+    }
+    function fadeOut(cb) {
+      fade.classList.remove('on');
+      setTimeout(cb, 360);
+    }
+
+    function goTo(i) {
+      if (i === current || transitioning) return;
+      transitioning = true;
+      fadeIn(function() {
+        scenes[i].switchTo();
+        current = i;
+        updateUI(i);
+        fadeOut(function() { transitioning = false; });
+      });
+    }
+
+    var nav = document.getElementById('nav');
+    SCENES.forEach(function(s, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = s.label;
+      b.addEventListener('click', function() { goTo(i); });
+      nav.appendChild(b);
+    });
+
+    scenes[0].addEventListener('loaded', function() { loader.classList.add('hide'); });
+    setTimeout(function() { loader.classList.add('hide'); }, 10000);
+    scenes[0].switchTo();
+    updateUI(0);
+  } catch (e) {
+    var loader = document.getElementById('loader');
+    loader.innerHTML = '<div style="color:#ff2d95;font-size:14px;">加载失败：' + (e && e.message ? e.message : '未知错误') + '</div>';
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>

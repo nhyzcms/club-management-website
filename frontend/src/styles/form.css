@@ -1,0 +1,50 @@
+/* form.css — 表单页共享基元（ProposalForm + Profile）
+   字段本体用 cobalt 的 .field/.label/.input/.select/.textarea；本文件补
+   表单卡片、两列网格、操作行、提示条、只读值、头像上传、折叠区。
+   .page-head / .breadcrumb / .alert / .btn / .card / .avatar 来自 cobalt.css。
+   （.form-grid 在 list.css 也有同名定义，因懒加载各页 CSS 独立注入，此处自带一份。） */
+
+/* 表单卡片（配合 .card.card-pad 使用，限制宽度居中） */
+.form-card { max-width: 760px; }
+
+/* 垂直字段栈 */
+.form-stack { display: flex; flex-direction: column; gap: var(--s-5); }
+
+/* 两列字段网格 */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-5); }
+@media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+
+/* 操作行 */
+.form-actions { display: flex; gap: var(--s-3); justify-content: flex-end; flex-wrap: wrap; }
+
+/* 提示条（提交须知等） */
+.form-notice {
+  font-size: 13px; color: var(--muted); line-height: 1.65;
+  padding: var(--s-3) var(--s-4);
+  background: var(--brand-50); border: 1px solid var(--brand-100); border-radius: var(--r-md);
+}
+
+/* 只读字段值（用户名/邮箱等不可改项） */
+.field-value { font-size: 14px; color: var(--fg); padding: 9px 0; min-height: 38px; word-break: break-all; }
+.field-value.muted { color: var(--muted); }
+
+/* 头像上传 */
+.avatar-upload { display: flex; align-items: center; gap: var(--s-5); flex-wrap: wrap; }
+.avatar-upload .avatar { width: 80px; height: 80px; font-size: 30px; position: relative; cursor: pointer; flex-shrink: 0; }
+.avatar-upload .avatar.editable { cursor: pointer; }
+.avatar-upload .avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-upload .avatar .cam { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: oklch(0 0 0 / .45); color: #fff; opacity: 0; transition: opacity var(--dur-1); }
+.avatar-upload .avatar.editable:hover .cam { opacity: 1; }
+.avatar-upload .cam svg { width: 24px; height: 24px; }
+.avatar-upload .au-meta { display: flex; flex-direction: column; gap: 4px; }
+.avatar-upload .au-meta .au-name { font-size: 15px; font-weight: 600; color: var(--fg); }
+.avatar-upload .au-meta .au-hint { font-size: 12px; color: var(--faint); }
+.avatar-upload .au-meta .btn { align-self: flex-start; }
+
+/* 折叠区（修改密码） */
+.collapse { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); overflow: hidden; }
+.collapse-head { width: 100%; display: flex; align-items: center; gap: var(--s-2); padding: var(--s-4) var(--s-5); font-size: 14px; font-weight: 600; color: var(--ink-700); cursor: pointer; background: transparent; border: none; }
+.collapse-head .ico { width: 18px; height: 18px; color: var(--brand-700); }
+.collapse-head .chev { margin-left: auto; transition: transform var(--dur-1); }
+.collapse.is-open .collapse-head .chev { transform: rotate(180deg); }
+.collapse-body { padding: var(--s-5); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--s-5); }

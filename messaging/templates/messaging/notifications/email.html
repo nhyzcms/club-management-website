@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }} - 南汇一中传媒社</title>
+</head>
+<body style="margin:0;padding:0;background:#eef2f7;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef2f7;padding:32px 12px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;background:#ffffff;border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;">
+
+        <tr><td style="height:6px;line-height:6px;font-size:0;background:{{ color }};">&nbsp;</td></tr>
+
+        <tr>
+          <td align="center" style="padding:30px 36px 4px;">
+            <img src="cid:club-logo" width="76" height="76" alt="传媒社社徽" style="display:block;width:76px;height:76px;border-radius:50%;">
+            <div style="margin-top:12px;font-size:15px;font-weight:600;color:#12324f;letter-spacing:.5px;">南汇一中传媒社</div>
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="padding:18px 36px 0;">
+            <span style="display:inline-block;padding:5px 16px;border-radius:999px;background:{{ tint }};color:{{ color }};font-size:12px;font-weight:600;">{{ emoji }} {{ source_name }}</span>
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="padding:14px 44px 0;">
+            <div style="font-size:19px;line-height:1.55;font-weight:700;color:#16283b;">{{ title }}</div>
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="padding:10px 44px 0;">
+            <div style="font-size:14px;line-height:1.85;color:#5a6b7c;">{{ message }}</div>
+          </td>
+        </tr>
+
+        {% if url %}
+        <tr>
+          <td align="center" style="padding:24px 36px 4px;">
+            <a href="{{ url }}" target="_blank" style="display:inline-block;min-width:132px;padding:12px 30px;border-radius:10px;background:{{ color }};color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">查看详情 →</a>
+          </td>
+        </tr>
+        {% endif %}
+
+        <tr><td style="padding:26px 36px 0;"><div style="height:1px;line-height:1px;font-size:0;background:#eef2f7;">&nbsp;</div></td></tr>
+
+        <tr>
+          <td align="center" style="padding:16px 36px 28px;">
+            <div style="font-size:12px;line-height:1.8;color:#8b98a7;">
+              你收到这封邮件，是因为你在「个人中心 → 通知设置」中开启了邮件提醒。<br>
+              可随时在通知设置中调整或关闭对应来源的邮件通知。
+            </div>
+            <div style="margin-top:10px;font-size:12px;color:#aab6c3;">© 2026 上海市南汇第一中学 · 传媒社 · 信息组</div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

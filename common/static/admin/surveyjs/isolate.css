@@ -1,0 +1,20 @@
+/* SurveyJS sits inside Django admin. Admin dark mode sets --body-bg/#121212 on
+   :root and paints every input[type=text] with that token (specificity beats
+   SurveyJS class-only rules). Native search/date widgets also follow
+   color-scheme: dark. Re-apply light admin tokens only inside SurveyJS hosts
+   and popups (Creator may portal .sv-popup onto document.body). */
+
+.surveyjs-admin-host,
+.sv-popup,
+.svc-creator-popup {
+  color-scheme: light;
+  --body-fg: #333;
+  --body-bg: #fff;
+  --body-quiet-color: #666;
+  --body-medium-color: #444;
+  --body-loud-color: #000;
+  --border-color: #ccc;
+  --hairline-color: #e8e8e8;
+  --darkened-bg: #f8f8f8;
+  --selected-bg: #e4e4e4;
+}

@@ -1,0 +1,14 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+{% if survey_editor_url %}
+<li><a href="{{ survey_editor_url }}" class="historylink">编辑问卷</a></li>
+{% endif %}
+{% if survey_response_url %}
+<li><a href="{{ survey_response_url }}" class="historylink">查看作答</a></li>
+{% endif %}
+{% if survey_results_url %}
+<li><a href="{{ survey_results_url }}" class="historylink">统计</a></li>
+{% endif %}
+{{ block.super }}
+{% endblock %}

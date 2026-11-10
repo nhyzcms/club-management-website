@@ -1,0 +1,307 @@
+name: CI
+
+# 供应链：所有 action 固定到 commit SHA（审计 L-8）。升级时改 SHA 并在行尾注明版本；
+# 版本 tag 可变，SHA 不可变。release job 的 contents: write 仅在该 job 生效。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-guard:
+    name: docs-guard
+    # 只在 main（push / 目标为 main 的 PR）检查：documentation 分支的 PR 本来就该带 docs/。
+    if: github.event_name == 'push' || github.base_ref == 'main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: docs/ 不得出现在 main
+        run: |
+          if [ -d docs ] && [ -n "$(ls -A docs)" ]; then
+            echo "::error::docs/ 已迁出到 documentation 分支维护；请把文档提交到该分支，main 只放代码与运行时资源。"
+            exit 1
+          fi
+          echo "OK：main 不含 docs/"
+
+  backend:
+    name: backend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Test
+        run: |
+          set -o pipefail
+          uv run python manage.py test 2>&1 | tee "$RUNNER_TEMP/backend-test.log"
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Backend · Django 全量测试"
+            echo
+            echo "- **状态**: \`${{ job.status }}\`"
+            if [ -f "$RUNNER_TEMP/backend-test.log" ]; then
+              echo "- $(grep -E '^Ran [0-9]+ tests' "$RUNNER_TEMP/backend-test.log" | tail -1 || echo '未捕获测试统计')"
+              echo "- 结果: $(grep -E '^(OK|FAILED)' "$RUNNER_TEMP/backend-test.log" | tail -1 || echo '未捕获')"
+            else
+              echo "- 未捕获测试输出（步骤未执行或提前失败）"
+            fi
+            echo "- 提交: \`${GITHUB_SHA:0:7}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build
+        working-directory: frontend
+        run: npm ci && npm run build
+
+      - name: Check SurveyJS admin assets
+        run: test -f frontend/dist/surveyjs/survey.core.min.js
+
+      - name: Upload dist
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Frontend · 生产构建"
+            echo
+            echo "- **状态**: \`${{ job.status }}\`"
+            if [ -d frontend/dist ]; then
+              echo "- 产物: \`frontend/dist\`（$(du -sh frontend/dist | cut -f1)，$(find frontend/dist -type f | wc -l) 个文件）"
+              if [ -f frontend/dist/surveyjs/survey.core.min.js ]; then
+                echo "- SurveyJS admin 断言: ✅"
+              else
+                echo "- SurveyJS admin 断言: ❌"
+              fi
+            else
+              echo "- 未生成 \`frontend/dist\`"
+            fi
+            echo "- 提交: \`${GITHUB_SHA:0:7}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  frontend-test:
+    name: frontend-test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: frontend
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee "$RUNNER_TEMP/vitest.log"
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Frontend · 单元测试（Vitest）"
+            echo
+            echo "- **状态**: \`${{ job.status }}\`"
+            if [ -f "$RUNNER_TEMP/vitest.log" ]; then
+              files=$(grep -E 'Test Files' "$RUNNER_TEMP/vitest.log" | tail -1 | xargs || true)
+              tests=$(grep -E '^ +Tests ' "$RUNNER_TEMP/vitest.log" | tail -1 | xargs || true)
+              dur=$(grep -E 'Duration' "$RUNNER_TEMP/vitest.log" | tail -1 | xargs || true)
+              echo "- 文件: ${files:-未捕获}"
+              echo "- 用例: ${tests:-未捕获}"
+              echo "- 耗时: ${dur:-未捕获}"
+            else
+              echo "- 未捕获测试输出（步骤未执行或提前失败）"
+            fi
+            echo "- 提交: \`${GITHUB_SHA:0:7}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    name: e2e
+    needs: [frontend]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync --frozen
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: frontend
+        run: |
+          set -o pipefail
+          npx playwright test 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## E2E · 浏览器测试（Playwright / chromium）"
+            echo
+            echo "- **状态**: \`${{ job.status }}\`"
+            if [ -f "$RUNNER_TEMP/e2e.log" ]; then
+              result=$(grep -E '[0-9]+ (passed|failed|flaky|skipped)' "$RUNNER_TEMP/e2e.log" | tail -3 | xargs || true)
+              echo "- 结果: ${result:-未捕获}"
+            else
+              echo "- 未捕获测试输出（步骤未执行或提前失败）"
+            fi
+            echo "- 失败产物: \`playwright-report\` artifact（含 trace 回放）"
+            echo "- 提交: \`${GITHUB_SHA:0:7}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: release
+    needs: [backend, frontend, frontend-test, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Pack tarball
+        run: bash scripts/pack-release.sh
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA="${GITHUB_SHA}"
+          # GitHub rejects tags that are 40/64 hex (look like commit SHAs).
+          TAG="club-${SHA}"
+          cp scripts/install.sh install.sh
+          ASSETS=("club-${SHA}.tar.gz" "club-${SHA}.tar.gz.sha256" "install.sh")
+
+          PREV_TAG=""
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            if [ "$t" != "$TAG" ]; then
+              PREV_TAG="$t"
+              break
+            fi
+          done < <(gh release list --limit 10 --json tagName --jq '.[].tagName' || true)
+
+          NOTES_FILE="$(mktemp)"
+          {
+            echo "Runtime tree (Django apps + frontend/dist) for \`${SHA}\`."
+            echo
+            if [ -n "$PREV_TAG" ]; then
+              echo "## Changelog"
+              echo
+              LOG="$(git log --no-merges --pretty=format:'- %s (%h)' "${PREV_TAG}..${SHA}" || true)"
+              if [ -n "$LOG" ]; then
+                printf '%s\n' "$LOG"
+              else
+                echo "- No recorded commits since \`${PREV_TAG}\`."
+              fi
+              echo
+              echo "**Full diff:** https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
+            else
+              echo "Initial packaged release."
+            fi
+          } > "$NOTES_FILE"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            gh release edit "$TAG" --notes-file "$NOTES_FILE"
+          else
+            gh release create "$TAG" "${ASSETS[@]}" \
+              --target "$SHA" \
+              --title "$TAG" \
+              --notes-file "$NOTES_FILE"
+          fi
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Release · 生产更新包"
+            echo
+            echo "- **状态**: \`${{ job.status }}\`"
+            echo "- 标签: \`club-${GITHUB_SHA}\`"
+            echo "- 链接: https://github.com/${GITHUB_REPOSITORY}/releases/tag/club-${GITHUB_SHA}"
+            echo "- 资产: \`club-${GITHUB_SHA}.tar.gz\` / \`.sha256\` / \`install.sh\`"
+          } >> "$GITHUB_STEP_SUMMARY"

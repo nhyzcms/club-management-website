@@ -1,0 +1,149 @@
+/* 全站弹窗公告（ADR-0042）：弹窗 + 详情页共用的版式，以及 pdf.js 画布容器。 */
+
+.ann-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.ann-modal {
+  display: flex;
+  flex-direction: column;
+  width: 780px;
+  max-width: 100%;
+  max-height: 88vh;
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: var(--r-md, 8px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.ann-modal-body {
+  padding: 24px 24px 8px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ann-kicker {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--brand-700, #0756a2);
+}
+
+.ann-title {
+  margin: 6px 0 4px;
+  font-size: 20px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.ann-meta {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.ann-text {
+  margin: 14px 0 0;
+  line-height: 1.8;
+  font-size: 14.5px;
+  white-space: pre-wrap; /* 后台填的是纯文本，保留换行 */
+  word-break: break-word;
+}
+
+.ann-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2, transparent);
+}
+
+.ann-hint {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* ---- 文档区 ---------------------------------------------------------- */
+.ann-doc { margin-top: 18px; }
+
+.ann-pdf-host {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: 4px;
+  background: #f1f3f5;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 8px);
+}
+
+.ann-pdf-page {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+/* 每页的占位框：先用 aspect-ratio 撑出高度（滚动条不跳），滚到附近再画 canvas。 */
+.ann-pdf-holder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  background: #fff;
+  color: #9aa0a6;
+  font-size: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+/* docx-preview 生成的内容：白底、可滚动（about.css 的同名类只在关于页加载，这里按
+   容器作用域再声明一次，避免两条规则互相影响）。 */
+.ann-doc .docx-host {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 8px);
+  padding: 12px;
+  overflow: auto;
+  background: #fff;
+  max-height: 52vh;
+}
+
+.ann-doc-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.ann-doc-foot {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+/* ---- 详情页（/#/announcements/:id）----------------------------------- */
+.ann-page { max-width: 860px; }
+
+.ann-page .ann-title { font-size: 26px; margin-top: 0; }
+
+.ann-page .ann-doc .docx-host,
+.ann-page .ann-pdf-host {
+  max-height: none; /* 详情页整页滚动，不再套内层滚动条 */
+}
+
+@media (max-width: 640px) {
+  .ann-modal-body { padding: 18px 16px 6px; }
+  .ann-actions { padding: 12px 16px; }
+  .ann-hint { display: none; }
+  .ann-title { font-size: 18px; }
+  .ann-pdf-host { max-height: 46vh; }
+}

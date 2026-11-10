@@ -1,0 +1,82 @@
+/* frappe-gantt base styles (copied from node_modules/frappe-gantt/dist/frappe-gantt.css)
+   :root --g-* 已对齐 cobalt token（变量延迟求值，使用处解析 cobalt :root 令牌）。 */
+:root{
+  --g-arrow-color: var(--ink-700);
+  --g-bar-color: var(--bg);
+  --g-bar-border: var(--bg);
+  --g-tick-color-thick: var(--line);
+  --g-tick-color: var(--surface-2);
+  --g-actions-background: var(--surface-2);
+  --g-border-color: var(--line);
+  --g-header-background: var(--bg);
+  --g-text-muted: var(--muted);
+  --g-text-light: #fff;
+  --g-text-dark: var(--ink-900);
+  --g-progress-color: var(--surface-2);
+  --g-handle-color: var(--ink-700);
+  --g-today-highlight: var(--brand-600);
+  --g-popup-actions: var(--surface-2);
+}
+.gantt-container{line-height:14.5px;position:relative;overflow:auto;font-size:12px;width:100%;border-radius:8px;isolation:isolate}
+.gantt-container .popup-wrapper{position:absolute;top:0;left:0;background:var(--g-header-background,#fff);box-shadow:0 10px 24px -3px #0003;padding:10px;border-radius:5px;width:max-content;z-index:1000}
+.gantt-container .grid-header{background-color:var(--g-header-background,#fff);position:sticky;top:0;left:0;border-bottom:1px solid var(--g-border-color);z-index:1000}
+.gantt-container .lower-text,.gantt-container .upper-text{text-anchor:middle}
+.gantt-container .lower-text{font-size:12px;position:absolute;align-content:center;text-align:center;color:var(--g-text-muted)}
+.gantt-container .upper-text{position:absolute;font-weight:500;font-size:14px;color:var(--g-text-dark)}
+.gantt-container .side-header{position:sticky;top:0;right:0;float:right;z-index:1000;line-height:20px;width:max-content;margin-left:auto;padding-right:10px;padding-top:10px;background:var(--g-header-background,#fff);display:flex}
+.gantt-container .current-highlight{position:absolute;background:var(--g-today-highlight);width:1px;z-index:999}
+.gantt-container .hide{display:none}
+.gantt{user-select:none;-webkit-user-select:none;position:absolute}
+.gantt .grid-background{fill:none}
+.gantt .grid-row{fill:var(--g-row-color,#fdfdfd)}
+.gantt .row-line{stroke:var(--g-border-color)}
+.gantt .tick{stroke:var(--g-tick-color);stroke-width:.4}
+.gantt .tick.thick{stroke:var(--g-tick-color-thick);stroke-width:.7}
+.gantt .arrow{fill:none;stroke:var(--g-arrow-color);stroke-width:1.5}
+.gantt .bar-wrapper .bar{fill:var(--g-bar-color);stroke:var(--g-bar-border);stroke-width:0;transition:stroke-width .3s ease}
+.gantt .bar-progress{fill:var(--g-progress-color);border-radius:4px}
+.gantt .bar-label{fill:var(--g-text-dark);dominant-baseline:central;font-family:Helvetica;font-size:13px;font-weight:400}
+.gantt .bar-label.big{fill:var(--g-text-dark);text-anchor:start}
+.gantt .handle{fill:var(--g-handle-color);opacity:0;transition:opacity .3s ease}
+.gantt .handle.active,.gantt .handle.visible{cursor:ew-resize;opacity:1}
+.gantt .bar-wrapper{cursor:pointer}
+.gantt .bar-wrapper .bar{outline:1px solid var(--g-border-color);border-radius:3px}
+.gantt .grid-column{fill:transparent;pointer-events:all}
+
+/* ── cobalt 覆盖 ── */
+.gantt-wrapper {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.gantt-controls { display: flex; gap: 4px; padding: var(--s-3) var(--s-4) 0; }
+.gantt-mode-btn {
+  padding: 4px 14px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--bg); font-size: 13px; cursor: pointer; color: var(--muted);
+  transition: border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.gantt-mode-btn:hover { border-color: var(--brand-500); color: var(--brand-700); }
+.gantt-mode-btn.active { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+
+.gantt-legend { display: flex; gap: var(--s-4); padding: var(--s-2) var(--s-4) var(--s-3); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.gantt-legend-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.gantt-legend-dot { width: 8px; height: 8px; border-radius: var(--r-pill); }
+
+.gantt-svg { display: block; width: 100%; }
+
+/* frappe-gantt 默认样式覆盖 → cobalt */
+.gantt-wrapper .gantt-container { font-family: inherit; }
+.gantt-wrapper .grid-row { fill: var(--bg); }
+.gantt-wrapper .grid-row:nth-child(even) { fill: var(--surface-2); }
+.gantt-wrapper .grid-header { fill: var(--surface-2); }
+.gantt-wrapper .row-line { stroke: var(--line); }
+.gantt-wrapper .tick { stroke: var(--line); }
+.gantt-wrapper .tick-text { fill: var(--muted); font-size: 11px; }
+.gantt-wrapper .bar-label { fill: var(--ink-900); font-size: 12px; }
+.gantt-wrapper .today-highlight { fill: var(--brand-600); opacity: 0.08; }
+.gantt-wrapper .lower-text,
+.gantt-wrapper .upper-text { fill: var(--muted); }
+
+.gantt-empty { text-align: center; padding: var(--s-16) 0; color: var(--faint); }

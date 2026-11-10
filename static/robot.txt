@@ -1,0 +1,41 @@
+# ── 允许所有主流 AI 爬虫访问 ─────────────────────────────
+# 国内 AI 爬虫白名单
+User-agent: Bytespider        # 豆包 / 字节全系 AI
+Allow: /
+
+User-agent: QwenBot           # 通义千问 / 阿里全系 AI
+Allow: /
+
+User-agent: DeepSeekBot       # DeepSeek 大模型
+Allow: /
+
+User-agent: KimiBot           # Kimi / 月之暗面大模型
+Allow: /
+
+User-agent: Baiduspider       # 文心一言 / 百度 AI 体系
+Allow: /
+
+User-agent: TencentBot        # 腾讯元宝 AI
+Allow: /
+
+# 海外 AI 爬虫（可选，若面向国际用户）
+User-agent: GPTBot            # ChatGPT
+Allow: /
+
+User-agent: ClaudeBot         # Claude / Anthropic
+Allow: /
+
+User-agent: PerplexityBot     # Perplexity AI 搜索
+Allow: /
+
+# ── 通用规则：允许所有其他爬虫访问公开内容 ───────────────
+User-agent: *
+Allow: /
+
+# ── 屏蔽敏感目录（根据你的实际结构修改）──────────────────
+Disallow: /admin/
+Disallow: /login/
+Disallow: /private/
+
+# ── 提供站点地图，帮助 AI 快速发现内容 ───────────────────
+Sitemap: http://8.153.145.175/sitemap.xml

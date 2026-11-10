@@ -1,0 +1,31 @@
+/* 评论区：挂在新闻 / 活动 / 任务详情底部 */
+.comment-section { margin-top: var(--s-8); padding-bottom: var(--s-8); }
+.comment-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; margin-bottom: var(--s-4); }
+.comment-section .section-h {
+  margin: 0;
+  font-family: var(--font-display); font-weight: 700; font-size: 15px;
+  display: flex; align-items: center; gap: var(--s-2); color: var(--fg);
+}
+.comment-section .section-h::before {
+  content: ""; width: 3px; height: 14px; border-radius: var(--r-pill); background: var(--brand-700);
+}
+.comment-section .empty-text { color: var(--faint); font-size: 14px; }
+.comment-list { display: flex; flex-direction: column; gap: var(--s-4); }
+.comment-item { display: flex; flex-direction: column; gap: 6px; }
+.comment-item.is-nested { margin-left: var(--s-6); padding-left: var(--s-4); border-left: 2px solid var(--line); }
+.comment-meta { display: flex; align-items: center; gap: var(--s-2); font-size: 13px; color: var(--muted); }
+.comment-meta a { color: inherit; font-weight: 600; }
+.comment-meta a:hover { color: var(--brand-700); }
+.comment-time { font-family: var(--font-mono); font-size: 12px; color: var(--faint); }
+.comment-body { font-size: 14.5px; line-height: 1.65; color: var(--ink-900); white-space: pre-wrap; word-break: break-word; }
+.comment-body.is-gone { color: var(--faint); font-style: italic; }
+.comment-mention { color: var(--brand-700); font-weight: 600; }
+.comment-actions { display: flex; gap: var(--s-2); }
+.comment-actions .btn { padding: 2px 8px; font-size: 12px; height: auto; }
+.comment-composer { display: flex; flex-direction: column; gap: var(--s-2); margin-top: var(--s-4); }
+.comment-composer.reply { margin-top: var(--s-2); }
+.comment-composer textarea { min-height: 72px; }
+.comment-composer-row { display: flex; gap: var(--s-2); justify-content: flex-end; align-items: center; }
+@media (max-width: 640px) {
+  .comment-item.is-nested { margin-left: var(--s-3); padding-left: var(--s-3); }
+}

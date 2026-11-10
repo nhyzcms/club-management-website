@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {% if status and status.reason == "update" %}
+    <meta http-equiv="refresh" content="2" />
+    {% endif %}
+    <title>{{ status.heading|default:"系统维护中" }} · 南汇一中传媒社</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #f4f1ea;
+        color: #2c2c2c;
+      }
+      main {
+        text-align: center;
+        padding: 2rem 1.5rem;
+        max-width: 28rem;
+        width: 100%;
+      }
+      h1 {
+        font-size: 1.75rem;
+        font-weight: 600;
+        margin: 0 0 0.75rem;
+      }
+      p {
+        margin: 0;
+        line-height: 1.6;
+        color: #5c5c5c;
+      }
+      .bar {
+        margin: 1.25rem 0 0.5rem;
+        height: 0.5rem;
+        border-radius: 999px;
+        background: #e4ddd0;
+        overflow: hidden;
+      }
+      .bar > span {
+        display: block;
+        height: 100%;
+        background: #3d6b4f;
+        border-radius: inherit;
+        transition: width 0.3s ease;
+      }
+      .meta {
+        margin-top: 0.5rem;
+        font-size: 0.85rem;
+        color: #8a8a8a;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>{{ status.heading|default:"系统维护中" }}</h1>
+      <p>{{ status.detail|default:"网站正在维护，请稍后再访问。" }}</p>
+      {% if status and status.reason == "update" and status.step_total %}
+      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ status.percent }}">
+        <span style="width: {{ status.percent }}%"></span>
+      </div>
+      <p class="meta">{{ status.step_index }} / {{ status.step_total }}{% if status.sha %} · {{ status.sha|slice:":12" }}{% endif %}</p>
+      {% endif %}
+    </main>
+  </body>
+</html>

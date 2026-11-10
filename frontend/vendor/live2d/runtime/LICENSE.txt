@@ -1,0 +1,7 @@
+Cubism 2 Live2D runtime (live2d.min.js) redistributed from
+https://github.com/stevenjoezhang/live2d-widget (tag v0.9.2).
+
+Cubism 5 Core (live2dcubismcore.min.js) loads Cubism 3/4/5 `.moc3` models.
+Live2D Cubism SDK is proprietary software of Live2D Inc.
+See https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html
+and the header comments inside live2d.min.js and live2dcubismcore.min.js.

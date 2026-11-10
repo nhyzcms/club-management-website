@@ -1,0 +1,39 @@
+{
+    "version": "1.0.0",
+    "models": [
+        {
+            "name": "试做 (Cubism 3/4)",
+            "url": [
+                "models/cat/试做.model3.json"
+            ]
+        },
+        {
+            "name": "hijiki (Cubism 2)",
+            "url": [
+                "models/hijiki/hijiki.model.json"
+            ]
+        },
+        {
+            "name": "云吞kumo (Cubism 3/4)",
+            "url": [
+                "models/kumo/云吞kumo.model3.json"
+            ]
+        },
+        {
+            "name": "miku (Cubism 2)",
+            "url": [
+                "models/miku/miku.model.json"
+            ]
+        },
+        {
+            "name": "shizuku (Cubism 2)",
+            "url": [
+                "models/shizuku/shizuku.model.json"
+            ]
+        }
+    ],
+    "messages": [
+        "欢迎来到本站！",
+        "想换一件衣服吗？点我试试～"
+    ]
+}

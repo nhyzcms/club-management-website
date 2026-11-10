@@ -1,0 +1,558 @@
+"""名册导入 / 自动匹配 / 自助认领（社员身份编号系统，见 ADR-0025）。
+
+职责：
+- 解析 CSV / XLSX（表头识别；值宽松、关键字段严格）；
+- 预检（不落库）：逐行校验 + 与库内对账（新增 / 更新 / 冲突 / 错误）；
+- 确认导入：事务内落库（幂等：姓名+电话 → 同届+姓名 认行；**识别码一律自动生成**，
+  表格中的「识别码」列仅作参照、导入时忽略）；
+- 自动匹配：按真实姓名把名册行绑到已有账号（唯一命中才自动，歧义进人工）；
+- 自助认领：候选（本人真实姓名匹配的未绑定行）/ 手机后四位校验 / 绑定。
+"""
+from __future__ import annotations
+
+import csv
+import io
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from django.utils import timezone
+
+from .member_codes import MemberCodeError, generate_code, name_sort_key, next_serial
+from .models import IdentityImportBatch, MemberIdentity, Profile
+from .queries import identity_q, not_deleted_q
+
+# 列清单（2026-10-23 修订）：只收「不会随时间变」的档案信息。
+# - 不含「年级」：年级每年随升学年变动，需要时按「入学年份 + 当前学年」推算；
+# - 「校牌号」取代旧「学号」列（同一栏位改名；旧表头「学号」按别名读入，见 HEADER_ALIASES）；
+# - 不含「年龄」：每年 +1，静态快照无意义；
+# - 不含「识别码」：一律由系统按规则生成（ADR-0025），表里写了也忽略；
+# - 不含「组别」（2026-10-23 二次修订）：社内分组会调整、也不是认人/编号所需。
+# 除「姓名 / 入学年份 / 届数」外（认人 + 生成识别码所需），其余列都可留空；
+# 旧模板带的「年级 / 学号 / 年龄 / 识别码 / 组别」等列按未知列忽略，不影响导入。
+HEADERS = [
+    "姓名", "班级", "校牌号", "入学年份", "入社时间",
+    "届数", "性别", "电话号码",
+]
+# 旧表头别名：改名前的「学号」列仍读入「校牌号」（两列同时存在时以「校牌号」为准）。
+HEADER_ALIASES = {"学号": "校牌号"}
+# 必需列 = 生成识别码与认人所必需：姓名（首字母排序序号）/ 入学年份 / 届数。
+REQUIRED_COLUMNS = ["姓名", "入学年份", "届数"]
+
+_WS_RE = re.compile(r"\s+")
+_DIGIT_RE = re.compile(r"\D")
+
+
+class RosterParseError(Exception):
+    """文件级解析失败（格式、编码、缺列等）。"""
+
+
+class ClaimError(Exception):
+    """自助认领失败（文案直接回给用户）。"""
+
+
+def normalize_name(raw: str) -> str:
+    """姓名归一：去全部空白（含全角）、西文大小写折叠——用于匹配而非展示。"""
+    return _WS_RE.sub("", (raw or "").replace("\u3000", " ")).strip().casefold()
+
+
+def normalize_card_no(raw: str) -> str:
+    """校牌号归一：去全部空白（含全角）、西文转大写——只用于比对，不改展示值。"""
+    return _WS_RE.sub("", (raw or "").replace("\u3000", " ")).upper()
+
+
+@dataclass
+class ParsedRow:
+    row_no: int  # 文件里的行号（表头为 1，数据从 2 起）
+    values: dict
+    errors: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+
+
+def _cell_str(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value).strip()
+
+
+def _read_xlsx(content: bytes) -> list[list[str]]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    try:
+        ws = wb.active
+        return [[_cell_str(c) for c in row] for row in ws.iter_rows(values_only=True)]
+    finally:
+        wb.close()
+
+
+def _read_csv(content: bytes) -> list[list[str]]:
+    text = None
+    for enc in ("utf-8-sig", "gbk"):
+        try:
+            text = content.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise RosterParseError("无法识别文件编码（支持 UTF-8 / GBK）。")
+    return [[c.strip() for c in row] for row in csv.reader(io.StringIO(text))]
+
+
+def _int_or_none(raw: str):
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_roster(filename: str, content: bytes) -> list[ParsedRow]:
+    """解析名册文件 → 数据行列表（行级问题挂在 ``errors`` / ``warnings``）。
+
+    文件级问题（格式 / 编码 / 缺列 / 空文件）抛 :class:`RosterParseError`。
+    """
+    name = (filename or "").lower()
+    if name.endswith(".xlsx"):
+        grid = _read_xlsx(content)
+    elif name.endswith(".csv"):
+        grid = _read_csv(content)
+    else:
+        raise RosterParseError("仅支持 .csv / .xlsx 文件。")
+    if not grid:
+        raise RosterParseError("文件为空。")
+
+    header = [_cell_str(c) for c in grid[0]]
+    missing = [h for h in REQUIRED_COLUMNS if h not in header]
+    if missing:
+        raise RosterParseError(f"缺少必需列：{'、'.join(missing)}。")
+    # 按表头名定位列：先认规范列名，再认旧表头别名（如「学号」→「校牌号」）；
+    # 同名重复时取最左一列，其余未知列一律忽略。
+    index: dict[str, int] = {}
+    for i, h in enumerate(header):
+        canon = h if h in HEADERS else HEADER_ALIASES.get(h)
+        if canon is not None and canon not in index:
+            index[canon] = i
+
+    rows: list[ParsedRow] = []
+    for offset, raw_row in enumerate(grid[1:]):
+        if not any(_cell_str(c) for c in raw_row):
+            continue  # 整行空白跳过
+        values = {}
+        for h in HEADERS:
+            i = index.get(h)
+            values[h] = _cell_str(raw_row[i]) if (i is not None and i < len(raw_row)) else ""
+        pr = ParsedRow(row_no=offset + 2, values=values)
+        _validate_row(pr)
+        rows.append(pr)
+
+    if not rows:
+        raise RosterParseError("表中没有数据行。")
+    _flag_file_duplicates(rows)
+    return rows
+
+
+def _validate_row(pr: ParsedRow) -> None:
+    v = pr.values
+
+    if not v["姓名"]:
+        pr.errors.append("姓名不能为空")
+
+    admit = _int_or_none(v["入学年份"])
+    if admit is None or not (1990 <= admit <= 2100):
+        pr.errors.append("入学年份须为 1990-2100 的整数")
+    else:
+        v["入学年份"] = admit
+
+    cohort = _int_or_none(v["届数"])
+    if cohort is None or not (1 <= cohort <= 99):
+        pr.errors.append("届数须为 1-99 的整数")
+    else:
+        v["届数"] = cohort
+
+    # 其余列（班级 / 校牌号 / 入社时间 / 组别 / 性别 / 电话号码）都可留空。
+
+    phone_raw = v["电话号码"]
+    if phone_raw:
+        digits = _DIGIT_RE.sub("", phone_raw)
+        if len(digits) < 7:
+            pr.warnings.append(f"电话号码位数异常（{phone_raw}），已按原样保留")
+        v["电话号码"] = digits
+    else:
+        pr.warnings.append("未登记电话号码：该身份不可自助认领，只能由管理员绑定")
+
+    # 注：「识别码」列内容忽略——识别码一律由系统按规则生成（ADR-0025）。
+
+
+def _flag_file_duplicates(rows: list[ParsedRow]) -> None:
+    by_name_phone: dict[tuple, list[int]] = defaultdict(list)
+    for pr in rows:
+        v = pr.values
+        if v["姓名"] and v["电话号码"]:
+            by_name_phone[(normalize_name(v["姓名"]), v["电话号码"])].append(pr.row_no)
+    for _, nos in by_name_phone.items():
+        if len(nos) > 1:
+            for pr in rows:
+                key = (normalize_name(pr.values["姓名"]), pr.values["电话号码"])
+                if key in by_name_phone and pr.row_no in nos:
+                    others = [f"第 {n} 行" for n in nos if n != pr.row_no]
+                    pr.errors.append(f"与{'、'.join(others)}疑似重复（同名同电话）")
+
+
+def plan_import(rows: list[ParsedRow]) -> dict:
+    """与库内对账 → 逐行动作（create / update / conflict / error），不落库。
+
+    认行键：姓名+电话 →（无电话时）届数+姓名。识别码一律自动生成（表格「识别码」列忽略；
+    更新行保留既有编码）。序号分配三条规则：
+
+    - **一次导入可混多届**：按（入学年份, 届数）分组，各组独立从 01 起编号——组间前缀不同，
+      互不干扰（同一届但入学年份不同也算两组，因前缀含入学年份）；
+    - **同届按姓名首字母**：组内按拼音首字母 A→Z 排（多音字姓氏按姓氏读音，见
+      ``accounts/name_order.py``），同首字母内按 GBK 序细排；
+    - **补录接续**：组内新行从「该组已有最大序号 + 1」起，按首字母排序后依次占用，
+      **不重排已发码**（所以先发的码不会因补录跳号）。
+    """
+    existing = list(MemberIdentity.objects.all())
+    taken = {r.code for r in existing}
+    by_name_phone: dict[tuple, list[MemberIdentity]] = defaultdict(list)
+    by_cohort_name: dict[tuple, list[MemberIdentity]] = defaultdict(list)
+    for r in existing:
+        n = normalize_name(r.name)
+        if r.phone:
+            by_name_phone[(n, r.phone)].append(r)
+        by_cohort_name[(r.cohort, n)].append(r)
+
+    items: list[dict] = []
+    pending: list[tuple[int, ParsedRow]] = []
+    counts = {"create": 0, "update": 0, "conflict": 0, "error": 0}
+
+    for pr in rows:
+        if pr.errors:
+            counts["error"] += 1
+            items.append({
+                "row": pr, "action": "error", "target": None, "code": None,
+                "note": "；".join(pr.errors),
+            })
+            continue
+
+        v = pr.values
+        name_n = normalize_name(v["姓名"])
+        notes = list(pr.warnings)
+        target = None
+
+        if v["电话号码"]:
+            matches = by_name_phone.get((name_n, v["电话号码"]), [])
+        else:
+            matches = by_cohort_name.get((v["届数"], name_n), [])
+        if len(matches) == 1:
+            target = matches[0]
+        elif len(matches) > 1:
+            counts["conflict"] += 1
+            items.append({
+                "row": pr, "action": "conflict", "target": None, "code": None,
+                "note": f"库内 {len(matches)} 条既有行匹配（同名同电话 / 同名同届），需人工处理",
+            })
+            continue
+
+        if target is not None:
+            counts["update"] += 1
+            items.append({"row": pr, "action": "update", "target": target, "code": target.code, "note": "；".join(notes)})
+            continue
+
+        # 新增：先占位，第二遍按「当次名单姓名序」统一分配识别码。
+        items.append({"row": pr, "action": "create", "target": None, "code": None, "note": "；".join(notes)})
+        pending.append((len(items) - 1, pr))
+
+    # 第二遍：按（入学年份, 届数）分组，组内按**姓名首字母**排（同首字母再按 GBK 序），
+    # 从该组「已有最大序号 + 1」接续分配——不重排已发码。
+    groups: dict[tuple[int, int], list[tuple[int, ParsedRow]]] = defaultdict(list)
+    for idx, pr in pending:
+        v = pr.values
+        groups[(v["入学年份"], v["届数"])].append((idx, pr))
+
+    for (admit_year, cohort), members in groups.items():
+        members.sort(key=lambda pair: (
+            name_sort_key(pair[1].values["姓名"]),
+            pair[1].values["电话号码"] or "",
+            pair[1].row_no,
+        ))
+        for idx, pr in members:
+            try:
+                serial = next_serial(admit_year, cohort, taken)
+                code = generate_code(admit_year, cohort, serial)
+            except MemberCodeError as exc:
+                items[idx]["action"] = "error"
+                items[idx]["note"] = str(exc)
+                counts["error"] += 1
+                continue
+            taken.add(code)
+            items[idx]["code"] = code
+            counts["create"] += 1
+
+    return {"items": items, "counts": counts}
+
+
+def commit_import(rows: list[ParsedRow], *, file_name: str, operator=None) -> IdentityImportBatch:
+    """确认导入：事务内落库 + 批次留痕 + 全库自动匹配。"""
+    plan = plan_import(rows)
+    with transaction.atomic():
+        batch = IdentityImportBatch.objects.create(
+            file_name=(file_name or "")[:255], uploaded_by=operator,
+        )
+        created = updated = 0
+        for item in plan["items"]:
+            action = item["action"]
+            if action == "create":
+                v = item["row"].values
+                MemberIdentity.objects.create(
+                    import_batch=batch, code=item["code"],
+                    name=v["姓名"], class_no=v["班级"], card_no=v["校牌号"],
+                    admit_year=v["入学年份"], joined_on_raw=v["入社时间"], cohort=v["届数"],
+                    gender=v["性别"], phone=v["电话号码"],
+                )
+                created += 1
+            elif action == "update":
+                obj, v = item["target"], item["row"].values
+                obj.name = v["姓名"]
+                obj.admit_year, obj.cohort = v["入学年份"], v["届数"]
+                # 其余列都可以留空：空白格 = 「这一项没填」，不覆盖库内已有值。
+                for field, key in (
+                    ("class_no", "班级"), ("card_no", "校牌号"), ("joined_on_raw", "入社时间"),
+                    ("gender", "性别"), ("phone", "电话号码"),
+                ):
+                    if v[key]:
+                        setattr(obj, field, v[key])
+                obj.import_batch = batch
+                obj.save()
+                updated += 1
+        matched = auto_match_identities()
+        batch.summary = {
+            "total": len(rows),
+            "created": created,
+            "updated": updated,
+            "conflicts": plan["counts"]["conflict"],
+            "errors": plan["counts"]["error"],
+            "auto_matched": matched,
+        }
+        batch.save(update_fields=["summary"])
+    return batch
+
+
+def auto_match_identities(rows: list[MemberIdentity] | None = None) -> int:
+    """把未绑定名册行按「真实姓名唯一命中」自动绑到已有账号；返回绑定数。
+
+    - 同名多人 / 多行同名 → 不动作（留给管理员或用户自助认领）；
+    - ``rows`` 为 None 时对全库未绑定行重跑（管理员动作 / 每次导入收尾）。
+    """
+    qs = MemberIdentity.objects.filter(user__isnull=True)
+    if rows is not None:
+        qs = qs.filter(pk__in=[r.pk for r in rows])
+    unbound = list(qs)
+
+    profiles = (
+        Profile.objects.exclude(identity_q("real_name", exact=""))
+        # 已注销 / 已停用账号不参与自动匹配（ADR-0027）：否则同名的新名册行会被绑到
+        # 一个永远不会再登录的账号上，且无法再被本人认领。
+        .filter(user__is_active=True)
+        .filter(not_deleted_q())
+        .filter(user__member_identity__isnull=True)
+        .select_related("user")
+    )
+    candidates: dict[str, list] = defaultdict(list)
+    for p in profiles:
+        identity = _identity_of(p)
+        if identity is not None:
+            candidates[normalize_name(identity.real_name)].append(p.user)
+
+    bound_ids = set(
+        MemberIdentity.objects.exclude(user__isnull=True).values_list("user_id", flat=True)
+    )
+    matched = 0
+    now = timezone.now()
+    for row in unbound:
+        pool = [u for u in candidates.get(normalize_name(row.name), []) if u.pk not in bound_ids]
+        if len(pool) != 1:
+            continue
+        user = pool[0]
+        row.user = user
+        row.bound_at = now
+        row.bound_by = None
+        row.bind_method = MemberIdentity.BIND_AUTO
+        row.save(update_fields=["user", "bound_at", "bound_by", "bind_method", "updated_at"])
+        bound_ids.add(user.pk)
+        matched += 1
+    sync_card_numbers()  # 收尾：资料里的校牌号写回名册 / 名册有值时覆盖资料
+    return matched
+
+
+def _identity_of(profile):
+    """取 ``AccountIdentity``；缺行返回 ``None``（``Profile.save()`` 正常会补）。"""
+    try:
+        return profile.user.identity_record
+    except ObjectDoesNotExist:
+        return None
+
+
+def _clear_pending(identity) -> None:
+    """清空账号侧的「待绑定暂存」。"""
+    if identity is not None and identity.pending_card_no:
+        identity.pending_card_no = ""
+        identity.save(update_fields=["pending_card_no"])
+
+
+def _align_card_no(row: MemberIdentity, profile: Profile) -> str:
+    """让名册行与账号侧暂存对齐。**名册是权威**，账号侧只是「还没进名册」的暂存。
+
+    B4 之前这里是「双向镜像」：名册有值就抄到 Profile，Profile 有值就抄到名册。
+    问题是 Profile.card_no 因此永远持有校牌号，看起来像第二个权威来源。
+
+    B4 把 Profile.card_no 改名为 ``AccountIdentity.pending_card_no``，语义随之变成
+    「待绑定」——写进名册之后就该清空。这样权威唯一：``MemberIdentity.card_no``。
+
+    返回 ``"row"``（写了名册）/ ``"cleared"``（清空了暂存）/ ``""``（无需变更）。
+    """
+    identity = _identity_of(profile)
+    pending = ((identity.pending_card_no if identity is not None else "") or "").strip()
+    row_card = (row.card_no or "").strip()
+
+    if row_card:
+        # 名册已有值 → 账号侧的暂存没有存在意义了
+        if pending:
+            _clear_pending(identity)
+            return "cleared"
+        return ""
+    if pending:
+        # 名册空、账号有暂存 → 补进名册，然后清空暂存
+        row.card_no = pending
+        row.save(update_fields=["card_no", "updated_at"])
+        _clear_pending(identity)
+        return "row"
+    return ""
+
+
+def auto_bind_on_register(user, profile) -> MemberIdentity | None:
+    """注册时按「姓名 + 校牌号」唯一命中未绑定名册行 → 自动绑定（ADR-0025 2026-10-23 增补）。
+
+    校牌号是半公开信息（印在校牌上），所以只在**姓名与校牌号都与名册一致**时绑定；
+    没命中（名册未导入 / 校牌号不同 / 同名多行）不报错，资料里的校牌号留待名册导入后
+    由 :func:`sync_card_numbers` 按姓名写回。返回绑定的名册行（没绑定则为 None）。
+    """
+    identity = _identity_of(profile)
+    if identity is None:
+        return None
+    wanted = normalize_card_no(identity.pending_card_no or "")
+    name_n = normalize_name(identity.real_name or "")
+    if not wanted or not name_n:
+        return None
+    if MemberIdentity.objects.filter(user=user).exists():
+        return None
+
+    matches = [
+        row
+        for row in MemberIdentity.objects.filter(
+            user__isnull=True, card_no__iexact=(identity.pending_card_no or "").strip(),
+        )
+        if normalize_name(row.name) == name_n and normalize_card_no(row.card_no) == wanted
+    ]
+    if len(matches) != 1:
+        return None
+
+    row = matches[0]
+    row.user = user
+    row.bound_at = timezone.now()
+    row.bound_by = None
+    row.bind_method = MemberIdentity.BIND_REGISTER
+    row.save(update_fields=["user", "bound_at", "bound_by", "bind_method", "updated_at"])
+    _align_card_no(row, profile)
+    return row
+
+
+def sync_card_numbers() -> dict:
+    """全库对齐「账号资料校牌号」与「名册行校牌号」，返回计数（导入 / 重跑匹配收尾调用）。
+
+    - 未绑定行：校牌号为空、且姓名唯一对应一个**还没绑定任何名册行**的账号 → 写回名册；
+      同名多账号不动作（避免张冠李戴，留给认领 / 人工）。
+    - 已绑定行：名册有值 → 覆盖资料；名册为空 → 用资料补（名册是学校档案，为准）。
+    """
+    profiles = list(
+        Profile.objects.filter(user__is_active=True).filter(not_deleted_q()).select_related("user", "user__identity_record")
+    )
+    by_user = {p.user_id: p for p in profiles}
+    by_name: dict[str, list[Profile]] = defaultdict(list)
+    for p in profiles:
+        identity = _identity_of(p)
+        if identity is None:
+            continue
+        if (identity.pending_card_no or "").strip() and (identity.real_name or "").strip():
+            by_name[normalize_name(identity.real_name)].append(p)
+    bound_user_ids = set(
+        MemberIdentity.objects.exclude(user__isnull=True).values_list("user_id", flat=True)
+    )
+
+    filled = cleared = 0
+    for row in MemberIdentity.objects.all():
+        if row.user_id:
+            profile = by_user.get(row.user_id)
+            if profile is None:
+                continue
+            if _align_card_no(row, profile) == "cleared":
+                cleared += 1
+        elif not (row.card_no or "").strip():
+            pool = [p for p in by_name.get(normalize_name(row.name), []) if p.user_id not in bound_user_ids]
+            if len(pool) == 1:
+                row.card_no = pool[0].card_no.strip()
+                row.save(update_fields=["card_no", "updated_at"])
+                filled += 1
+    return {"filled_rows": filled, "cleared_profiles": cleared}
+
+
+def claim_candidates(user) -> list[MemberIdentity]:
+    """本人可认领的候选：真实姓名匹配、尚未绑定的名册行。"""
+    identity = getattr(user, "identity_record", None)
+    if identity is None or not (identity.real_name or "").strip():
+        return []
+    name_n = normalize_name(identity.real_name)
+    return [
+        row
+        for row in MemberIdentity.objects.filter(user__isnull=True)
+        if normalize_name(row.name) == name_n
+    ]
+
+
+def claim_identity(user, identity_id: int, phone_last4: str) -> MemberIdentity:
+    """自助认领：姓名匹配 + 手机号后四位校验 → 绑定（事务 + 行锁）。"""
+    digits = _DIGIT_RE.sub("", phone_last4 or "")
+    if len(digits) != 4:
+        raise ClaimError("请输入手机号后四位（4 个数字）。")
+
+    with transaction.atomic():
+        row = MemberIdentity.objects.select_for_update().filter(pk=identity_id).first()
+        if row is None:
+            raise ClaimError("该身份不存在或已失效。")
+        if MemberIdentity.objects.filter(user=user).exists():
+            raise ClaimError("你的账号已绑定过社员身份。")
+        if row.user_id:
+            raise ClaimError("该身份已被认领。")
+
+        profile = getattr(user, "profile", None)
+        identity = getattr(user, "identity_record", None)
+        if identity is None or normalize_name(identity.real_name) != normalize_name(row.name):
+            raise ClaimError("身份信息与账号不匹配，无法认领。")
+
+        row_digits = _DIGIT_RE.sub("", row.phone or "")
+        if len(row_digits) < 4:
+            raise ClaimError("该身份未登记电话号码，无法自助认领，请联系管理员。")
+        if row_digits[-4:] != digits:
+            raise ClaimError("手机号后四位不匹配。")
+
+        row.user = user
+        row.bound_at = timezone.now()
+        row.bound_by = None
+        row.bind_method = MemberIdentity.BIND_SELF
+        row.save(update_fields=["user", "bound_at", "bound_by", "bind_method", "updated_at"])
+        if profile is not None:
+            _align_card_no(row, profile)
+    return row

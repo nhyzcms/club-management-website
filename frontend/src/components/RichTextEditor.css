@@ -1,0 +1,255 @@
+/* RichTextEditor.css — TipTap 富文本编辑器（cobalt token）
+   设计：黏性工具栏吸附在站点顶栏下方（topnav 为 position:sticky, height:var(--nav-h)），
+   大尺寸写作区（min-height 由 prop 注入 --rte-min-height），动作按钮（图片/链接/导入 Word）靠右。 */
+
+.rte-wrapper {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  /* 不设 overflow:hidden：否则会切断黏性工具栏 */
+}
+
+/* —— 工具栏（黏性） —— */
+.rte-toolbar {
+  position: sticky;
+  /* 与顶栏留出呼吸距离，避免滚动黏住时工具栏与站点顶栏零间距贴死 */
+  top: calc(var(--nav-h) + var(--s-3));
+  z-index: 40; /* 低于 topnav(100)，让顶栏始终覆盖在工具栏之上 */
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  padding: var(--s-2) var(--s-3);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  border-top-left-radius: var(--r-lg);
+  border-top-right-radius: var(--r-lg);
+}
+
+.rte-group { display: flex; gap: 2px; align-items: center; }
+
+.rte-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 var(--s-2);
+}
+
+.rte-spacer { flex: 1; }
+
+.rte-btn {
+  padding: 5px 9px;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-700);
+  white-space: nowrap;
+  transition: background var(--dur-1), color var(--dur-1);
+}
+.rte-btn:hover { background: var(--bg-soft); color: var(--fg); }
+.rte-btn.active { background: var(--brand-600); color: #fff; }
+
+/* 动作类按钮（图片 / 链接 / 导入 Word）：带图标，视觉上与格式按钮区分 */
+.rte-actions { gap: var(--s-2); }
+.rte-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-700);
+  transition: background var(--dur-1), border-color var(--dur-1), color var(--dur-1);
+}
+.rte-action:hover:not(:disabled) { background: var(--bg); border-color: var(--brand-300); color: var(--brand-700); }
+.rte-action:disabled { opacity: .6; cursor: progress; }
+.rte-action svg { flex: none; }
+
+/* —— 写作区 —— */
+.rte-content .tiptap {
+  min-height: var(--rte-min-height, 320px);
+  padding: var(--s-6) var(--s-7);
+  outline: none;
+  font-size: 16px;
+  line-height: 1.85;
+  color: var(--fg);
+}
+.rte-content .tiptap:focus { outline: none; }
+
+.rte-content .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--faint);
+  pointer-events: none;
+  height: 0;
+}
+
+/* 标题 */
+.rte-content .tiptap h1 { font-size: 1.9em; font-weight: 700; line-height: 1.3; margin: .6em 0 .3em; }
+.rte-content .tiptap h2 { font-size: 1.5em; font-weight: 700; line-height: 1.3; margin: .6em 0 .3em; }
+.rte-content .tiptap h3 { font-size: 1.25em; font-weight: 700; line-height: 1.35; margin: .5em 0 .25em; }
+.rte-content .tiptap h4 { font-size: 1.1em;  font-weight: 700; margin: .5em 0 .25em; }
+.rte-content .tiptap h5 { font-size: 1em;    font-weight: 700; margin: .5em 0 .2em; }
+.rte-content .tiptap h6 { font-size: .9em;   font-weight: 700; color: var(--muted); margin: .5em 0 .2em; }
+.rte-content .tiptap :first-child { margin-top: 0; }
+
+.rte-content .tiptap a {
+  color: var(--brand-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--brand-200);
+  cursor: pointer;
+}
+
+.rte-content .tiptap blockquote {
+  border-left: 3px solid var(--brand-500);
+  padding: 2px var(--s-4);
+  margin: var(--s-4) 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.rte-content .tiptap code {
+  background: var(--bg-soft);
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  font-size: .88em;
+  font-family: var(--font-mono);
+}
+.rte-content .tiptap pre {
+  background: var(--ink-900);
+  color: #e2e8f0;
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  overflow-x: auto;
+  margin: var(--s-4) 0;
+  font-size: .9em;
+}
+.rte-content .tiptap pre code { background: none; color: inherit; padding: 0; }
+
+.rte-content .tiptap ul,
+.rte-content .tiptap ol { padding-left: 1.4em; margin: var(--s-3) 0; }
+.rte-content .tiptap ul { list-style: disc; }
+.rte-content .tiptap ol { list-style: decimal; }
+
+.rte-content .tiptap ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.rte-content .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: var(--s-2); margin: 4px 0; }
+.rte-content .tiptap ul[data-type="taskList"] li > label { display: flex; align-items: center; cursor: pointer; }
+.rte-content .tiptap ul[data-type="taskList"] li > div { flex: 1; }
+.rte-content .tiptap ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--faint); text-decoration: line-through; }
+
+.rte-content .tiptap hr { border: none; border-top: 1px solid var(--line); margin: var(--s-5) 0; }
+
+.rte-content .tiptap table { border-collapse: collapse; width: 100%; margin: var(--s-4) 0; }
+.rte-content .tiptap table td,
+.rte-content .tiptap table th { border: 1px solid var(--line); padding: var(--s-2) var(--s-3); text-align: left; }
+.rte-content .tiptap table th { background: var(--bg-soft); font-weight: 600; }
+
+.rte-content .tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+  margin: var(--s-3) 0;
+}
+
+/* —— 错误提示 —— */
+.rte-err { padding: var(--s-2) var(--s-4) var(--s-3); font-size: 13px; color: var(--danger, #c0392b); }
+
+/* —— 隐藏文件输入 —— */
+.rte-file { display: none; }
+
+/* —— 只读渲染（NewsDetailPage 等不再用本组件；保留 ProposalForm 等可能的只读场景） —— */
+.rte-readonly .tiptap { padding: 0; font-size: 15px; line-height: 1.8; color: var(--fg); }
+
+/* ===== 文档式编辑增补（2026-09：气泡菜单 / 浮动菜单 / 调色板 / 字数） ===== */
+
+/* —— 气泡菜单（选区快捷格式；BubbleMenu 浮层） —— */
+.rte-bubble {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, .16);
+  z-index: 45;
+}
+.rte-bubble .rte-btn { padding: 4px 8px; }
+
+/* —— 浮动菜单（空行块类型切换；FloatingMenu 浮层） —— */
+.rte-float {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, .16);
+  z-index: 45;
+}
+.rte-float .rte-btn { padding: 4px 8px; }
+
+/* —— 调色板弹层（文字颜色 / 高亮） —— */
+.rte-pop-wrap { position: relative; display: inline-flex; }
+.rte-pop-backdrop { position: fixed; inset: 0; z-index: 50; }
+.rte-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 176px;
+  padding: var(--s-3);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 10px 32px rgba(15, 23, 42, .18);
+}
+.rte-pop-grid { display: grid; grid-template-columns: repeat(6, 22px); gap: 6px; justify-content: start; }
+.rte-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, .2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform var(--dur-1);
+}
+.rte-swatch:hover { transform: scale(1.1); }
+.rte-pop-clear {
+  margin-top: var(--s-2);
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-700);
+  cursor: pointer;
+}
+.rte-pop-clear:hover { border-color: var(--brand-300); color: var(--brand-700); }
+
+/* “A”字形（文字颜色按钮）：底部色条提示可调色 */
+.rte-color-a { font-weight: 700; border-bottom: 2px solid currentColor; line-height: 1.1; }
+
+/* —— 字数栏 —— */
+.rte-foot { display: flex; justify-content: flex-end; padding: 2px var(--s-4) var(--s-3); }
+.rte-count { font-size: 12px; color: var(--faint); }
+
+/* —— 内容区补充：高亮 mark / 上下标 / 禁用按钮 —— */
+.rte-content .tiptap mark { background: #fff3a3; padding: 0 2px; border-radius: 3px; }
+.rte-content .tiptap sub,
+.rte-content .tiptap sup { font-size: .72em; }
+.rte-btn:disabled { opacity: .45; cursor: default; }
+.rte-btn:disabled:hover { background: transparent; color: var(--ink-700); }

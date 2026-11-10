@@ -1,0 +1,68 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static admin_urls %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="{% static 'surveyjs/survey.core.min.js' %}"></script>
+<script src="{% static 'surveyjs/survey.i18n.zh-cn.min.js' %}"></script>
+<script src="{% static 'surveyjs/chart.umd.min.js' %}"></script>
+<link rel="stylesheet" href="{% static 'surveyjs/survey.analytics.min.css' %}">
+<link rel="stylesheet" href="{% static 'admin/surveyjs/isolate.css' %}">
+<script src="{% static 'surveyjs/survey.analytics.min.js' %}"></script>
+<script src="{% static 'admin/surveyjs/analytics-zh-cn.js' %}"></script>
+<style>
+  #survey-viz-panel { margin: 16px 0 32px; }
+  .survey-response-table { width: 100%; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; <a href="{{ back_url }}">{{ original }}</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<p><a href="{{ back_url }}" class="button">返回</a></p>
+<h2>统计</h2>
+<div id="survey-viz-panel" class="surveyjs-admin-host"></div>
+{{ schema_json|json_script:"survey-schema" }}
+{{ answers_json|json_script:"survey-answers" }}
+<script src="{% static 'admin/surveyjs/results.js' %}"></script>
+<script>
+  SurveyAdminResults.init({
+    schemaEl: "survey-schema",
+    answersEl: "survey-answers"
+  });
+</script>
+
+<h2>作答列表（{{ response_rows|length }}）</h2>
+<table class="survey-response-table">
+  <thead>
+    <tr>
+      <th>作答者</th>
+      <th>提交时间</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in response_rows %}
+    <tr>
+      <td>{{ row.user_label }}</td>
+      <td>{{ row.submitted_at|date:"Y-m-d H:i:s" }}</td>
+      <td>
+        {% if row.admin_url %}
+        <a href="{{ row.admin_url }}">查看作答</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="3">暂无作答。</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

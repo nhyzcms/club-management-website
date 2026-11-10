@@ -1,0 +1,22 @@
+/* 安全验证（Step-up，ADR-0026）：验证页 / 安全验证面板。 */
+
+.stepup-methods { display: flex; gap: var(--s-2); margin-bottom: var(--s-4); }
+.stepup-method {
+  padding: var(--s-2) var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md);
+  background: transparent; color: var(--ink-700); cursor: pointer;
+}
+.stepup-method.is-active { border-color: var(--brand-600); color: var(--brand-700); background: var(--brand-50); font-weight: 600; }
+.stepup-method:disabled { opacity: .5; cursor: not-allowed; }
+
+.stepup-row { display: flex; gap: var(--s-2); margin-top: var(--s-3); }
+.stepup-row .input { flex: 1; }
+.stepup-ok { color: var(--success, #16a34a); margin-top: var(--s-2); }
+
+.stepup-qbank { display: flex; flex-direction: column; gap: var(--s-2); margin: var(--s-3) 0; }
+.stepup-qbank-item {
+  display: flex; gap: var(--s-3); align-items: center;
+  padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.stepup-qbank-item.is-picked { border-color: var(--brand-600); background: var(--brand-50); }
+
+.stepup-events { display: flex; flex-direction: column; gap: var(--s-1); font-size: 13px; }

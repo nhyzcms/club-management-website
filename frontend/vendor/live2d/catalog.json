@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "cat",
+      "name": "试做 (Cubism 3/4)",
+      "entry": "models/cat/试做.model3.json"
+    },
+    {
+      "id": "hijiki",
+      "name": "hijiki (Cubism 2)",
+      "entry": "models/hijiki/hijiki.model.json"
+    },
+    {
+      "id": "kumo",
+      "name": "云吞kumo (Cubism 3/4)",
+      "entry": "models/kumo/云吞kumo.model3.json"
+    },
+    {
+      "id": "miku",
+      "name": "miku (Cubism 2)",
+      "entry": "models/miku/miku.model.json"
+    },
+    {
+      "id": "shizuku",
+      "name": "shizuku (Cubism 2)",
+      "entry": "models/shizuku/shizuku.model.json"
+    }
+  ]
+}

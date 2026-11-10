@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-label="南汇一中传媒社 App 图标">
+  <!--
+    与 Android 壳的启动图标同一套矢量：app/app/src/main/res/drawable/ic_launcher_foreground.xml
+    （白 / 浅蓝「三道波 + 圆点」）+ values/colors.xml 的 brand #0756A2 底色。
+    壳里是 108×108 自适应图标（系统再裁圆角），网页上需要自己给圆角，所以这里画了 rx=24 的底色块，
+    并把前景按 1.15 倍放大（自适应图标的 66dp 安全区在网页上显得太靠里）。
+  -->
+  <rect width="108" height="108" rx="24" fill="#0756A2" />
+  <g transform="matrix(1.15 0 0 1.15 -8.1 -8.4)">
+    <!-- 左波（矮） -->
+    <path fill="#FFFFFF" d="M36,76 C36,62 39,50 46,44 C46,58 43,68 42,76 Z" />
+    <!-- 中波（最高，社徽浅蓝） -->
+    <path fill="#79C2FA" d="M48,76 C48,56 51,42 58,36 C60,52 57,66 55,76 Z" />
+    <!-- 右波（中） -->
+    <path fill="#FFFFFF" d="M60,76 C61,64 65,54 72,50 C72,62 68,70 66,76 Z" />
+    <!-- 社徽右下角那颗圆点 -->
+    <path fill="#79C2FA" d="M74,66 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0 Z" />
+  </g>
+</svg>

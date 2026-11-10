@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="传媒社 波形标识">
+  <rect x="4"  y="13" width="4" height="19" rx="2" fill="#0756a2"/>
+  <rect x="14" y="6"  width="4" height="26" rx="2" fill="#0c63b4"/>
+  <rect x="24" y="15" width="4" height="17" rx="2" fill="#3da5f3"/>
+  <circle cx="29" cy="3" r="3" fill="#3da5f3"/>
+</svg>
