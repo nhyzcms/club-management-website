@@ -162,6 +162,8 @@ export interface SimAIConfig {
   base_url: string;
   model: string;
   timeout_seconds: number;
+  /** 采样温度（0–2）：越低越确定，越高越随机。 */
+  temperature: number;
   extra_headers: Record<string, string>;
   ip_blacklist: string[];
   /** 每次 AI 请求都会前置的系统提示词（空 = 不附加）。 */
@@ -206,6 +208,7 @@ export function emptySimState(): SimState {
       base_url: "",
       model: "",
       timeout_seconds: 20,
+      temperature: 0,
       extra_headers: {},
       ip_blacklist: [],
       prompt_prefix: "",

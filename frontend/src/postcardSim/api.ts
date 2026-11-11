@@ -189,6 +189,7 @@ export async function seedSimAIConfig(state: SimState): Promise<void> {
     state.ai.model = real.model || "";
     state.ai.enabled = Boolean(real.enabled);
     state.ai.timeout_seconds = real.timeout_seconds ?? 20;
+    state.ai.temperature = real.temperature ?? 0;
     state.ai.extra_headers = { ...(real.extra_headers || {}) };
     state.ai.ip_blacklist = [...(real.ip_blacklist || [])];
     state.ai.prompt_prefix = real.prompt_prefix || "";
@@ -206,6 +207,8 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
     if (state.ai.base_url) overrides.base_url = state.ai.base_url;
     if (state.ai.model) overrides.model = state.ai.model;
     if (state.ai.timeout_seconds) overrides.timeout_seconds = state.ai.timeout_seconds;
+    // 0 是有效值（审核默认最确定），只能用 undefined 判断，不能靠真值。
+    if (state.ai.temperature !== undefined) overrides.temperature = state.ai.temperature;
     if (Object.keys(state.ai.extra_headers).length) overrides.extra_headers = state.ai.extra_headers;
     if (state.ai.ip_blacklist.length) overrides.ip_blacklist = state.ai.ip_blacklist;
     if (state.ai.prompt_prefix) overrides.prompt_prefix = state.ai.prompt_prefix;
@@ -230,11 +233,13 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
     return {
       configured: Boolean(state.ai.base_url || state.ai.model),
       enabled: state.ai.enabled,
-      ready: Boolean(state.ai.enabled && state.ai.base_url && state.ai.model && state.ai.api_key_set),
+      // 与后端 PostcardAIConfig.ready 同口径：api_key 允许为空（部分兼容服务免鉴权）。
+      ready: Boolean(state.ai.enabled && state.ai.base_url && state.ai.model),
       base_url: state.ai.base_url,
       model: state.ai.model,
       extra_headers: { ...state.ai.extra_headers },
       timeout_seconds: state.ai.timeout_seconds,
+      temperature: state.ai.temperature,
       ip_blacklist: [...state.ai.ip_blacklist],
       prompt_prefix: state.ai.prompt_prefix,
       api_key_set: state.ai.api_key_set,
@@ -271,6 +276,7 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
       if (patch.base_url !== undefined) state.ai.base_url = patch.base_url;
       if (patch.model !== undefined) state.ai.model = patch.model;
       if (patch.timeout_seconds !== undefined) state.ai.timeout_seconds = patch.timeout_seconds;
+      if (patch.temperature !== undefined) state.ai.temperature = patch.temperature;
       if (patch.extra_headers !== undefined) state.ai.extra_headers = { ...patch.extra_headers };
       if (patch.ip_blacklist !== undefined) state.ai.ip_blacklist = [...patch.ip_blacklist];
       if (patch.prompt_prefix !== undefined) state.ai.prompt_prefix = patch.prompt_prefix;
@@ -316,13 +322,19 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
       return { deleted: before - state.samples.length, sample_ready: state.samples.length > 0 };
     },
     aiSampleImageUrl: (id: number) => state.samples.find((s) => s.id === id)?.data_url || "",
-    explainAISample: async (id: number) => {
+    explainAISample: async (id: number, input: AIProbeInput = {}) => {
       const sample = state.samples.find((s) => s.id === id);
       if (!sample) throw new SimError("样例不存在。", 404);
       const blob = await (await fetch(sample.data_url)).blob();
       const fd = new FormData();
       fd.set("image", new File([blob], "sample.jpg", { type: blob.type || "image/jpeg" }));
       fd.set("caption", sample.caption || "");
+      // 模拟环境的 AI 配置只活在内存里：把草稿参数一起发过去，否则后端会拿正式
+      // 环境里那套（可能还没保存过）配置来判「配置不完整」。
+      for (const [key, value] of Object.entries(probeOverrides(input))) {
+        if (key === "dry_run") continue;
+        fd.set(key, typeof value === "string" ? value : JSON.stringify(value));
+      }
       return request<{ text: string }>("/admin/ai/explain/", { method: "POST", body: fd });
     },
 

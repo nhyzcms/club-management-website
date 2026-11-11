@@ -11,8 +11,10 @@ SHA-256）+ ``user``（若当时已登录）三轨识别；**修改/查看自己
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -332,13 +334,27 @@ class PostcardSuggestion(models.Model):
         return f"建议 #{self.pk}"
 
 
-#: 预置「网络动漫产品黑名单」形象 IP（广电历次通报下架条目摘录，2026-11）。
+#: 预置「网络动漫产品黑名单」形象 IP（广电历次通报下架条目，2026-11 由管理员给定）。
 #: 这是 AI 配置的**初始默认值**而非硬编码约束——管理员可在后台编辑增删。
 DEFAULT_IP_BLACKLIST = [
-    "进击的巨人", "东京喰种", "学园默示录", "寄生兽", "暗杀教室",
-    "死亡笔记", "心理测量者", "Blood-C", "斩·赤红之瞳", "大剑",
-    "妖精的旋律", "学园孤岛",
+    "东京残响", "blood-c", "学园默示录", "死亡代理人", "寄生兽", "骷髅人",
+    "another（替身）", "地狱刑警", "爆炸头武士", "东京食尸鬼第二季",
+    "刀剑神域第二季", "东京ESP", "东京暗鸦", "鬼泣", "记忆女神的女儿们",
+    "新妹魔王的契约者", "进击的巨人", "尸体派对", "噬血狂袭", "死亡笔记",
+    "亡灵幻境（死囚乐园）", "约会大作战第二季", "心理测量者", "女恶魔人",
+    "日在校园(school days)", "妖精狩猎者", "妖精的旋律", "high school（恶魔高校）",
+    "百花缭乱 武士少女", "美少女死神 还我H之魂！", "女生万岁第二季",
+    "我的狐仙女友", "无赖勇者的鬼畜美学", "樱通信", "暗杀教室", "黑执事3",
+    "大剑", "吸血鬼同盟",
 ]
+
+#: 预置的前置提示词（管理员运营口径：先比对模板与参与表，格式不对就简明告知）。
+#: 同样是**默认值**，管理员可随意改写或清空。
+DEFAULT_PROMPT_PREFIX = (
+    "你是明信片审核员。你应当将用户上传的明信片与已有模板和参与表相对比，"
+    "确保用户书写的格式正确，寄达校存在于参与校名单中。"
+    "如不符合要求，应当简明扼要地告知用户"
+)
 
 
 def _default_ip_blacklist() -> list:
@@ -371,10 +387,16 @@ class PostcardAIConfig(models.Model):
     # 自定义请求头：{"x-api-key": "..."} 等（部分兼容服务不用 Bearer）。
     extra_headers = models.JSONField("自定义请求头", default=dict, blank=True)
     timeout_seconds = models.PositiveSmallIntegerField("单次调用超时（秒）", default=20)
+    #: 采样温度（0–2，步进 0.1）：越低输出越确定、越可复现，越高越随机、越发散。
+    #: 审核判定要求口径稳定，默认 0（同 OpenAI 兼容服务的最低值）。
+    temperature = models.DecimalField(
+        "温度", max_digits=3, decimal_places=1, default=Decimal("0.0"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("2"))],
+    )
     ip_blacklist = models.JSONField("动漫黑名单 IP 清单", default=_default_ip_blacklist, blank=True)
     #: 前置提示词：每次 AI 请求都作为第一条 system 消息前置（审图 / 样例解读 /
-    #: 海报识别 / 测试连接统一生效，见 ai._with_prefix）。空 = 不附加。
-    prompt_prefix = models.TextField("前置提示词", blank=True, default="")
+    #: 海报识别 / 测试连接统一生效，见 ai._with_prefix）。可在后台改写或清空。
+    prompt_prefix = models.TextField("前置提示词", blank=True, default=DEFAULT_PROMPT_PREFIX)
     enabled = models.BooleanField("启用 AI 审核", default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

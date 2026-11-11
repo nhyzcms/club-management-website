@@ -91,6 +91,8 @@ export interface AIConfig {
   model?: string;
   extra_headers?: Record<string, string>;
   timeout_seconds?: number;
+  /** 采样温度（0–2）：越低越确定，越高越随机。 */
+  temperature?: number;
   ip_blacklist?: string[];
   prompt_prefix?: string;
   api_key_set?: boolean;
@@ -109,6 +111,9 @@ export interface AIProbeInput {
   model?: string;
   extra_headers?: Record<string, string>;
   timeout_seconds?: number;
+  temperature?: number;
+  ip_blacklist?: string[];
+  prompt_prefix?: string;
   dry_run?: boolean;
 }
 
@@ -330,6 +335,7 @@ const realPostcardAdminApi = {
     model: string;
     extra_headers: Record<string, string>;
     timeout_seconds: number;
+    temperature: number;
     ip_blacklist: string[];
     prompt_prefix: string;
   }>) =>
@@ -375,11 +381,11 @@ const realPostcardAdminApi = {
 
   aiSampleImageUrl: (id: number) => `/events/postcard/admin/ai/samples/${id}/image/`,
 
-  /** 让 AI 复述它对这张样例的理解（管理员核对 AI 是否理解正确）。 */
-  explainAISample: (id: number) =>
+  /** 让 AI 复述它对这张样例的理解；可带未保存的草稿参数（不落库）。 */
+  explainAISample: (id: number, input: AIProbeInput = {}) =>
     request<{ text: string }>(`/admin/ai/samples/${id}/explain/`, {
       method: "POST",
-      body: "{}",
+      body: JSON.stringify(input),
     }),
 
   // —— 复核台 ——

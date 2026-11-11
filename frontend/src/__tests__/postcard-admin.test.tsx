@@ -263,6 +263,68 @@ describe("AI 配置预设", () => {
     expect((screen.getByRole("textbox", { name: /模型 ID/ }) as HTMLInputElement).value).toBe("");
   });
 
+  it("高级选项默认收起、温度随保存提交，读样例带上草稿参数", async () => {
+    const { postcardAdminApi } = await import("../api/postcardAdmin");
+    const saved = {
+      configured: true,
+      enabled: true,
+      ready: true,
+      base_url: "https://saved.example/v1",
+      model: "saved-model",
+      extra_headers: {},
+      timeout_seconds: 20,
+      temperature: 0,
+      ip_blacklist: ["喜羊羊"],
+      prompt_prefix: "",
+      api_key_set: true,
+    };
+    // 第一次打开是 0；保存后重新拉取（真实后端会带回本次保存的 0.4）。
+    vi.spyOn(postcardAdminApi, "aiConfig")
+      .mockResolvedValueOnce(saved)
+      .mockResolvedValueOnce({ ...saved, temperature: 0.4 })
+      .mockResolvedValue({ ...saved, temperature: 0.4 });
+    vi.spyOn(postcardAdminApi, "aiSamples").mockResolvedValue({
+      results: [{ id: 7, caption: "样例", has_image: true }],
+      sample_ready: true,
+    });
+    vi.spyOn(postcardAdminApi, "aiModels").mockResolvedValue({
+      ok: true,
+      models: ["saved-model"],
+    });
+    const explain = vi
+      .spyOn(postcardAdminApi, "explainAISample")
+      .mockResolvedValue({ text: "理解" });
+    const save = vi
+      .spyOn(postcardAdminApi, "saveAIConfig")
+      .mockResolvedValue({ configured: true });
+
+    const { default: AITab } = await import("../components/postcard/admin/AITab");
+    render(<AITab />);
+
+    // Base URL / 模型 ID / 超时 / 温度 / 请求头都收进「高级选项」，且默认收起。
+    const details = (await screen.findByText(/高级选项/)).closest("details") as HTMLDetailsElement;
+    expect(details).toBeTruthy();
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain("Base URL");
+
+    fireEvent.change(screen.getByRole("spinbutton", { name: "温度" }), {
+      target: { value: "0.4" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存 AI 配置" }));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(save.mock.calls[0][0]).toMatchObject({ temperature: 0.4 });
+
+    // 「让 AI 读样例」与「测试连接」同口径：带上当前草稿参数（后端不落库）。
+    fireEvent.click(screen.getByRole("button", { name: "让 AI 读样例" }));
+    await waitFor(() => expect(explain).toHaveBeenCalled());
+    expect(explain.mock.calls[0][1]).toMatchObject({
+      base_url: "https://saved.example/v1",
+      model: "saved-model",
+      temperature: 0.4,
+    });
+    expect(await screen.findByText("理解")).toBeTruthy();
+  });
+
   it("前置提示词是多行文本，随保存一起提交", async () => {
     const { postcardAdminApi } = await import("../api/postcardAdmin");
     vi.spyOn(postcardAdminApi, "aiConfig").mockResolvedValue({

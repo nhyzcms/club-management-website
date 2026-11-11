@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   postcardAdminApi,
   type AIConfig,
+  type AIProbeInput,
   type AISample,
 } from "../../../api/postcardAdmin";
 import { errMessage, isForbidden } from "./pure";
@@ -19,6 +20,13 @@ type Preset = {
 /** OpenCode Go 用稳定会话串做路由 / prompt cache 键（缺失会 400 MissingSessionID）。 */
 function opencodeSessionId(): string {
   return `nhyz-postcard-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** 温度夹到 0–2（输入框清空 / 乱填时不要给后端发 NaN 或越界值）。 */
+function clampTemp(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(2, Math.max(0, Math.round(n * 10) / 10));
 }
 
 /**
@@ -73,6 +81,8 @@ export default function AITab() {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [timeout, setTimeoutSec] = useState(20);
+  const [temperature, setTemperature] = useState(0);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [headersText, setHeadersText] = useState("{}");
   const [blacklistText, setBlacklistText] = useState("");
   const [promptPrefix, setPromptPrefix] = useState("");
@@ -162,6 +172,9 @@ export default function AITab() {
       setBaseUrl(cfg.base_url || "");
       setModel(cfg.model || "");
       setTimeoutSec(cfg.timeout_seconds ?? 20);
+      setTemperature(cfg.temperature ?? 0);
+      // 还没配过 Base URL（首次上线 / 换服务商）时默认展开高级选项，省一次点击。
+      if (!cfg.base_url) setAdvancedOpen(true);
       setHeadersText(JSON.stringify(cfg.extra_headers || {}, null, 2));
       setBlacklistText((cfg.ip_blacklist || []).join("\n"));
       setPromptPrefix(cfg.prompt_prefix || "");
@@ -239,6 +252,22 @@ export default function AITab() {
     });
   };
 
+  /**
+   * 当前页面的草稿参数：测试连接 / 让 AI 读样例共用。
+   *
+   * 这两个按钮都要「填完先试、确认无误再保存」的用法，后端只在本次请求里用、
+   * 不落库。早先读样例只认已保存配置，于是测试连接通过、读样例却报「配置不完整」。
+   */
+  const draftProbe = (headers: Record<string, string>): AIProbeInput => ({
+    base_url: baseUrl.trim(),
+    model: model.trim(),
+    extra_headers: headers,
+    timeout_seconds: timeout,
+    temperature,
+    prompt_prefix: promptPrefix,
+    ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
+  });
+
   const save = async () => {
     setError("");
     setNotice("");
@@ -252,6 +281,7 @@ export default function AITab() {
         ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
         model: model.trim(),
         timeout_seconds: timeout,
+        temperature,
         extra_headers: headers,
         ip_blacklist: blacklistText
           .split("\n")
@@ -278,13 +308,7 @@ export default function AITab() {
     setError("");
     setNotice("");
     try {
-      const d = await postcardAdminApi.testAIConfig({
-        base_url: baseUrl.trim(),
-        model: model.trim(),
-        extra_headers: headers,
-        timeout_seconds: timeout,
-        ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
-      });
+      const d = await postcardAdminApi.testAIConfig(draftProbe(headers));
       if (d.ok) {
         setTestResult({
           ok: true,
@@ -335,9 +359,12 @@ export default function AITab() {
   };
 
   const explainSample = async (id: number) => {
+    // 带上当前草稿参数：否则「填好没保存」时测试连接能通、这个按钮必然报配置不完整。
+    const headers = parseHeaders();
+    if (!headers) return;
     setExplain({ id, busy: true, text: "", error: "" });
     try {
-      const d = await postcardAdminApi.explainAISample(id);
+      const d = await postcardAdminApi.explainAISample(id, draftProbe(headers));
       setExplain({ id, busy: false, text: d.text, error: "" });
     } catch (e) {
       setExplain({ id, busy: false, text: "", error: errMessage(e) });
@@ -380,10 +407,6 @@ export default function AITab() {
           启用 AI 审核（关闭后登记全部转人工复核）
         </label>
         <label className="pa-field">
-          <span>Base URL（OpenAI 兼容，含 /v1）</span>
-          <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" />
-        </label>
-        <label className="pa-field">
           <span>API Key{config?.api_key_set ? "（已设置，留空保持不变）" : ""}</span>
           <input
             type="password"
@@ -393,36 +416,30 @@ export default function AITab() {
             placeholder={config?.api_key_set ? "••••••••" : "sk-…"}
           />
         </label>
-        <div className="pa-grid2">
-          <label className="pa-field">
-            <span>模型选择（从服务商获取）</span>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              disabled={modelsBusy || modelOptions.length === 0}
-            >
-              <option value="">
-                {modelsBusy
-                  ? "获取中…"
-                  : modelOptions.length
-                    ? "请选择模型"
-                    : "先点「获取模型列表」"}
+        <label className="pa-field">
+          <span>模型选择（从服务商获取）</span>
+          <select
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            disabled={modelsBusy || modelOptions.length === 0}
+          >
+            <option value="">
+              {modelsBusy
+                ? "获取中…"
+                : modelOptions.length
+                  ? "请选择模型"
+                  : "先点「获取模型列表」"}
+            </option>
+            {model && !modelOptions.includes(model) && (
+              <option value={model}>{model}（当前）</option>
+            )}
+            {modelOptions.map((id) => (
+              <option key={id} value={id}>
+                {id}
               </option>
-              {model && !modelOptions.includes(model) && (
-                <option value={model}>{model}（当前）</option>
-              )}
-              {modelOptions.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="pa-field">
-            <span>模型 ID（可直接编辑）</span>
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-flash" />
-          </label>
-        </div>
+            ))}
+          </select>
+        </label>
         <div className="pa-inline">
           <button
             type="button"
@@ -441,25 +458,67 @@ export default function AITab() {
             {modelsError}
           </p>
         )}
-        <label className="pa-field">
-          <span>超时（秒，5–120）</span>
-          <input
-            type="number"
-            min={5}
-            max={120}
-            value={timeout}
-            onChange={(e) => setTimeoutSec(Number(e.target.value))}
-          />
-        </label>
-        <label className="pa-field">
-          <span>自定义请求头（JSON 对象）</span>
-          <textarea
-            rows={3}
-            value={headersText}
-            onChange={(e) => setHeadersText(e.target.value)}
-            spellCheck={false}
-          />
-        </label>
+        <details
+          className="pa-advanced"
+          open={advancedOpen}
+          onToggle={(e) => setAdvancedOpen((e.currentTarget as HTMLDetailsElement).open)}
+        >
+          <summary>高级选项（Base URL / 模型 ID / 超时 / 温度 / 自定义请求头）</summary>
+          <p className="pa-hint">
+            快捷预设会替你填好这几项；只有换服务商、要手动指定模型或调采样温度时才需要展开。
+          </p>
+          <label className="pa-field">
+            <span>Base URL（OpenAI 兼容，含 /v1）</span>
+            <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" />
+          </label>
+          <label className="pa-field">
+            <span>模型 ID（可直接编辑）</span>
+            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-flash" />
+          </label>
+          <label className="pa-field">
+            <span>超时（秒，5–120）</span>
+            <input
+              type="number"
+              min={5}
+              max={120}
+              value={timeout}
+              onChange={(e) => setTimeoutSec(Number(e.target.value))}
+            />
+          </label>
+          <div className="pa-field">
+            <span>温度（0–2，步进 0.1）：越低输出越确定、越可复现（审核建议 0）；越高越随机发散，1.5 以上容易跑题</span>
+            <div className="pa-inline">
+              <input
+                type="range"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperature}
+                aria-label="温度滑块"
+                onChange={(e) => setTemperature(clampTemp(e.target.value))}
+              />
+              <input
+                type="number"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperature}
+                aria-label="温度"
+                className="pa-temp-num"
+                onChange={(e) => setTemperature(clampTemp(e.target.value))}
+              />
+            </div>
+          </div>
+          <label className="pa-field">
+            <span>自定义请求头（JSON 对象）</span>
+            <textarea
+              rows={3}
+              value={headersText}
+              onChange={(e) => setHeadersText(e.target.value)}
+              spellCheck={false}
+            />
+          </label>
+        </details>
         <label className="pa-field">
           <span>网络动漫黑名单形象 IP（一行一个）</span>
           <textarea

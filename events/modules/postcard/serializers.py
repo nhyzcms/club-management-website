@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+from decimal import Decimal
 
 from rest_framework import serializers
 from rest_framework.utils import html as drf_html
@@ -180,6 +181,11 @@ class AIConfigInput(serializers.Serializer):
     model = serializers.CharField(required=False, allow_blank=True, max_length=128, trim_whitespace=True)
     extra_headers = serializers.DictField(required=False, allow_empty=True)
     timeout_seconds = serializers.IntegerField(required=False, min_value=5, max_value=120)
+    # 采样温度：0–2，步进 0.1（越低越确定，越高越发散）。
+    temperature = serializers.DecimalField(
+        required=False, max_digits=3, decimal_places=1,
+        min_value=Decimal("0"), max_value=Decimal("2"),
+    )
     ip_blacklist = serializers.ListField(
         child=serializers.CharField(max_length=128, trim_whitespace=True),
         required=False, allow_empty=True,

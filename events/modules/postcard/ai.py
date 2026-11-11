@@ -288,10 +288,26 @@ def _with_prefix(cfg: PostcardAIConfig, messages: list) -> list:
     return [{"role": "system", "content": prefix}, *messages]
 
 
+def _temperature(cfg: PostcardAIConfig) -> float:
+    """采样温度（0–2）：越低输出越确定、越可复现，越高越随机发散。
+
+    审核判定要口径稳定，所以越界 / 脏值一律回落到 0，而不是把整次调用搞崩。
+    """
+    try:
+        value = float(getattr(cfg, "temperature", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return min(2.0, max(0.0, value))
+
+
 def _post_chat(cfg: PostcardAIConfig, messages: list, max_tokens: int | None = None) -> str:
     """单次对话调用，返回模型回复正文。任何失败 raise AIReviewError。"""
     url = cfg.base_url.strip().rstrip("/") + "/chat/completions"
-    payload = {"model": cfg.model.strip(), "messages": _with_prefix(cfg, messages), "temperature": 0}
+    payload = {
+        "model": cfg.model.strip(),
+        "messages": _with_prefix(cfg, messages),
+        "temperature": _temperature(cfg),
+    }
     if max_tokens:
         payload["max_tokens"] = max_tokens
     headers = _request_headers(cfg)
@@ -635,7 +651,7 @@ def test_connection(cfg: PostcardAIConfig) -> dict:
         "model": cfg.model.strip(),
         "messages": _with_prefix(cfg, [{"role": "user", "content": "只回复两个字：正常"}]),
         "max_tokens": 8,
-        "temperature": 0,
+        "temperature": _temperature(cfg),
     }
     headers = _request_headers(cfg)
 
