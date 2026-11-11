@@ -353,6 +353,16 @@ uv run python manage.py prune_orphan_targets --apply # 确认后删除（可加 
 
 B4 删掉 `Profile` 的旧列后，`check_profile_sync` 退化为「新表缺行体检」；`prune_orphan_targets` 处理裸 SQL、数据库级 CASCADE 与迁移删数据绕过 `post_delete` 留下的孤儿锚点（正常删除会自动清理）。
 
+账号彻底删除（物理删除，不可恢复；日常优先用 Django 后台的「强制彻底删除」动作，命令行用于服务器侧应急）：
+
+```bash
+uv run python manage.py hard_delete_account <用户名或id> [更多目标…]          # 预检：只打印目标与模式，不删除
+uv run python manage.py hard_delete_account <用户名或id> --mode keep --reason "冒用身份注册" --yes
+uv run python manage.py hard_delete_account <用户名或id> --mode purge --reason "垃圾账号" --yes
+```
+
+`--mode keep`（默认）保留内容并匿名化到墓碑账号；`--mode purge` 连内容一起删。`--yes` 必填，不加只预检。每次执行写 `AccountDeletionLog`（actor 记为 `cli`）；不会删除社员名册行，也不能删最后一个可用超级管理员。
+
 问卷附件回收（审计 #271 起，匿名上传点落 `SurveyUpload` 台账；未被任何作答引用的孤儿文件可清，默认只预演）：
 
 ```bash

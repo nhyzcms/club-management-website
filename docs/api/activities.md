@@ -108,7 +108,7 @@
 | max_submissions | int | 否 | 征集：最大作品数；`null` = 不限，设了则满额自动收口 |
 | review_enabled | bool | 否 | 征集：默认 true；false = 提交即公开、跳过复审 |
 | voting_enabled | bool | 否 | 展示：默认 false；true = 每展品绑定一个投票选项（创建后不可改） |
-| audience | string | 否 | 受众：`public` / `members`，默认 `members`；调研=作答资格，众议 / 展示=投票资格（`public` 时未登录游客也可投，按设备标识判重）。创建后不可改；征集忽略此字段 |
+| audience | string | 否 | 受众（四种活动类型通用）：`public`（公开）/ `members`（仅成员，默认）/ `member_only`（仅社员）；调研=作答资格，众议 / 展示=投票资格，征集=投稿资格。`public` 时调研作答 / 众议与展示投票对未登录游客开放（按设备标识判重）；**征集投稿始终要求登录 + 已认证**。`members` = 调研须登录、投票 / 投稿须登录 + 已认证；`member_only` 在此基础上另须账号已绑定社员名册（**已毕业 / 已退社也算**）。创建后不可改 |
 | schema | object | 否 | 调研：SurveyJS Schema，须含 `pages`；非调研类型忽略。可在创建时一并提交（表单里的「设计问卷」弹层就是走这条路），也可创建后再 `PATCH` |
 | comment_thread_status | string | 否 | 评论区状态 `open` / `muted` / `closed`，缺省 `open` |
 
@@ -144,6 +144,7 @@
   "review_enabled": true, "voting_enabled": false, "audience": "members",
   "schema": {"title": "", "pages": [{"name": "page1", "elements": []}]},
   "my_response": null, "response_count": null, "schema_editable": false,
+  "viewer_is_member": false,
   "options": [{"id": 31, "text": "团结拼搏", "order": 0, "vote_count": 4},
               {"id": 32, "text": "青春无畏", "order": 1, "vote_count": 2}],
   "ballots": [{"id": 7, "voter": {"id": 8, "username": "lisi", "nickname": "李四", "avatar": null}, "option_ids": [31], "created_at": "2026-09-26T10:00:00+08:00"}],
@@ -163,6 +164,7 @@
 - `my_submission` / `submissions`：仅征集返回。`my_submission` 是本人作品（无则 `null`）；`submissions` 复审者（发起人 / `activities.manage_activity` / `activities.review_collection`）见全部作品，其余登录成员只见 `review_status=accepted` 的作品；`review_enabled=false` 时全部作品公开。作品结构：`id` / `submitter` / `files`（附件：`id` / `file_url` / `file_type` / `file_name` / `file_size` / `uploaded_by` / `uploaded_at`）/ `review_status`（`pending` / `accepted` / `rejected`）/ `review_comment` / `reviewed_at` / `created_at`。
 - `exhibits`：仅展示返回。展品结构：`id` / `title` / `files` / `vote_option_id`（未启用投票为 `null`）/ `vote_count` / `like_count` / `dislike_count` / `my_rating`（`like` / `dislike` / `null`）/ `created_at`。
 - 调研：`audience`、`schema`、`my_response`（当前身份——登录用户或访客设备——的作答，未答 `null`）、`response_count`（作答总数，不作答列表）、`schema_editable`（问卷可否改，走生命周期判断）。非调研类型 `schema` 为默认空 Schema、后三者分别为 `null` / `null` / `false`。
+- `viewer_is_member`：当前登录用户是否已绑定社员名册（匿名 `false`）。受众为 `member_only` 时前端据此提前禁用参与按钮，不必等提交后 403。
 - `comment_thread`：`id` / `status` / `can_manage`（当前用户能否管理该评论区）。
 
 ### 更新活动
@@ -211,7 +213,7 @@
 
 `POST /activities/activities/{id}/vote/`
 
-**认证**：`audience=public` 公开（`AllowAny`——游客与任何登录态均可投）；`audience=members` 须登录 + 已认证（未登录 401、未认证 403）。众议在 `open` 期间可投；展示只在 `voting_enabled=true` 且 `open` 时开放投票（`option_ids` 填展品对应的 `vote_option_id`）。
+**认证**：`audience=public` 公开（`AllowAny`——游客与任何登录态均可投）；`audience=members` 须登录 + 已认证（未登录 401、未认证 403）；`audience=member_only` 另须账号已绑定社员名册（否则 403「该活动仅社员可参与，你的账号尚未绑定社员身份。」）。众议在 `open` 期间可投；展示只在 `voting_enabled=true` 且 `open` 时开放投票（`option_ids` 填展品对应的 `vote_option_id`）。
 
 **请求体**：`{"option_ids": [31, 32], "turnstile_token": "..."}`——选项 id 数组：至少 1 项、不得重复、不得超过 `max_choices_per_voter`，且都须属于本活动。一人一张选票，投出后不可更改；全部已认证成员投完时众议自动结算（转 `closed`；公开受众下游客票不参与结算）。`turnstile_token` 仅在站点启用了 Turnstile 且请求来自未登录游客时必填（每次投票一个、单次有效）；成员投票不需要。
 
@@ -225,7 +227,7 @@
 
 `POST /activities/activities/{id}/respond/`
 
-**认证**：公开（`AllowAny`）；**权限**：—。`audience=public` 任何人可答，`audience=members` 仅登录成员；活动须 `open`，审核轴须为 `approved` 或无审核行（否则 400「调研尚未公开」）。已登录用户每份调研一次；访客按 `X-Device-Id` 头（UUID）一次，未带合法标识返回 400。
+**认证**：公开（`AllowAny`）；**权限**：—。`audience=public` 任何人可答；`audience=members` 仅登录成员；`audience=member_only` 须登录且账号已绑定社员名册（否则 403「该活动仅社员可参与，你的账号尚未绑定社员身份。」）。活动须 `open`，审核轴须为 `approved` 或无审核行（否则 400「调研尚未公开」）。已登录用户每份调研一次；访客按 `X-Device-Id` 头（UUID）一次，未带合法标识返回 400。
 
 **请求体**：`{"answers": {"grade": "高一", "intro": "你好"}}`——`answers` 须为 JSON 对象（问卷题目的 `name` → 作答值）。服务端按 `Questionnaire.schema` 校验：必填题、题型（单值 / 多值 / 布尔 / 评分）、选项归属、未知题名与总体积（64KB）；空 Schema 的历史问卷保持原行为。
 
@@ -239,6 +241,7 @@
 |---|---|
 | 400 | 调研尚未公开；仅调研可以作答；当前不可作答（非 `open`）；`answers 须为 JSON 对象`；缺少设备标识；你已经提交过了 |
 | 401 | `仅成员可作答，请先登录`——仅成员受众且未登录时的防御分支；访客的可见范围本身已排除仅成员调研，实际先返回 404 |
+| 403 | `该活动仅社员可参与，你的账号尚未绑定社员身份。`——`audience=member_only` 且当前账号未绑定社员名册 |
 | 404 | 访客访问非「公开受众的公开调研」的活动 |
 
 ### 问卷作答查看
@@ -262,16 +265,17 @@
   "total": 2,
   "query": "摄影",
   "results": [
-    {"id": 5, "user_label": "zhangsan", "answers": {"grade": "高一", "intro": "你好"},
+    {"id": 5, "user_label": "zhangsan", "member": null, "answers": {"grade": "高一", "intro": "你好"},
      "submitted_at": "2026-09-26T10:00:00+08:00",
      "matches": [{"name": "intro", "title": "自我介绍", "snippet": "…喜欢摄影和剪辑…"}]},
-    {"id": 6, "user_label": "访客 · 1a2b3c4d", "answers": {"grade": "高二"},
+    {"id": 6, "user_label": "访客 · 1a2b3c4d", "member": null, "answers": {"grade": "高二"},
      "submitted_at": "2026-09-26T11:00:00+08:00", "matches": []}
   ]
 }
 ```
 
 `schema` 为该调研的问卷 Schema；`user_label`：登录用户为 `username`，访客为 `访客 · {设备标识前 8 位}`（无标识则「访客」）。
+`member`：作答者的社员名册快照——`name` / `class_no` / `code` / `status` / `status_label`；未绑定名册或访客为 `null`。**不含电话等认领凭据**，供发起人查看作答时辨认社员身份。
 `total` 是**未过滤**的可见份数（检索时用于显示「匹配 N / 共 M」）；`query` 回显生效的检索词（空串 = 未检索）；
 `matches` 是命中字段（最多 3 条，含题目标题与前后文片段），未检索或未命中时为空数组。
 

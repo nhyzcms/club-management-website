@@ -30,7 +30,7 @@ Schema 形状与校验：必须是含 `pages` 的 JSON 对象（`common/survey_s
 Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
    │ 窗口语义                              │ 表单 + 结果
    ├─ status: scheduled → open → closed    ├─ schema（SurveyJS JSON）
-   ├─ audience: public / members           └─ responses（QuestionnaireResponse）
+   ├─ audience: public/members/member_only └─ responses（QuestionnaireResponse）
    ├─ start_at / end_at
    └─ Review（经 ContentTarget 锚定，见 ADR-0045）
 ```
@@ -48,12 +48,11 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 - `scheduled`（待开始）→ 到 `start_at` 自动 `open`（征答中）→ 到 `end_at` 自动 `closed`（已结束）。
 - 不填 `start_at` 则创建即 `open`；发起人或持 `activities.manage_activity` 者可**提前结束征答**（`POST /activities/activities/{id}/close/`，仅 `open` 可关）。
 
-**受众 (`audience`)** 是调研专属字段，**创建后不可改**（与展示的 `voting_enabled` 同思路）：
+**受众 (`audience`)** 四种活动类型通用（调研=作答、众议 / 展示=投票、征集=投稿），**创建后不可改**：
 
 - `public`（公开）：访客可列表、可打开、可作答；未登录的列表查询范围也被收窄为「`type=survey` 且 `audience=public` 且审核轴公开」。
-- `members`（仅成员，默认）：须登录才能作答；门户仍仅成员可见。
-
-其他活动类型 `audience` 恒为 `members`，字段无实际作用。
+- `members`（仅成员，默认）：须登录才能作答（作答只要求登录，不额外要求认证）。
+- `member_only`（仅社员）：须登录 + 账号已绑定社员名册（`MemberIdentity`）；**已毕业 / 已退社也算社员**（状态只用于展示）。未绑定时接口返回 403「该活动仅社员可参与，你的账号尚未绑定社员身份。」。
 
 ### 审核轴怎么作用在调研上
 
@@ -101,7 +100,7 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 1. 活动 `status === "open"`（未开始 / 已结束都不行）；
 2. 审核轴 `approved` 或无审核行；
 3. 当前身份尚未提交过；
-4. `audience === "public"` 或已登录。
+4. 受众放行：`public` 任何人；`members` 需登录；`member_only` 需登录且已绑定社员名册（活动详情返回 `viewer_is_member`，前端据此提前禁用入口）。
 
 `answers` 的键名与 SurveyJS 元素 `name` 一一对应，落库前必须过 `common/survey_answers.validate_answers()`（审计 M-2）：`answers` 须为 JSON 对象且 ≤ 64KB；题目名必须在 Schema 中存在（未知题名 400）；必填题不得为空；`checkbox` / `tagbox` 必须是数组、选项须属于该题；`radiogroup` / `dropdown` 须是单值且选项合法；`boolean` 必须是布尔；文本单值 ≤ 20000 字；矩阵题须为对象 / 数组；文件题项须是字符串或对象。**不解释表达式**：`visibleIf` 隐藏的必填题允许为空（前端按同一 Schema 跳过），空 Schema 的历史问卷直接放行。需要更强的业务约束时，仍应在 Schema 之外另设校验或人工核查。
 

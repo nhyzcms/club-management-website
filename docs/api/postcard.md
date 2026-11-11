@@ -229,7 +229,7 @@
 | GET / PUT | `admin/config/` | manage | 读 / 写活动配置（首次保存自动建 Event 壳） |
 | POST | `admin/publish/` | manage | 发布草稿（`draft` → `scheduled` / `active`） |
 | POST | `admin/archive/` | manage | 归档当前活动 |
-| POST | `admin/new-season/` | manage | 归档当前并新建下一届草稿（复制年级 / 学校清单） |
+| POST | `admin/new-season/` | manage | 归档当前并新建下一届草稿（复制年级 / 学校清单；AI 配置继承、API Key 清空） |
 | GET / POST | `admin/barcodes/` | manage | 条码汇总 / 生成（可覆盖重建） |
 | GET | `admin/barcodes/pdf/` | manage | 整版条码 PDF |
 | GET | `admin/records/` | manage | 登记条目列表（分页 + 搜索筛选） |
@@ -240,7 +240,7 @@
 | GET | `admin/suggestions/` | manage | 建议列表（分页） |
 | GET | `admin/audit/` | manage | 审计日志（分页、只读） |
 | GET / PUT | `admin/ai/config/` | manage | AI 审核配置（`api_key` 写后不可读） |
-| POST | `admin/ai/test/` | manage | 用已保存配置发一次最小请求（60/时） |
+| POST | `admin/ai/test/` | manage | 用当前填写的草稿参数发一次最小请求（不落库；60/时） |
 | POST | `admin/ai/models/` | manage | 代理服务商 `{base_url}/models` 的模型清单（120/时） |
 | POST | `admin/ai/explain/` | manage | 一次性样例解读（不落库，10/时） |
 | POST | `admin/ai/preview/` | manage | 模拟环境真调一次审核判定（不落库 / 不存照片 / 不写审计，120/时） |
@@ -297,7 +297,7 @@
 
 - `POST admin/publish/`：仅 `draft` 可发布；`start_at` 在未来 → `scheduled`，否则 → `active`。
 - `POST admin/archive/`：把当前活动置 `archived`（数据保留、可查）；已归档 400。
-- `POST admin/new-season/`：归档当前活动（若未归档）+ 新建草稿活动（标题 `明信片互寄 <年份>`，`start_at=now+7d`、`end_at=now+37d`），复制上一届的年级与寄达校清单；响应 `{event_id, previous_event, status}`（201）。
+- `POST admin/new-season/`：归档当前活动（若未归档）+ 新建草稿活动（标题 `明信片互寄 <年份>`，`start_at=now+7d`、`end_at=now+37d`），复制上一届的年级与寄达校清单；**AI 配置为全局单例，新一届自动继承上一年度的参数，但 `api_key` 会清空**（需管理员重新填写；审计 `new_season` 记录 `api_key_cleared`）。响应 `{event_id, previous_event, status}`（201）。
 
 ### 条码
 
@@ -348,13 +348,13 @@
 
 ### AI 审核配置
 
-`GET admin/ai/config/` 只回 `{configured, enabled, ready, base_url, model, extra_headers, timeout_seconds, ip_blacklist, api_key_set}`——**`api_key` 永不回显**。`ready` = 启用 + `base_url` + `model` 齐备（部分兼容服务可免鉴权）。字段 `model` 在界面上叫「模型 ID」。
+`GET admin/ai/config/` 只回 `{configured, enabled, ready, base_url, model, extra_headers, timeout_seconds, ip_blacklist, prompt_prefix, api_key_set}`——**`api_key` 永不回显**。`ready` = 启用 + `base_url` + `model` 齐备（部分兼容服务可免鉴权）。字段 `model` 在界面上叫「模型 ID」。
 
-`PUT admin/ai/config/`：`base_url`（http/https）、`api_key`（留空 = 保持原值）、`model`、`extra_headers`（字符串键值对）、`timeout_seconds`（5–120，默认 20）、`ip_blacklist`（动漫形象黑名单）、`enabled`。
+`PUT admin/ai/config/`：`base_url`（http/https）、`api_key`（留空 = 保持原值）、`model`、`extra_headers`（字符串键值对）、`timeout_seconds`（5–120，默认 20）、`ip_blacklist`（动漫形象黑名单）、`prompt_prefix`（前置提示词，≤4000 字，可多行；空 = 不附加）、`enabled`。`prompt_prefix` 会并入每次请求的首条 system 消息——审图 / 样例解读 / 海报识别 / 测试连接统一生效；审计只记长度（`prompt_prefix_len`），不落正文。
 
-`POST admin/ai/test/`：用已保存配置发一次最小对话请求，返回 `{ok, latency_ms, model, reply}` 或 `{ok: false, error}`（HTTP 200，按 `ok` 展示；不回显密钥）。限 60 次/时。请求体可选覆盖（**只在本次请求生效，不落库**）：`base_url` / `model` / `api_key` / `extra_headers` / `timeout_seconds`；再带 `dry_run: true` 时**跳过审计**（模拟环境用，`#/postcard/admin?sim=1`）。
+`POST admin/ai/test/`：用**当前填写的草稿参数**（请求体可选覆盖 `base_url` / `model` / `api_key` / `extra_headers` / `timeout_seconds`，缺省回落到已保存配置；**只在本次请求生效，不落库**）发一次最小对话请求，返回 `{ok, latency_ms, model, reply}` 或 `{ok: false, error}`（HTTP 200，按 `ok` 展示；不回显密钥）。限 60 次/时。再带 `dry_run: true` 时**跳过审计**（模拟环境用，`#/postcard/admin?sim=1`）。前端「测试连接」与「获取模型列表」同口径，都提交当前表单。
 
-`POST admin/ai/models/`：代理服务商 `GET {base_url}/models`，可选带本次填写的 `base_url` / `api_key` / `extra_headers` / `timeout_seconds` 覆盖参数（模拟环境用，不落库）。只回 `{ok: true, models: ["…"]}` 或 `{ok: false, error}`；响应上限 512 KiB、模型 ID 经白名单校验；服务商无 `/models`（404）时提示手填模型 ID。**不内置写死清单**。限 120 次/时。
+`POST admin/ai/models/`：代理服务商 `GET {base_url}/models`，可选带本次填写的 `base_url` / `api_key` / `extra_headers` / `timeout_seconds` 覆盖参数（**正式端与模拟环境同口径，不落库**）。只回 `{ok: true, models: ["…"]}` 或 `{ok: false, error}`；响应上限 512 KiB、模型 ID 经白名单校验；服务商无 `/models`（404）时提示手填模型 ID。**不内置写死清单**。限 120 次/时。
 
 审核管线：OpenAI 兼容 `/chat/completions`（urllib 实现，零 SDK），输入用户照片 + 管理员样例 + 规则 + 黑名单；输出严格 JSON（`matched` / `mismatched_items` / `blacklist_hit` / `blacklist_names` / `comment`）。最多 6 次调用机会、指数退避；全败转人工复核。连续 5 个用户失败会邮件告警所有绑定邮箱的管理员。
 

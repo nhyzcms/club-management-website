@@ -64,6 +64,8 @@
 | POST | `/auth/member/claim/` | 登录 | — | 自助认领（身份 + 手机号后四位） |
 | GET | `/auth/member/check/` | 公开 | — | 扫码校验（签名；最小公开字段） |
 | GET/POST | `/auth/member/lookup/` | 公开 | — | 社员查询（真实姓名 / 8 位编号 / 12 位条码载荷；GET 只读额度，POST 计次） |
+| GET/POST | `/auth/member/equipment/` | 登录 | 已绑定社员 | 我的设备：列表 / 新增（只存物品名） |
+| PATCH/DELETE | `/auth/member/equipment/{id}/` | 登录 | 本人且已绑定社员 | 改名 / 删除自己的设备条目 |
 | GET | `/auth/stepup/` | 登录 | — | 安全验证方式总览（[ADR-0026](../adr/0026-stepup-verification.md)） |
 | POST | `/auth/stepup/email/send/` | 登录 | — | 发送邮箱验证码（60s 冷却 / 小时限） |
 | POST | `/auth/stepup/verify/` | 登录 | — | 验证并签发 grant（10 分钟） |
@@ -273,6 +275,8 @@
 - 409 `account_already_deleted`（重复注销）。
 
 注销语义见 [ADR-0027](../adr/0027-account-deletion.md)：`User` / `Profile` 行保留（`AccountLifecycle.deleted_at` 标记），邮箱、头像、身份证明材料、验证通道、登录设备、通知与安全验证残留删除；真实姓名、账号唯一编码与社员编号（`MemberIdentity`）保留。
+
+> 管理员另有**强制彻底删除**（物理删除 `User` 行，可选保留内容匿名化 / 连内容一起删，并写 `AccountDeletionLog` 审计）——那是 Django 后台动作与管理命令，不是本端点：见[管理后台指南](../operations/admin-guide.md)与[部署与运维](../operations/deployment.md)。
 
 > 前端（`AccountDeletionPanel`）在表单填对后**不会直接调本端点**：先弹一次二次确认弹窗，点「确认注销」才发请求；取消 / Esc / 点遮罩都不发。这是纯前端防误触，后端的三重校验不变。
 
@@ -622,7 +626,7 @@
   "profile": {"avatar": "/media/avatars/user_7.png", "nickname": "张三", "bio": "摄影部部长",
               "birthday": "2007-05-01", "gender": "M"},
   "role": {"label": "用户", "variant": "user"},
-  "viewer": {"is_owner": true, "is_admin": false},
+  "viewer": {"is_owner": true, "is_admin": false, "is_member": false},
   "permissions": {"can_manage_news": false, "can_manage_tasks": false, "can_assign_task": false, "can_manage_tags": false,
                   "can_change_activity": false, "can_view_feedback": false, "can_handle_reports": false, "can_review_collections": false,
                   "can_edit_about": false, "can_manage_panoramas": false, "can_manage_exam": false, "can_review_content": false,
@@ -635,7 +639,7 @@
 
 字段可见性（`accounts/visibility.py`）：
 
-- 公开（始终输出）：`user.id` / `username` / `date_joined`、`profile.avatar` / `nickname` / `bio`、`role`、`viewer`。
+- 公开（始终输出）：`user.id` / `username` / `date_joined`、`profile.avatar` / `nickname` / `bio`、`role`、`viewer`。`viewer.is_member` 表示**被查看者**是否绑定社员名册（所有查看者可见，前端据此显示社员徽标）。
 - ★ 私密（仅本人，`can_see_private`）：`user.email`、`profile.birthday`、`profile.gender`。
 - ★ 敏感（本人或管理员视角，`can_see_sensitive`）：`permissions`、`groups`（组名列表）。管理员视角 = 超管或持 `news.manage_news`。
 
@@ -710,6 +714,18 @@
 | 400 | 空查询：`{"error": "请输入真实姓名或社员编号。"}` |
 | 429 | 额度用尽：`{"error": "查询次数已达上限（每 24 小时最多 N 次），请稍后再试。", "quota": {…}, "retry_after": 3600}` |
 | 429 | 12 位条码载荷频控超限：`{"error": "请求过于频繁，请稍后再试。"}`（`member_lookup_per_ip_per_hour`，计全部载荷查询） |
+
+#### 我的设备（社员）
+
+`GET /auth/member/equipment/` / `POST /auth/member/equipment/` / `PATCH`、`DELETE /auth/member/equipment/{id}/`
+
+**认证**：登录；**权限**：账号已绑定社员名册（在册 / 已毕业 / 已退社均可）。非社员 403 `{"error": "仅社员可以登记设备。", "reason": "members_only"}`。
+
+- `GET` → `{"limit": 30, "items": [{"id", "name", "created_at", "updated_at"}]}`（按添加时间倒序）。
+- `POST` JSON `{"name": "相机"}`：物品名去首尾空白后 1–100 字；每人最多 30 项，超限 400。
+- `PATCH /auth/member/equipment/{id}/`：改名（同样 1–100 字）；`DELETE`：删除自己的条目（`{"ok": true}`）。别人的条目按不存在处理（404），不泄露是否存在。
+
+只存**物品名**（供社团活动调配参考），不收集型号 / 数量 / 照片。与账号安全中心的「登录设备」（`AccountDevice`）是两回事；数据仅本人与管理员可见。
 
 
 ### 安全验证（Step-up，[ADR-0026](../adr/0026-stepup-verification.md) · [ADR-0043](../adr/0043-stepup-factor-registry.md)）
