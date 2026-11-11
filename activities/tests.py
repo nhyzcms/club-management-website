@@ -2249,10 +2249,10 @@ class SurveyAnswerValidationTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("q1", resp.data["detail"])
 
-    def test_unknown_question_rejected(self):
-        resp = self._respond({"q1": "ok", "ghost": 1})
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("ghost", resp.data["detail"])
+    def test_unknown_question_kept_not_rejected(self):
+        """认不出的键保留、不再整份 400（SurveyJS 的合法额外键曾把正常答卷拒掉）。"""
+        resp = self._respond({"q1": "ok", "q2": "A", "ghost": 1})
+        self.assertEqual(resp.status_code, 201, resp.content)
 
     def test_invalid_choice_rejected(self):
         resp = self._respond({"q1": "ok", "q2": "C"})
@@ -2277,6 +2277,38 @@ class SurveyAnswerValidationTest(TestCase):
             QuestionnaireResponse.objects.create(
                 questionnaire=questionnaire, user=self.author, dedupe_key="q-test:u-test",
             )
+
+    def test_nested_choice_answers_are_accepted(self):
+        """生产回归（传统文化宣传月）：选项内子题的答案平铺在 answers 里。
+
+        ``choices[i].elements`` 里的子题（选中「是」才出现「姓名」）以前没被
+        校验侧收集，整份答卷被判「存在未知题目：问题2」，400 且不落库。
+        """
+        schema = {
+            "pages": [{
+                "name": "page1",
+                "elements": [{
+                    "name": "问题1", "type": "radiogroup", "isRequired": True,
+                    "title": "你是否为南汇一中传媒社成员",
+                    "choices": [
+                        {"text": "是", "value": "item1", "elements": [
+                            {"name": "问题2", "type": "text", "title": "你的姓名", "isRequired": True},
+                        ]},
+                        {"text": "否", "value": "item2"},
+                    ],
+                }],
+            }],
+        }
+        resp = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "survey", "title": "嵌套子题问卷", "body": "<p>x</p>", "schema": schema,
+        })
+        self.assertEqual(resp.status_code, 201, resp.content)
+        aid = resp.data["id"]
+        resp = _json(
+            self.client, "post", f"/activities/activities/{aid}/respond/", self.author,
+            {"answers": {"问题1": "item1", "问题2": "张三"}},
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
 class PublicVoteThrottleTest(TestCase):
     """H-2 回归：游客轮换 ``X-Device-Id`` 仍被（IP + 活动）限流兜住。
 
