@@ -22,6 +22,13 @@ function opencodeSessionId(): string {
   return `nhyz-postcard-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** 温度夹到 0–2（输入框清空 / 乱填时不要给后端发 NaN 或越界值）。 */
+function clampTemp(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(2, Math.max(0, Math.round(n * 10) / 10));
+}
+
 /**
  * 预设来自各家官方文档（2026-11 核对）：
  * - DeepSeek：OpenAI 兼容 `https://api.deepseek.com/v1` + Bearer；`deepseek-flash`
@@ -488,7 +495,7 @@ export default function AITab() {
                 step={0.1}
                 value={temperature}
                 aria-label="温度滑块"
-                onChange={(e) => setTemperature(Number(e.target.value))}
+                onChange={(e) => setTemperature(clampTemp(e.target.value))}
               />
               <input
                 type="number"
@@ -498,7 +505,7 @@ export default function AITab() {
                 value={temperature}
                 aria-label="温度"
                 className="pa-temp-num"
-                onChange={(e) => setTemperature(Number(e.target.value))}
+                onChange={(e) => setTemperature(clampTemp(e.target.value))}
               />
             </div>
           </div>

@@ -1605,7 +1605,7 @@ def _admin_ai_cfg(request):
 
 
 class AdminAITestView(APIView):
-    """测试 AI 配置：用已保存的配置发一次最小对话请求。
+    """测试 AI 配置：用「已保存配置 + 本次草稿参数」发一次最小对话请求。
 
     返回 ``{ok, latency_ms, model, reply}`` 或 ``{ok: false, error}``（HTTP 200，
     由前端按 ok 展示）。失败原因已收敛成人话，**绝不回显 api_key**。
