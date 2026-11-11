@@ -48,3 +48,11 @@
 .collapse-head .chev { margin-left: auto; transition: transform var(--dur-1); }
 .collapse.is-open .collapse-head .chev { transform: rotate(180deg); }
 .collapse-body { padding: var(--s-5); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: var(--s-5); }
+
+/* 只读字段（真实姓名 / 校牌号等登记后锁定的项）：灰底 + 不可点，深色模式随变量切换 */
+.input:disabled, .select:disabled, .textarea:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 1;
+}

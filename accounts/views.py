@@ -131,6 +131,12 @@ PROOF_MAX_COUNT = 3
 PROOF_MAX_BYTES = 5 * 1024 * 1024  # 单张 ≤ 5MB
 # 头像允许的真实格式（由 Pillow 判定，不看客户端声明的 content_type）
 AVATAR_EXTENSIONS = frozenset({".jpg", ".png", ".gif", ".webp"})
+# 真实姓名 / 校牌号的自助补录（2026-11-11）：
+# - 姓名填过就锁，满一年才允许本人再改一次（注册 / 管理员修改不占用这次机会）；
+# - 校牌号只能从空补录一次，已绑定名册时以名册为准，本人不可改。
+REAL_NAME_CHANGE_INTERVAL = timedelta(days=365)
+REAL_NAME_MAX_LENGTH = 100
+CARD_NO_MAX_LENGTH = 20
 # 身份证明 / 密码重置证明：只收真实解码成功的图片（不含 GIF，避免动图绕过）
 PROOF_EXTENSIONS = frozenset({".jpg", ".png", ".webp"})
 # 证明文件直出时的 Content-Type：只认这几种扩展名，其余一律当二进制附件下载，
@@ -1705,7 +1711,36 @@ def _public_role_for(viewed, viewer):
     return role
 
 
+def _real_name_edit_state(user, identity):
+    """返回 (本人现在能否改真实姓名, 解锁时间)。
+
+    年度一次的口径：上次**本人自助**修改时间（没有则用注册时间）起算 365 天。
+    注册 / 管理员改姓名不写 ``real_name_changed_at``，因此不会额外占用用户的
+    年度机会；刚注册的用户从注册日起锁一年，符合「填过就灰」的预期。
+    """
+    real_name = ((getattr(identity, "real_name", "") or "") if identity else "").strip()
+    if not real_name:
+        return True, None
+    changed_at = getattr(identity, "real_name_changed_at", None) if identity else None
+    locked_until = (changed_at or user.date_joined) + REAL_NAME_CHANGE_INTERVAL
+    return timezone.now() >= locked_until, locked_until
+
+
 def _profile_response(user, profile):
+    identity = getattr(user, "identity_record", None)
+    member = getattr(user, "member_identity", None)
+    real_name = (getattr(identity, "real_name", "") or "").strip() if identity else ""
+    real_name_editable, real_name_locked_until = _real_name_edit_state(user, identity)
+    if member is not None:
+        # 已绑定名册：校牌号以学校档案为准，本人不可改（改也只会与名册冲突）。
+        card_no = (member.card_no or "").strip()
+        card_no_editable = False
+        card_no_locked_reason = "member"
+    else:
+        card_no = (getattr(identity, "pending_card_no", "") or "").strip() if identity else ""
+        # 只允许「从空补录一次」；已有值（含注册时填的）要更正请联系管理员。
+        card_no_editable = not card_no
+        card_no_locked_reason = "filled" if card_no else ""
     return {
         "user": {
             "id": user.id,
@@ -1724,6 +1759,18 @@ def _profile_response(user, profile):
             "birthday": profile.birthday.isoformat() if profile.birthday else None,
             "gender": profile.gender,
             "bio": profile.bio,
+            # 实名资料（2026-11-11）：本人自助补录 / 每年一次修改；已绑定名册时
+            # 校牌号以名册为准。只经本人接口返回，别加到他人主页的序列化里。
+            "real_name": real_name,
+            "real_name_editable": real_name_editable,
+            "real_name_locked_until": (
+                None if real_name_editable or real_name_locked_until is None
+                else real_name_locked_until.isoformat()
+            ),
+            "identity": getattr(identity, "identity", "") if identity else "",
+            "card_no": card_no,
+            "card_no_editable": card_no_editable,
+            "card_no_locked_reason": card_no_locked_reason,
             # 认证态（ADR-0006）：前端据此显访客提示 / 引导去认证面板。
             "is_verified": is_verified(user),
         },
@@ -1758,10 +1805,90 @@ def profile_update_view(request):
     if not form.is_valid():
         return JsonResponse({"error": _form_errors(form)}, status=400)
 
-    for field in ("nickname", "birthday", "gender", "bio"):
-        setattr(profile, field, form.cleaned_data[field])
+    # 实名资料自助补录（2026-11-11）：姓名 / 校牌号只在「还没有值」时接受，
+    # 姓名满一年可再改一次。字段没随请求提交（老客户端）时按「不改」处理。
+    name_supplied = "real_name" in request.POST
+    card_supplied = "card_no" in request.POST
+    new_name = (request.POST.get("real_name") or "").strip()
+    new_card = (request.POST.get("card_no") or "").strip()
+    name_changed = card_changed = False
 
-    profile.save()
+    with transaction.atomic():
+        identity = (
+            AccountIdentity.objects.select_for_update()
+            .filter(user=request.user)
+            .first()
+        )
+        if identity is None:  # 正常由 Profile.save() 补行，这里兜底
+            identity = AccountIdentity.objects.create(user=request.user)
+        old_name = (identity.real_name or "").strip()
+        member = MemberIdentity.objects.filter(user=request.user).first()
+        old_card = ((member.card_no if member is not None else identity.pending_card_no) or "").strip()
+
+        if name_supplied and new_name != old_name:
+            locked_until = None
+            if not new_name:
+                return JsonResponse({"error": "真实姓名不能为空"}, status=400)
+            if len(new_name) > REAL_NAME_MAX_LENGTH:
+                return JsonResponse(
+                    {"error": f"真实姓名不能超过 {REAL_NAME_MAX_LENGTH} 个字符"}, status=400,
+                )
+            if old_name:
+                editable, locked_until = _real_name_edit_state(request.user, identity)
+                if not editable:
+                    return JsonResponse(
+                        {
+                            "error": (
+                                "真实姓名每年只能修改一次，"
+                                f"{timezone.localtime(locked_until):%Y-%m-%d} 后可再次修改"
+                            ),
+                        },
+                        status=400,
+                    )
+            identity.real_name = new_name
+            identity.real_name_changed_at = timezone.now()
+            name_changed = True
+
+        if card_supplied and new_card != old_card:
+            if member is not None:
+                return JsonResponse(
+                    {"error": "校牌号以社员名册为准，如需更正请联系管理员"}, status=400,
+                )
+            if not new_card:
+                return JsonResponse({"error": "校牌号不能为空"}, status=400)
+            if len(new_card) > CARD_NO_MAX_LENGTH:
+                return JsonResponse(
+                    {"error": f"校牌号不能超过 {CARD_NO_MAX_LENGTH} 个字符"}, status=400,
+                )
+            if old_card:
+                return JsonResponse(
+                    {"error": "校牌号已登记，如需更正请联系管理员"}, status=400,
+                )
+            if identity.identity not in ("", *Profile.CARD_NO_IDENTITIES):
+                return JsonResponse({"error": "当前身份无需登记校牌号"}, status=400)
+            identity.pending_card_no = new_card
+            card_changed = True
+
+        update_fields = []
+        if name_changed:
+            update_fields += ["real_name", "real_name_changed_at"]
+        if card_changed:
+            update_fields.append("pending_card_no")
+        if update_fields:
+            identity.save(update_fields=update_fields)
+
+        for field in ("nickname", "birthday", "gender", "bio"):
+            setattr(profile, field, form.cleaned_data[field])
+        profile.save()
+
+    # 姓名 + 校牌号都齐了才尝试自动绑名册（与注册同一条安全口径：只认双字段唯一命中，
+    # 不按姓名单独绑定，避免本人随便填个名字就冒领别人的社员身份）。
+    if name_changed or card_changed:
+        try:
+            auto_bind_on_register(request.user, profile)
+        except Exception:  # 绑定失败不能拖垮资料保存（管理员可稍后重跑匹配）
+            logger.exception("资料页自动绑定社员身份失败: username=%s", request.user.username)
+
     return JsonResponse(_profile_response(request.user, profile))
 
 
