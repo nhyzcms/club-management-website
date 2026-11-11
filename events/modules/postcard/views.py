@@ -1457,6 +1457,7 @@ class AdminAIConfigView(APIView):
             "model": cfg.model,
             "extra_headers": cfg.extra_headers or {},
             "timeout_seconds": cfg.timeout_seconds,
+            "temperature": float(cfg.temperature or 0),
             "ip_blacklist": cfg.ip_blacklist or [],
             "prompt_prefix": cfg.prompt_prefix or "",
             "api_key_set": bool(cfg.api_key),
@@ -1471,6 +1472,7 @@ class AdminAIConfigView(APIView):
         cfg.model = data.get("model", cfg.model)
         cfg.extra_headers = data.get("extra_headers", cfg.extra_headers)
         cfg.timeout_seconds = data.get("timeout_seconds", cfg.timeout_seconds)
+        cfg.temperature = data.get("temperature", cfg.temperature)
         cfg.ip_blacklist = data.get("ip_blacklist", cfg.ip_blacklist)
         cfg.prompt_prefix = data.get("prompt_prefix", cfg.prompt_prefix)
         cfg.enabled = data.get("enabled", cfg.enabled)
@@ -1483,6 +1485,7 @@ class AdminAIConfigView(APIView):
                 "enabled": cfg.enabled,
                 "base_url": cfg.base_url,
                 "model": cfg.model,
+                "temperature": float(cfg.temperature or 0),
                 "api_key_changed": bool(data.get("api_key")),
                 "blacklist_count": len(cfg.ip_blacklist or []),
                 "prompt_prefix_len": len(cfg.prompt_prefix or ""),
@@ -1498,9 +1501,10 @@ class AdminAIConfigView(APIView):
 class _AIConfigView:
     """一次性的 AI 配置视图：用请求里的临时参数覆盖已保存配置（**不落库**）。
 
-    模拟环境（``#/postcard/admin?sim=1``）要能验证「填了这套参数能不能通」，
-    但用户的红线是模拟不得改动正式环境——所以这里只做只读合并，字段与
-    ``ai.test_connection`` 用到的属性一一对应，绝不回显 api_key。
+    管理端每个 AI 端点（测试连接 / 模型列表 / 读样例 / 导入海报 / 模拟判定）
+    都要能验证「填了这套参数能不能通」，但用户的红线是不能因此改动正式环境——
+    所以这里只做只读合并，字段与 ``ai.test_connection`` 用到的属性一一对应，
+    绝不回显 api_key。``enabled`` 恒为 True：带了草稿就是在明确要求试跑。
     """
 
     def __init__(self, base, data: dict):
@@ -1510,13 +1514,21 @@ class _AIConfigView:
                 value = fallback
             return str(value or "").strip()
 
+        def number(key: str, cast, fallback, low, high):
+            raw = data.get(key)
+            if raw is None or raw == "":
+                raw = fallback
+            try:
+                return max(low, min(high, cast(raw)))
+            except (TypeError, ValueError):
+                return fallback
+
         headers = data.get("extra_headers")
         if not isinstance(headers, dict):
             headers = (getattr(base, "extra_headers", None) or {})
-        try:
-            timeout = int(data.get("timeout_seconds") or getattr(base, "timeout_seconds", 20) or 20)
-        except (TypeError, ValueError):
-            timeout = getattr(base, "timeout_seconds", 20) or 20
+        blacklist = data.get("ip_blacklist")
+        if not isinstance(blacklist, list):
+            blacklist = list(getattr(base, "ip_blacklist", None) or [])
 
         self.enabled = True
         self.base_url = text("base_url", getattr(base, "base_url", ""))
@@ -1527,14 +1539,69 @@ class _AIConfigView:
             for k, v in headers.items()
             if str(k).strip()
         }
-        self.timeout_seconds = max(5, min(120, timeout))
-        self.ip_blacklist = list(getattr(base, "ip_blacklist", None) or [])
-        # 前置提示词：模拟环境沿用已保存的配置（可被本次请求临时覆盖）。
+        self.timeout_seconds = number(
+            "timeout_seconds", int, int(getattr(base, "timeout_seconds", 20) or 20), 5, 120,
+        )
+        # 温度 0–2：审核判定默认 0（最确定）；脏值一律回落到 0 而不是整单报错。
+        self.temperature = number("temperature", float, 0.0, 0.0, 2.0)
+        self.ip_blacklist = [str(v) for v in blacklist if str(v).strip()]
+        # 前置提示词：沿用已保存的配置（可被本次请求临时覆盖）。
         self.prompt_prefix = str(
             data.get("prompt_prefix")
             if data.get("prompt_prefix") is not None
             else getattr(base, "prompt_prefix", "") or ""
         )
+
+    @property
+    def ready(self) -> bool:
+        """草稿视图的可用性口径与 ``PostcardAIConfig.ready`` 对齐（api_key 可空）。"""
+        return bool(self.base_url and self.model)
+
+
+def _ai_overrides(data) -> dict:
+    """把请求里的草稿参数洗成 dict（multipart / FormData 里全是字符串）。
+
+    ``extra_headers`` / ``ip_blacklist`` 可能以 JSON 字符串形式到达（FormData 只能
+    带字符串），解析失败就当没传——这些都是只读试跑端点，不要因为一个脏字段整单失败。
+    """
+    if not isinstance(data, dict):
+        return {}
+    overrides: dict = {}
+    for key in ("base_url", "model", "api_key", "prompt_prefix"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            overrides[key] = value
+    for key, kind in (("extra_headers", dict), ("ip_blacklist", list)):
+        value = data.get(key)
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                continue
+        if isinstance(value, kind):
+            overrides[key] = value
+    for key in ("timeout_seconds", "temperature"):
+        value = data.get(key)
+        if value is not None and value != "":
+            overrides[key] = value
+    return overrides
+
+
+def _admin_ai_cfg(request):
+    """管理端 AI 端点的**唯一**配置取值入口：已保存配置 + 本次请求的草稿参数（不落库）。
+
+    返回 ``(cfg, dry_run)``。为什么收成一个入口：早先只有「测试连接 / 模型列表」
+    接了草稿，其余端点（读样例 / 导入海报 / 模拟判定）还在读已保存配置，管理员
+    「填完没保存」时就会出现「测试连接通过、按钮却报配置不完整」——同一个坑踩过
+    两次。新增 AI 端点必须走这里，别再各自 ``PostcardAIConfig.load()``。
+    """
+    cfg = PostcardAIConfig.load()
+    overrides = _ai_overrides(request.data)
+    raw_dry = request.data.get("dry_run") if isinstance(request.data, dict) else None
+    dry_run = str(raw_dry).lower() in ("1", "true", "yes") if raw_dry is not None else False
+    if overrides:
+        cfg = _AIConfigView(cfg, overrides)
+    return cfg, dry_run
 
 
 class AdminAITestView(APIView):
@@ -1555,18 +1622,9 @@ class AdminAITestView(APIView):
     def post(self, request):
         from . import ai
 
-        cfg = PostcardAIConfig.load()
-        overrides = request.data if isinstance(request.data, dict) else {}
-        # 模拟环境（前端 `?sim=1`）：dry_run=true 表示这次只是演练，不落审计。
-        dry_run = bool(overrides.get("dry_run"))
-        if overrides:
-            cfg = _AIConfigView(cfg, overrides)
-        if (
-            cfg is None
-            or (not overrides and not cfg.enabled)
-            or not cfg.base_url.strip()
-            or not cfg.model.strip()
-        ):
+        # 统一入口：已保存配置 + 本次草稿（不落库）。dry_run=true 表示演练，不写审计。
+        cfg, dry_run = _admin_ai_cfg(request)
+        if cfg is None or not cfg.ready:
             return Response({
                 "ok": False,
                 "error": "配置不完整：需要启用 AI、填写 Base URL 与模型 ID 后才能测试",
@@ -1596,10 +1654,7 @@ class AdminAIModelsView(APIView):
     def post(self, request):
         from . import ai
 
-        cfg = PostcardAIConfig.load()
-        overrides = request.data if isinstance(request.data, dict) else {}
-        if overrides:
-            cfg = _AIConfigView(cfg, overrides)
+        cfg, _ = _admin_ai_cfg(request)
         if cfg is None or not cfg.base_url.strip():
             return Response({"ok": False, "error": "请先填写 Base URL"})
         try:
@@ -1701,8 +1756,10 @@ class AdminAISampleExplainView(APIView):
             raise Http404
         if not sample.image:
             return Response({"detail": "这条样例没有照片，无法让 AI 阅读"}, status=400)
-        cfg = PostcardAIConfig.load()
-        if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
+        # 草稿参数同样生效（统一入口）：管理员常常「填完先点按钮验证、确认后才保存」，
+        # 只读已保存配置会让这个按钮在保存前必然报「配置不完整」。
+        cfg, _ = _admin_ai_cfg(request)
+        if cfg is None or not cfg.ready:
             return Response(
                 {"detail": "AI 未启用或配置不完整：需要启用 AI、填写 Base URL 与模型 ID"},
                 status=400,
@@ -1742,10 +1799,9 @@ class AdminAIReviewPreviewView(APIView):
         from . import ai
         from .photos import PhotoRejected, validate_and_reencode
 
-        cfg = PostcardAIConfig.load()
-        if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
+        cfg, _ = _admin_ai_cfg(request)
+        if cfg is None or not cfg.ready:
             return Response({"ok": False, "reason": "ai_not_ready"})
-
         photos = []
         for field in ("photo_front", "photo_back"):
             upload = request.FILES.get(field)
@@ -1795,8 +1851,8 @@ class AdminAIExplainUploadView(APIView):
         upload = request.FILES.get("image")
         if upload is None:
             return Response({"detail": "请附上样例图片"}, status=400)
-        cfg = PostcardAIConfig.load()
-        if cfg is None or not cfg.enabled or not cfg.base_url.strip() or not cfg.model.strip():
+        cfg, _ = _admin_ai_cfg(request)
+        if cfg is None or not cfg.ready:
             return Response(
                 {"detail": "AI 未启用或配置不完整：需要启用 AI、填写 Base URL 与模型 ID"},
                 status=400,
@@ -1857,7 +1913,7 @@ class AdminSchoolsImportView(APIView):
         from . import ai
         from .photos import PhotoRejected, validate_and_reencode
 
-        cfg = PostcardAIConfig.load()
+        cfg, dry_run = _admin_ai_cfg(request)
         if cfg is None or not cfg.ready:
             return Response(
                 {"code": "ai_not_configured", "detail": "请先配置AI"}, status=400,
@@ -1878,7 +1934,6 @@ class AdminSchoolsImportView(APIView):
             )
         event, _, _ = _phase_guard(admin=True)
         # 模拟环境只借用识别能力，不该在正式审计里留痕（dry_run 由前端模拟层带上）。
-        dry_run = str(request.data.get("dry_run") or "").lower() in ("1", "true", "yes")
         if event is not None and not dry_run:
             _audit(event, request, "schools_import", "schools", {
                 "recognized": len(result["schools"]),

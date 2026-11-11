@@ -1143,6 +1143,30 @@ class AIConfigAdminTest(TestCase):
         self.assertIn("进击的巨人", data["ip_blacklist"])
         self.assertTrue(len(data["ip_blacklist"]) >= 10)
 
+    def test_new_default_blacklist_and_prompt_prefix(self):
+        """默认值是管理员给定的 38 条黑名单 + 那段前置提示词。"""
+        cfg = PostcardAIConfig.objects.create(enabled=True, base_url="https://a/v1", model="m")
+        self.assertEqual(len(cfg.ip_blacklist), 38)
+        self.assertIn("东京残响", cfg.ip_blacklist)
+        self.assertIn("吸血鬼同盟", cfg.ip_blacklist)
+        self.assertTrue(cfg.prompt_prefix.startswith("你是明信片审核员"))
+
+    def test_temperature_roundtrip_and_bounds(self):
+        """温度 0–2、一位小数：能存能读，越界一律 400。"""
+        resp = self.client.put("/events/postcard/admin/ai/config/", {
+            "base_url": "https://a.example/v1", "model": "m", "temperature": "0.7",
+        }, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(float(PostcardAIConfig.load().temperature), 0.7)
+        self.assertEqual(
+            self.client.get("/events/postcard/admin/ai/config/").json()["temperature"], 0.7,
+        )
+        for bad in ("2.5", "-0.1"):
+            resp = self.client.put(
+                "/events/postcard/admin/ai/config/", {"temperature": bad}, format="json",
+            )
+            self.assertEqual(resp.status_code, 400, bad)
+
     def test_plain_user_forbidden(self):
         user = User.objects.create_user(username="plain", password="test-pass-123")
         client = APIClient()
@@ -1947,6 +1971,30 @@ class AISampleExplainTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("AI 未启用", resp.json()["detail"])
 
+    def test_draft_params_work_before_save(self):
+        """回归：填完没保存时，测试连接能通、「让 AI 读样例」也必须能通（同一套草稿参数）。"""
+        PostcardAIConfig.objects.update(enabled=False, base_url="", model="")
+        body = json.dumps({"choices": [{"message": {"content": "姓名正楷写在左上角"}}]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ) as urlopen:
+            resp = self.client.post(self.url, {
+                "base_url": "https://draft.example.com/v1",
+                "model": "draft-model",
+                "api_key": "sk-draft",
+                "temperature": 0.3,
+            }, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertIn("左上角", resp.json()["text"])
+        req = urlopen.call_args[0][0]
+        self.assertTrue(req.full_url.startswith("https://draft.example.com/v1"))
+        self.assertEqual(json.loads(req.data)["temperature"], 0.3)
+        # 草稿只在本次请求里生效，一个字都不落库
+        cfg = PostcardAIConfig.load()
+        self.assertEqual(cfg.base_url, "")
+        self.assertEqual(cfg.model, "")
+
     def test_requires_manage_permission(self):
         client = APIClient()
         client.force_authenticate(user=_reviewer())
@@ -2663,6 +2711,26 @@ class AIExplainUploadTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("AI 未启用", resp.json()["detail"])
 
+    def test_draft_params_work_before_save(self):
+        """模拟环境同款回归：草稿参数（FormData）必须能顶替没保存的配置。"""
+        PostcardAIConfig.objects.update(enabled=False, base_url="", model="")
+        upload = SimpleUploadedFile("s.jpg", _jpeg_bytes(), content_type="image/jpeg")
+        body = json.dumps({"choices": [{"message": {"content": "姓名写在左上角"}}]}).encode()
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(body),
+        ) as urlopen:
+            resp = self.client.post(self.url, {
+                "image": upload,
+                "base_url": "https://draft.example.com/v1",
+                "model": "draft-model",
+                "extra_headers": json.dumps({"X-Trace": "t1"}),
+            }, format="multipart")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        req = urlopen.call_args[0][0]
+        self.assertTrue(req.full_url.startswith("https://draft.example.com/v1"))
+        self.assertEqual(req.get_header("X-trace"), "t1")
+
     def test_requires_manage_permission(self):
         client = APIClient()
         client.force_authenticate(user=_reviewer())
@@ -2867,6 +2935,28 @@ class AIReviewPreviewTest(TestCase):
         resp = self.client.post(self.URL, self._payload(), format="multipart")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), {"ok": False, "reason": "ai_not_ready"})
+
+    def test_draft_params_work_before_save(self):
+        """模拟环境：AI 配置只活在内存里，判定必须用本次带上的草稿参数。"""
+        PostcardAIConfig.objects.update(enabled=False, base_url="", model="")
+        verdict = {
+            "matched": True,
+            "mismatched_items": [],
+            "blacklist_hit": False,
+            "blacklist_names": [],
+            "comment": "",
+        }
+        with mock.patch(
+            "events.modules.postcard.ai.preview_judgement", return_value=verdict,
+        ) as preview:
+            resp = self.client.post(
+                self.URL,
+                self._payload(base_url="https://draft.example.com/v1", model="draft-model"),
+                format="multipart",
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.json()["ok"])
+        self.assertEqual(preview.call_args.args[0].model, "draft-model")
 
     def test_ai_error_degrades_to_manual(self):
         with mock.patch(
