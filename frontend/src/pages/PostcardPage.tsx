@@ -98,6 +98,8 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
   const [reviewTimedOut, setReviewTimedOut] = useState(false);
   const [modalError, setModalError] = useState("");
   const [requestingReview, setRequestingReview] = useState(false);
+  /** 每次自增都让 RegisterForm 把光标还给条码号框（仅桌面端生效）。 */
+  const [formFocusSignal, setFormFocusSignal] = useState(0);
   const [copied, setCopied] = useState(false);
 
   const regsRef = useRef<PostcardRegistrationSummary[] | null>(null);
@@ -167,6 +169,12 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
     } catch {
       /* 剪贴板不可用（http 环境 / 旧浏览器）：用户可手动选中复制 */
     }
+  };
+
+  /** 关闭发码 / 审核弹窗：顺手把光标还给条码号框，方便接着录下一张（桌面端）。 */
+  const closeSubmitModal = () => {
+    setSubmitState(null);
+    setFormFocusSignal((n) => n + 1);
   };
 
   /** 登记提交成功（201）→ 按审核状态决定是否亮码（2026-11-08 用户指定规则）。 */
@@ -359,6 +367,7 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
             portal={portal}
             fingerprint={fingerprint}
             isMobile={isMobile}
+            focusSignal={formFocusSignal}
             onRegistered={handleRegistered}
           />
         </section>
@@ -424,7 +433,7 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
                     审核还在进行中。可以先关闭本窗口，结果稍后到「历史登记记录」查看。
                   </p>
                 )}
-                <button type="button" className="btn btn-ghost" onClick={() => setSubmitState(null)}>
+                <button type="button" className="btn btn-ghost" onClick={closeSubmitModal}>
                   关闭，稍后查看
                 </button>
               </>
@@ -445,7 +454,7 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
                 <p className="muted pc-modal-hint">
                   登记码是查看和修改登记记录的唯一凭证，请妥善保存。
                 </p>
-                <button type="button" className="btn btn-primary" onClick={() => setSubmitState(null)}>
+                <button type="button" className="btn btn-primary" onClick={closeSubmitModal}>
                   我已保存登记码
                 </button>
               </>
@@ -471,7 +480,7 @@ function PostcardContent({ isMobile }: { isMobile: boolean }) {
                 >
                   {requestingReview ? "提交中…" : "申请人工复核"}
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => setSubmitState(null)}>
+                <button type="button" className="btn btn-ghost" onClick={closeSubmitModal}>
                   关闭
                 </button>
               </>

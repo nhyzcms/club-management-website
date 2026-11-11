@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PostcardPortal, RegisterResult } from "../../api/postcard";
 import { postcardApi } from "../../api/postcard";
 import { useTurnstile } from "../../turnstile";
@@ -18,6 +18,8 @@ interface Props {
   fingerprint: string;
   isMobile: boolean;
   onRegistered: (result: RegisterResult) => void;
+  /** 父级每自增 1 次就把光标还给条码号框（登记码弹窗关掉后接着录下一张）。 */
+  focusSignal?: number;
 }
 
 const EMPTY_VALUES: RegisterFormValues = {
@@ -32,7 +34,7 @@ const EMPTY_VALUES: RegisterFormValues = {
  * 明信片登记表单：扫码/手填条码（≤5 张，每张正反两面照片）+ 寄出人信息 +
  * 寄达区/校下拉 + Turnstile。提交走 multipart（后端 RegisterView 契约）。
  */
-export default function RegisterForm({ portal, fingerprint, isMobile, onRegistered }: Props) {
+export default function RegisterForm({ portal, fingerprint, isMobile, onRegistered, focusSignal = 0 }: Props) {
   const [values, setValues] = useState<RegisterFormValues>(EMPTY_VALUES);
   const [items, setItems] = useState<DraftItem[]>([]);
   const [manualCode, setManualCode] = useState("");
@@ -40,6 +42,15 @@ export default function RegisterForm({ portal, fingerprint, isMobile, onRegister
   const [itemError, setItemError] = useState("");
   const [busy, setBusy] = useState(false);
   const { containerRef, token, reset, enabled } = useTurnstile(true);
+  const manualRef = useRef<HTMLInputElement | null>(null);
+
+  // 桌面端进页面就把光标放进条码号框（USB / 蓝牙扫码枪即插即用），
+  // preventScroll 免得长页面被拽到中段。手机端不抢焦点，避免一进页就弹软键盘
+  // 把姓名等字段顶出屏幕。
+  useEffect(() => {
+    if (isMobile) return;
+    manualRef.current?.focus({ preventScroll: true });
+  }, [isMobile, focusSignal]);
 
   const setField = (key: keyof RegisterFormValues, value: string) => {
     setValues((v) => {
@@ -196,6 +207,7 @@ export default function RegisterForm({ portal, fingerprint, isMobile, onRegister
 
       <div className="pc-manual-add">
         <input
+          ref={manualRef}
           className="input"
           inputMode="numeric"
           autoComplete="off"

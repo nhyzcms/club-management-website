@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AppShell from "../components/AppShell";
 import MobilePage from "../components/MobilePage";
 import BarcodeScanPanel from "../components/postcard/BarcodeScanPanel";
@@ -24,10 +24,18 @@ export default function PostcardReceivePage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string[]>([]);
+  const barcodeRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     document.title = "明信片签收 · 南汇一中传媒社";
   }, []);
+
+  // 桌面端进页面即把光标放到条码号框：USB / 蓝牙扫码枪开箱可用（输入完自动回车查询）。
+  // 手机端不抢焦点，免得一进页面就弹软键盘挡住取景区和查询结果。
+  useEffect(() => {
+    if (isMobile) return;
+    barcodeRef.current?.focus();
+  }, [isMobile]);
 
   const lookup = async (code: string) => {
     const value = code.trim();
@@ -60,6 +68,9 @@ export default function PostcardReceivePage() {
       setPayload(d);
       if (kind === "confirm") {
         setDone((prev) => [payload.barcode, ...prev.filter((b) => b !== payload.barcode)].slice(0, 20));
+        // 清空条码框并回焦，方便连着签收下一张。
+        setBarcode("");
+        if (!isMobile) barcodeRef.current?.focus();
       }
     } catch (e) {
       setError(errMessage(e));
@@ -85,6 +96,7 @@ export default function PostcardReceivePage() {
       <section className="pa-card">
         <div className="pa-inline">
           <input
+            ref={barcodeRef}
             inputMode="numeric"
             pattern="[0-9]*"
             maxLength={7}
