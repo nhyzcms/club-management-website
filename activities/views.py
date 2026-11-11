@@ -4,6 +4,7 @@
 众议投票 / 征集投稿复审 / 展示布展 / 调研作答。
 """
 import hashlib
+import logging
 import os
 import uuid
 from datetime import timedelta
@@ -31,7 +32,6 @@ from messaging.services import thread_for
 from reviews.lifecycle import open_review, reopen
 from reviews.models import Review
 from reviews.visibility import status_of, visible_queryset
-
 from . import exhibition, survey_search, voting
 from .debt import annotate_activity_debt
 from .device import client_ip_from_request, device_id_from_request
@@ -70,6 +70,8 @@ from .throttles import (
     SurveyUploadDeviceThrottle,
     SurveyUploadIPThrottle,
 )
+
+logger = logging.getLogger(__name__)
 
 # 正文内嵌图片上限（与新闻一致）
 _CONTENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024
@@ -343,8 +345,20 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if questionnaire is None:
             return Response({"detail": "问卷不存在"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            answers = validate_answers(questionnaire.schema or {}, answers)
+            answers = validate_answers(
+                questionnaire.schema or {}, answers,
+                context=(
+                    f"activity={activity.pk} questionnaire={questionnaire.pk} "
+                    f"user={request.user.pk if request.user.is_authenticated else 'anon'}"
+                ),
+            )
         except InvalidSurveyAnswers as exc:
+            # 以前这类拒绝是静默的（只有用户看到一句 400），排查只能靠猜。
+            logger.warning(
+                "问卷作答被拒 activity=%s questionnaire=%s user=%s: %s",
+                activity.pk, questionnaire.pk,
+                request.user.pk if request.user.is_authenticated else "anon", exc,
+            )
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         user = request.user if request.user.is_authenticated else None
         device_id = device_id_from_request(request)

@@ -2249,10 +2249,10 @@ class SurveyAnswerValidationTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("q1", resp.data["detail"])
 
-    def test_unknown_question_rejected(self):
-        resp = self._respond({"q1": "ok", "ghost": 1})
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("ghost", resp.data["detail"])
+    def test_unknown_question_kept_not_rejected(self):
+        """认不出的键保留、不再整份 400（SurveyJS 的合法额外键曾把正常答卷拒掉）。"""
+        resp = self._respond({"q1": "ok", "q2": "A", "ghost": 1})
+        self.assertEqual(resp.status_code, 201, resp.content)
 
     def test_invalid_choice_rejected(self):
         resp = self._respond({"q1": "ok", "q2": "C"})
