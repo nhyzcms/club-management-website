@@ -16,6 +16,8 @@ import json
 
 MAX_ANSWERS_BYTES = 64 * 1024
 MAX_TEXT_LENGTH = 20_000
+# 选项内子题的最大下钻深度（防畸形 schema 自引用导致死循环；与导出侧同口径）。
+MAX_NEST_DEPTH = 6
 
 # 这些题只负责展示 / 计算，不产生作答键。
 _NO_ANSWER_TYPES = frozenset({"html", "image", "expression"})
@@ -41,27 +43,74 @@ def _choice_values(choices) -> set[str]:
     return values
 
 
-def _collect_questions(schema: dict) -> dict[str, dict]:
-    """递归收集 ``name -> 题目定义``（支持 panel / paneldynamic 的 elements）。"""
-    found: dict[str, dict] = {}
+def _collect_questions(schema: dict) -> tuple[dict[str, dict], dict[str, tuple[str, str]]]:
+    """递归收集 ``name -> 题目定义``，并记下「选项内子题」的激活条件。
 
-    def walk(elements) -> None:
-        if not isinstance(elements, list):
+    嵌套来源：
+
+    - 页面的 ``elements`` 与 ``panel`` 容器的 ``elements``；
+    - **选项内子题**：SurveyJS 允许在 ``choices[i].elements`` 挂子题，选中该选项时
+      就地展开（如「会员＝是」→「姓名」）。作答按子题自己的 ``name`` 平铺在
+      answers 里，和导出侧 ``activities.survey_export.extract_questions`` 同口径；
+      漏掉这一层会把正常答卷误判成「存在未知题目」。
+
+    ``guards[name] = (父题 name, 选项值)``：只有父题答案等于该选项（多选则包含）
+    时，这题才可见、才该被要求必填。
+
+    ``paneldynamic`` 的 ``templateElements`` 不展开：它的作答是「每行一个 dict」
+    的列表，内层键不是顶层作答键。
+    """
+    questions: dict[str, dict] = {}
+    guards: dict[str, tuple[str, str]] = {}
+
+    def walk(elements, guard=None, depth: int = 0) -> None:
+        if depth > MAX_NEST_DEPTH or not isinstance(elements, list):
             return
         for element in elements:
             if not isinstance(element, dict):
                 continue
             name = element.get("name")
-            if isinstance(name, str) and name:
-                found[name] = element
+            if isinstance(name, str) and name and name not in questions:
+                # 同名题目只取先出现的（按页面顺序），与导出侧一致。
+                questions[name] = element
+                if guard is not None:
+                    guards[name] = guard
             # panel 的题在 elements 里；matrix 的列不是独立作答键。
             if isinstance(element.get("elements"), list):
-                walk(element["elements"])
+                walk(element["elements"], guard, depth + 1)
+            # 选项内子题：激活条件绑到「这个题的这个选项」。
+            if not isinstance(name, str) or not name:
+                continue
+            for choice in element.get("choices") or []:
+                if not isinstance(choice, dict):
+                    continue
+                if not isinstance(choice.get("elements"), list):
+                    continue
+                value = choice.get("value", choice.get("text"))
+                if value is None:
+                    continue
+                walk(choice["elements"], (name, str(value)), depth + 1)
 
     for page in schema.get("pages") or []:
         if isinstance(page, dict):
             walk(page.get("elements"))
-    return found
+    return questions, guards
+
+
+def _is_active(name: str, guards: dict[str, tuple[str, str]], answers: dict) -> bool:
+    """「选项内子题」是否被父题的选择激活；无激活条件（普通题）恒为真。
+
+    父选项没选中时，SurveyJS 会把子题的值从 data 里清掉。这类子题即使
+    ``isRequired`` 也不该报「必填」，否则「否」分支永远交不上来。
+    """
+    guard = guards.get(name)
+    if guard is None:
+        return True
+    parent, value = guard
+    parent_value = answers.get(parent)
+    if isinstance(parent_value, list):
+        return value in {str(item) for item in parent_value}
+    return parent_value is not None and str(parent_value) == value
 
 
 def _is_empty(value) -> bool:
@@ -86,7 +135,7 @@ def validate_answers(schema: dict, answers: dict) -> dict:
     if len(encoded.encode("utf-8")) > MAX_ANSWERS_BYTES:
         raise InvalidSurveyAnswers("answers 体积过大")
 
-    questions = _collect_questions(schema if isinstance(schema, dict) else {})
+    questions, guards = _collect_questions(schema if isinstance(schema, dict) else {})
     if not questions:
         # 兼容历史「默认空问卷」：没有题目定义时无从校验键名，保持原行为。
         return answers
@@ -100,7 +149,7 @@ def validate_answers(schema: dict, answers: dict) -> dict:
         if qtype in _NO_ANSWER_TYPES:
             continue
         if _is_empty(value):
-            if question.get("isRequired"):
+            if question.get("isRequired") and _is_active(name, guards, answers):
                 raise InvalidSurveyAnswers(f"「{name}」为必填项")
             continue
 
