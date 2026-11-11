@@ -190,7 +190,22 @@ jobs:
 
       - name: Install Playwright browser
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: |
+          # ubuntu-24.04 runner 镜像已预装 Chromium 运行库，--with-deps 只是附加保险。
+          # 托管 runner 的 Ubuntu 镜像源偶发 DNS 故障（Temporary failure resolving
+          # 'azure.archive.ubuntu.com'）会让 apt 以 code 100 退出，从而整步失败，
+          # 因此把系统依赖安装降级为「失败仅告警」，并对浏览器下载本身重试。
+          npx playwright install-deps chromium \
+            || echo "::warning::系统依赖安装失败（apt 不可用），改用 runner 镜像预装依赖"
+          for i in 1 2 3; do
+            if npx playwright install chromium; then
+              exit 0
+            fi
+            echo "chromium 下载第 $i 次失败，15s 后重试"
+            sleep 15
+          done
+          echo "::error::Playwright chromium 安装失败"
+          exit 1
 
       - name: Run E2E tests
         working-directory: frontend
