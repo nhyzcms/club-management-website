@@ -1,6 +1,12 @@
 /** 全站弹窗公告（ADR-0042）。字段与后端 announcements/serializers.py 一一对应。 */
 
-export type AnnouncementAudience = "all" | "registered" | "verified" | "admin";
+export type AnnouncementAudience =
+  | "all"
+  | "registered"
+  | "verified"
+  /** 认证社员：账号已绑定社员名册（毕业 / 退社也算）。 */
+  | "member"
+  | "admin";
 
 /** 空串 = 没有文档（只有正文）。 */
 export type AnnouncementDocumentKind = "" | "pdf" | "docx";
@@ -30,6 +36,7 @@ export const AUDIENCE_LABELS: Record<AnnouncementAudience, string> = {
   all: "全站",
   registered: "注册用户",
   verified: "认证用户",
+  member: "认证社员",
   admin: "管理员",
 };
 

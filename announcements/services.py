@@ -15,7 +15,12 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from accounts.models import Verification, admin_identity_valid, is_verified
+from accounts.models import (
+    MemberIdentity,
+    Verification,
+    admin_identity_valid,
+    is_verified,
+)
 from messaging.models import NotificationDelivery
 from messaging.services import notify_many
 
@@ -24,6 +29,7 @@ from .models import Announcement, AnnouncementRead
 AUDIENCE_ALL = Announcement.AUDIENCE_ALL
 AUDIENCE_REGISTERED = Announcement.AUDIENCE_REGISTERED
 AUDIENCE_VERIFIED = Announcement.AUDIENCE_VERIFIED
+AUDIENCE_MEMBER = Announcement.AUDIENCE_MEMBER
 AUDIENCE_ADMIN = Announcement.AUDIENCE_ADMIN
 
 AUDIENCE_LABELS = dict(Announcement.AUDIENCE_CHOICES)
@@ -63,6 +69,10 @@ def recipient_queryset(audience: str):
             Q(verifications__status=Verification.STATUS_APPROVED)
             & _channel_unexpired_q(),
         ).distinct()
+    if audience == AUDIENCE_MEMBER:
+        # 「认证社员」＝账号已绑定社员名册（``MemberIdentity.user`` 一对一）。
+        # 毕业 / 退社也算（2026-11 口径，与活动「仅社员」一致），故不筛 status。
+        return users.filter(member_identity__isnull=False)
     if audience == AUDIENCE_ADMIN:
         appointed = (
             Q(
@@ -90,6 +100,8 @@ def audience_matches(user, audience: str) -> bool:
         return True
     if audience == AUDIENCE_VERIFIED:
         return bool(is_verified(user))
+    if audience == AUDIENCE_MEMBER:
+        return MemberIdentity.objects.filter(user=user).exists()
     if audience == AUDIENCE_ADMIN:
         return bool(user.is_superuser or admin_identity_valid(user))
     return False
