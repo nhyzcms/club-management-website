@@ -2347,6 +2347,35 @@ class SchoolsImportTest(TestCase):
         self.assertEqual(resp.status_code, 400, resp.content)
         self.assertEqual(resp.json()["detail"], "请先配置AI")
 
+    def test_draft_params_work_before_save(self):
+        """回归：没保存配置时，导入海报也必须能用本次草稿参数跑通（同一取值入口）。"""
+        image = SimpleUploadedFile("poster.jpg", _jpeg_bytes(size=(120, 120)), "image/jpeg")
+        content = json.dumps(
+            {"schools": [{"region": "浦东新区", "no": 5, "name": "建平中学"}]}, ensure_ascii=False,
+        )
+        with mock.patch(
+            "events.modules.postcard.ai.urllib.request.urlopen",
+            return_value=self._Resp(self._body(content)),
+        ) as urlopen:
+            resp = self.client.post(
+                "/events/postcard/admin/schools/import/",
+                {
+                    "image": image,
+                    "base_url": "https://draft.example.com/v1",
+                    "model": "draft-model",
+                    "api_key": "sk-draft",
+                    "dry_run": "1",
+                },
+                format="multipart",
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["schools"][0]["name"], "建平中学")
+        self.assertTrue(
+            urlopen.call_args[0][0].full_url.startswith("https://draft.example.com/v1")
+        )
+        # 演练：不写审计，也不落库任何配置
+        self.assertFalse(PostcardAuditLog.objects.filter(action="schools_import").exists())
+
     def test_parses_and_normalizes_schools(self):
         _ai_config()
         content = json.dumps({"schools": [
