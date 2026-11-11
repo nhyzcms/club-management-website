@@ -69,11 +69,15 @@ class Announcement(models.Model):
     AUDIENCE_ALL = "all"
     AUDIENCE_REGISTERED = "registered"
     AUDIENCE_VERIFIED = "verified"
+    # 认证社员：账号已绑定社员名册（MemberIdentity）。按 2026-11 口径，毕业 / 退社
+    # 也算社员，名册状态只用于展示；不额外要求邮箱认证（与活动「仅社员」同一口径）。
+    AUDIENCE_MEMBER = "member"
     AUDIENCE_ADMIN = "admin"
     AUDIENCE_CHOICES = [
         (AUDIENCE_ALL, "全站（含未登录访客）"),
         (AUDIENCE_REGISTERED, "注册用户（已登录）"),
         (AUDIENCE_VERIFIED, "认证用户"),
+        (AUDIENCE_MEMBER, "认证社员"),
         (AUDIENCE_ADMIN, "管理员"),
     ]
 

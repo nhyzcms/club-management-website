@@ -14,7 +14,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
-from accounts.models import Verification
+from accounts.models import MemberIdentity, Verification
 from accounts.test_helpers import grant_verification
 from messaging.models import Notification, NotificationDelivery
 
@@ -52,6 +52,14 @@ class AudienceTest(TestCase):
         # is_staff=True 会经 post_save 信号自动补「后台委任」通道（accounts.models.sync_appointment_channel）
         self.staff = User.objects.create_user("staff", password="p", is_staff=True)
         self.boss = User.objects.create_user("boss", password="p", is_staff=True, is_superuser=True)
+        # 认证社员：绑定名册即可；毕业 / 退社也算社员（不筛 status）。
+        MemberIdentity.objects.create(
+            name="在校社员", admit_year=2026, cohort=1, code="26010001", user=self.plain,
+        )
+        MemberIdentity.objects.create(
+            name="毕业社员", admit_year=2020, cohort=1, code="20010001",
+            status=MemberIdentity.STATUS_GRADUATED, user=self.verified,
+        )
 
     def test_registered_audience_matches_every_active_account(self):
         self.assertEqual(
@@ -67,6 +75,16 @@ class AudienceTest(TestCase):
         self.assertNotIn(self.expired.pk, ids)  # 过期通道不再算已认证
         self.assertNotIn(self.plain.pk, ids)
 
+    def test_member_audience_requires_roster_binding(self):
+        ids = set(
+            recipient_queryset(Announcement.AUDIENCE_MEMBER).values_list("pk", flat=True)
+        )
+        self.assertIn(self.plain.pk, ids)  # 在册社员
+        self.assertIn(self.verified.pk, ids)  # 已毕业也算
+        self.assertNotIn(self.expired.pk, ids)  # 有账号但没绑名册
+        self.assertNotIn(self.staff.pk, ids)
+        self.assertNotIn(self.boss.pk, ids)
+
     def test_admin_audience_requires_valid_appointment(self):
         ids = set(
             recipient_queryset(Announcement.AUDIENCE_ADMIN).values_list("pk", flat=True)
@@ -80,6 +98,7 @@ class AudienceTest(TestCase):
             Announcement.AUDIENCE_ALL,
             Announcement.AUDIENCE_REGISTERED,
             Announcement.AUDIENCE_VERIFIED,
+            Announcement.AUDIENCE_MEMBER,
             Announcement.AUDIENCE_ADMIN,
         ):
             sql_ids = set(recipient_queryset(audience).values_list("pk", flat=True))
@@ -95,6 +114,7 @@ class AudienceTest(TestCase):
         for audience in (
             Announcement.AUDIENCE_REGISTERED,
             Announcement.AUDIENCE_VERIFIED,
+            Announcement.AUDIENCE_MEMBER,
             Announcement.AUDIENCE_ADMIN,
         ):
             self.assertFalse(audience_matches(None, audience))
