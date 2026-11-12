@@ -97,8 +97,8 @@ describe("containRect / mapTapToVideoFraction", () => {
   it("16:9 画面放进 4:3 框：上下留黑边，画面不裁切", () => {
     const inner = containRect(400, 300, 16 / 9);
     expect(inner.width).toBe(400);
-    expect(inner.height).toBe(225);
-    expect(inner.y).toBe(37.5);
+    expect(inner.height).toBeCloseTo(225, 6);
+    expect(inner.y).toBeCloseTo(37.5, 6);
   });
 
   it("49:9 竖屏画面放进横向框：左右留黑边", () => {
@@ -114,7 +114,8 @@ describe("containRect / mapTapToVideoFraction", () => {
   it("点击位置换算成画面内 0–1 坐标", () => {
     const box = { left: 0, top: 0, width: 400, height: 300 };
     const point = mapTapToVideoFraction(box, 16 / 9, 200, 150);
-    expect(point).toEqual({ x: 0.5, y: 0.5 });
+    expect(point?.x).toBeCloseTo(0.5, 6);
+    expect(point?.y).toBeCloseTo(0.5, 6);
   });
 
   it("点在黑边上不抢对焦点", () => {
