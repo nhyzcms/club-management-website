@@ -36,7 +36,15 @@ from django.utils import timezone
 from about.models import AboutBlock, AboutPage
 from accounts import stepup
 from accounts.member_codes import barcode_payload, make_signature
-from accounts.models import AccountLifecycle, IdentityProof, MemberIdentity, Profile, UserSession, Verification
+from accounts.models import (
+    AccountIdentity,
+    AccountLifecycle,
+    IdentityProof,
+    MemberIdentity,
+    Profile,
+    UserSession,
+    Verification,
+)
 from activities.models import Activity, Questionnaire, VoteOption, default_join_schema
 from exam_board.models import Exam, ExamBatch, ExamSubject
 from messaging.models import Conversation, Message, Notification
@@ -121,6 +129,20 @@ class Command(BaseCommand):
             (validity_user, "E2E 有效期成员"),
         ):
             Profile.objects.update_or_create(user=user, defaults={"nickname": nickname})
+
+        # 实名资料补全提醒（2026-11-12）：这个弹窗同样会盖住页面，所以种子账号一律预置
+        # 完整实名资料（真实姓名 + 校牌号），避免打断既有用例的点击；
+        # 「资料没填 → 登录后被提醒」由 member-identity.spec.ts 里新注册的账号天然覆盖。
+        for user, real_name, card_no in (
+            (info, "E2E 信息员", "E2E0001"),
+            (plain, "E2E 普通成员", "E2E0002"),
+            (stepup_user, "E2E 安全验证成员", "E2E0003"),
+            (validity_user, "E2E 有效期成员", "E2E0004"),
+        ):
+            AccountIdentity.objects.update_or_create(
+                user=user,
+                defaults={"real_name": real_name, "pending_card_no": card_no},
+            )
 
         # 有效期弹窗会盖住页面：除专属账号外，其余种子账号预置「已读」，
         # 避免打断既有用例的点击（弹窗只在未读时才出现）。
