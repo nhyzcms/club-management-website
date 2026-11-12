@@ -344,10 +344,11 @@ class ProfileInline(admin.StackedInline):
 
 
 class AccountIdentityInline(admin.StackedInline):
-    """实名资料（B4 拆表）：只读浏览。
+    """实名资料（B4 拆表）：身份只读，真实姓名可由管理员更正。
 
-    实名 / 身份的变更走认证与审核流程（``identity_review`` / 验证面板），
-    不在用户页直接改——这里只给运维一个「这人是哪位」的视角。
+    - ``real_name`` 可改（2026-11-11）：本人年度一次的限制只约束自助修改，
+      管理员在后台更正不受影响，也不写 ``real_name_changed_at``；
+    - ``identity`` / ``pending_card_no`` 仍走认证与审核流程，这里只读。
     """
 
     model = AccountIdentity
@@ -355,8 +356,8 @@ class AccountIdentityInline(admin.StackedInline):
     extra = 0
     max_num = 1
     can_delete = False
-    fields = ("real_name", "identity", "pending_card_no")
-    readonly_fields = ("real_name", "identity", "pending_card_no")
+    fields = ("real_name", "identity", "pending_card_no", "real_name_changed_at")
+    readonly_fields = ("identity", "pending_card_no", "real_name_changed_at")
 
     def has_add_permission(self, request, obj=None):
         return False

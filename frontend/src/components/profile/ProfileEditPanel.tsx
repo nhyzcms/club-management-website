@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../../api/client";
+import { CARD_NO_IDENTITIES } from "../../types/profile";
 import "../../styles/form.css";
 
 const GENDER_OPTIONS = [
@@ -9,6 +10,12 @@ const GENDER_OPTIONS = [
   { value: "O", label: "其他" },
 ];
 
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso.slice(0, 10) : date.toLocaleDateString("zh-CN");
+}
+
 /** 资料编辑面板（仅自己可用）。保存成功后调 onSaved，由父组件刷新 Hero + 顶栏。 */
 export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
   const [nickname, setNickname] = useState("");
@@ -17,21 +24,40 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
   const [bio, setBio] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  // 实名资料（2026-11-11）：姓名填过就灰，满一年可自助再改一次；校牌号只能从空补录。
+  const [realName, setRealName] = useState("");
+  const [realNameEditable, setRealNameEditable] = useState(false);
+  const [realNameLockedUntil, setRealNameLockedUntil] = useState<string | null>(null);
+  const [identity, setIdentity] = useState("");
+  const [cardNo, setCardNo] = useState("");
+  const [cardNoEditable, setCardNoEditable] = useState(false);
+  const [cardNoLockedReason, setCardNoLockedReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const originalRealName = useRef("");
+
+  const applyProfile = (p: any) => {
+    setNickname(p.nickname ?? "");
+    setBirthday(p.birthday || "");
+    setGender(p.gender ?? "");
+    setBio(p.bio ?? "");
+    setAvatar(p.avatar ?? null);
+    setRealName(p.real_name ?? "");
+    setRealNameEditable(!!p.real_name_editable);
+    setRealNameLockedUntil(p.real_name_locked_until ?? null);
+    setIdentity(p.identity ?? "");
+    setCardNo(p.card_no ?? "");
+    setCardNoEditable(!!p.card_no_editable);
+    setCardNoLockedReason(p.card_no_locked_reason ?? "");
+    originalRealName.current = p.real_name ?? "";
+  };
 
   useEffect(() => {
     api.getProfile()
-      .then((d: any) => {
-        setNickname(d.profile.nickname);
-        setBirthday(d.profile.birthday || "");
-        setGender(d.profile.gender);
-        setBio(d.profile.bio);
-        setAvatar(d.profile.avatar);
-      })
+      .then((d: any) => applyProfile(d.profile))
       .finally(() => setLoading(false));
   }, []);
 
@@ -46,7 +72,15 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setError(""); setSaving(true);
+    setError("");
+    const nextName = realName.trim();
+    if (realNameEditable && nextName !== originalRealName.current.trim()) {
+      const ok = window.confirm(
+        "真实姓名每年只能修改一次，提交后一年内不可再改。确认提交吗？",
+      );
+      if (!ok) return;
+    }
+    setSaving(true);
     try {
       const fd = new FormData();
       if (avatarPreview) {
@@ -57,7 +91,10 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
       fd.append("birthday", birthday);
       fd.append("gender", gender);
       fd.append("bio", bio);
-      await api.updateProfile(fd);
+      if (realNameEditable && nextName) fd.append("real_name", nextName);
+      if (cardNoEditable && cardNo.trim()) fd.append("card_no", cardNo.trim());
+      const data: any = await api.updateProfile(fd);
+      if (data?.profile) applyProfile(data.profile);
       setAvatarPreview(null);
       setSuccess("资料已更新");
       setTimeout(() => setSuccess(""), 3000);
@@ -73,6 +110,61 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
 
   const avatarSrc = avatarPreview || avatar;
   const initial = (nickname || "?").charAt(0).toUpperCase();
+  const showCardNo = !identity || CARD_NO_IDENTITIES.includes(identity);
+
+  const realNameField = (
+    <div className="field">
+      <label className="label" htmlFor="pe-real-name">真实姓名</label>
+      <input
+        className="input"
+        id="pe-real-name"
+        name="real_name"
+        type="text"
+        value={realName}
+        onChange={(e) => setRealName(e.target.value)}
+        maxLength={100}
+        disabled={!realNameEditable}
+        placeholder="填写真实姓名，用于匹配社员名册"
+        autoComplete="name"
+      />
+      <p className="hint">
+        {realNameEditable
+          ? (realName
+            ? "距离上次修改已满一年，本次提交后将再锁定一年。"
+            : "填写后与社员名册配对；每年只能修改一次，请核对后提交。")
+          : `真实姓名已登记，${formatDate(realNameLockedUntil)} 后可自行修改；如需更正请联系管理员。`}
+      </p>
+    </div>
+  );
+
+  const cardNoField = (
+    <div className="field">
+      <label className="label" htmlFor="pe-card-no">校牌号</label>
+      <input
+        className="input"
+        id="pe-card-no"
+        name="card_no"
+        type="text"
+        value={cardNo}
+        onChange={(e) => setCardNo(e.target.value)}
+        maxLength={20}
+        disabled={!cardNoEditable}
+        placeholder="选填"
+        autoComplete="off"
+      />
+      <p className="hint">
+        {cardNoEditable
+          ? "选填；与真实姓名一起用于匹配社员名册，登记后不可自行修改。"
+          : (cardNoLockedReason === "member"
+            ? "校牌号以社员名册为准，如需更正请联系管理员。"
+            : "校牌号已登记，如需更正请联系管理员。")}
+      </p>
+    </div>
+  );
+
+  const identityFields: ReactNode = showCardNo ? (
+    <div className="form-grid">{realNameField}{cardNoField}</div>
+  ) : realNameField;
 
   return (
     <form className="card card-pad form-stack" onSubmit={submit}>
@@ -90,6 +182,8 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
         </div>
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={onAvatarChange} style={{ display: "none" }} />
       </div>
+
+      {identityFields}
 
       <div className="field">
         <label className="label" htmlFor="pe-nickname">昵称</label>
