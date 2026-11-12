@@ -102,7 +102,7 @@ Activity(type=survey)  ──OneToOne──▶  Questionnaire(kind=survey)
 3. 当前身份尚未提交过；
 4. 受众放行：`public` 任何人；`members` 需登录；`member_only` 需登录且已绑定社员名册（活动详情返回 `viewer_is_member`，前端据此提前禁用入口）。
 
-`answers` 的键名与 SurveyJS 元素 `name` 一一对应，落库前必须过 `common/survey_answers.validate_answers()`（审计 M-2）：`answers` 须为 JSON 对象且 ≤ 64KB；题目名必须在 Schema 中存在（未知题名 400）；必填题不得为空；`checkbox` / `tagbox` 必须是数组、选项须属于该题；`radiogroup` / `dropdown` 须是单值且选项合法；`boolean` 必须是布尔；文本单值 ≤ 20000 字；矩阵题须为对象 / 数组；文件题项须是字符串或对象。**不解释表达式**：`visibleIf` 隐藏的必填题允许为空（前端按同一 Schema 跳过），空 Schema 的历史问卷直接放行。需要更强的业务约束时，仍应在 Schema 之外另设校验或人工核查。
+`answers` 的键名按 SurveyJS 规则完整枚举后与 Schema 对照，落库前必须过 `common/survey_answers.validate_answers()`（审计 M-2）：`answers` 须为 JSON 对象且 ≤ 64KB；合法键包括题目 `name`（有 `valueName` 时以 `valueName` 为准）、**选项内子题**（`choices[i].elements`，选中父选项后就地展开）、`showOtherItem` / `showCommentArea` 产生的 `<key>-Comment`、`calculatedValues`（`includeIntoResult`）与 trigger 的 `setToName`，`showOtherItem` / `showNoneItem` 追加的 `other` / `none` 视为合法选项。**认不出的键保留并记 warning**（统计 / 导出只按 Schema 取列，多余键不会展示，但不再整份拒绝——此前「未知题名 400」会误伤合法的 SurveyJS 特性）。必填题不得为空（选项内子题的必填只在父选项被选中时要求）；`checkbox` / `tagbox` 必须是数组、选项须属于该题；`radiogroup` / `dropdown` / `buttongroup` 须是单值且选项合法；`boolean` 必须是布尔；文本单值 ≤ 20000 字；矩阵题须为对象 / 数组；文件题项须是字符串或对象；题型白名单只对已知单值题型断言单值，新题型不误拒。**不解释表达式**：`visibleIf` 隐藏的必填题允许为空（前端按同一 Schema 跳过），空 Schema 的历史问卷直接放行。作答被拒时后端记 warning（活动 / 问卷 / 用户 / 原因），不再静默。需要更强的业务约束时，仍应在 Schema 之外另设校验或人工核查。
 
 **文件题上传**（`POST /activities/activities/survey_upload/`）：匿名可传，只收图片（JPG / PNG / GIF / WebP）或 PDF；按 IP 与 `X-Device-Id` 各 20 次/小时限流（登录用户也计数），另有全局 200MB / 24h 字节配额，超限 `429` 且**不落盘**。每次成功上传写一行 `SurveyUpload` 台账；上传超过 7 天、且未被任何作答引用的文件由 `manage.py sweep_survey_uploads` 回收（默认预演，`--apply` 才删）。
 

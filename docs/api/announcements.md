@@ -14,6 +14,7 @@
 | `all` | 全站 | 任何人（含未登录访客） |
 | `registered` | 注册用户 | 已登录账号 |
 | `verified` | 认证用户 | `is_verified(user)` 为真（任一认证通道 approved 且未过期） |
+| `member` | 认证社员 | 账号已绑定社员名册（`MemberIdentity`）；**已毕业 / 已退社也算**，不额外要求邮箱认证 |
 | `admin` | 管理员 | `is_staff` 且委任通道未过期，或超级管理员 |
 
 「推送站内通知」的收件人恒为**启用状态的账号**（`is_active=True`）中属于该受众者；

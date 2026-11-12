@@ -229,7 +229,7 @@
 
 **认证**：公开（`AllowAny`）；**权限**：—。`audience=public` 任何人可答；`audience=members` 仅登录成员；`audience=member_only` 须登录且账号已绑定社员名册（否则 403「该活动仅社员可参与，你的账号尚未绑定社员身份。」）。活动须 `open`，审核轴须为 `approved` 或无审核行（否则 400「调研尚未公开」）。已登录用户每份调研一次；访客按 `X-Device-Id` 头（UUID）一次，未带合法标识返回 400。
 
-**请求体**：`{"answers": {"grade": "高一", "intro": "你好"}}`——`answers` 须为 JSON 对象（问卷题目的 `name` → 作答值）。服务端按 `Questionnaire.schema` 校验：必填题、题型（单值 / 多值 / 布尔 / 评分）、选项归属、未知题名与总体积（64KB）；空 Schema 的历史问卷保持原行为。
+**请求体**：`{"answers": {"grade": "高一", "intro": "你好"}}`——`answers` 须为 JSON 对象（问卷题目的 `name` → 作答值，有 `valueName` 时以 `valueName` 为准）。服务端按 `Questionnaire.schema` 校验：必填题、题型（单值 / 多值 / 布尔 / 评分）、选项归属与总体积（64KB）；合法键按 SurveyJS 规则完整枚举（`valueName`、选项内子题、`<key>-Comment`、`calculatedValues`、trigger `setToName`、`other` / `none`），认不出的键保留并记 warning、不再整份拒绝；空 Schema 的历史问卷保持原行为。
 
 **判重**：已登录用户每份调研一次；访客按 `X-Device-Id` 头（UUID）一次，未带合法标识返回 400。DB 级 `QuestionnaireResponse.dedupe_key` 唯一约束兜底并发窗口（加入问卷允许 5 次，不写该键）。
 

@@ -348,11 +348,13 @@
 
 ### AI 审核配置
 
-`GET admin/ai/config/` 只回 `{configured, enabled, ready, base_url, model, extra_headers, timeout_seconds, ip_blacklist, prompt_prefix, api_key_set}`——**`api_key` 永不回显**。`ready` = 启用 + `base_url` + `model` 齐备（部分兼容服务可免鉴权）。字段 `model` 在界面上叫「模型 ID」。
+`GET admin/ai/config/` 只回 `{configured, enabled, ready, base_url, model, extra_headers, timeout_seconds, temperature, ip_blacklist, prompt_prefix, api_key_set}`——**`api_key` 永不回显**。`ready` = 启用 + `base_url` + `model` 齐备（部分兼容服务可免鉴权）。字段 `model` 在界面上叫「模型 ID」。
 
-`PUT admin/ai/config/`：`base_url`（http/https）、`api_key`（留空 = 保持原值）、`model`、`extra_headers`（字符串键值对）、`timeout_seconds`（5–120，默认 20）、`ip_blacklist`（动漫形象黑名单）、`prompt_prefix`（前置提示词，≤4000 字，可多行；空 = 不附加）、`enabled`。`prompt_prefix` 会并入每次请求的首条 system 消息——审图 / 样例解读 / 海报识别 / 测试连接统一生效；审计只记长度（`prompt_prefix_len`），不落正文。
+`PUT admin/ai/config/`：`base_url`（http/https）、`api_key`（留空 = 保持原值）、`model`、`extra_headers`（字符串键值对）、`timeout_seconds`（5–120，默认 20）、`temperature`（0–2，步进 0.1，默认 0；越低越确定）、`ip_blacklist`（动漫形象黑名单，默认 38 条）、`prompt_prefix`（前置提示词，≤4000 字，可多行；空 = 不附加；有默认文案）、`enabled`。`prompt_prefix` 会并入每次请求的首条 system 消息——审图 / 样例解读 / 海报识别 / 测试连接统一生效；审计只记长度（`prompt_prefix_len`），不落正文。**升级迁移 `0008` 会把已存配置的黑名单与前置提示词整体覆盖为新默认值**（旧清单是早期摘录，留旧值等于线上用过期名单）。
 
-`POST admin/ai/test/`：用**当前填写的草稿参数**（请求体可选覆盖 `base_url` / `model` / `api_key` / `extra_headers` / `timeout_seconds`，缺省回落到已保存配置；**只在本次请求生效，不落库**）发一次最小对话请求，返回 `{ok, latency_ms, model, reply}` 或 `{ok: false, error}`（HTTP 200，按 `ok` 展示；不回显密钥）。限 60 次/时。再带 `dry_run: true` 时**跳过审计**（模拟环境用，`#/postcard/admin?sim=1`）。前端「测试连接」与「获取模型列表」同口径，都提交当前表单。
+**草稿参数（不落库）**：下列所有管理端 AI 端点都以 `_admin_ai_cfg` 为唯一取值入口，接受请求体覆盖任一 AI 配置字段（`base_url` / `model` / `api_key` / `extra_headers` / `timeout_seconds` / `temperature` / `prompt_prefix` / `ip_blacklist`），缺省回落到已保存配置，**只在本次请求生效**；带 `dry_run: true` 时连审计也不写（模拟环境用）。管理员「填完没保存」时，读样例 / 导入海报 / 模拟判定也能用这套参数试跑。
+
+`POST admin/ai/test/`：用**当前填写的草稿参数**发一次最小对话请求，返回 `{ok, latency_ms, model, reply}` 或 `{ok: false, error}`（HTTP 200，按 `ok` 展示；不回显密钥）。限 60 次/时。
 
 `POST admin/ai/models/`：代理服务商 `GET {base_url}/models`，可选带本次填写的 `base_url` / `api_key` / `extra_headers` / `timeout_seconds` 覆盖参数（**正式端与模拟环境同口径，不落库**）。只回 `{ok: true, models: ["…"]}` 或 `{ok: false, error}`；响应上限 512 KiB、模型 ID 经白名单校验；服务商无 `/models`（404）时提示手填模型 ID。**不内置写死清单**。限 120 次/时。
 
@@ -362,13 +364,13 @@
 
 - `GET admin/ai/samples/` → `{results: [{id, caption, has_image, created_at}], sample_ready}`；**活动至少一条样例才开放登记**。
 - `POST admin/ai/samples/`：`multipart`（`image` + `caption`），照片走与用户照片同一道安全管线。
-- `POST admin/ai/samples/<pk>/explain/`：让 AI 复述它对样例的理解（核对 AI 是否理解正确）；未启用 / 调用失败给人话错误。
+- `POST admin/ai/samples/<pk>/explain/`：让 AI 复述它对样例的理解（核对 AI 是否理解正确）；接受草稿参数（同测试连接，不落库），未启用 / 调用失败给人话错误。
 - `POST admin/ai/explain/`：**一次性**解读（模拟环境用）——`multipart`（`image` + `caption`），走同一套照片安全管线，复用上面的 prompt；**不落库、不留文件、不写审计**，返回 `{text}`。
-- `POST admin/schools/import/`：上传活动海报 → AI 识别参与学校、所在区与区内编号；**只回结果、不落库**，前端合并进配置表单、管理员核对后保存才生效。响应含 `schools` / `skipped` / `missing_no`；AI 未配置返回 `400 {code: "ai_not_configured"}`。
+- `POST admin/schools/import/`：上传活动海报 → AI 识别参与学校、所在区与区内编号；**只回结果、不落库**，接受草稿参数，前端合并进配置表单、管理员核对后保存才生效。响应含 `schools` / `skipped` / `missing_no`；AI 未配置返回 `400 {code: "ai_not_configured"}`。
 
 ### 模拟环境专用
 
-- `POST admin/ai/preview/`：**只给模拟环境用**（`#/postcard/admin?sim=1`）。`multipart`：`sender_name` / `grade_label` / `class_no` / `dest_region` / `dest_school` / `barcode` + 可选 `photo_front` / `photo_back`（走同一套照片安全管线）→ 用**与正式审核相同的 prompt 与解析**跑一次模型，返回 `{ok: true, verdict: {...}}`。
+- `POST admin/ai/preview/`：**只给模拟环境用**（`#/postcard/admin?sim=1`）。`multipart`：`sender_name` / `grade_label` / `class_no` / `dest_region` / `dest_school` / `barcode` + 可选 `photo_front` / `photo_back`（走同一套照片安全管线）→ 用**与正式审核相同的 prompt 与解析**跑一次模型，接受草稿参数（同测试连接），返回 `{ok: true, verdict: {...}}`。
   - **不建登记单、不存照片、不写审计**；
   - AI 未配置 / 调用失败 → `{ok: false, reason: "ai_not_ready" | "ai_error"}`（HTTP 200），前端按「转人工复核」处理；
   - 限流 120/h（一张明信片一次调用）。

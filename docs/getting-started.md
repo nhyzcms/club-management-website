@@ -132,7 +132,7 @@ CI 配置见 `.github/workflows/ci.yml`，触发条件为 push 到 `main` 或任
 | `backend` | push 到 `main` / 任意 PR | `astral-sh/setup-uv`（python 3.14）→ `uv sync --frozen` → `uv run python manage.py test` |
 | `frontend` | 同上 | Node 22 → `npm ci && npm run build`（工作目录 `frontend`）→ 断言 `frontend/dist/surveyjs/survey.core.min.js` 存在 → 上传 `frontend-dist` artifact（保留 1 天） |
 | `frontend-test` | 同上 | Node 22 → `npm ci` → `npm test`（Vitest 单元 / 组件测试，工作目录 `frontend`） |
-| `e2e` | 同上 | 复用 `frontend-dist` artifact + `uv sync` → `npx playwright install --with-deps chromium` → `npx playwright test`（自动起独立库与服务）；上传 `playwright-report`（含 trace 回放，保留 7 天） |
+| `e2e` | 同上 | 复用 `frontend-dist` artifact + `uv sync` → `npx playwright install-deps chromium`（apt 失败仅告警，用 runner 镜像预装依赖）+ `npx playwright install chromium`（最多 3 次重试）→ `npx playwright test`（自动起独立库与服务）；上传 `playwright-report`（含 trace 回放，保留 7 天） |
 | `release` | 仅 push 到 `main` 且前四个 job 通过 | `bash scripts/pack-release.sh` 打包 → 创建 GitHub Release（标签 `club-<sha>`，资产为 tarball + `.sha256` + `install.sh`，附上一个 Release 以来的 changelog） |
 
 各 job 会把关键结果（测试统计、构建摘要等）写入运行页的 Step Summary，便于快速浏览。
