@@ -44,7 +44,7 @@ class ProfileRealNameApiTest(TestCase):
         self.assertEqual(data["card_no"], "")
         self.assertTrue(data["card_no_editable"])
 
-    def test_fill_name_then_locked_for_a_year(self):
+    def test_fill_name_then_locked_for_the_rest_of_the_year(self):
         resp = self.client.post("/auth/profile/update/", {"real_name": "  李四  "})
         self.assertEqual(resp.status_code, 200, resp.content)
         identity = self._identity()
@@ -60,7 +60,20 @@ class ProfileRealNameApiTest(TestCase):
         self.assertEqual(resp.status_code, 400, resp.content)
         self.assertEqual(self._identity().real_name, "李四")
 
-    def test_can_change_again_after_one_year(self):
+    def test_registered_name_can_be_changed_once_in_current_year(self):
+        # 注册时填的姓名不算「本年度已用掉」：当年度仍可自助改一次。
+        self._set_identity(real_name="张三")
+        data = self.client.get("/auth/profile/").json()["profile"]
+        self.assertTrue(data["real_name_editable"])
+        self.assertIsNone(data["real_name_locked_until"])
+
+        resp = self.client.post("/auth/profile/update/", {"real_name": "张三丰"})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(resp.json()["profile"]["real_name_editable"])
+        resp = self.client.post("/auth/profile/update/", {"real_name": "张三"})
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+    def test_can_change_again_in_a_new_calendar_year(self):
         self._set_identity(
             real_name="张三",
             real_name_changed_at=timezone.now() - timedelta(days=366),
@@ -68,7 +81,7 @@ class ProfileRealNameApiTest(TestCase):
         resp = self.client.post("/auth/profile/update/", {"real_name": "张三丰"})
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(self._identity().real_name, "张三丰")
-        # 改过一次后又锁一年
+        # 本年度改过之后，下一次要等到下一年
         resp = self.client.post("/auth/profile/update/", {"real_name": "张三"})
         self.assertEqual(resp.status_code, 400, resp.content)
 

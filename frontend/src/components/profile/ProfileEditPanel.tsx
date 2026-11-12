@@ -24,7 +24,7 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
   const [bio, setBio] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  // 实名资料（2026-11-11）：姓名填过就灰，满一年可自助再改一次；校牌号只能从空补录。
+  // 实名资料（2026-11-11）：姓名每个自然年可自助改一次（改后本年置灰）；校牌号只能从空补录。
   const [realName, setRealName] = useState("");
   const [realNameEditable, setRealNameEditable] = useState(false);
   const [realNameLockedUntil, setRealNameLockedUntil] = useState<string | null>(null);
@@ -76,7 +76,7 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
     const nextName = realName.trim();
     if (realNameEditable && nextName !== originalRealName.current.trim()) {
       const ok = window.confirm(
-        "真实姓名每年只能修改一次，提交后一年内不可再改。确认提交吗？",
+        "真实姓名每个自然年只能修改一次，提交后本年不可再改。确认提交吗？",
       );
       if (!ok) return;
     }
@@ -130,8 +130,8 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
       <p className="hint">
         {realNameEditable
           ? (realName
-            ? "距离上次修改已满一年，本次提交后将再锁定一年。"
-            : "填写后与社员名册配对；每年只能修改一次，请核对后提交。")
+            ? "本年度还有一次修改机会，提交后需等到下一年方可再改。"
+            : "填写后与社员名册配对；每个自然年只能修改一次，请核对后提交。")
           : `真实姓名已登记，${formatDate(realNameLockedUntil)} 后可自行修改；如需更正请联系管理员。`}
       </p>
     </div>
