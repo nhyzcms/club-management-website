@@ -34,6 +34,14 @@ test("注册 → 认领阶段：选身份 + 手机号后四位 → 认领成功"
   await validity.getByRole("button", { name: "我知道了" }).click();
   await expect(validity).toBeHidden();
 
+  // 注册即登录 → 实名资料补全提醒（2026-11-12）：注册时没填校牌号，于是这里弹一次。
+  // 按真实用户的做法点「下次一定」，顺便覆盖提醒本身（内容 + 关闭后不再挡路）。
+  const profilePrompt = page.getByRole("alertdialog", { name: "完善实名资料" });
+  await expect(profilePrompt).toBeVisible();
+  await expect(profilePrompt.getByText("校牌号")).toBeVisible();
+  await profilePrompt.getByRole("button", { name: "下次一定" }).click();
+  await expect(profilePrompt).toBeHidden();
+
   // 注册即登录 → 进入认领阶段
   await expect(page.getByRole("heading", { name: "以下身份是否是你？" })).toBeVisible();
   await expect(page.getByText("第 9 届")).toBeVisible();
