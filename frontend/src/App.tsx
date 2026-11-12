@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, type ReactElement } from "react";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
 import ValidityNoticeHost from "./components/ValidityNoticeHost";
+import ProfileCompletionHost from "./components/ProfileCompletionHost";
 import AnnouncementHost from "./components/AnnouncementHost";
 import ShellVersionGate from "./components/ShellVersionGate";
 import LoginModalProvider from "./components/LoginModalProvider";
@@ -216,6 +217,8 @@ export default function App() {
       </SessionGuard>
       {/* 账号有效期弹窗（ADR-0041）：挂在根部，桌面 / 手机版共用同一份快照。 */}
       <ValidityNoticeHost />
+      {/* 实名资料补全提醒：真实姓名 / 校牌号缺项时登录后弹一次，「下次一定」下次登录再来。 */}
+      <ProfileCompletionHost />
       {/* 全站弹窗公告（ADR-0042）：等其它弹窗关掉后再弹，关闭即已读。 */}
       <AnnouncementHost />
       {/* App 壳最低版本闸门（区块 8）：只在壳里、且 UA 版本码低于要求时出现，浏览器不受影响。 */}
