@@ -1,6 +1,7 @@
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
@@ -132,9 +133,10 @@ PROOF_MAX_BYTES = 5 * 1024 * 1024  # 单张 ≤ 5MB
 # 头像允许的真实格式（由 Pillow 判定，不看客户端声明的 content_type）
 AVATAR_EXTENSIONS = frozenset({".jpg", ".png", ".gif", ".webp"})
 # 真实姓名 / 校牌号的自助补录（2026-11-11）：
-# - 姓名填过就锁，满一年才允许本人再改一次（注册 / 管理员修改不占用这次机会）；
+# - 姓名每个自然年可自助修改一次（注册当年度也算一年）；注册 / 管理员修改不占用
+#   这次机会。自然年按学校所在时区算，与 Django TIME_ZONE=UTC 解耦。
 # - 校牌号只能从空补录一次，已绑定名册时以名册为准，本人不可改。
-REAL_NAME_CHANGE_INTERVAL = timedelta(days=365)
+REAL_NAME_TZ = ZoneInfo("Asia/Shanghai")
 REAL_NAME_MAX_LENGTH = 100
 CARD_NO_MAX_LENGTH = 20
 # 身份证明 / 密码重置证明：只收真实解码成功的图片（不含 GIF，避免动图绕过）
@@ -1711,26 +1713,28 @@ def _public_role_for(viewed, viewer):
     return role
 
 
-def _real_name_edit_state(user, identity):
-    """返回 (本人现在能否改真实姓名, 解锁时间)。
+def _real_name_edit_state(identity):
+    """返回 (本人现在能否改真实姓名, 锁定到什么时候)。
 
-    年度一次的口径：上次**本人自助**修改时间（没有则用注册时间）起算 365 天。
-    注册 / 管理员改姓名不写 ``real_name_changed_at``，因此不会额外占用用户的
-    年度机会；刚注册的用户从注册日起锁一年，符合「填过就灰」的预期。
+    自然年一次：上一次**本人自助**修改落在当前自然年 → 锁定到次年 1 月 1 日；
+    没有改过（或上次在上一年）→ 可以改。注册时填的姓名不写
+    ``real_name_changed_at``，所以注册当年度仍有一次修改机会。
     """
     real_name = ((getattr(identity, "real_name", "") or "") if identity else "").strip()
     if not real_name:
         return True, None
     changed_at = getattr(identity, "real_name_changed_at", None) if identity else None
-    locked_until = (changed_at or user.date_joined) + REAL_NAME_CHANGE_INTERVAL
-    return timezone.now() >= locked_until, locked_until
+    now = timezone.now().astimezone(REAL_NAME_TZ)
+    if changed_at is None or changed_at.astimezone(REAL_NAME_TZ).year != now.year:
+        return True, None
+    return False, datetime(now.year + 1, 1, 1, tzinfo=REAL_NAME_TZ)
 
 
 def _profile_response(user, profile):
     identity = getattr(user, "identity_record", None)
     member = getattr(user, "member_identity", None)
     real_name = (getattr(identity, "real_name", "") or "").strip() if identity else ""
-    real_name_editable, real_name_locked_until = _real_name_edit_state(user, identity)
+    real_name_editable, real_name_locked_until = _real_name_edit_state(identity)
     if member is not None:
         # 已绑定名册：校牌号以学校档案为准，本人不可改（改也只会与名册冲突）。
         card_no = (member.card_no or "").strip()
@@ -1834,13 +1838,13 @@ def profile_update_view(request):
                     {"error": f"真实姓名不能超过 {REAL_NAME_MAX_LENGTH} 个字符"}, status=400,
                 )
             if old_name:
-                editable, locked_until = _real_name_edit_state(request.user, identity)
+                editable, locked_until = _real_name_edit_state(identity)
                 if not editable:
                     return JsonResponse(
                         {
                             "error": (
-                                "真实姓名每年只能修改一次，"
-                                f"{timezone.localtime(locked_until):%Y-%m-%d} 后可再次修改"
+                                "真实姓名每个自然年只能修改一次，"
+                                f"{locked_until.astimezone(REAL_NAME_TZ):%Y-%m-%d} 后可再次修改"
                             ),
                         },
                         status=400,

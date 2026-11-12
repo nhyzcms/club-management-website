@@ -120,9 +120,9 @@ class AccountIdentity(models.Model):
     pending_card_no = models.CharField(
         "待绑校牌号", max_length=20, blank=True, default="",
     )
-    # 本人最近一次**自助**修改真实姓名的时间（2026-11-11）：年度一次的限制据此计算。
-    # 注册 / 管理员修改不写本字段；为空时按 user.date_joined 起算（见
-    # accounts.views._real_name_edit_state）。管理员在后台改姓名不受此限制。
+    # 本人最近一次**自助**修改真实姓名的时间（2026-11-11）：每个自然年一次的限制据此计算。
+    # 注册 / 管理员修改不写本字段，所以注册当年度仍有一次自助修改机会；自然年按学校
+    # 所在时区算（见 accounts.views._real_name_edit_state）。管理员后台改姓名不受此限制。
     real_name_changed_at = models.DateTimeField(
         "真实姓名自助修改时间", null=True, blank=True,
     )
