@@ -4,7 +4,8 @@ import { api } from "../api/client";
 import AppShell from "../components/AppShell";
 import MobilePage from "../components/MobilePage";
 import MemberResultCard, { type MemberPublicResult } from "../components/member/MemberResultCard";
-import { isAppShell, isMobileDevice } from "../utils/device";
+import { isMobileDevice } from "../utils/device";
+import { useBarcodeScan } from "../hooks/useBarcodeScan";
 import "../styles/member.css";
 import "../styles/mobile.css";
 
@@ -34,27 +35,6 @@ export default function MemberLookupPage() {
   const [results, setResults] = useState<MemberPublicResult[] | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [scanError, setScanError] = useState("");
-
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const timerRef = useRef<number | null>(null);
-  const aliveRef = useRef(false);
-
-  const stopCamera = useCallback(() => {
-    aliveRef.current = false;
-    if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setScanning(false);
-  }, []);
-
-  // 离开页面时释放摄像头（iOS 上不释放会一直亮绿灯）。
-  useEffect(() => stopCamera, [stopCamera]);
 
   const submit = useCallback(
     async (raw?: string) => {
@@ -98,72 +78,22 @@ export default function MemberLookupPage() {
     if (/^\d{12}$/.test(preset)) void submit(preset);
   }, [preset, submit]);
 
-  const startScan = useCallback(async () => {
-    setScanError("");
+  // 摄像头扫码与明信片登记/签收共用 `useBarcodeScan`：连续对焦、取景不裁切、
+  // 解不出时只对解码器做中心放大（预览不放大）、支持轻点手动对焦。
+  const scan = useBarcodeScan({
+    onCode: (code) => {
+      setValue(code);
+      void submit(code);
+    },
+    label: "编号",
+    appDeniedHint: "App 内没有拿到摄像头权限——请用右下角的「扫码」按钮，或手动输入编号。",
+  });
+
+  const startScan = useCallback(() => {
     setNotice("");
     setResults(null);
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setScanError("当前浏览器不支持调用摄像头，请手动输入编号。");
-      return;
-    }
-    setScanning(true);
-    try {
-      // 解码器与 wasm 都按需加载：只有点了扫码才下载（wasm ~950KB，不进首屏）。
-      const [{ BarcodeDetector, prepareZXingModule }, wasmModule] = await Promise.all([
-        import("barcode-detector"),
-        import("zxing-wasm/reader/zxing_reader.wasm"),
-      ]);
-      const wasmUrl = wasmModule.default;
-      await prepareZXingModule({
-        overrides: { locateFile: () => wasmUrl },
-        fireImmediately: true,
-      });
-      const detector = new BarcodeDetector({ formats: ["code_128"] });
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      if (!videoRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        setScanning(false);
-        return;
-      }
-      streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-      aliveRef.current = true;
-      timerRef.current = window.setInterval(async () => {
-        if (!aliveRef.current || !videoRef.current || videoRef.current.readyState < 2) return;
-        try {
-          const codes = await detector.detect(videoRef.current);
-          const raw = (codes[0]?.rawValue || "").replace(/[\s-]/g, "");
-          if (raw) {
-            stopCamera();
-            setValue(raw);
-            void submit(raw);
-          }
-        } catch {
-          // 单帧解不出（对焦中 / 角度偏）不打断取景，下一帧再试。
-        }
-      }, 250);
-    } catch (e: any) {
-      stopCamera();
-      const name = e?.name || "";
-      if (name === "NotAllowedError") {
-        setScanError(
-          isAppShell()
-            ? "App 内没有拿到摄像头权限——请用右下角的「扫码」按钮，或手动输入编号。"
-            : "摄像头权限被拒绝——请在浏览器里允许本站使用摄像头，或手动输入编号。",
-        );
-      } else if (name === "NotFoundError") {
-        setScanError("没有找到可用摄像头，请手动输入编号。");
-      } else if (name === "NotReadableError") {
-        setScanError("摄像头被其他应用占用，请关掉后重试。");
-      } else {
-        setScanError("扫码组件加载失败，请手动输入编号。");
-      }
-    }
-  }, [stopCamera, submit]);
+    void scan.start();
+  }, [scan.start]);
 
   const isMobile = isMobileDevice();
   // 一套内容，两套外壳：桌面版挂在 AppShell 的卡片里，手机版挂在 /m 那套样式里。
@@ -181,13 +111,23 @@ export default function MemberLookupPage() {
         拿工牌对准摄像头扫描条码，也可以手动输入编号。
       </p>
 
-      {scanning ? (
+      {scan.scanning ? (
         <div style={{ marginBottom: "var(--s-5)" }}>
-          <div className="member-scan-frame">
-            <video ref={videoRef} playsInline muted className="member-scan-video" />
-            <div className="member-scan-hint">把工牌条形码放进取景框，横向铺满</div>
+          <div
+            className="member-scan-frame"
+            style={scan.videoAspect ? { aspectRatio: String(scan.videoAspect) } : undefined}
+            onPointerDown={(e) => scan.tapToFocus(e.clientX, e.clientY, e.currentTarget)}
+          >
+            <video ref={scan.videoRef} playsInline muted className="member-scan-video" />
+            {scan.focusPoint && (
+              <span
+                className="member-scan-focus"
+                style={{ left: `${scan.focusPoint.x * 100}%`, top: `${scan.focusPoint.y * 100}%` }}
+              />
+            )}
+            <div className="member-scan-hint">条形码横向铺满取景框；轻点画面可手动对焦</div>
           </div>
-          <button type="button" className={ghostBtn} onClick={stopCamera}>
+          <button type="button" className={ghostBtn} onClick={scan.stop}>
             取消扫码
           </button>
         </div>
@@ -202,9 +142,9 @@ export default function MemberLookupPage() {
         </button>
       )}
 
-      {scanError && (
+      {scan.error && (
         <p className="muted" style={{ marginBottom: "var(--s-4)", color: "var(--danger, #c0392b)" }}>
-          {scanError}
+          {scan.error}
         </p>
       )}
 
