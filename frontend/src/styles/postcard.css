@@ -261,13 +261,32 @@
 .pc-scan-live { margin-top: var(--s-2); }
 .pc-scan-frame {
   position: relative;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 4 / 3; /* 兜底值；拿到视频后由内联 style 换成真实宽高比 */
+  max-height: 60vh;
   background: #000; /* 取景框黑底：两种主题一致 */
   border-radius: var(--r-md);
   overflow: hidden;
   margin-bottom: var(--s-3);
+  touch-action: manipulation;
 }
-.pc-scan-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* contain：完整显示画面，不做 cover 裁切（裁切看着像「自动放大」，反而找不到条码） */
+.pc-scan-video { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* 轻点对焦的落点圈：只做视觉反馈，不拦点击 */
+.pc-scan-focus {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: pc-scan-focus-pop 0.7s ease-out forwards;
+}
+@keyframes pc-scan-focus-pop {
+  0% { transform: scale(1.4); opacity: 0; }
+  30% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0; }
+}
 .pc-scan-hint {
   position: absolute;
   left: 50%;
