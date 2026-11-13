@@ -219,11 +219,15 @@
   "must_change_password": false,
   "role": {"label": "用户", "variant": "user"},
   "profile": {"avatar": "/media/avatars/user_7.png", "nickname": "张三", "birthday": "2007-05-01",
-    "gender": "M", "bio": "摄影部部长", "is_verified": true}
+    "gender": "M", "bio": "摄影部部长", "real_name": "张三", "real_name_editable": true,
+    "real_name_locked_until": null, "identity": "student", "card_no": "20260101",
+    "card_no_editable": false, "card_no_locked_reason": "member", "is_verified": true}
 }
 ```
 
 `avatar` 无头像时为 `null`；`birthday` 未填为 `null`；`gender` 可为 `""` / `M` / `F` / `O`（男 / 女 / 其他）。`profile.is_verified` 为账号总认证态（任一通道 `approved` 且未过期）。`role` 四档：`superadmin` 超级管理员（`is_superuser`）＞ `admin` 管理员（`is_staff`，仅徽章展示）＞ `user` 用户（`is_verified`，后台委任通道计入）＞ `visitor` 访客（匿名或已登录未认证）。
+
+**实名资料字段（2026-11）**：`real_name` / `identity` / `card_no` 只经本人接口返回，**不进入他人主页**序列化。`real_name_editable` 表示本人现在能否自助修改姓名：**每个自然年一次**（按 `Asia/Shanghai` 划年，改后锁定到次年 1 月 1 日）；注册时填的姓名不占当年机会，可改时 `real_name_locked_until` 为 `null`。`card_no` 已绑定名册时取 `MemberIdentity.card_no`，否则取待绑的 `AccountIdentity.pending_card_no`。`card_no_editable` 仅在「校牌号为空 + 身份为在校生 / 毕业生」时为 true（只能从空补录一次）；`card_no_locked_reason` ∈ `""` / `filled`（已登记）/ `member`（已绑定名册，以名册为准）。管理员在后台更正姓名不受自然年限制。
 
 ### 能力投影（`permissions.can_*`）
 
@@ -254,6 +258,11 @@
 | avatar | file | 否 | ≤2MB；仅 JPG / PNG / GIF / WebP |
 | nickname / bio | string | 否 | 昵称 ≤50 字符；简介 ≤500 字符 |
 | birthday / gender | string | 否 | 生日 `YYYY-MM-DD`；性别 `""` / `M` / `F` / `O` |
+| real_name | string | 否 | 真实姓名（≤100 字符）。空值可补录；已有值时**每个自然年**只能自助改一次（按 `Asia/Shanghai` 划年；注册时填的不占当年机会）。锁定期间提交新值 → 400 |
+| card_no | string | 否 | **校牌号**（≤20 字符）。仅在校生 / 毕业生、且当前为空时可从空补录一次；已绑定名册时以名册为准（`card_no_locked_reason=member`），要更正联系管理员 |
+
+姓名或校牌号有变化时会尝试按「姓名 + 校牌号」唯一命中名册、自动绑定社员身份（与注册同一口径，不按姓名单独绑定）。**错误**：400 `{"error": "真实姓名不能为空"}` / `{"error": "真实姓名每个自然年只能修改一次，YYYY-MM-DD 后可再次修改"}` / `{"error": "校牌号已登记，如需更正请联系管理员"}` / `{"error": "校牌号以社员名册为准，如需更正请联系管理员"}` / `{"error": "当前身份无需登记校牌号"}`。
+
 通知订阅（站内 / 邮件等通道开关）已迁至通知框架：见 `/messaging/notification-preferences/`（详见 messaging.md）。**错误**：400 `{"error": "头像文件不能超过 2MB"}`、`{"error": "仅支持 JPG、PNG、GIF、WebP 格式"}` 或表单校验消息。
 
 `POST /auth/profile/change-password/`

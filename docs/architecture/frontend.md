@@ -71,8 +71,8 @@ frontend/
 │   │   └── feed/          # 首页社团动态卡片
 │   ├── api/               # API 客户端（按后端前缀拆分）+ WebSocket 客户端
 │   ├── types/             # 按域的类型定义（news/tasks/activities/messaging…）
-│   ├── hooks/             # usePagedList（分页列表钩子）
-│   ├── utils/             # device、deviceId、survey、surveyLocale、iframeEmbed、marzipano
+│   ├── hooks/             # usePagedList（分页列表）、useBarcodeScan（摄像头扫码流程）
+│   ├── utils/             # device、deviceId、survey、surveyLocale、iframeEmbed、marzipano、barcodeCamera（扫码取景 / 裁切解码纯函数）
 │   ├── examBoard/         # 考试看板纯逻辑：prefs、audio、validate
 │   └── styles/            # 共享样式：cobalt 主题 + 各域页面样式
 ├── scripts/               # copy-surveyjs / assert-* 构建钩子
@@ -216,6 +216,7 @@ frontend/
 | 审核队列预览 | `pages/review/ReviewPreview` |
 | 首页「社团概览」社员查询 | `member/MemberLookup`（结果弹窗复用 `member/MemberResultCard`，与 `/#/v/:code` 公开校验页共用同一结果卡） |
 | 个人中心（`UserProfile` 的 tab 面板） | `profile/ProfileHero`、`ProfileSideNav`、`ProfileTabs`、`ProfileEditPanel`、`VerificationPanel`、`PasswordPanel`、`SessionsPanel`、`ContentListPanel`、`PermissionsPanel`、`MuteUserPanel` |
+| 全局宿主（`App.tsx` 挂载） | `ProfileCompletionHost` + `ProfileCompletionModal`：登录后实名资料缺项提醒（「下次一定」只写 sessionStorage；桌面 / 手机版共用） |
 | 账号与安全中心（`/#/security`） | `pages/SecurityCenterPage` + `security/DeviceListPanel`、`security/LoginEventsPanel`、`security/LoginMap`、`security/TotpPanel`（改密 / 安全问题复用 `profile/PasswordPanel`、`profile/SecurityPanel`） |
 
 URL 查询参数约定（hash 部分之后）：tab 状态用查询参数（如 `/u/3?tab=verification`、`/profile?tab=verification`）并由页面用 `URLSearchParams` 读写（`PanoramaPage` 的 `?id=` 选场景同理）；邮件链接参数（`uid`/`token`/`email`）；嵌入参数 `embed=1`（见「嵌入模式」）。
@@ -355,7 +356,7 @@ Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?emb
 - **Cloudflare Turnstile**：`turnstile.ts` 在注册/找回密码/重发认证邮件/匿名反馈处按需注入脚本（未启用时零请求）；`turnstile_enabled` 与 sitekey 由 `/site-policy/` 下发，`useTurnstile` 负责渲染、重置与卸载组件。
 - **富文本**：Tiptap 3 编辑器（`RichTextEditor.tsx`），自定义原子节点 `rte/VideoNode.ts`（本地上传视频）与 `rte/IframeNode.ts`（仅 https iframe 嵌入，sandbox 属性与后端 `common/rich_text.py` 保持一致）；`utils/iframeEmbed.ts` 解析用户粘贴的 embed HTML（仅取首个 iframe 的 src/title，安全边界仍在服务端 sanitize）。工具栏扩展高亮 / 文字颜色 / 对齐 / 上下标 / 字数统计与选区气泡菜单、空行浮动菜单；新闻编辑页（`NewsFormPage`）为文档式布局，编辑内容自动保存至服务端草稿区（已发布稿存独立草稿表 `NewsDraft`、模型上保留 `draft_*` 只读属性，未发布稿直写正文；读写弃均须 `news.manage_news`），详情页提供「编辑 / 继续编辑」入口。
 - **文档处理**：`DocxPreview`（docx-preview 保真渲染 Word 原件）与 mammoth（Word 导入转富文本）；全站弹窗公告的 PDF 原件用内置 **pdf.js**（`vendor/pdfjs/`：解析器 + worker + CJK CMap，构建时直拷到 `/static/pdfjs/`，不进 bundle——`PdfPreview` 按页懒渲染，页数封顶）。
-- **条码解码（`barcode-detector`）**：`MemberLookupPage`（`/#/v`）的摄像头扫码按需动态加载 `barcode-detector`（zxing wasm 兜底；iOS 没有原生 `BarcodeDetector`），只解 Code128。wasm 文件来自其依赖 `zxing-wasm`，由 webpack 的 `asset/resource` 规则发射成带 contenthash 的静态资源，运行时用 `prepareZXingModule({ overrides: { locateFile } })` 指回自托管副本——默认实现会去 jsdelivr 取 wasm，国内基本取不到；wasm 约 950KB，只在点「扫码」时下载，不进首屏。
+- **条码解码（`barcode-detector`）**：`MemberLookupPage`（`/#/v`）的摄像头扫码按需动态加载 `barcode-detector`（zxing wasm 兜底；iOS 没有原生 `BarcodeDetector`），只解 Code128。wasm 文件来自其依赖 `zxing-wasm`，由 webpack 的 `asset/resource` 规则发射成带 contenthash 的静态资源，运行时用 `prepareZXingModule({ overrides: { locateFile } })` 指回自托管副本——默认实现会去 jsdelivr 取 wasm，国内基本取不到；wasm 约 950KB，只在点「扫码」时下载，不进首屏。取流与解码流程统一在 `hooks/useBarcodeScan` + `utils/barcodeCamera.ts`（明信片登记 / 签收与 `/#/v` 共用）：请求高分辨率并按设备能力开连续对焦 / 曝光、取景按视频真实宽高比完整显示（不裁切）、全画面解不出时只把中心 60% 裁切放大交给解码器重试，另支持轻点画面手动对焦。
 - **其他**：`frappe-gantt`（任务甘特，`TaskGantt`，配色映射 cobalt token）；`tus-js-client`（超过同步上限的大文件走 tus 可续传上传，端点 `/uploads/files/`，完成后后端自动挂为统一附件）；字体 Sora / Noto Sans SC 由 `cobalt.css` 以 Google Fonts `@import` 引入。
 
 ## 开发惯例
