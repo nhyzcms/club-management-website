@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  isPostcardAdminSim,
   postcardAdminApi,
   type AIConfig,
   type AIProbeInput,
@@ -290,7 +291,12 @@ export default function AITab() {
         prompt_prefix: promptPrefix,
       });
       setApiKey("");
-      setNotice("AI 配置已保存。");
+      // 模拟环境的「保存」只写浏览器内存（不落库）：说明白，免得以为正式环境也配好了。
+      setNotice(
+        isPostcardAdminSim()
+          ? "AI 配置已保存到模拟环境：只对本次模拟有效，不会改动正式配置。"
+          : "AI 配置已保存。",
+      );
       await load();
     } catch (e) {
       setError(errMessage(e));
@@ -378,7 +384,7 @@ export default function AITab() {
       {error && <p className="pa-error">{error}</p>}
       {notice && <p className="pa-ok">{notice}</p>}
       <p className="pa-hint">
-        状态：{config?.ready ? "配置完整，AI 审核可用" : "配置不完整（Base URL / API Key / 模型 ID 缺一不可），登记会转人工复核"}
+        状态：{config?.ready ? "配置完整，AI 审核可用" : "配置不完整（启用开关 / Base URL / 模型 ID 缺一不可；API Key 视服务商可选），登记会转人工复核"}
       </p>
 
       <section className="pa-card">
