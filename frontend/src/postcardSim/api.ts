@@ -31,7 +31,7 @@ import {
   type StatsPayload,
   type SuggestionRow,
 } from "../api/postcardAdmin";
-import { createRequest } from "../api/shared";
+import { createSimRequest, simAIDraft } from "./aiDraft";
 import {
   SIM_PAGE_SIZE,
   SimError,
@@ -61,8 +61,6 @@ import {
   buildXlsx,
   bytesToDataUrl,
 } from "./files";
-
-const request = createRequest("/events/postcard");
 
 const GRADE_LABELS: Record<string, string> = Object.fromEntries(
   POSTCARD_GRADES.map((g) => [g.value, g.label]),
@@ -201,20 +199,12 @@ export async function seedSimAIConfig(state: SimState): Promise<void> {
 
 /** 造一个模拟管理端 API（共用传进来的内存 state；退出即整体丢弃）。 */
 export function createSimPostcardAdminApi(state: SimState = emptySimState()): PostcardAdminApi {
+  // 请求器会自动给 AI 路径补上模拟环境的草稿参数（见 aiDraft.ts）。
+  const request = createSimRequest(state);
   /** 模拟环境的 AI 临时参数：只随本次请求发给后端，不落库、不写审计。 */
   function aiOverrides(): Record<string, unknown> {
-    const overrides: Record<string, unknown> = {};
-    if (state.ai.base_url) overrides.base_url = state.ai.base_url;
-    if (state.ai.model) overrides.model = state.ai.model;
-    if (state.ai.timeout_seconds) overrides.timeout_seconds = state.ai.timeout_seconds;
-    // 0 是有效值（审核默认最确定），只能用 undefined 判断，不能靠真值。
-    if (state.ai.temperature !== undefined) overrides.temperature = state.ai.temperature;
-    if (Object.keys(state.ai.extra_headers).length) overrides.extra_headers = state.ai.extra_headers;
-    if (state.ai.ip_blacklist.length) overrides.ip_blacklist = state.ai.ip_blacklist;
-    if (state.ai.prompt_prefix) overrides.prompt_prefix = state.ai.prompt_prefix;
-    if (state.ai.api_key) overrides.api_key = state.ai.api_key;
-    overrides.dry_run = true;
-    return overrides;
+    // 统一由 simAIDraft 生成（口径与后端 _ai_overrides 对齐），这里只补演练标记。
+    return { ...simAIDraft(state.ai), dry_run: true };
   }
 
   /**
@@ -342,7 +332,7 @@ export function createSimPostcardAdminApi(state: SimState = emptySimState()): Po
     importSchools: (image: File) => {
       const fd = new FormData();
       fd.set("image", image);
-      fd.set("dry_run", "1");
+      // 草稿参数（模拟环境配的 AI）由 createSimRequest 自动补上，这里只管图片。
       return request<SchoolsImportResult>("/admin/schools/import/", { method: "POST", body: fd });
     },
 
