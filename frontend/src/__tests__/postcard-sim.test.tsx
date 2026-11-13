@@ -18,6 +18,7 @@ import {
 } from "../postcardSim/state";
 import { buildPdf, buildXlsx, bytesToDataUrl } from "../postcardSim/files";
 import { createSimPostcardAdminApi } from "../postcardSim/api";
+import { createSimRequest } from "../postcardSim/aiDraft";
 import { exitSim, isSimRoute } from "../postcardSim/session";
 import { isPostcardAdminSim, withSimFileSuffix } from "../api/postcardAdmin";
 import PostcardAdminPage from "../pages/PostcardAdminPage";
@@ -284,6 +285,99 @@ describe("模拟环境 · AI 模型清单带草稿参数", () => {
     expect(third.base_url).toBe("https://api.deepseek.com/v1");
     expect(third.model).toBe("deepseek-flash");
     expect(third.dry_run).toBe(true);
+  });
+
+  it("导入海报也要带模拟环境的 AI 参数（否则后端按正式空配置报「请先配置AI」）", async () => {
+    const state = emptySimState();
+    state.ai.enabled = true;
+    state.ai.base_url = "https://ai.example.com/v1";
+    state.ai.model = "deepseek-flash";
+    state.ai.api_key = "sk-sim";
+    state.ai.prompt_prefix = "你是明信片审核员";
+    state.ai.extra_headers = { "x-opencode-session": "s" };
+    const api = createSimPostcardAdminApi(state);
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({ schools: [], skipped: [], missing_no: 0 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.importSchools(new File([new Uint8Array([1, 2, 3])], "poster.jpg", { type: "image/jpeg" }));
+    const fd = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData;
+    expect(fd.get("base_url")).toBe("https://ai.example.com/v1");
+    expect(fd.get("model")).toBe("deepseek-flash");
+    expect(fd.get("api_key")).toBe("sk-sim");
+    expect(fd.get("prompt_prefix")).toBe("你是明信片审核员");
+    expect(JSON.parse(String(fd.get("extra_headers")))).toEqual({ "x-opencode-session": "s" });
+    expect(fd.get("temperature")).toBe("0");
+    expect(fd.get("dry_run")).toBe("1");
+  });
+});
+
+describe("模拟环境 · AI 草稿参数按路径自动注入", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stateWithAI(): SimState {
+    const state = emptySimState();
+    state.ai.enabled = true;
+    state.ai.base_url = "https://ai.example.com/v1";
+    state.ai.model = "deepseek-flash";
+    state.ai.api_key = "sk-sim";
+    return state;
+  }
+
+  function stubFetch() {
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  // 这条是「以后别再犯」的护栏：新增任何模拟层真调 AI 的入口，只要走
+  // createSimRequest，参数就漏不了（导入海报 / 用户端预审各踩过一次）。
+  it("AI 路径 + 写请求自动补草稿参数（含 dry_run）", async () => {
+    const fetchMock = stubFetch();
+    const request = createSimRequest(stateWithAI());
+    const fd = new FormData();
+    fd.set("barcode", "1234567");
+    await request("/admin/ai/preview/", { method: "POST", body: fd });
+    const sent = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData;
+    expect(sent.get("base_url")).toBe("https://ai.example.com/v1");
+    expect(sent.get("model")).toBe("deepseek-flash");
+    expect(sent.get("api_key")).toBe("sk-sim");
+    expect(sent.get("dry_run")).toBe("1");
+    expect(sent.get("barcode")).toBe("1234567");
+  });
+
+  it("请求里已有的草稿优先于内存里的已保存值", async () => {
+    const fetchMock = stubFetch();
+    const request = createSimRequest(stateWithAI());
+    await request("/admin/ai/test/", {
+      method: "POST",
+      body: JSON.stringify({ model: "draft-model" }),
+    });
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(body.model).toBe("draft-model");
+    expect(body.base_url).toBe("https://ai.example.com/v1");
+    expect(body.dry_run).toBe(true);
+  });
+
+  it("GET 与非 AI 路径不注入", async () => {
+    const fetchMock = stubFetch();
+    const request = createSimRequest(stateWithAI());
+    await request("/admin/ai/config/");
+    await request("/admin/config/", { method: "POST", body: JSON.stringify({ title: "x" }) });
+    expect((fetchMock.mock.calls[0][1] as RequestInit).body).toBeUndefined();
+    const cfg = JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body));
+    expect(cfg.base_url).toBeUndefined();
   });
 });
 
