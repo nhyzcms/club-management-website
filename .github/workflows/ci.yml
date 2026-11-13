@@ -7,6 +7,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 手动触发：GitHub 事件投递抽风（2026-11-13 全组织 0 条 run）时用
+  # `gh workflow run ci.yml --ref <branch>` 直接点火，不依赖 webhook 派发。
+  workflow_dispatch:
 
 permissions:
   contents: read
