@@ -28,6 +28,14 @@ services:
       BIND: "127.0.0.1"
       CLUB_SPAWN_UPDATER: "0"
     command: ["web-tcp"]
+    # 镜像自带的 HEALTHCHECK 探的是 /app/run/gunicorn.sock，而 web-tcp 模式不建 unix socket，
+    # 沿用会让容器一直显示 unhealthy（实际服务是好的，属误导）。这里换成 HTTP 探活。
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:18080/site-policy/', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     # 生产机只有 1.87 GB，余量不到 300 MB；test 实例不许把线上挤到 OOM。
     mem_limit: 400m
     # 刻意不设 unless-stopped：test 环境靠脚本显式起停，机器重启后不该自己爬起来。
