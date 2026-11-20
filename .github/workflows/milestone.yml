@@ -1,0 +1,53 @@
+name: Milestone
+
+# 合入 main 的 PR 自动挂到「当前开放的版本 Milestone」。
+#
+# 为什么需要它：Milestone 只有被人手动挂才会长东西，一旦要记得手动挂，
+# 一周后就没人挂了。这里按「编号最小的开放 v* Milestone」自动归类——
+# 也就是当前正在攒的那个版本；该版本发布时 Release workflow 会关闭它并开下一个。
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  attach:
+    name: attach
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Attach to current version milestone
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # 只认形如 v1.2.3 的 Milestone，按语义版本取最小的那个（= 正在攒的版本）
+          MILESTONE=$(gh api "repos/${REPO}/milestones?state=open&per_page=100" \
+            --jq '[.[]
+                   | select(.title | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+                   | .title]
+                  | sort_by(ltrimstr("v") | split(".") | map(tonumber))
+                  | .[0] // empty')
+
+          if [ -z "$MILESTONE" ]; then
+            echo "::notice::没有开放的 v* Milestone，跳过（发布第一个版本后会自动建）"
+            exit 0
+          fi
+
+          # 已经挂过别的 Milestone 就不覆盖——人工指定优先
+          CURRENT=$(gh api "repos/${REPO}/pulls/${PR}" --jq '.milestone.title // empty')
+          if [ -n "$CURRENT" ]; then
+            echo "::notice::PR #${PR} 已挂在 ${CURRENT}，不覆盖"
+            exit 0
+          fi
+
+          gh pr edit "$PR" --repo "$REPO" --milestone "$MILESTONE"
+          echo "PR #${PR} → Milestone ${MILESTONE}"

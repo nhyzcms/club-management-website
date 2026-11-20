@@ -1,0 +1,232 @@
+name: Release
+
+# SemVer 发布流程（三步，全部可审计）：
+#
+#   1. 维护者手动 dispatch（选 bump）→ 本 workflow 开一个 release/vX.Y.Z PR：
+#      pyproject.toml 的 version + CHANGELOG.md 的新小节
+#   2. PR 合入 main（走正常 PR 闸门 + 评审）
+#   3. main 上 pyproject 版本变了 → 自动打 tag vX.Y.Z + 建 GitHub Release
+#      + 关掉同名 Milestone + 开下一个版本的 Milestone
+#
+# 为什么不直接 push 版本提交：main 有分支保护，任何直推都会被拒。
+# 发布也必须是 PR——这样「这次发布的变更集」本身就是被评审过的东西。
+#
+# 为什么不从 commit message 猜版本位：BREAKING 靠正则猜错一次就会让下游
+# 在升级时炸掉。版本位由人显式选，机器只负责算数与执行。
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "版本位（仓库还没有 v* tag 时一律落到 1.0.0）"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version_override:
+        description: "可选：直接指定 X.Y.Z（优先级高于 bump）"
+        type: string
+        required: false
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  packages: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ── 1. 准备发布 PR（仅手动触发）────────────────────────────────────────
+  prepare:
+    name: prepare
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          fetch-depth: 0          # 生成变更记录要完整历史
+          fetch-tags: true
+
+      - name: Compute next version
+        id: calc
+        env:
+          BUMP: ${{ inputs.bump }}
+          OVERRIDE: ${{ inputs.version_override }}
+        run: |
+          set -euo pipefail
+          git config user.name  "Echo"
+          git config user.email "echo@hermes.local"
+
+          args=(--bump "$BUMP")
+          if [ -n "$OVERRIDE" ]; then args=(--override "$OVERRIDE"); fi
+
+          out=$(python3 scripts/bump_version.py "${args[@]}")
+          echo "$out"
+          NEW=$(echo "$out" | sed -n 's/.*next=\([0-9.]*\).*/\1/p')
+          [ -n "$NEW" ] || { echo "::error::算不出版本号"; exit 1; }
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.calc.outputs.version }}
+        run: |
+          set -euo pipefail
+          BRANCH="release/v${VERSION}"
+
+          git checkout -b "$BRANCH"
+          git add pyproject.toml CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "::error::版本号没有变化（当前已经是 v${VERSION}？）"
+            exit 1
+          fi
+          git commit -m "chore(release): v${VERSION}"
+          git push -u origin "$BRANCH"
+
+          {
+            echo "## 发布 v${VERSION}"
+            echo
+            echo "由 Release workflow 自动生成。合并后会自动打 tag \`v${VERSION}\` 并建 Release。"
+            echo
+            echo "### 本次提交的变更"
+            echo
+            sed -n '/^## \[/,$p' CHANGELOG.md | head -120
+          } > /tmp/pr-body.md
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(release): v${VERSION}" \
+            --body-file /tmp/pr-body.md \
+            --label release
+
+  # ── 2. main 上版本变了 → 打 tag + 建 Release（串在所有闸门之后）────────
+  tag:
+    name: tag
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Read versions
+        id: v
+        run: |
+          set -euo pipefail
+          NEW=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' pyproject.toml | head -1)
+          [ -n "$NEW" ] || { echo "::error::pyproject.toml 里读不到 version"; exit 1; }
+
+          # 取语义版本最大的 v* tag（git 默认字典序会把 v1.10 排在 v1.9 前面）
+          LATEST=$(git tag --list 'v[0-9]*' \
+            | sed 's/^v//' \
+            | sort -t. -k1,1n -k2,2n -k3,3n \
+            | tail -1)
+
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "latest=${LATEST:-}" >> "$GITHUB_OUTPUT"
+
+          if [ "$NEW" = "$LATEST" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "版本未变化（已是 v${NEW}），跳过打 tag"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "将打 tag：v${NEW}（上一个 v${LATEST:-无}）"
+          fi
+
+      - name: Create tag and release
+        if: steps.v.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.new }}
+          PREV: ${{ steps.v.outputs.latest }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+
+          git config user.name  "Echo"
+          git config user.email "echo@hermes.local"
+          git tag -a "$TAG" -m "Release ${TAG}"
+          git push origin "$TAG"
+
+          # 变更记录：上一个 v* tag 到本次 tag
+          if [ -n "$PREV" ]; then
+            python3 scripts/release_notes.py --since "v${PREV}" --until "$TAG" > /tmp/notes.md
+          else
+            echo "首个版本，变更记录见仓库 CHANGELOG.md 的 \`[${VERSION}]\` 小节。" > /tmp/notes.md
+          fi
+
+          {
+            echo "**本站版本 ${TAG}**"
+            echo
+            cat /tmp/notes.md
+            echo
+            echo "---"
+            echo "完整历史：\`CHANGELOG.md\`　·　容器部署：\`deploy/README.md\`"
+            if [ -n "$PREV" ]; then
+              echo "对比：https://github.com/${GITHUB_REPOSITORY}/compare/v${PREV}...${TAG}"
+            fi
+          } > /tmp/release-body.md
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-body.md
+
+      # ── 镜像也打版本 tag，回滚时是人可读的名字而不是一串 sha ──────────
+      - name: Tag container image with version
+        if: steps.v.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          VERSION: ${{ steps.v.outputs.new }}
+        run: |
+          set -euo pipefail
+          IMAGE=ghcr.io/nhyzcms/club-management-website
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          # Image workflow 与本 job 都在 main 上并行跑，谁先完成不确定。
+          # 等它最多 4 分钟；等不到就跳过（版本 tag 只是给人看的，不影响部署，
+          # 部署用的是 sha-<sha>）。
+          ok=0
+          for i in $(seq 1 12); do
+            if docker pull "${IMAGE}:sha-${GITHUB_SHA}"; then ok=1; break; fi
+            echo "镜像 sha-${GITHUB_SHA} 还没就绪，20s 后重试（$i/12）"
+            sleep 20
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::warning::镜像版本 tag 跳过：sha-${GITHUB_SHA} 尚未推送到 ghcr"
+            exit 0
+          fi
+
+          docker tag "${IMAGE}:sha-${GITHUB_SHA}" "${IMAGE}:v${VERSION}"
+          docker push "${IMAGE}:v${VERSION}"
+
+      # ── Milestone：关掉本版，开下一版 ─────────────────────────────────
+      - name: Update milestones
+        if: steps.v.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.new }}
+        run: python3 scripts/update_milestones.py "$VERSION"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Release"
+            echo
+            echo "- 版本: \`v${{ steps.v.outputs.new }}\`"
+            echo "- 上一个: \`v${{ steps.v.outputs.latest }}\`"
+            echo "- 跳过: \`${{ steps.v.outputs.skip }}\`"
+            echo "- 状态: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
