@@ -8,6 +8,12 @@ on:
     branches: [main]
   pull_request:
 
+# PR 上同分支连推时只保留最新一次（旧 run 立即取消，省 runner 与排队时间）。
+# main 上不取消：push 到 main 会连锁 release / 镜像发布，取消可能留下半个发布。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -17,6 +23,7 @@ jobs:
     # 只在 main（push / 目标为 main 的 PR）检查：documentation 分支的 PR 本来就该带 docs/。
     if: github.event_name == 'push' || github.base_ref == 'main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -31,6 +38,7 @@ jobs:
   backend:
     name: backend
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -67,6 +75,7 @@ jobs:
   frontend:
     name: frontend
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -115,6 +124,7 @@ jobs:
   frontend-test:
     name: frontend-test
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -159,19 +169,52 @@ jobs:
     name: e2e
     needs: [frontend]
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
+      # ── 触发闸门 ──────────────────────────────────────────────────────
+      # e2e 只在两种情况真正执行：push 到 main、或 PR 打了 `ci:full` 标签。
+      # 其余 PR 走 no-op —— 但 job 本身照常启动并报 success。
+      # 这是刻意的：job-level `if:` 会让检查停在 skipped，而 skipped 不会被
+      # 分支保护认作通过，PR 就永远合不进去。所以闸门放在 step 层。
+      - name: Decide whether to run
+        id: gate
+        env:
+          HAS_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:full') }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "$HAS_FULL_LABEL" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip notice
+        if: steps.gate.outputs.run != 'true'
+        run: |
+          {
+            echo "## E2E · 已跳过（PR 默认不跑浏览器测试）"
+            echo
+            echo "- **状态**: 跳过"
+            echo "- 需要全套验证：给本 PR 打 \`ci:full\` 标签，再 re-run 本 workflow。"
+            echo "- main 上的每次 push 仍会完整跑一遍 e2e。"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::PR 不跑 e2e（省 5–20 分钟）；加 ci:full 标签可强制全套"
+
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        if: steps.gate.outputs.run == 'true'
 
       - name: Install uv
+        if: steps.gate.outputs.run == 'true'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.14"
           enable-cache: true
 
       - name: Install Python dependencies
+        if: steps.gate.outputs.run == 'true'
         run: uv sync --frozen
 
       - name: Set up Node
+        if: steps.gate.outputs.run == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: "22"
@@ -179,16 +222,19 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
+        if: steps.gate.outputs.run == 'true'
         working-directory: frontend
         run: npm ci
 
       - name: Download frontend dist
+        if: steps.gate.outputs.run == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: frontend-dist
           path: frontend/dist
 
       - name: Install Playwright browser
+        if: steps.gate.outputs.run == 'true'
         working-directory: frontend
         run: |
           # ubuntu-24.04 runner 镜像已预装 Chromium 运行库，--with-deps 只是附加保险。
@@ -208,13 +254,14 @@ jobs:
           exit 1
 
       - name: Run E2E tests
+        if: steps.gate.outputs.run == 'true'
         working-directory: frontend
         run: |
           set -o pipefail
           npx playwright test 2>&1 | tee "$RUNNER_TEMP/e2e.log"
 
       - name: Upload Playwright report
-        if: ${{ !cancelled() }}
+        if: steps.gate.outputs.run == 'true' && !cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: playwright-report
@@ -222,7 +269,7 @@ jobs:
           retention-days: 7
 
       - name: Job summary
-        if: always()
+        if: steps.gate.outputs.run == 'true' && always()
         run: |
           {
             echo "## E2E · 浏览器测试（Playwright / chromium）"
@@ -243,6 +290,7 @@ jobs:
     needs: [backend, frontend, frontend-test, e2e]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:

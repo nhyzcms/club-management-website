@@ -1,0 +1,64 @@
+name: 功能需求
+description: 想要一个现在没有的能力
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        一个需求要拆到「一个人几天内能做完、一个 PR 能承载」的粒度。
+        如果它明显需要好几个 PR，先在这里写总目标，实施时再拆子 issue。
+
+  - type: textarea
+    id: why
+    attributes:
+      label: 要解决什么问题
+      description: 描述现状的痛点，不要直接写「加一个按钮」
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 一句话目标
+      description: 做完之后，谁能做什么他现在做不到的事
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: |
+        用「给定 / 当 / 那么」写，结论必须可观察（能点、能测、能看）。
+        写不出可观察的验收标准，说明需求还没想清楚。
+      value: |
+        给定 …
+        当 …
+        那么 …
+
+        给定 …
+        当 …
+        那么 …
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 这次不做
+      description: 明确划掉边界，防止范围越滚越大
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - P2 · 排进正常迭代
+        - P1 · 优先做，阻塞下一次发布
+        - P0 · 立刻做（核心功能全挂 / 数据损坏 / 安全漏洞）
+        - P3 · 有空再说
+    validations:
+      required: true
