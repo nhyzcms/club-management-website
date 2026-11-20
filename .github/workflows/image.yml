@@ -1,0 +1,147 @@
+name: Image
+
+# 构建生产镜像 → 冒烟测试 → 推 ghcr.io。
+#
+# 为什么单独一个 workflow：
+#   1) 镜像构建 3–5 分钟，不该拖慢 PR 的 backend/frontend 反馈回路；
+#   2) deploy.yml 需要「镜像确实产出成功」这个信号，用 workflow_run 串联最直接；
+#   3) PR 上只在改动落在容器相关文件（或打了 ci:full）时才跑。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "docker/**"
+      - ".github/workflows/image.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/nhyzcms/club-management-website
+
+jobs:
+  image:
+    name: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+            ${{ env.IMAGE }}:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # ── 冒烟测试：镜像构建成功 ≠ 镜像能用 ────────────────────────────
+      - name: Image layout guard
+        run: |
+          IMAGE="${IMAGE}:smoke"
+          # 修剪逻辑的回归守卫：构建期依赖不该出现在运行时镜像里。
+          docker run --rm "$IMAGE" sh -c '
+            set -e
+            test ! -d /app/frontend/src   || { echo "frontend/src leaked into image"; exit 1; }
+            test ! -d /app/frontend/vendor || { echo "frontend/vendor leaked into image"; exit 1; }
+            test -d /app/frontend/dist     || { echo "frontend/dist missing"; exit 1; }
+            test -f /app/frontend/dist/surveyjs/survey.core.min.js || { echo "surveyjs missing"; exit 1; }
+            test -x /app/start.sh
+            test -x /app/.venv/bin/gunicorn
+            test -x /app/.venv/bin/python
+          '
+          echo "镜像大小：$(docker image inspect "$IMAGE" --format '{{.Size}}' | awk '{printf "%.0f MB", $1/1024/1024}')"
+
+      - name: Boot smoke test
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE}:smoke"
+          docker volume create club-smoke >/dev/null
+          ENVS=(
+            -e DJANGO_DEBUG=1
+            -e SECRET_KEY=smoke-test-key-not-a-secret
+            -e ALLOWED_HOSTS=localhost,127.0.0.1
+            -e DJANGO_DB_FILE=/app/db/smoke.sqlite3
+          )
+
+          echo "== migrate =="
+          docker run --rm -v club-smoke:/app/db "${ENVS[@]}" "$IMAGE" migrate
+
+          echo "== web (tcp) =="
+          docker run -d --name club-smoke -v club-smoke:/app/db "${ENVS[@]}" -p 18000:8000 "$IMAGE" web-tcp
+
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 3 http://127.0.0.1:18000/site-policy/ >/tmp/policy.json 2>/dev/null; then
+              ok=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::容器 60 秒内没有响应 /site-policy/"
+            docker logs club-smoke || true
+            exit 1
+          fi
+
+          echo "site-policy: $(head -c 160 /tmp/policy.json)..."
+          python3 -c "import json;json.load(open('/tmp/policy.json'))" || { echo "::error::/site-policy/ 不是 JSON"; exit 1; }
+
+          # SPA 入口：证明 frontend/dist 真的进了镜像并被 Django 托管
+          curl -fsS --max-time 5 http://127.0.0.1:18000/ | grep -q 'id="root"' \
+            || { echo "::error::SPA 入口未渲染（frontend/dist 可能没进镜像）"; exit 1; }
+          echo "SPA 入口 OK"
+
+      - name: Dump container logs
+        if: failure()
+        run: docker logs club-smoke 2>&1 | tail -50 || true
+
+      # ── 推送（只有 main 才推）────────────────────────────────────────
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          docker tag "${IMAGE}:smoke" "${IMAGE}:sha-${GITHUB_SHA}"
+          docker push "${IMAGE}:sha-${GITHUB_SHA}"
+          docker tag "${IMAGE}:smoke" "${IMAGE}:latest"
+          docker push "${IMAGE}:latest"
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Image · 生产镜像"
+            echo
+            echo "- **状态**: \`${{ job.status }}\`"
+            echo "- 标签: \`${IMAGE}:sha-${{ github.sha }}\`"
+            echo "- 提交: \`${GITHUB_SHA:0:7}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
