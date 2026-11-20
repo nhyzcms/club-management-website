@@ -45,7 +45,8 @@ feat/* fix/* ← 短命，从 develop 拉，合完即删
   让 CI 先跑一遍。真正的评审发生在 `develop` → `main`，**一次审完全部**。
   给 `develop` 也加 review 只会让评审人变成瓶颈。
 - **`fix/*` 急用时可以从 `main` 拉**，直接对 `main` 开 PR。仍然要过完整 CI + review
-  ——"急"省掉的是绕经 develop 那一跳，不是省掉验证。
+  ——"急"省掉的是绕经 develop 那一跳，不是省掉验证。**对 `main` 的 PR 一律跑全套 e2e**，
+  不因为在急修就跳过。
 - **发版后把 `main` 合回 `develop`**（`git checkout develop && git merge main`），
   否则两条线会越走越远，最后合并时冲突集中爆发。
 - 测试文件**跟功能代码一起进 `main`**。不要为测试单独开分支：`main` 上没有测试文件时，
