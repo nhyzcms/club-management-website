@@ -7,6 +7,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # 手动点火：GitHub 事件投递抽风时（实测 2026-11-13 全组织 0 条 run）
+  # 用 `gh workflow run ci.yml --ref <branch>` 直接触发，不依赖 webhook 派发。
+  workflow_dispatch:
 
 # PR 上同分支连推时只保留最新一次（旧 run 立即取消，省 runner 与排队时间）。
 # main 上不取消：push 到 main 会连锁 release / 镜像发布，取消可能留下半个发布。
