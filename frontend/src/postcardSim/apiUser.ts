@@ -12,7 +12,7 @@ import type {
   RegisterResult,
 } from "../api/postcard";
 import { POSTCARD_GRADES } from "../api/postcardAdmin";
-import { createRequest } from "../api/shared";
+import { createSimRequest } from "./aiDraft";
 import { PDF_MIME, buildPdf, bytesToDataUrl } from "./files";
 import {
   SimError,
@@ -33,8 +33,6 @@ import {
   type SubmitItemInput,
   type SimVerdict,
 } from "./state";
-
-const request = createRequest("/events/postcard");
 
 const GRADE_LABELS: Record<string, string> = Object.fromEntries(
   POSTCARD_GRADES.map((g) => [g.value, g.label]),
@@ -119,7 +117,10 @@ export interface SimUserApiDeps {
   previewAIReview?: (form: FormData) => Promise<SimVerdict | null>;
 }
 
-async function defaultPreviewAIReview(form: FormData): Promise<SimVerdict | null> {
+async function defaultPreviewAIReview(
+  form: FormData,
+  request: ReturnType<typeof createSimRequest>,
+): Promise<SimVerdict | null> {
   const res = await request<{ ok: boolean; verdict?: SimVerdict; reason?: string }>(
     "/admin/ai/preview/",
     { method: "POST", body: form },
@@ -131,7 +132,8 @@ export function createSimPostcardUserApi(
   state: SimState,
   deps: SimUserApiDeps = {},
 ): PostcardApi {
-  const previewAIReview = deps.previewAIReview ?? defaultPreviewAIReview;
+  const request = createSimRequest(state);
+  const previewAIReview = deps.previewAIReview ?? ((form: FormData) => defaultPreviewAIReview(form, request));
   const api: PostcardApi = {
     portal: async () => portalOf(state),
 
@@ -173,6 +175,7 @@ export function createSimPostcardUserApi(
         fd.set("dest_school", destSchool);
         fd.set("barcode", barcode);
         for (const f of files) fd.set(`photo_${f.side}`, f.file);
+        // 模拟环境的 AI 草稿参数由 createSimRequest 自动补上（见 aiDraft.ts）。
         try {
           verdicts.push(await previewAIReview(fd));
         } catch {
