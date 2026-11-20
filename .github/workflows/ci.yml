@@ -208,6 +208,10 @@ jobs:
             esac
           elif [ "$HAS_FULL_LABEL" = "true" ]; then
             run=true; reason="PR 带 ci:full 标签"
+          elif [ "$BASE_REF" = "main" ] && [ -n "$PR_NUMBER" ]; then
+            # 发布 PR（develop→main）和急修 PR（fix/*→main）是最后一道闸，
+            # 这里省掉的每一分钟都要用一次线上事故去还。
+            run=true; reason="PR→main（发布/急修，必跑）"
           elif [ "$BASE_REF" = "develop" ] && [ -n "$PR_NUMBER" ]; then
             # 只在前端相关改动时跑：省掉纯后端/文档 PR 的 5 分钟
             CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
