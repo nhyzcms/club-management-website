@@ -9,7 +9,10 @@ name: Image
 
 on:
   push:
-    branches: [main]
+    # develop 也要出镜像：test 环境拉的就是 develop 的 sha-<sha> 镜像。
+    # Deploy 只认 main 上完成的 Image run（deploy.yml 的 workflow_run.branches），
+    # 所以 develop 的构建不会污染生产待发布队列。
+    branches: [main, develop]
   pull_request:
     paths:
       - "Dockerfile"

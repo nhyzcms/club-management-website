@@ -24,12 +24,14 @@ case "${1:-web}" in
     ;;
 
   web-tcp)
-    # 仅用于 CI 冒烟：不依赖 unix socket，直接监听 TCP
+    # 不依赖 unix socket，直接监听 TCP。用于 CI 冒烟与 test 环境。
+    # BIND 默认 0.0.0.0（容器内/端口映射场景）；test 环境要设 127.0.0.1，
+    # 免得 test 实例跟着 host 网络暴露到公网网卡上。
     _load_env_if_present
     exec ./.venv/bin/gunicorn \
       -k uvicorn.workers.UvicornWorker \
       --workers "${GUNICORN_WORKERS:-1}" \
-      --bind "0.0.0.0:${PORT:-8000}" \
+      --bind "${BIND:-0.0.0.0}:${PORT:-8000}" \
       --access-logfile - --error-logfile - \
       config.asgi:application
     ;;
