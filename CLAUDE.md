@@ -62,15 +62,37 @@ npx playwright test                        # Browser E2E: auto-starts Django (:8
 - **写入与推送的载荷上限已解除**（2026-10-14 实测，见 `nhyzcms/app` 的 `docs/ENGINEERING-ENV.md`）：
   2 MiB 二进制文件可以**一次 `git push`** 落地；单次写入调用可以生成 1.1 万+ 字符的文档且逐字节无损。
   → 大文件、长文档**直接整文件写、直接推**；**不要**再为了体积拆片，**不要**再使用"补丁分片 + 一次性工作流"之类的临时通道。
-- **改动一律走分支 + PR**（`feature/…` / `fix/…` / `docs/…`），不要直推 `main`；PR 被合并后若还要继续改，**另开分支/PR**。
+- **分支模型（2026-11-20 起）**：
+
+  ```
+  main        ← 生产。PR + 1 人 review + 四道必需检查（backend/frontend/frontend-test/e2e）
+  develop     ← 集成。feat/* 合进来，只要求 CI 绿（backend/frontend/frontend-test），**不要求 review**
+  feat/* fix/* ← 短命，从 develop 拉，合完即删
+  ```
+
+  - 命名用 `feat/` `fix/` `chore/` `docs/` `refactor/` `test/` `ci/`；不要用 `feature/`。
+  - **评审只发生在 `develop` → `main`**，一次审完整批。给 `develop` 也加 review 会让评审人成为瓶颈。
+  - `fix/*` 急用时可从 `main` 拉、直接对 `main` 开 PR；仍要过完整 CI + review——"急"省的是绕经 develop，不是省验证。
+  - **发版后把 `main` 合回 `develop`**，否则两条线越走越远。
+  - **测试文件必须跟功能代码一起进 `main`**。不要为测试单独开分支：那样 `main` 上测试文件为空，
+    CI 会跑空集并报绿，是最坏的一种失败（静默通过）。
+  - **不要建 `test` 分支。** 需要预演就用容器化环境（见下）。
 - **不要在生产服务器上跑测试或构建**：该机为 **2 核 / 2 GB 内存 / 3 MB 带宽**，跑测试会拖垮在线服务。
   测试交 CI（四个作业：backend / frontend / frontend-test / e2e）；需要本机验证时用 SQLite 跑 `manage.py test`。
-  生产应用目录 `/opt/club` 是**发布包解压目录、不是 git 仓库**，不要在它上面切分支。
-- **前端无法在服务器构建**：本机与生产服务器都**没有 node/npm**，`npm run build` 只能在 CI 或你自己的机器上跑；
-  改前端后不重建 `frontend/dist`，线上不会生效。
+- **生产机没有代码树**（2026-11-20 起容器化）：`/opt/club` 只剩 `.env` / `docker-compose.yml` /
+  `data` / `staticfiles` / `run` / `backups` / `scripts/{deploy.sh,deploy-wrapper.sh}`。
+  没有 `.git`、没有 `.venv`、没有 `frontend/`。不要在它上面切分支、装依赖或改代码。
+  `club.service` 已删除，容器是 `club-app`（`restart: unless-stopped`），`docker logs club-app` 看日志。
+- **前端在镜像里构建**：`Image` workflow 跑 `npm ci && npm run build`，产物进镜像；
+  生产机永远不构建。改前端后等 Image/Deploy 走完即可，不需要在服务器上重建 `frontend/dist`。
+- **上线路径**：合并 `main` → CI → Image（推 ghcr）→ Deploy（只登记）→ `club-deploy.timer` 在
+  01:00–03:00 窗口内切容器。状态唯一真源是 `sudo -u clubdeploy /opt/club/scripts/deploy.sh status`。
+- **预演环境**：`sudo scripts/test-env.sh up sha-<submit>`，只绑 `127.0.0.1:8080`，用
+  `ssh -N -L 8080:127.0.0.1:8080 nhyz-prod` 访问。数据库 `club_test`、Redis db 1、独立媒体/静态目录，
+  与生产完全隔离。验完 `down`，需要清数据用 `reset --yes`。详见 `deploy/README.md`。
 - **数据库迁移**：新增 `Meta.permissions` 等模型选项时**必须**同时生成 `AlterModelOptions` 迁移，
   否则权限不落库（历史踩坑）。
-- **推送后自检**：CI 状态 + 关键接口/页面人工确认；涉及前端构建的改动，确认 `frontend/dist` 真的重建了。
+- **推送后自检**：CI 状态 + 关键接口/页面人工确认；涉及前端构建的改动，确认 Image workflow 真的重建了镜像。
 
 ### 移动端与 App 契约
 

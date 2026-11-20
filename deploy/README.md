@@ -97,6 +97,51 @@ sudo -u clubdeploy /opt/club/scripts/deploy.sh now sha-<sha>
 sudo -u clubdeploy /opt/club/scripts/deploy.sh status
 ```
 
+## 预演环境（test）
+
+在合并进 `main` 之前点一遍真实页面。跑的是 `develop` 的镜像，数据面与生产隔离。
+
+```bash
+# 一次性初始化：建目录、派生 .env、建 club_test 库、装 nginx 站点
+sudo scripts/test-env.sh init
+
+# 拉起某个提交（develop 的 sha，镜像由 Image workflow 构建）
+sudo scripts/test-env.sh up sha-abc1234
+
+# 开发者本机开隧道（不需要安全组 / 域名 / 证书）
+ssh -N -L 8080:127.0.0.1:8080 nhyz-prod
+# 浏览器打开 http://127.0.0.1:8080/
+
+sudo scripts/test-env.sh status
+sudo scripts/test-env.sh logs
+sudo scripts/test-env.sh down          # 停掉，数据保留
+sudo scripts/test-env.sh reset --yes   # 停掉并清空数据
+```
+
+### 隔离面
+
+| 资源 | 生产 | test |
+|---|---|---|
+| 数据库 | `club` | `club_test` |
+| Redis | db 0 | db 1 |
+| 媒体 | `/opt/club/data` | `/opt/club-test/data` |
+| 静态 | `/opt/club/staticfiles` | `/opt/club-test/staticfiles` |
+| 端口 | 80/443（nginx） | `127.0.0.1:8080`（nginx）→ `127.0.0.1:18080`（容器） |
+| 进程 | `club-app` | `club-test-app`（`mem_limit: 400m`） |
+
+### 为什么不开公网
+
+`DJANGO_DEBUG=1` 会把 traceback、局部变量、settings 片段打进错误页。这个环境**只绑回环**，
+通过 SSH 隧道访问，既不用开安全组，也不用心疼没人给测试站发证书。
+
+如果哪天真要对外演示，先把 `.env` 里 `DJANGO_DEBUG` 改成 `0`，再考虑开端口。
+
+### 已知取舍
+
+- 容器 `restart: "no"`：机器重启后 test 环境不会自己起来。刻意的——它会占 400 MB 内存，
+  而且跑的是旧提交，自动拉起只会让人误以为线上就是这个版本。
+- 数据保留到下次 `reset`。想复现某个 bug 就别急着 reset，先 `down`。
+
 ## 回滚
 
 ```bash
