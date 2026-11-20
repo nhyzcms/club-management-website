@@ -35,7 +35,23 @@ die() { printf '[%s] ❌ %s\n' "$(date '+%F %T')" "$*" >&2; exit 1; }
 need_root() { [ "$(id -u)" -eq 0 ] || die "需要 root：sudo $0 $*"; }
 
 compose() {
-  env CLUB_IMAGE="${CLUB_IMAGE:-}" docker compose -f "$COMPOSE_FILE" "$@"
+  # down / reset 不需要真镜像，但 compose 文件里是 ${CLUB_IMAGE:?...}：
+  # 不给值会直接报错，所以这里兜一个占位（只有 up 才要求真 tag）。
+  env CLUB_IMAGE="${CLUB_IMAGE:-unused-for-down}" docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+# 镜像包是 private。生产侧是由 clubdeploy 登录的，而本脚本以 root 跑（要建库、改 nginx），
+# root 的 docker 凭据是空的 —— 直接 pull 会拿到 unauthorized。
+# 不复制 token 到别处，只把 clubdeploy 的 docker config 借给 root 用。
+ensure_ghcr_auth() {
+  if [ -f /root/.docker/config.json ] && grep -q 'ghcr.io' /root/.docker/config.json 2>/dev/null; then
+    return 0
+  fi
+  local src=/home/clubdeploy/.docker/config.json
+  [ -f "$src" ] || die "没有 ghcr 凭据。先执行：sudo -u clubdeploy docker login ghcr.io -u <用户名>"
+  install -d -m 700 /root/.docker
+  install -m 600 "$src" /root/.docker/config.json
+  log "已复用 clubdeploy 的 ghcr 凭据"
 }
 
 # 生产 .env 派生 test .env：只改必须改的，其余原样继承。
@@ -56,6 +72,9 @@ overrides = {
     "ALLOWED_HOSTS": "127.0.0.1,localhost",
     "FRONTEND_URL": "http://127.0.0.1:8080",
     "DB_NAME": "club_test",                    # 独立库
+    # 直连 PG 5432，不走 pgbouncer 6432：pgbouncer 的 [databases] 是白名单，
+    # 新库不登记就会 "no such database"。预演环境本来也不需要连接池。
+    "DB_PORT": "5432",
     "REDIS_URL": "redis://127.0.0.1:6379/1",   # 同实例不同 db：缓存与频道层不串
     "GUNICORN_WORKERS": "2",
     "CLUB_UPDATER_PROXY": "",                  # 更新器已弃用
@@ -138,6 +157,7 @@ cmd_up() {
 
   [ -f "$COMPOSE_FILE" ] || die "还没 init：先跑 sudo $0 init"
 
+  ensure_ghcr_auth
   log "拉取镜像 $CLUB_IMAGE"
   compose pull
 
