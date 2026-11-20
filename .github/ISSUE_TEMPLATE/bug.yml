@@ -1,0 +1,69 @@
+name: 缺陷
+description: 某个功能的行为和预期不一致
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        安全漏洞不要走这里——请私下联系维护者。
+        提之前先搜一遍已关闭的 issue，很多问题已经修过了。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 实际行为。贴原文报错或截图，不要转述。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你预期发生什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 /#/news
+        2. 点「编辑」
+        3. …
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: 在哪一端出现
+      description: 桌面网页 / 手机版 / Android 壳 / Django 后台；附浏览器与版本
+      placeholder: 桌面 Chrome 131 / 手机版 iOS Safari
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 影响
+      options:
+        - 用不了（核心流程中断，无绕行）
+        - 很麻烦（有绕行，但每次都要绕）
+        - 小问题（文案、样式、边缘场景）
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 影响范围
+      description: 只有你能复现，还是所有人都这样？涉及哪些账号 / 角色？
+      placeholder: 所有未登录访客都能复现；登录后正常
+    validations:
+      required: false

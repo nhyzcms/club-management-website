@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 参与开发 / 协作约定
+    url: https://github.com/nhyzcms/club-management-website/blob/main/CONTRIBUTING.md
+    about: 分支命名、提交信息、PR 要求、CI 怎么跑
+  - name: 使用问题（不是缺陷）
+    url: https://github.com/nhyzcms/club-management-website/issues?q=is%3Aissue
+    about: 先搜一遍已有关闭的 issue
