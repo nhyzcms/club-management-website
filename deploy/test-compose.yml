@@ -1,0 +1,41 @@
+# test 环境：跑 develop / 某个 sha 的镜像，数据面与生产完全隔离。
+#
+# 与 deploy/docker-compose.yml 是两个独立的 compose project（club-test / club），
+# 互不影响：停掉、重建、清空挂载目录都不会碰到生产。
+#
+# 隔离面：
+#   数据库  → PG 里的独立库 club_test
+#   Redis   → 同一个实例的不同 db 序号（/1），缓存与频道层不串
+#   媒体    → /opt/club-test/data（生产是 /opt/club/data）
+#   静态    → /opt/club-test/staticfiles（生产是 /opt/club/staticfiles）
+#   端口    → 容器只绑 127.0.0.1:18080，对外由 nginx 127.0.0.1:8080 反代
+#
+# 用法见 scripts/test-env.sh。
+
+name: club-test
+
+services:
+  app:
+    image: ${CLUB_IMAGE:?CLUB_IMAGE 未设置：用 scripts/test-env.sh up <tag> 启动}
+    container_name: club-test-app
+    # 复用宿主网络：PG(5432) / pgbouncer(6432) / Redis(6379) 都在 127.0.0.1 上，
+    # 这样 .env 里的地址在生产与 test 之间完全不用改。
+    network_mode: host
+    env_file: /opt/club-test/.env
+    environment:
+      PORT: "18080"
+      # 关键：只绑回环。默认 web-tcp 是 0.0.0.0，host 网络下那就是对外裸奔。
+      BIND: "127.0.0.1"
+      CLUB_SPAWN_UPDATER: "0"
+    command: ["web-tcp"]
+    # 生产机只有 1.87 GB，余量不到 300 MB；test 实例不许把线上挤到 OOM。
+    mem_limit: 400m
+    # 刻意不设 unless-stopped：test 环境靠脚本显式起停，机器重启后不该自己爬起来。
+    restart: "no"
+    volumes:
+      - /opt/club-test/.env:/app/.env:ro
+      # 容器内路径与生产保持一致（CLUB_DATA_DIR=/opt/club/data），换的只是宿主侧目录
+      - /opt/club-test/data:/opt/club/data
+      - /opt/club-test/staticfiles:/app/staticfiles
+      - /opt/club-test/run:/app/run
+    stop_grace_period: 20s
