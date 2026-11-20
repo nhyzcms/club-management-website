@@ -14,6 +14,12 @@ ARG PYTHON_VERSION=3.14
 ARG NODE_VERSION=22
 ARG UV_VERSION=0.11.28
 
+# ── 0. uv 二进制 ───────────────────────────────────────────────────────
+# 单独一个 stage：`COPY --from=<image>` 不会展开 ARG（只有 FROM 行会），
+# 写成 `COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION}` 会报
+# "failed to parse stage name ... invalid reference format"。
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uvbinary
+
 # ── 1. 前端产物 ────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS frontend
 WORKDIR /build/frontend
@@ -29,8 +35,7 @@ RUN npm run build && test -f dist/surveyjs/survey.core.min.js
 
 # ── 2. Python 依赖 ─────────────────────────────────────────────────────
 FROM python:${PYTHON_VERSION}-slim AS deps
-ARG UV_VERSION
-COPY --from=ghcr.io/astral-sh/uv:${UV_VERSION} /uv /uvx /bin/
+COPY --from=uvbinary /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
