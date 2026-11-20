@@ -1,0 +1,36 @@
+# 构建上下文排除项。漏一个就会把几百 MB 带进 build context，
+# 或者把本机的 node_modules / venv 覆盖到容器里。
+.git
+.github
+.gitignore
+docs
+*.md
+!README.md
+
+# 本机环境
+.venv
+**/__pycache__
+**/*.py[cod]
+.env
+.env.*
+!.env.example
+db.sqlite3
+db.sqlite3-journal
+
+# 前端：依赖与产物都在镜像里现装现建
+frontend/node_modules
+frontend/dist
+frontend/playwright-report
+frontend/test-results
+frontend/e2e
+frontend/.auth
+
+# 运行时数据（宿主机持久卷，绝不能进镜像）
+data
+media
+private_media
+staticfiles
+backups
+run
+tmp
+*.log
