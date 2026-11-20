@@ -35,7 +35,9 @@ die() { printf '[%s] ❌ %s\n' "$(date '+%F %T')" "$*" >&2; exit 1; }
 need_root() { [ "$(id -u)" -eq 0 ] || die "需要 root：sudo $0 $*"; }
 
 compose() {
-  env CLUB_IMAGE="${CLUB_IMAGE:-}" docker compose -f "$COMPOSE_FILE" "$@"
+  # down / reset 不需要真镜像，但 compose 文件里是 ${CLUB_IMAGE:?...}：
+  # 不给值会直接报错，所以这里兜一个占位（只有 up 才要求真 tag）。
+  env CLUB_IMAGE="${CLUB_IMAGE:-unused-for-down}" docker compose -f "$COMPOSE_FILE" "$@"
 }
 
 # 镜像包是 private。生产侧是由 clubdeploy 登录的，而本脚本以 root 跑（要建库、改 nginx），
