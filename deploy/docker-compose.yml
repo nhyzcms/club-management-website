@@ -1,0 +1,35 @@
+# 生产容器定义。由 scripts/install-docker-host.sh 安装到 /opt/club/docker-compose.yml。
+#
+# 设计取舍（已与维护者确认）：
+#   - 只容器化 Django 应用；nginx / PostgreSQL / pgbouncer / Redis 全部留在宿主机。
+#     这台机器只有 1.87 GB 内存，全站 compose 会把内存与迁移成本一起放大。
+#   - network_mode: host —— 应用原来就连 127.0.0.1 的 pgbouncer / Redis，
+#     host 网络让 .env 里的连接串一个字节都不用改。
+#   - 挂载路径与宿主机完全同名（/opt/club/data）。CLUB_DATA_DIR 在 .env 里写的就是
+#     这个绝对路径，同名挂载才能让同一份 .env 在容器内外都成立。
+#   - 运行用户是 root：与现有 systemd unit（User=root）一致，不是本次引入的放宽。
+#     改成非 root 需要先规划 data/ staticfiles/ run/ 的 uid 对齐，属于单独的迁移。
+
+name: club
+
+services:
+  app:
+    image: ${CLUB_IMAGE:?CLUB_IMAGE 未设置（形如 ghcr.io/nhyzcms/club-management-website:sha-<sha>）}
+    container_name: club-app
+    network_mode: host
+    restart: unless-stopped
+    env_file:
+      - /opt/club/.env
+    environment:
+      # 容器里不拉更新守护进程：更新改由 CD 流水线负责。
+      CLUB_SPAWN_UPDATER: "0"
+    volumes:
+      # start.sh 要求存在 .env；同时让 load_dotenv() 走同一份配置
+      - /opt/club/.env:/app/.env:ro
+      # media / private_media / app-update / ip2region（.env 里 CLUB_DATA_DIR 指向此路径）
+      - /opt/club/data:/opt/club/data
+      # collectstatic 输出，nginx 的 /static/ 直接 alias 到这里
+      - /opt/club/staticfiles:/app/staticfiles
+      # gunicorn unix socket，nginx 的 location / 反代到这里
+      - /opt/club/run:/app/run
+    stop_grace_period: 30s

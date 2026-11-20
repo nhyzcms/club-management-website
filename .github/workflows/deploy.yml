@@ -1,0 +1,124 @@
+name: Deploy
+
+# CD：镜像构建成功后，通过 SSH 把 tag 交给生产侧的 deploy.sh「登记」。
+# 真正的切换发生在夜间窗口内，由服务器上的 club-deploy.timer 触发。
+#
+# 为什么拆成「登记」与「切换」两步：
+#   1) 拉 300 MB 镜像不必卡在窗口里做，窗口内只剩重建容器（5–15 秒）；
+#   2) 上课时段合并 main 不会立刻重启线上；
+#   3) 窗口外想立刻上线，人工跑一次 deploy.sh now <tag> 即可，不必改流水线。
+
+on:
+  workflow_run:
+    workflows: ["Image"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "stage：登记待发布；tick：跑一次窗口判定；status：打印状态"
+        type: choice
+        options: [stage, tick, status]
+        default: status
+      sha:
+        description: "action=stage 时必填：要发布的提交 SHA"
+        type: string
+        required: false
+
+concurrency:
+  # 串行化：不允许两个部署同时改写生产状态
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # workflow_run 触发时，只有镜像构建成功才继续
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Resolve target
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          INPUT_ACTION: ${{ inputs.action }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            action="${INPUT_ACTION:-status}"
+            sha="${INPUT_SHA:-}"
+          else
+            action="stage"
+            sha="$RUN_SHA"
+          fi
+
+          if [ "$action" = "stage" ]; then
+            [ -n "$sha" ] || { echo "::error::stage 需要 sha"; exit 1; }
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha 形态不对：$sha"; exit 1; }
+            echo "command=stage sha-$sha" >> "$GITHUB_OUTPUT"
+            echo "描述：登记 sha-${sha:0:7} 为待发布（窗口内自动切换）" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "command=$action" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check secrets
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$HOST" ] || missing+=(DEPLOY_HOST)
+          [ -n "$KEY" ] || missing+=(DEPLOY_SSH_KEY)
+          [ -n "$KNOWN_HOSTS" ] || missing+=(DEPLOY_KNOWN_HOSTS)
+          if [ "${#missing[@]}" -ne 0 ]; then
+            echo "::error::缺少 secrets：${missing[*]}（见 deploy/README.md）"
+            exit 1
+          fi
+
+      - name: Run remote command
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          COMMAND: ${{ steps.target.outputs.command }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+          # authorized_keys 里配了强制命令，这里传什么都会落到 deploy-wrapper.sh，
+          # 由它做白名单校验。StrictHostKeyChecking=yes 保证不会连到陌生主机。
+          ssh -i ~/.ssh/deploy_key \
+              -p "${PORT:-22}" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              "${USER:-clubdeploy}@${HOST}" \
+              "$COMMAND" 2>&1 | tee /tmp/deploy.log
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo ""
+            echo "## Deploy"
+            echo ""
+            echo "- 命令: \`${{ steps.target.outputs.command }}\`"
+            echo "- 状态: \`${{ job.status }}\`"
+            echo "- 说明: 登记成功后，切换发生在窗口内（默认 01:00–03:00 Asia/Shanghai）"
+          } >> "$GITHUB_STEP_SUMMARY"
