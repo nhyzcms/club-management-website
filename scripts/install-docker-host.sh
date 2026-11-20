@@ -212,11 +212,18 @@ fi
 # ── 切流 ────────────────────────────────────────────────────────────────
 if [ -n "$CUTOVER_TAG" ]; then
   say "切换到容器运行：$CUTOVER_TAG"
+  # 先拉镜像再停机：否则拉取失败（鉴权 / 网络）时旧服务已经停了，站点直接不可用。
+  # 实测踩过：GHCR 包是 private、细粒度 token 缺 Packages:Read，pull 返回 denied，
+  # 而 club.service 已被 stop，线上 502 直到手动 systemctl start。
+  info "预拉镜像（成功后才停机）"
+  su - "$DEPLOY_USER" -c "$APP_DIR/scripts/deploy.sh stage '$CUTOVER_TAG'" \
+    || die "镜像拉取失败，已保持旧服务运行。先修 ghcr 鉴权：sudo -u $DEPLOY_USER docker login ghcr.io"
+
   info "停止并禁用旧 unit club.service（它和容器会抢同一个 gunicorn.sock）"
   systemctl stop club.service || true
   systemctl disable club.service || true
 
-  su - "$DEPLOY_USER" -c "$APP_DIR/scripts/deploy.sh now '$CUTOVER_TAG'"
+  su - "$DEPLOY_USER" -c "$APP_DIR/scripts/deploy.sh apply '$CUTOVER_TAG'"
 
   say "切流完成"
   info "nginx 不需要改：依然反代 $APP_DIR/run/gunicorn.sock"
