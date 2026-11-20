@@ -26,20 +26,12 @@ set -a; . ./.env; set +a
 # socket 目录（相对仓库根）；systemd unit 与 nginx 都指向这里。
 mkdir -p "$DIR/run"
 
-# 与 Gunicorn 同生共死。CLUB_SPAWN_UPDATER=0 可关（排障只起 web）。
-# CLUB_UPDATER_PROXY 可选（如 http://127.0.0.1:7891）：只注入更新器进程，
-# 给 GitHub API/Release 下载加速；gunicorn/Django 不受影响（业务出站不走代理）。
-if [ "${CLUB_SPAWN_UPDATER:-1}" != "0" ] && [ -x "$DIR/.venv/bin/python" ]; then
-  export CLUB_UPDATER_SPAWNED=1
-  if [ -n "${CLUB_UPDATER_PROXY:-}" ]; then
-    HTTPS_PROXY="${CLUB_UPDATER_PROXY}" \
-    HTTP_PROXY="${CLUB_UPDATER_PROXY}" \
-    NO_PROXY="${CLUB_UPDATER_NO_PROXY:-127.0.0.1,localhost}" \
-    "$DIR/.venv/bin/python" "$DIR/scripts/updater.py" &
-  else
-    "$DIR/.venv/bin/python" "$DIR/scripts/updater.py" &
-  fi
-fi
+# 更新守护进程已于 2026-11-20 弃用：生产改为容器化 CD
+# （CI 构建镜像 → 推 ghcr.io → Deploy workflow 登记 → 窗口内 deploy.sh 切换）。
+# 不再在 web 进程旁 fork 一个会改写站点文件的守护进程——它和容器的语义直接冲突：
+# 容器跑的是镜像里的只读代码树，而旧更新器会去替换宿主机的 /opt/club 目录。
+# 旧代码（common/updater.py / scripts/updater.py）保留在仓库里作为回滚参考，
+# 但没有任何启动路径会拉起它。
 
 exec "$DIR/.venv/bin/gunicorn" \
   -k uvicorn.workers.UvicornWorker \

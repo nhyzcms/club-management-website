@@ -3,6 +3,15 @@
 ``start.sh`` spawns ``scripts/updater.py`` next to Gunicorn (same systemd
 cgroup). Tests import the helpers below and never hit GitHub.
 """
+
+# ── DEPRECATED（2026-11-20）──────────────────────────────────────────────────
+# 本模块已不再被任何启动路径调用。生产更新改为容器化 CD：
+#   CI 构建镜像 → 推 ghcr.io → Deploy workflow 只登记 tag →
+#   服务器上的 club-deploy.timer 在窗口内用 scripts/deploy.sh 切换容器。
+#
+# 保留代码只作为「没有容器环境的机器要回滚旧方式」时的参考。
+# 不要再往 common/updater.py 里加新逻辑；站点更新一律走镜像。
+
 from __future__ import annotations
 
 import argparse
