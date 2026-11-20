@@ -14,18 +14,20 @@ Nginx
   ├── /media/  → 用户上传文件
   └── 其余（含 /ws/messaging/、/ws/exam-board/）
         ↓  一律 HTTP/1.1 + Upgrade（unix socket）
-      Gunicorn UvicornWorker × 1 → Django ASGI
-        ├── config.asgi:application（HTTP + WebSocket）
-        └── scripts/updater.py（同一 systemd cgroup 内的兄弟进程）
+      Docker 容器 club-app（network_mode: host）
+        └── Gunicorn UvicornWorker × N → Django ASGI
+              └── config.asgi:application（HTTP + WebSocket）
 ```
+
+升级不再由容器内的守护进程完成：CI 构建新镜像，窗口内重建容器（见 §6）。
 
 关键事实（全部可在仓库中核对）：
 
-- `start.sh` 用 `exec` 启动 `gunicorn -k uvicorn.workers.UvicornWorker --workers "${GUNICORN_WORKERS:-1}" --bind unix:$DIR/run/gunicorn.sock config.asgi:application`，并以兄弟进程身份拉起 `scripts/updater.py`。
+- 容器入口是 `docker/entrypoint.sh`（子命令 `web` / `web-tcp` / `migrate` / `collectstatic` / `check` / `shell`），最终 `exec` 的是 `start.sh` → `gunicorn -k uvicorn.workers.UvicornWorker --workers "${GUNICORN_WORKERS:-1}" --bind unix:/app/run/gunicorn.sock config.asgi:application`。容器以 `network_mode: host` 运行，`.env` 里的 `127.0.0.1:6432` / `127.0.0.1:6379` 不需要改。
 - **worker 缺省为 1**：`CHANNEL_LAYERS` 缺省 `InMemoryChannelLayer`，不能跨进程扇出（[ADR-0015](../adr/0015-channels-without-redis.md)）。配置 `REDIS_URL`（Redis 频道层，[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)）后可用 `GUNICORN_WORKERS` 提高；SQLite 怕多写者，生产多 worker 建议同时切 PostgreSQL。
 - WebSocket 两条：`/ws/messaging/`（须登录，推私信 / 通知 / 当前评论区）与 `/ws/exam-board/`（匿名可连，教室看板课表与题目误刊广播，[ADR-0018](../adr/0018-exam-board-batch-and-public-ws.md)）。
 - 前端 `frontend/dist/` 由 Django 的 `TEMPLATES["DIRS"]` 直接渲染，`STATICFILES_DIRS` 收集其静态资源；**没有独立的前端服务**。
-- 更新守护进程与 Gunicorn 同生命周期：停 `club` 时 systemd 清整个 cgroup，因此没有单独的 `club-updater.service`（`scripts/install.sh` 会停用并移除历史遗留的该 unit）。
+- **没有更新守护进程**。旧的 `scripts/updater.py` 已弃用（2026-11-20），生产升级改为「CI 推镜像 → 窗口内重建容器」。容器带 `restart: unless-stopped` 且 Docker 已 `enable`，重启机器后站点自动恢复。
 - 明信片照片清理由独立的 **`club-postcard-gc.timer`**（hourly，`Persistent=true`）驱动 `manage.py postcard_photo_gc`；它与 web 服务生命周期解耦，安装脚本自动创建并启用。
 - 维护拦截是**文件旗标** `run/MAINTENANCE`，中间件只读文件、不读数据库——保证 `migrate` 期间不会死锁 SQLite。
 
@@ -260,12 +262,13 @@ sudo ./scripts/install.sh
 脚本结尾会打印访问地址与超管账号。建议继续：
 
 ```bash
-# 1) 补可选凭据（邮件 / Turnstile / 更新 token），然后重启
+# 1) 补可选凭据（邮件 / Turnstile / ghcr token），然后重建容器
 sudo nano /opt/club/.env
-sudo systemctl restart club
+sudo -u clubdeploy /opt/club/scripts/deploy.sh status           # 记下「运行中」的 tag
+sudo -u clubdeploy /opt/club/scripts/deploy.sh now <记下的 tag>  # 用同一个 tag 重建容器
 
 # 2) 登录 /admin/，把成员加入「社长」「信息组」组（没组 = 没权限）
-# 3) /admin/ 的「站点策略」里调更新窗口与轮询间隔
+# 3) /admin/ 的「站点策略」里调站点开关与限流额度（更新窗口已迁到 .env，见 §6）
 ```
 
 ## 4. 环境变量
@@ -286,28 +289,43 @@ sudo systemctl restart club
 | `DB_ENGINE` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | 数据库切换与连接 | 留空 = SQLite；`DB_ENGINE=postgresql` 启用 PostgreSQL；`DB_PORT` 可指向 pgbouncer（transaction pooling；服务端游标与自动 prepared statements 已在 settings 关闭） |
 | `REDIS_URL` | 缓存 + 频道层 | 留空 = v1；配置后可用 `GUNICORN_WORKERS` >1 |
 | `GUNICORN_WORKERS` | ASGI worker 数 | 默认 `1`；**须配 `REDIS_URL`** |
-| `CLUB_UPDATER_PROXY` | 更新器出站代理（仅注入守护进程，加速下载） | 留空 = 不注入；如 `http://127.0.0.1:7891` |
 | `LOGIN_CHALLENGE` | 陌生设备二次验证开关 | 默认开启；线上异常可置 `0` 应急回滚（设备与登录事件照常记录） |
 | `IP2REGION_DB` | 离线 IP 库路径 | 默认 `<安装目录>/data/ip2region_v4.xdb`；文件缺失时静默降级为只记 IP |
 
-逐项默认值、派生逻辑与相关测试见[配置参考](../configuration.md)。另有几个不在模板中、由代码读取的变量：`CLUB_SPAWN_UPDATER=0`（只起 web、不拉起更新守护进程，排障用）、`CLUB_UPDATER_SPAWNED`（由 `start.sh` 置 1）、`SERVICE_NAME`（更新器重载服务用，默认 `club`）、`LOGIN_CHALLENGE`（陌生设备验证开关，见上）、`IP2REGION_DB`（离线 IP 库路径，见上）。前端构建期还可传 `AMAP_KEY` 注入高德地图 key（`AMAP_KEY=… npm run build`）；未设置时登录记录页降级为城市文字。
+逐项默认值、派生逻辑与相关测试见[配置参考](../configuration.md)。部署相关的变量由 `deploy/docker-compose.yml` 与 `scripts/deploy.sh` 读取：`CLUB_IMAGE`（要运行的镜像 tag，`deploy.sh` 注入）、`CLUB_DEPLOY_WINDOW_START` / `CLUB_DEPLOY_WINDOW_END` / `CLUB_DEPLOY_TZ`（窗口，默认 `01:00` / `03:00` / `Asia/Shanghai`）、`CLUB_DEPLOY_KEEP_IMAGES`（默认 3）、`CLUB_DEPLOY_KEEP_DUMPS`（默认 5）、`CLUB_DEPLOY_HEALTH_TIMEOUT`（默认 90 秒）。前端构建期还可传 `AMAP_KEY` 注入高德地图 key（`AMAP_KEY=… npm run build`）；未设置时登录记录页降级为城市文字。
 
 ## 5. 日常服务管理
 
 ```bash
-sudo systemctl status club          # 状态
-sudo systemctl restart club         # 重启（读 .env 变更）
-sudo systemctl stop club            # 停止（连同更新守护进程）
-sudo systemctl reload club          # SIGHUP，平滑重载 worker
-sudo journalctl -u club -f          # 跟日志（web + 更新器同一条流）
-sudo journalctl -u club -n 100 --no-pager
+sudo -u clubdeploy /opt/club/scripts/deploy.sh status   # 版本 / 窗口 / 容器健康
+sudo docker ps                                          # club-app 状态
+sudo docker restart club-app                            # 重启（读 .env 变更）
+sudo docker logs -f club-app                            # 跟日志
+sudo docker logs club-app --tail 100 --no-pager
 ```
 
-前台排障（Ctrl-C 停，不影响 systemd 下的实例）：
+改 `.env` 后必须**重建容器**才生效（compose 的 `env_file` 只在创建时读取，
+`docker restart` 不够）：
 
 ```bash
-cd /opt/club && ./start.sh
+sudo -u clubdeploy /opt/club/scripts/deploy.sh status              # 先看当前是哪个 tag
+sudo -u clubdeploy /opt/club/scripts/deploy.sh now sha-<当前sha>   # 用同一个 tag 重建
 ```
+
+只改 nginx 配置时不必动容器：
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+容器内排障（镜像里没有 `ps`，用 `sh` + `/proc`）：
+
+```bash
+sudo docker exec -it club-app sh
+sudo docker exec club-app python manage.py shell
+```
+
+> 旧的 `systemctl status|restart|stop club` 已失效：`club.service` 于 2026-11-20 删除。
 
 维护拦截（写 `run/MAINTENANCE`，全站 503，含 `/admin/`）：
 
@@ -388,77 +406,104 @@ sudo systemctl reload nginx
 
 ## 6. 升级流程
 
-生产升级走 **GitHub Release + 更新守护进程**，不要在服务器上 `git pull` 再手工构建（独立安装的机器往往没有 git 历史，Release 包也不含 `.git`）。
+生产使用**容器部署**：CI 构建镜像 → 推 `ghcr.io` → 服务器上的定时器在维护窗口内切换容器。
+服务器上**没有代码树、没有 `.venv`、没有 `.git`**——`/opt/club` 只剩运行时资产（`.env`、
+`data/`、`staticfiles/`、`run/`、`backups/`、`docker-compose.yml`、`scripts/deploy.sh`）。
 
-### 6.1 自动更新
+> 旧的「更新器定时轮询 GitHub Release 拉 `club-<sha>.tar.gz`」已于 2026-11-20 弃用。
+> 仓库不再产出 `club-<sha>` 发行包；`common/updater.py` 仅作回滚参考保留，
+> 任何启动路径都不会拉起它。
 
-`start.sh` 拉起 `scripts/updater.py`，与 Gunicorn 同 cgroup、同生命周期。行为要点：
+### 6.1 全链路
 
-- **轮询**：按站点策略 `update_poll_interval_seconds`（默认 900 秒）查 GitHub Release，下载 `club-<sha>.tar.gz` + `.sha256` 到 `backups/releases/`，支持 HTTP Range 断点续传、校验失败重下、最多 8 次指数退避重试；未完成的 `.part` 绝不参与应用。首次启动还会预取当前 `run/applied-release` 对应包，作为回滚保险。
-- **应用窗口**：`auto_update_enabled` 为真、当前处于 `[update_window_start_hour, update_window_end_hour)`（`update_timezone`，默认 `Asia/Shanghai` 01:00–03:00）、且距窗口结束还有 `update_apply_cutoff_minutes_before_end`（默认 30）分钟以上，才会开始应用。
-- **应用步骤**：写维护旗标（`drain` 拦截访问）→ 备份数据库（SQLite `.backup` 或 PostgreSQL `pg_dump --clean`，写到 `backups/db-<时间戳>.sqlite3` / `.pg.sql`，按 `update_db_backup_keep` 裁剪）→ 解包到 `backups/staging-*` → 替换代码树（`.env`、`db.sqlite3*`、`media`、`private_media`、`data`、`run`、`backups`、`.venv`、`.git` 一律排除）→ `uv sync --frozen` → `migrate` → `collectstatic` → 重载服务并健康检查（`systemctl is-active`）。
-- **成功后**：写 `run/applied-release`，按 `update_release_keep` 裁剪旧包，撤下维护页。
-- **失败 / 窗口关闭**：自动回滚——恢复上一发行包代码树 + 应用前的 DB 快照 + 重载；若回滚后服务不健康，保留维护页。
+合并 PR 到 `main` 之后，流水线自动执行三步：
 
-维护页按 8 步显示进度（拦截访问 / 备份数据库 / 解包更新 / 替换文件 / 同步依赖 / 迁移数据库 / 收集静态文件 / 重载服务），回滚时显示「正在回滚到上一版本」。
+1. **CI** — 四道闸：`backend` / `frontend` / `frontend-test` / `e2e`（`e2e` 默认只在 main 或带
+   `ci:full` 标签时真跑，PR 上是秒过的空步骤）。
+2. **Image** — 多阶段构建镜像，跑冒烟（布局守卫 / `migrate` / `/site-policy/` 返回 JSON /
+   SPA 入口含 `id="root"`），推 `ghcr.io/nhyzcms/club-management-website:sha-<sha>` 与 `:latest`。
+3. **Deploy** — 通过 SSH 执行 `deploy.sh stage sha-<sha>`，**只拉镜像并登记，不切换**。
 
-### 6.2 手动立即升级
+服务器上的 `club-deploy.timer` 每 5 分钟 tick 一次，只有落在窗口内才真正应用：
 
-忽略窗口，立刻升到最新 Release（或指定包）：
-
-```bash
-cd /opt/club
-set -a; . ./.env; set +a
-.venv/bin/python scripts/updater.py --apply-now
+```
+窗口（默认 [01:00, 03:00) Asia/Shanghai，由 .env 的
+      CLUB_DEPLOY_WINDOW_START / CLUB_DEPLOY_WINDOW_END / CLUB_DEPLOY_TZ 控制）
+  ① pg_dump 直连 5432 → backups/db/club-<时间戳>.sql.gz（保留 5 份）
+  ② migrate
+  ③ collectstatic → /opt/club/staticfiles（nginx 直出）
+  ④ docker compose up -d --no-deps --force-recreate app
+  ⑤ 健康检查（最多 90 秒）；失败自动回滚到上一个 tag
 ```
 
-`--apply-now` 的 `SHA` 参数可以是完整 hash、7 位以上前缀、`club-<sha>` 标签，或磁盘上已有的 `club-*.tar.gz` 路径；省略则下载并应用 GitHub latest：
+**为什么「登记」与「切换」分开**：镜像 300–500 MB，不必卡在窗口里拉；窗口内只剩重建容器
+（5–15 秒）。上课时段合并 `main` 不会立刻重启线上。
+
+### 6.2 手动操作
 
 ```bash
-.venv/bin/python scripts/updater.py --apply-now a03abc2
-.venv/bin/python scripts/updater.py --apply-now club-<fullsha>
-.venv/bin/python scripts/updater.py --apply-now backups/releases/club-<fullsha>.tar.gz
+# 唯一权威状态源：当前运行版本 / 待发布 / 是否在窗口 / 容器健康
+sudo -u clubdeploy /opt/club/scripts/deploy.sh status
+
+# 立刻切换（忽略窗口）
+sudo -u clubdeploy /opt/club/scripts/deploy.sh now sha-<sha>
+
+# 只拉镜像登记，等窗口再切
+sudo -u clubdeploy /opt/club/scripts/deploy.sh stage sha-<sha>
+
+# 回滚到上一版（读 run/applied-release 的「上一版本」）
+sudo -u clubdeploy /opt/club/scripts/deploy.sh rollback
 ```
 
-以服务用户身份执行（文件属主正确、`sudo systemctl` 免密生效）：
+`stage` / `apply` / `now` / `rollback` 都支持 `--dry-run`（只打印将执行什么）；
+`apply` 支持 `--force`（忽略「已经是这个 tag」的跳过判断）。
+
+### 6.3 窗口外想立刻上线
+
+两个做法，按需选择：
+
+- **改窗口**：临时把 `.env` 的 `CLUB_DEPLOY_WINDOW_START/END` 调到当前时段，tick 会在 5 分钟内
+  接上；改完记得调回去。
+- **直接 `now`**：`deploy.sh now sha-<sha>` 无视窗口，代价是那一下会重建容器（约 5–15 秒不可用）。
+
+### 6.4 回滚
 
 ```bash
-sudo -u club HOME=$(getent passwd club | cut -d: -f6) bash -lc \
-  'cd /opt/club && set -a; . ./.env; set +a && .venv/bin/python scripts/updater.py --apply-now'
+sudo -u clubdeploy /opt/club/scripts/deploy.sh rollback          # 上一版
+sudo -u clubdeploy /opt/club/scripts/deploy.sh now sha-<旧sha>   # 指定任意历史 tag
 ```
 
-中断处理：`--apply-now` / `--rollback` 在终端里 Ctrl+C 不会立刻杀掉半套树——当前步骤结束后询问：
+镜像保留最近 3 个（`CLUB_DEPLOY_KEEP_IMAGES`，默认 3），数据库快照保留 5 份
+（`CLUB_DEPLOY_KEEP_DUMPS`，默认 5）。超出后在每次 `apply` 时自动裁剪。
 
-- 尚未替换文件：[a] 取消更新并撤下维护页（回车默认）/ [c] 继续；
-- 已经替换文件：[r] 回滚到上一版本并恢复这次更新前的数据库备份（回车默认）/ [c] 继续 / [h] 保持维护页人工处理。
+回滚**只换镜像，不还原数据库**。`apply` 失败时的自动回滚也不还原——迁移一旦写成，
+旧镜像可能读不懂新 schema，这种情况应该从 `backups/db/` 手工恢复（见 §7）。
 
-无 TTY（守护进程）时走同一套默认值，不提问。回滚进行中的 Ctrl+C 会被忽略直到回滚结束。
+### 6.5 ghcr 凭据
 
-### 6.3 回滚
-
-回滚到任意一个以往的 Release。**只换代码树，不还原数据库**（SQLite / PostgreSQL 同此），以免丢上线后的数据（这与「应用失败时的自动回滚」不同——那条路径会恢复 apply 前的 DB 快照）：
+镜像包是 **private**（公开仓库不代表包公开）。服务器上以服务账号完成一次登录，
+凭据落在 `/home/clubdeploy/.docker/config.json`：
 
 ```bash
-cd /opt/club
-set -a; . ./.env; set +a
-.venv/bin/python scripts/updater.py --rollback            # 本地最新非当前包，否则 GitHub 上当前版本的前一个 Release
-.venv/bin/python scripts/updater.py --rollback abc1234    # 7 位以上前缀
-.venv/bin/python scripts/updater.py --rollback club-<fullsha>
+printf '%s' '<token>' | sudo -n -u clubdeploy docker login ghcr.io -u <用户名> --password-stdin
+sudo -u clubdeploy docker pull ghcr.io/nhyzcms/club-management-website:sha-<sha>
 ```
 
-Django 迁移不会自动反向：回滚只换代码与静态文件，数据库保持当前内容。若必须手工处理，先确认 `backups/releases/club-<sha>.tar.gz` 还在。**不要**在生产树里 `git checkout`。
+token 需要 **Packages: Read** 权限。`.env` 里的 `UPDATE_GITHUB_TOKEN` 是细粒度 token 且没有
+Packages 权限，**不能**用于这里（会得到 `manifest 403` / `pull denied`）。
 
-升级 / 回滚后检查：
+### 6.6 排障
 
 ```bash
-sudo systemctl status club
-sudo journalctl -u club -n 50 --no-pager
-cat /opt/club/run/applied-release
+sudo -u clubdeploy /opt/club/scripts/deploy.sh status
+sudo docker ps                                            # club-app 是否 healthy
+sudo docker logs club-app --tail 100                       # 应用日志
+sudo tail -50 /var/log/club-deploy.log                     # 部署流水日志
+sudo journalctl -u club-deploy.timer -n 50 --no-pager      # 定时器
 ```
 
-### 6.4 发布侧（仓库维护者）
-
-`.github/workflows/ci.yml`：push 到 `main` 或任意 PR 触发 `backend`（`uv sync --frozen` + `manage.py test`）、`frontend`（Node 22 + `npm ci && npm run build` + 断言 SurveyJS 产物）、`frontend-test`（Vitest 单元 / 组件测试）与 `e2e`（Playwright 浏览器测试，复用 `frontend` 构建产物、自动起独立库与服务）四个 job；仅 push 到 `main` 且前四个通过时跑 `release` job——`bash scripts/pack-release.sh` 打包成 `club-<sha>.tar.gz` + `.sha256`，连同 `install.sh` 一起创建 GitHub Release（标签 `club-<sha>`，附上一个 Release 以来的 changelog）。`pack-release.sh` 只收 Django 应用、`config/`、`manage.py`、`pyproject.toml`、`uv.lock`、`scripts/`、`start.sh`、`.env.example`、`static/maintenance.html` 与 `frontend/dist/`。
+容器 `restart: unless-stopped`，Docker 已 `enable`——**重启机器后站点会自动回来**，
+不需要 `systemctl start club`（该 unit 已删除）。
 
 ## 7. 备份与恢复
 
@@ -500,36 +545,37 @@ PGPASSWORD='<DB_PASSWORD>' pg_dump -h 127.0.0.1 -U club --clean --if-exists --no
 tar -czf backups/data-$(date +%Y%m%d).tar.gz data/media data/private_media   # 未启用数据根的旧布局：去掉 data/ 前缀
 ```
 
-建议保留最近 7–30 天版本，并同步到对象存储或 NAS。快照裁剪由站点策略 `update_db_backup_keep`（默认 5）控制，只作用于更新器自己生成的 `db-*.sqlite3`。
+建议保留最近 7–30 天版本，并同步到对象存储或 NAS。`deploy.sh` 每次 `apply` 前会自己 `pg_dump` 到 `backups/db/club-<时间戳>.sql.gz`，保留份数由 `CLUB_DEPLOY_KEEP_DUMPS`（默认 5）控制。
 
 ### 7.3 恢复
 
 **数据库（SQLite）**：
 
 ```bash
-sudo systemctl stop club
+sudo docker stop club-app
 cd /opt/club
-rm -f db.sqlite3-journal db.sqlite3-wal db.sqlite3-shm
-cp backups/db-<时间戳>.sqlite3 db.sqlite3
-chown club:club db.sqlite3
-sudo systemctl start club
+rm -f data/db.sqlite3-journal data/db.sqlite3-wal data/db.sqlite3-shm
+cp backups/db-<时间戳>.sqlite3 data/db.sqlite3
+sudo docker start club-app
 ```
+
+> 容器内进程以 root 运行，文件属主保持 root 即可；裸机部署仍为服务用户 `club`。
 
 **数据库（PostgreSQL）**：
 
 ```bash
-sudo systemctl stop club
+sudo docker stop club-app
 cd /opt/club
 PGPASSWORD='<DB_PASSWORD>' psql -h 127.0.0.1 -U club -v ON_ERROR_STOP=1 \
-  -f backups/db-<时间戳>.pg.sql club
-sudo systemctl start club
+  -f backups/db/<文件>.sql club
+sudo docker start club-app
 ```
 
 **媒体**：解包归档到数据根对应位置（`<数据根>/media`、`<数据根>/private_media`），属主保持服务用户。
 
-**代码**：优先用 `--rollback <sha>`（见 6.3），而不是手工解包——它会一并跑 `uv sync` / `collectstatic` 与重载。
+**代码**：不要手工解包。用 `deploy.sh now sha-<sha>` 切到指定镜像（见 §6.4），它会把容器整棵代码树换成该 tag 的镜像。
 
-恢复后核对 `sudo systemctl status club` 与关键页面（首页、`/admin/`、登录后 `/ws/messaging/` 握手）。
+恢复后核对 `sudo -u clubdeploy /opt/club/scripts/deploy.sh status` 与关键页面（首页、`/admin/`、登录后 `/ws/messaging/` 握手）。
 
 ## 8. 常见故障与排查
 
@@ -538,8 +584,9 @@ sudo systemctl start club
 常见原因：Gunicorn 未启动 / 崩溃；`run/gunicorn.sock` 不存在或权限不对；SELinux 未打标签（阿里云 / RHEL 常见）。
 
 ```bash
-sudo systemctl status club
-sudo journalctl -u club -n 100 --no-pager
+sudo -u clubdeploy /opt/club/scripts/deploy.sh status
+sudo docker ps -a --filter name=club-app
+sudo docker logs club-app --tail 100
 ls -l /opt/club/run/
 sudo journalctl -u nginx -n 50 --no-pager
 ```
@@ -577,20 +624,20 @@ SQLite 在并发写入时的典型问题：
 
 页面功能不受影响（评论、私信、通知走 HTTP，只是不实时推）：
 
-- 站点配置缺 `proxy_http_version 1.1` 或 `Upgrade` / `Connection` 头（**更新器不会改 Nginx**）。
+- 站点配置缺 `proxy_http_version 1.1` 或 `Upgrade` / `Connection` 头（**升级流程不会改 nginx**）。
 - 只改了 80 的 `server`，443 块没有同一套反代头。
 - `start.sh` 还是旧的 WSGI / 多 worker 写法：须为 `UvicornWorker`、`--workers 1`、`config.asgi:application`。
 - 约 60 秒断一次：补 `proxy_read_timeout 7d; proxy_send_timeout 7d;`。
-- 检查 `CLUB_SPAWN_UPDATER` 等环境是否被误设、以及 `AllowedHostsOriginValidator` 是否因 `ALLOWED_HOSTS` 不含域名而拒绝握手。
+- 检查 `AllowedHostsOriginValidator` 是否因 `ALLOWED_HOSTS` 不含域名而拒绝握手。
 
-### 8.6 自动更新不生效
+### 8.6 容器升级不生效
 
-- `UPDATE_GITHUB_TOKEN` 为空 → 守护进程日志会打 `UPDATE_GITHUB_TOKEN empty; skip download`。
-- 站点策略 `auto_update_enabled` 关闭 → 跳过下载与应用。
-- 不在窗口内或距窗口结束不足截止分钟数 → 只下载不应用（`--apply-now` 可绕过）。
-- token 权限不足 / 仓库名不对 → 日志出现 `GitHub HTTP 401/403/404`；`UPDATE_GITHUB_REPO` 默认 `nhyzcms/club-management-website`。
-- 想确认当前版本：`cat run/applied-release`；想看已下载的包：`ls -l backups/releases/`。
-- 下载龟速 / 长期停在 `*.part`（直连 GitHub 慢）：给更新器单独配出站代理 `CLUB_UPDATER_PROXY`（见第 4 节），只影响更新器，不碰业务出站。
+- `Deploy` 失败 → 镜像没登记：看 Actions 的 Deploy run，多半是 SSH 或 `docker pull` 报错。
+- 登记了但没切：`deploy.sh status` 看「待发布」是否为空、当前是否在窗口外。窗口外只登记不切换是设计行为。
+- 窗口内也没切：`sudo journalctl -u club-deploy.timer -n 50 --no-pager`，再看 `/var/log/club-deploy.log`。
+- `pull denied` / `manifest 403`：ghcr 凭据失效或缺 Packages:Read（见 §6.5）。
+- 健康检查失败会自动回滚到上一 tag，日志里能看到 `回滚`；此时站点应仍可用，但版本没变。
+- 想确认当前版本：`deploy.sh status` 的第一行，或 `cat /opt/club/run/applied-release`。
 
 ### 8.7 站点一直 503（维护页不撤）
 
