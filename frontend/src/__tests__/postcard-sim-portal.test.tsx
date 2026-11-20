@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
   emptySimState,
@@ -75,7 +75,18 @@ function submit(state: SimState, barcodes: string[], photos = 0) {
   );
 }
 
+// 时间钉死在本文件假定的「登记阶段」（2026-11-10）。
+//
+// 夹具里 ship_at 是 2026-11-20，而 submitRegistration / 模拟 API 的默认 now 取真实时间：
+// 到了 2026-11-20 当天，阶段直接翻成 shipped，登记类用例集体变红——纯时间炸弹，
+// 与业务逻辑无关。只伪造 Date，不伪造 setTimeout：伪造定时器会让 await 链挂住。
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   exitSim();
   window.location.hash = "";
 });
