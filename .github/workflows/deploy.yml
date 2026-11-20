@@ -37,7 +37,9 @@ jobs:
   deploy:
     name: deploy
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # 拉镜像实测：首次 472 MB 约 7 分钟，增量层在拥塞时可达 12 分钟以上。
+    # 15 分钟离边界太近，给到 30 分钟（stage 只是拉包 + 登记，不切换）。
+    timeout-minutes: 30
     # workflow_run 触发时，只有镜像构建成功才继续
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
