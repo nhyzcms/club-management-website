@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased]
+
+_（下个版本待归类；发版时整段移到版本小节下。）_
+
+## [1.0.1] - 2026-11-21
+
+### Added
+
+- **ci**: 恢复 release 打包 job，供开发者下载运行时包 (7b419b8)
+- **flow**: 全面改为 Git Flow 五分支模型 + 每分支保护规则 (184c55a)
+- **ci**: develop 集成分支 + 容器化预演环境 (5c6fee8)
+
+### Fixed
+
+- **release**: Actions 无权建 PR 时不失败，给出直链交人工点击 (622e149)
+- **ci**: PR→main 必跑 e2e，堵住发布/急修路径上的空闸门 (fe6e6d6)
+- **test-env**: down 不依赖 CLUB_IMAGE，healthcheck 改探 HTTP (319f40b)
+- **test-env**: 复用 ghcr 凭据，直连 PG 5432 (47ffb48)
+
+### Docs
+
+- **claude**: 开发流程约束同步为新分支模型 (4c5546e)
+
+### Chore
+
+- **ci**: 发布包只走 Releases，每个版本一份 (7040bcb)
+- **ci**: 按代价重排 job 顺序，e2e 等三道单测全绿再跑 (f397225)
+- **ci**: 移除 release 打包 job，Deploy 超时提到 30 分钟 (f83e558)
+- **deploy**: 弃用旧更新器，修 cutover 先停机后拉镜像的顺序 (c3169ea)
+
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。
 
@@ -7,9 +37,6 @@
 > 之后的版本由 `.github/workflows/release.yml` 生成，分类依据是 commit message 的
 > Conventional Commits 前缀，区间是上一个 `v*` tag 到本次 tag。
 
-## [Unreleased]
-
-_（下个版本待归类。）_
 
 ## [1.0.0] - 2026-11-20
 
