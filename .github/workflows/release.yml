@@ -1,12 +1,14 @@
 name: Release
 
-# SemVer 发布流程（三步，全部可审计）：
+# SemVer 发布流程（Git Flow，四步，全部可审计）：
 #
-#   1. 维护者手动 dispatch（选 bump）→ 本 workflow 开一个 release/vX.Y.Z PR：
-#      pyproject.toml 的 version + CHANGELOG.md 的新小节
-#   2. PR 合入 main（走正常 PR 闸门 + 评审）
-#   3. main 上 pyproject 版本变了 → 自动打 tag vX.Y.Z + 建 GitHub Release
+#   1. 维护者手动 dispatch（选 bump）→ 从 **develop** 切出 release/vX.Y.Z，
+#      提交 pyproject 版本号 + CHANGELOG 新小节，对 main 开 PR（冻结窗口开始）
+#   2. PR 合入 main（source-guard + 1 人 review + 四道检查）
+#   3. main 上 pyproject 版本变了 → 打 tag vX.Y.Z + 建 Release
 #      + 关掉同名 Milestone + 开下一个版本的 Milestone
+#   4. 自动开一个 main → develop 的回流 PR（Git Flow 强制项：
+#      不回流，下一个 release 会把修好的 bug 原样带回来）
 #
 # 为什么不直接 push 版本提交：main 有分支保护，任何直推都会被拒。
 # 发布也必须是 PR——这样「这次发布的变更集」本身就是被评审过的东西。
@@ -51,7 +53,9 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: main
+          # Git Flow：release 分支从 develop 切，不从 main 切。
+          # 从 main 切会把 develop 上已集成但未发布的改动漏掉。
+          ref: develop
           fetch-depth: 0          # 生成变更记录要完整历史
           fetch-tags: true
 
@@ -105,8 +109,7 @@ jobs:
             --base main \
             --head "$BRANCH" \
             --title "chore(release): v${VERSION}" \
-            --body-file /tmp/pr-body.md \
-            --label release
+            --body-file /tmp/pr-body.md
 
   # ── 2. main 上版本变了 → 打 tag + 建 Release（串在所有闸门之后）────────
   tag:
@@ -230,3 +233,46 @@ jobs:
             echo "- 跳过: \`${{ steps.v.outputs.skip }}\`"
             echo "- 状态: \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 3. 回流：main → develop（Git Flow 强制项，忘了就会「同一个 bug 修两次」）──
+  back-merge:
+    name: back-merge
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 开回流 PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' pyproject.toml | head -1)
+          BRANCH="chore/back-merge-v${VERSION}"
+
+          git fetch origin develop
+          AHEAD=$(git rev-list --count "origin/develop..origin/main")
+          if [ "$AHEAD" = "0" ]; then
+            echo "develop 已包含 main，无需回流"
+            exit 0
+          fi
+
+          if gh pr list --head "$BRANCH" --state open --json number --jq 'length' | grep -qv '^0$'; then
+            echo "回流 PR 已存在，跳过"
+            exit 0
+          fi
+
+          git checkout -B "$BRANCH"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --base develop \
+            --head "$BRANCH" \
+            --title "chore: v${VERSION} 回流 develop" \
+            --body "release 合入 main 后自动开的回流 PR。
+
+              Git Flow 里这一步不是可选项：develop 上还留着发布前的代码，不回流的
+              直接后果是下一个 release/* 把已经修好的问题原样带回来。确认 CI 绿即可合并。"
