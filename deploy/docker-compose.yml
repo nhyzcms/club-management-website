@@ -22,7 +22,6 @@ services:
       - /opt/club/.env
     environment:
       # 容器里不拉更新守护进程：更新改由 CD 流水线负责。
-      CLUB_SPAWN_UPDATER: "0"
     volumes:
       # start.sh 要求存在 .env；同时让 load_dotenv() 走同一份配置
       - /opt/club/.env:/app/.env:ro

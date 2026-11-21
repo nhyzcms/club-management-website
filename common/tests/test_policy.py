@@ -2,7 +2,7 @@
 
 ## B5 之后的变化
 
-`SiteSettings` 一张表拆成五张（Auth / RateLimit / Upload / Updater / Content）。
+`SiteSettings` 一张表拆成四张（Auth / RateLimit / Upload / Content）。
 `get_policy()` 仍返回同一个 `SitePolicy` dataclass，所以这里**默认值断言一字未改**
 ——那部分测的是「契约」，契约没动。
 
@@ -19,19 +19,16 @@ from common.admin import (
     AuthPolicyAdmin,
     ContentPolicyAdmin,
     RateLimitPolicyAdmin,
-    UpdaterPolicyAdmin,
     UploadPolicyAdmin,
 )
 from common.models import (
     AuthPolicy,
     ContentPolicy,
     RateLimitPolicy,
-    UpdaterPolicy,
     UploadPolicy,
 )
 from common.policy import (
     DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
-    DEFAULT_AUTO_UPDATE_ENABLED,
     DEFAULT_COMMENT_MAX_DEPTH,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
@@ -48,19 +45,12 @@ from common.policy import (
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
     DEFAULT_SYNC_UPLOAD_MAX_BYTES,
     DEFAULT_TUS_MEDIA_MAX_BYTES,
-    DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
-    DEFAULT_UPDATE_DB_BACKUP_KEEP,
-    DEFAULT_UPDATE_POLL_INTERVAL_SECONDS,
-    DEFAULT_UPDATE_RELEASE_KEEP,
-    DEFAULT_UPDATE_TIMEZONE,
-    DEFAULT_UPDATE_WINDOW_END_HOUR,
-    DEFAULT_UPDATE_WINDOW_START_HOUR,
     get_policy,
     invalidate_policy_cache,
 )
 from common.testing import set_policy
 
-POLICY_MODELS = (AuthPolicy, ContentPolicy, RateLimitPolicy, UpdaterPolicy, UploadPolicy)
+POLICY_MODELS = (AuthPolicy, ContentPolicy, RateLimitPolicy, UploadPolicy)
 
 
 class SitePolicyDefaultsTest(TestCase):
@@ -100,21 +90,10 @@ class SitePolicyDefaultsTest(TestCase):
         self.assertEqual(p.stepup_email_per_ip_per_hour, DEFAULT_STEPUP_EMAIL_PER_IP_PER_HOUR)
         self.assertEqual(p.sync_upload_max_bytes, DEFAULT_SYNC_UPLOAD_MAX_BYTES)
         self.assertEqual(p.tus_media_max_bytes, DEFAULT_TUS_MEDIA_MAX_BYTES)
-        self.assertEqual(p.auto_update_enabled, DEFAULT_AUTO_UPDATE_ENABLED)
-        self.assertEqual(p.update_poll_interval_seconds, DEFAULT_UPDATE_POLL_INTERVAL_SECONDS)
-        self.assertEqual(p.update_timezone, DEFAULT_UPDATE_TIMEZONE)
-        self.assertEqual(p.update_window_start_hour, DEFAULT_UPDATE_WINDOW_START_HOUR)
-        self.assertEqual(p.update_window_end_hour, DEFAULT_UPDATE_WINDOW_END_HOUR)
-        self.assertEqual(
-            p.update_apply_cutoff_minutes_before_end,
-            DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
-        )
-        self.assertEqual(p.update_release_keep, DEFAULT_UPDATE_RELEASE_KEEP)
-        self.assertEqual(p.update_db_backup_keep, DEFAULT_UPDATE_DB_BACKUP_KEEP)
         self.assertEqual(p.comment_max_depth, DEFAULT_COMMENT_MAX_DEPTH)
 
     def test_each_policy_table_is_singleton(self):
-        """五张表各自 pk 恒为 1，保存后清缓存。"""
+        """四张表各自 pk 恒为 1，保存后清缓存。"""
         get_policy()  # 预热缓存
         AuthPolicy(pk=2, verification_enabled=False).save()
         self.assertTrue(AuthPolicy.objects.filter(pk=1).exists())
@@ -122,9 +101,9 @@ class SitePolicyDefaultsTest(TestCase):
         self.assertFalse(get_policy().verification_enabled)
 
     def test_delete_is_noop(self):
-        row, _ = UpdaterPolicy.objects.get_or_create(pk=1)
+        row, _ = AuthPolicy.objects.get_or_create(pk=1)
         row.delete()
-        self.assertTrue(UpdaterPolicy.objects.filter(pk=1).exists())
+        self.assertTrue(AuthPolicy.objects.filter(pk=1).exists())
 
     def test_invalidate_then_reread(self):
         set_policy(register_per_ip_per_day=1)
@@ -145,17 +124,6 @@ class SitePolicyDefaultsTest(TestCase):
         p = get_policy()
         self.assertEqual(p.login_per_ip_per_hour, 3)
         self.assertEqual(p.tus_media_max_bytes, DEFAULT_TUS_MEDIA_MAX_BYTES)
-        self.assertEqual(p.update_timezone, DEFAULT_UPDATE_TIMEZONE)
-
-    def test_window_hours_reject_out_of_range(self):
-        row, _ = UpdaterPolicy.objects.get_or_create(pk=1)
-        row.update_window_start_hour = 24
-        with self.assertRaises(ValidationError):
-            row.full_clean()
-        row.update_window_start_hour = 1
-        row.update_window_end_hour = -1
-        with self.assertRaises(ValidationError):
-            row.full_clean()
 
     def test_comment_max_depth_rejects_out_of_range(self):
         row, _ = ContentPolicy.objects.get_or_create(pk=1)
@@ -190,7 +158,6 @@ class PolicyFieldOwnershipTest(TestCase):
         ):
             self.assertIn(f, names)
         self.assertNotIn("login_per_ip_per_hour", names)
-        self.assertNotIn("auto_update_enabled", names)
 
     def test_rate_limit_policy_owns_all_throttles(self):
         names = self._names(RateLimitPolicy)
@@ -207,42 +174,30 @@ class PolicyFieldOwnershipTest(TestCase):
             {"sync_upload_max_bytes", "tus_media_max_bytes", "survey_upload_daily_bytes"},
         )
 
-    def test_updater_policy_owns_update_knobs(self):
-        names = self._names(UpdaterPolicy)
-        for f in (
-            "auto_update_enabled", "update_poll_interval_seconds", "update_timezone",
-            "update_window_start_hour", "update_window_end_hour",
-            "update_apply_cutoff_minutes_before_end", "update_release_keep",
-            "update_db_backup_keep",
-        ):
-            self.assertIn(f, names)
-        self.assertNotIn("comment_max_depth", names)
-
     def test_content_policy_owns_review_and_comments(self):
         names = self._names(ContentPolicy)
         for f in ("content_review_enabled", "comments_enabled", "comment_max_depth", "dms_enabled"):
             self.assertIn(f, names)
         self.assertNotIn("registration_enabled", names)
 
-    def test_all_thirty_seven_fields_are_covered_once(self):
-        """37 个字段一个不落、也不重复。漏一个会让它悄悄回到默认值。"""
+    def test_all_twenty_nine_fields_are_covered_once(self):
+        """29 个字段一个不落、也不重复。漏一个会让它悄悄回到默认值。"""
         seen = []
         for model in POLICY_MODELS:
             for f in model._meta.get_fields():
                 if f.concrete and not f.auto_created and f.name != "id":
                     seen.append(f.name)
-        self.assertEqual(len(seen), 37, f"实际 {len(seen)} 个：{sorted(seen)}")
-        self.assertEqual(len(set(seen)), 37, "有字段被放进了两张表")
+        self.assertEqual(len(seen), 29, f"实际 {len(seen)} 个：{sorted(seen)}")
+        self.assertEqual(len(set(seen)), 29, "有字段被放进了两张表")
 
 
 class PolicyAdminTest(TestCase):
-    """五张表的 admin 都是「只有一行、不能增删」。"""
+    """四张表的 admin 都是「只有一行、不能增删」。"""
 
     ADMINS = (
         (AuthPolicyAdmin, AuthPolicy),
         (RateLimitPolicyAdmin, RateLimitPolicy),
         (UploadPolicyAdmin, UploadPolicy),
-        (UpdaterPolicyAdmin, UpdaterPolicy),
         (ContentPolicyAdmin, ContentPolicy),
     )
 
@@ -291,8 +246,6 @@ class SitePolicyPublicGetTest(TestCase):
             "tus_media_max_bytes",
             "login_per_ip_per_hour",
             "register_per_ip_per_day",
-            "auto_update_enabled",
-            "update_window_start_hour",
         ):
             self.assertNotIn(hidden, data)
 

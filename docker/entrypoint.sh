@@ -19,7 +19,7 @@ _load_env_if_present() {
 case "${1:-web}" in
   web)
     # 生产：unix socket + systemd 式生命周期（start.sh 内部会按需拉更新守护进程，
-    # 容器里由 CLUB_SPAWN_UPDATER=0 关掉——更新改由 CD 流水线负责）
+    # 更新已完全交给 CD 流水线，容器内没有更新逻辑）
     exec ./start.sh
     ;;
 

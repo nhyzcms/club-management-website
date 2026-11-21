@@ -26,7 +26,6 @@ services:
       PORT: "18080"
       # 关键：只绑回环。默认 web-tcp 是 0.0.0.0，host 网络下那就是对外裸奔。
       BIND: "127.0.0.1"
-      CLUB_SPAWN_UPDATER: "0"
     command: ["web-tcp"]
     # 镜像自带的 HEALTHCHECK 探的是 /app/run/gunicorn.sock，而 web-tcp 模式不建 unix socket，
     # 沿用会让容器一直显示 unhealthy（实际服务是好的，属误导）。这里换成 HTTP 探活。

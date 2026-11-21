@@ -236,7 +236,6 @@ one_shot() {
   run docker run --rm \
     --network host \
     --env-file "$ENV_FILE" \
-    -e CLUB_SPAWN_UPDATER=0 \
     -v "$APP_DIR/.env:/app/.env:ro" \
     -v "$APP_DIR/data:/opt/club/data" \
     -v "$APP_DIR/staticfiles:/app/staticfiles" \

@@ -747,7 +747,7 @@ EOF
 
 ensure_superuser
 
-# 独立安装时把 SHA 从归档名写入 applied-release（updater 靠这个做回滚）
+# 独立安装时把 SHA 从归档名写入 applied-release（记录版本，供脚本/巡检读取）
 if [ "$NEED_DOWNLOAD" = 1 ] && [ -n "${ARCHIVE_NAME:-}" ]; then
   APPLIED="${ARCHIVE_NAME#club-}"
   APPLIED="${APPLIED%.tar.gz}"
@@ -837,8 +837,9 @@ if [ -n "$GENERATED_ADMIN_PASSWORD" ]; then
   echo "          ↑ 随机生成，只显示一次，登录后请立刻修改。"
 fi
 echo "   日志： sudo journalctl -u $SERVICE_NAME -f"
-echo "   更新： sudo -u $APP_USER HOME=$APP_HOME bash -lc 'cd \"$DIR\" && set -a;. ./.env;set +a && .venv/bin/python scripts/updater.py --apply-now [SHA]'"
-echo "   回滚： sudo -u $APP_USER HOME=$APP_HOME bash -lc 'cd \"$DIR\" && set -a;. ./.env;set +a && .venv/bin/python scripts/updater.py --rollback [SHA]'"
+echo "   更新： 下载新版 Release 运行时包，备份 $DIR 后覆盖解包，再 uv sync && manage.py migrate"
+echo "         线上正式环境请用容器化 CD（deploy/docker-compose.yml），不要手工覆盖代码树。"
+echo "   回滚： 保留上一份代码树和数据库快照，覆盖回去即可；旧更新器已在 2026-11-21 移除。"
 echo
 echo "⚠️  可选收尾："
 echo "   1) 编辑 $DIR/.env 填 EMAIL_* / TURNSTILE_* / UPDATE_GITHUB_TOKEN，再：sudo systemctl restart $SERVICE_NAME"

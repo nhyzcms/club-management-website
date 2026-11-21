@@ -77,7 +77,6 @@ overrides = {
     "DB_PORT": "5432",
     "REDIS_URL": "redis://127.0.0.1:6379/1",   # 同实例不同 db：缓存与频道层不串
     "GUNICORN_WORKERS": "2",
-    "CLUB_UPDATER_PROXY": "",                  # 更新器已弃用
     "UPDATE_GITHUB_TOKEN": "",                 # test 不碰 GitHub
     "UPDATE_GITHUB_REPO": "",
 }
@@ -163,7 +162,6 @@ cmd_up() {
 
   log "迁移数据库"
   docker run --rm --network host --env-file "$ENV_FILE" \
-    -e CLUB_SPAWN_UPDATER=0 \
     -v "$ENV_FILE:/app/.env:ro" \
     -v "$TEST_ROOT/data:/opt/club/data" \
     -v "$TEST_ROOT/staticfiles:/app/staticfiles" \
@@ -172,7 +170,6 @@ cmd_up() {
 
   log "收集静态文件"
   docker run --rm --network host --env-file "$ENV_FILE" \
-    -e CLUB_SPAWN_UPDATER=0 \
     -v "$ENV_FILE:/app/.env:ro" \
     -v "$TEST_ROOT/data:/opt/club/data" \
     -v "$TEST_ROOT/staticfiles:/app/staticfiles" \
