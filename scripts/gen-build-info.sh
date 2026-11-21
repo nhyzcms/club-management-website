@@ -34,10 +34,13 @@ if [ "$REF_TYPE" = "tag" ]; then
   TAG="$REF_NAME"
   VERSION="${REF_NAME#v}"
 elif [ -n "$SHA" ]; then
-  PARENT=$(git rev-parse "${SHA}^" 2>/dev/null || true)
+  # --verify --quiet：浅克隆里 HEAD^ 解析不出来时，普通 rev-parse 会把参数
+  # 原样打到 stdout（"<sha>^"），`[ -n "$PARENT" ]` 因此为真，后面 git show 真的
+  # 失败，pipefail + set -e 直接以 128 退出。CI 的浅克隆就是这么炸的。
+  PARENT=$(git rev-parse --verify --quiet "${SHA}^" 2>/dev/null || true)
   if [ -n "$PARENT" ]; then
     PREV=$(git show "${PARENT}:pyproject.toml" 2>/dev/null \
-      | sed -n 's/^version *= *"\([^"]*\)".*/\1/p' | head -1)
+      | sed -n 's/^version *= *"\([^"]*\)".*/\1/p' | head -1 || true)
     if [ -n "$PREV" ] && [ "$PREV" != "$BASE" ]; then
       CHANNEL="release"
       VERSION="$BASE"
