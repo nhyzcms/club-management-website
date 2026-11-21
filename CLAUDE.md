@@ -111,6 +111,9 @@ npx playwright test                        # Browser E2E: auto-starts Django (:8
   - **不要手改版本号、不要手写 CHANGELOG**：前者由 `bump_version.py` 算，后者由
     `release_notes.py` 按 Conventional Commits 分类生成。提交信息不规范，发布说明就不像话。
   - **发布说明只发一份**：挂在该版本 Release 的资产里，不恢复「每提交一个 `club-<sha>` Release」。
+  - **push 事件没送达时**：合并发布 PR 后若目标 commit 上 0 个 check-run（tag / Release / Milestone
+    / 镜像全部没发生），不是 workflow 写错。补收尾 `gh workflow run release.yml --ref main -f finish=1`，
+    补镜像 `gh workflow run image.yml --ref main`。`finish=1` 只跑 tag/Release/Milestone/回流。
   - **卡点**：① Actions 建 PR 需要组织/仓库打开 `can_approve_pull_request_reviews`（该开关同时
     允许 workflow 审批 PR）；② `GITHUB_TOKEN` 建的 PR 触发的 run 可能是 `action_required`，
     去 Actions 页面点一次 Approve；③ `main` 要 1 个 review，不能自批。
