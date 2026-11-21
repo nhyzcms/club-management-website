@@ -28,6 +28,10 @@ on:
         description: "可选：直接指定 X.Y.Z（优先级高于 bump）"
         type: string
         required: false
+      finish:
+        description: "只补做收尾：填 1，且 --ref main。用于合并后 push 事件没送达 GitHub 的情况"
+        type: string
+        required: false
   push:
     branches: [main]
     paths:
@@ -47,7 +51,8 @@ jobs:
   # ── 1. 准备发布 PR（仅手动触发）────────────────────────────────────────
   prepare:
     name: prepare
-    if: github.event_name == 'workflow_dispatch'
+    # finish=1 时跳过发起，只跑收尾（tag / Release / Milestone / 回流）
+    if: github.event_name == 'workflow_dispatch' && inputs.finish != '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -146,7 +151,7 @@ jobs:
   # ── 2. main 上版本变了 → 打 tag + 建 Release（串在所有闸门之后）────────
   tag:
     name: tag
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || inputs.finish == '1'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -269,7 +274,7 @@ jobs:
   # ── 3. 回流：main → develop（Git Flow 强制项，忘了就会「同一个 bug 修两次」）──
   back-merge:
     name: back-merge
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || inputs.finish == '1') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

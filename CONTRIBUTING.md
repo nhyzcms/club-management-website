@@ -250,6 +250,7 @@ curl -s https://<站点>/version/ | python3 -m json.tool
 |---|---|---|
 | `GitHub Actions is not permitted to create or approve pull requests` | 组织/仓库关了 Actions 建 PR | 设置里打开 `can_approve_pull_request_reviews`（同时也会放开 Actions 审批 PR） |
 | PR 的 CI 停在 `action_required` | `GITHUB_TOKEN` 建的 PR 触发的 workflow 要人工放行 | 在 Actions 页面点一次 Approve；通常几十秒内会自行开始 |
+| 合并发布 PR 后**一条 workflow 记录都没有**（该 commit 上 0 个 check-run） | GitHub 没有处理这次 push，不是 workflow 写错 | 先补收尾：`gh workflow run release.yml --ref main -f finish=1`（打 tag / 建 Release / 关 Milestone / 开回流）；再补镜像：`gh workflow run image.yml --ref main` |
 | `source-guard` 红 | PR 的 head 不是 `release/*` 或 `hotfix/*` | 改动先落 `develop`，别直接对 `main` 开 PR |
 | 合并被拒 `At least 1 approving review is required` | `main` 需要 1 个 review，且不能自批 | 找另一位维护者审；不要用 admin 绕过 |
 
