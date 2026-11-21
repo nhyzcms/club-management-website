@@ -6,6 +6,14 @@
     <meta name="theme-color" content="#ffffff" />
     <link rel="icon" href="/static/favicon.ico" />
     <title>南汇一中 · 传媒社</title>
+    <!-- 现代语法探针：下面这段只能用 ES2020 解析。旧浏览器在这里解析失败、整段不执行，
+         从而 window.__clubModernSyntax 保持为 undefined（是探测，不参与任何权限判断）。 -->
+    <script>
+      (function () {
+        var o = { b: 1 };
+        window.__clubModernSyntax = (o?.b ?? 0) === 1 ? 1 : 0;
+      })();
+    </script>
     <script>
       // 首屏防闪烁：在 React 挂载前按已存偏好先落 data-theme。
       // 同时镜像到 Django 后台约定的 theme 键（auto/light/dark），使 /admin/ 自动跟随。
@@ -41,6 +49,34 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- 旧浏览器提示：内容只有一份，默认不显示；JS 探测失败或脚本被禁用时才出现。
+         样式只用 px 与普通块元素（不用 flex/grid/CSS 变量），以便在 IE 里也能排版。 -->
+    <div id="legacy-notice" style="display:none;background:#f5f7fa;border-top:4px solid #2f6fb3;padding:32px 20px;text-align:left;font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;color:#1f2733;line-height:1.8;font-size:15px;">
+      <div style="max-width:640px;margin:0 auto;">
+        <p style="font-size:20px;font-weight:bold;color:#1f3a5f;margin:0 0 14px;">您的浏览器过旧，无法访问本网站</p>
+        <p style="margin:0 0 8px;">请更换以下浏览器后重试：</p>
+        <ul style="margin:0 0 12px 22px;padding:0;">
+          <li style="margin:0 0 4px;">Chrome 80+、Microsoft Edge 80+、Firefox 74+、Safari 13.1+（建议直接用最新版本）</li>
+          <li style="margin:0 0 4px;">Windows 7 最高可用 Chrome 109 或 Edge 109</li>
+          <li style="margin:0 0 4px;">手机请使用系统自带浏览器或 Chrome，并关闭“兼容模式”</li>
+        </ul>
+        <p style="margin:0;color:#5b6673;font-size:13px;">如果无法更换浏览器，请联系社团管理员。</p>
+      </div>
+    </div>
+    <noscript>
+      <style>#legacy-notice{display:block !important}</style>
+    </noscript>
+    <script>
+      // 语法探针未命中（解析期失败）或关键能力缺失 → 显示上面的提示块。
+      // 只读 window 上的公开能力，不读 Cookie、不写存储、不区分 UA。
+      (function () {
+        var ok = window.__clubModernSyntax === 1;
+        if (ok && !(window.fetch && window.Promise && window.JSON && document.addEventListener)) ok = false;
+        if (ok) return;
+        var el = document.getElementById("legacy-notice");
+        if (el) el.style.display = "block";
+      })();
+    </script>
     <!-- Turnstile api.js 按需加载（见 src/turnstile.ts），未启用时不请求 Cloudflare。 -->
   </body>
 </html>
