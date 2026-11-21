@@ -9,7 +9,8 @@ name: Image
 
 on:
   push:
-    # develop 也要出镜像：test 环境拉的就是 develop 的 sha-<sha> 镜像。
+    # 目前只有 main 会把镜像推送到 GHCR（见文末的 Login / Push 步骤）。
+    # develop / release / hotfix 的构建只做冒烟验证，不产出可拉取的镜像。
     # Deploy 只认 main 上完成的 Image run（deploy.yml 的 workflow_run.branches），
     # 所以 develop 的构建不会污染生产待发布队列。
     # release/* 与 hotfix/* 也出镜像：发版前要用预演环境点一遍候选版本，
@@ -188,7 +189,9 @@ jobs:
 
       # ── 推送（只有 main 才推）────────────────────────────────────────
       - name: Log in to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # 手动 dispatch 也是「我要一个能部署的镜像」——只在 push 时推的话，
+        # 补镜像的路径会构建成功、冒烟通过、然后悄悄什么都不推，直到 Deploy 报 manifest unknown。
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -196,7 +199,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # 手动 dispatch 也是「我要一个能部署的镜像」——只在 push 时推的话，
+        # 补镜像的路径会构建成功、冒烟通过、然后悄悄什么都不推，直到 Deploy 报 manifest unknown。
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           docker tag "${IMAGE}:smoke" "${IMAGE}:sha-${GITHUB_SHA}"
