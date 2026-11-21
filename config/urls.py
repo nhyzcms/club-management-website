@@ -23,11 +23,13 @@ from django.views.decorators.cache import never_cache
 from django.views.generic import TemplateView
 from django.views.static import serve
 
-from common.views import SitePolicyView
+from common.views import ChangelogView, SitePolicyView, VersionView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('site-policy/', SitePolicyView.as_view(), name='site-policy'),
+    path('version/', VersionView.as_view(), name='version'),
+    path('changelog/', ChangelogView.as_view(), name='changelog'),
     path('auth/', include('accounts.urls')),
     path('tasks/', include('tasks.urls')),
     path('messaging/', include('messaging.urls')),
