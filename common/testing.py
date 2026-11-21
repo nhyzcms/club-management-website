@@ -25,7 +25,6 @@ from .models import (
     AuthPolicy,
     ContentPolicy,
     RateLimitPolicy,
-    UpdaterPolicy,
     UploadPolicy,
 )
 from .policy import invalidate_policy_cache
@@ -59,15 +58,6 @@ POLICY_MODEL_OF = {
     "sync_upload_max_bytes": UploadPolicy,
     "tus_media_max_bytes": UploadPolicy,
     "survey_upload_daily_bytes": UploadPolicy,
-    # UpdaterPolicy
-    "auto_update_enabled": UpdaterPolicy,
-    "update_poll_interval_seconds": UpdaterPolicy,
-    "update_timezone": UpdaterPolicy,
-    "update_window_start_hour": UpdaterPolicy,
-    "update_window_end_hour": UpdaterPolicy,
-    "update_apply_cutoff_minutes_before_end": UpdaterPolicy,
-    "update_release_keep": UpdaterPolicy,
-    "update_db_backup_keep": UpdaterPolicy,
     # ContentPolicy
     "content_review_enabled": ContentPolicy,
     "comments_enabled": ContentPolicy,

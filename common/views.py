@@ -15,7 +15,9 @@ from rest_framework.views import APIView
 
 from accounts.turnstile import public_turnstile_fields
 
+from .changelog import changelog_entry
 from .policy import get_policy
+from .version import build_info
 
 #: 公开字段的唯一真源。每一项都必须有前端消费端（grep 得到），
 #: 不做「以后可能有用」的预留——预留一个键就是永久多暴露一个键。
@@ -50,3 +52,43 @@ class SitePolicyView(APIView):
     def get(self, request):
         # Turnstile sitekey 来自 .env，不是 SiteSettings；叠到公开快照给 SPA。
         return Response({**public_policy_snapshot(), **public_turnstile_fields()})
+
+
+class VersionView(APIView):
+    """公开的版本快照：线上跑的到底是哪一份代码。
+
+    ``build_info.json`` 由 CI 在构建镜像前写好，随镜像分发；
+    本地开发没有这个文件时回落到 pyproject 的版本号，``source`` 会说清楚是哪种。
+
+    为什么要公开：出问题时第一句话就是「现在是哪个版本」。能直接 GET 到，
+    就不用先 SSH 上去翻 ``deploy.sh status``。
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        response = Response(build_info())
+        # 版本随部署才变，但缓存住会让「部署到底生效没」这件事看起来像没生效
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class ChangelogView(APIView):
+    """当前版本的发行说明（前端「更新了什么」弹窗的数据源）。
+
+    和 ``/version/`` 一样是公开的：给社员看的更新说明没有保密价值，
+    而要求登录才能看「这次更新了什么」是本末倒置。
+    没有内容时给一个空壳（``sections: []``）而不是 404 或 204：
+    形状固定，前端只判断「有没有条目」，不必再处理 null / 空响应体。
+    （DRF 会把 ``Response(None)`` 压成没有 Content-Type 的 204，反而更难消费。）
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        entry = changelog_entry() or {"version": None, "released": None, "summary": None, "sections": []}
+        response = Response(entry)
+        response["Cache-Control"] = "no-store"
+        return response

@@ -93,9 +93,40 @@ npx playwright test                        # Browser E2E: auto-starts Django (:8
   生产机永远不构建。改前端后等 Image/Deploy 走完即可，不需要在服务器上重建 `frontend/dist`。
 - **上线路径**：合并 `main` → CI → Image（推 ghcr）→ Deploy（只登记）→ `club-deploy.timer` 在
   01:00–03:00 窗口内切容器。状态唯一真源是 `sudo -u clubdeploy /opt/club/scripts/deploy.sh status`。
+- **发布流程**（人点两下，其余全自动；细则见 `CONTRIBUTING.md` 的「发布流程」）：
+
+  ```bash
+  gh workflow run release.yml --ref develop -f bump=patch     # 或 -f version_override=X.Y.Z
+  ```
+
+  1. 从 **`develop`**（不是 main）切 `release/vX.Y.Z`，bump `pyproject.toml` + 写 `CHANGELOG.md`，
+     推分支并对 `main` 开 PR。
+  2. PR 过 `source-guard` + 1 review + `backend`/`frontend`/`frontend-test`/`e2e`。
+  3. 合并后自动：打 tag `vX.Y.Z` → 建 Release → 关旧 Milestone/开新 → `ci.yml` 的 `release` job
+     打包 `club-<sha>.tar.gz` 挂到该 Release → `back-merge` job 开「main → develop」回流 PR →
+     Image 构建 → Deploy 登记待发布。
+  4. **回流 PR 必须合**：不合回 `develop`，下一个 `release/*` 会把已修好的问题原样带回来。
+  5. 验证线上：`curl https://<站点>/version/`，`channel=release` 且版本号与刚发的一致才算切上去。
+
+  - **不要手改版本号、不要手写 CHANGELOG**：前者由 `bump_version.py` 算，后者由
+    `release_notes.py` 按 Conventional Commits 分类生成。提交信息不规范，发布说明就不像话。
+  - **发布说明只发一份**：挂在该版本 Release 的资产里，不恢复「每提交一个 `club-<sha>` Release」。
+  - **卡点**：① Actions 建 PR 需要组织/仓库打开 `can_approve_pull_request_reviews`（该开关同时
+    允许 workflow 审批 PR）；② `GITHUB_TOKEN` 建的 PR 触发的 run 可能是 `action_required`，
+    去 Actions 页面点一次 Approve；③ `main` 要 1 个 review，不能自批。
 - **预演环境**：`sudo scripts/test-env.sh up sha-<submit>`，只绑 `127.0.0.1:8080`，用
   `ssh -N -L 8080:127.0.0.1:8080 nhyz-prod` 访问。数据库 `club_test`、Redis db 1、独立媒体/静态目录，
   与生产完全隔离。验完 `down`，需要清数据用 `reset --yes`。详见 `deploy/README.md`。
+- **版本号不要手改**：`pyproject.toml` 的 `version` 只由 `release.yml` 在切 `release/*` 时 bump；
+  `build_info.json` 由 `scripts/gen-build-info.sh` 在 `docker build` 前生成，**在 `.gitignore` 里，不进仓库**。
+  构建侧靠「提交是否改了 pyproject 的 version」判断 release / dev，因此不需要等 tag（tag job 是并发跑的）。
+  线上版本：`curl https://<站点>/version/`，或 `docker exec club-app .venv/bin/python manage.py version`。
+  `channel=dev` 的版本号形如 `1.0.1-dev.<距上个 tag 的提交数>.g<sha7>`。
+  **弹窗文案**：`CHANGELOG.md` 版本小节标题下的 `> …` 引用块会成为弹窗第一句；没写就只剩
+  自动生成的 commit 条目。`ci/test/chore/build` 类型不进弹窗（留给 git log）。
+  **前端**：页脚显示版本号（`/version/`），发版后版本变化弹一次「这次的更新」——内容来自
+  `/changelog/`，由 `scripts/gen_changelog.py` 把 CHANGELOG.md 的当节转成 `changelog.json` 带进镜像。
+  弹窗只在 `channel=release`、且用户见过旧版本、且确有说明时才弹（首次访问只记录不打扰）。
 - **数据库迁移**：新增 `Meta.permissions` 等模型选项时**必须**同时生成 `AlterModelOptions` 迁移，
   否则权限不落库（历史踩坑）。
 - **推送后自检**：CI 状态 + 关键接口/页面人工确认；涉及前端构建的改动，确认 Image workflow 真的重建了镜像。

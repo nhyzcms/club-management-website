@@ -68,6 +68,24 @@ feature/*    ●──●      ●──●                        单个功能�
 5. **测试文件跟功能代码一起进 `main`。** 不要为测试单开分支——
    `main` 上没有测试文件时，CI 会跑空集并报绿，这是最坏的一种失败。
 
+### 版本号：谁都不用手改
+
+```
+pyproject.toml 的 version   ← 只由 release/* 分支改（Release workflow 自动 bump）
+build_info.json             ← 只由 CI 在构建镜像前生成，不进仓库
+GET /version/               ← 程序自报：version / channel / commit / 构建时间
+```
+
+- **不要手改 `pyproject.toml` 的版本号。** 它由 `release.yml` 在切 `release/*` 时改，
+  于是「版本号变了的那个提交」就是发布提交本身——构建侧据此判断 release / dev，
+  不需要等 tag（tag 由另一个 job 并发创建，等它会有竞态）。
+- **`build_info.json` 不要提交。** 它在 `.gitignore` 里，由 `scripts/gen-build-info.sh`
+  在 `docker build` 前写入构建上下文。提交它就意味着每条分支都要处理一次冲突。
+- **判断线上跑的是哪一版**：`curl https://<站点>/version/`，或在服务器上
+  `docker exec club-app .venv/bin/python manage.py version`。
+  返回里的 `channel=dev` 说明这是分支构建（版本号带 `-dev.<n>.g<sha>`），
+  `channel=release` 才是打过 tag 的发布版本。
+
 ### 各分支的保护规则
 
 | 分支 | 保护规则 |
@@ -158,6 +176,82 @@ cd frontend && npx playwright test        # 浏览器 E2E（首次需装 chromiu
 ```
 
 跑测试用 `.venv/bin/python` 直调，不要用 `uv run`——`uv run` 每次都会重写 `uv.lock`，给 diff 添噪音。
+
+---
+
+## 发布流程
+
+一次发布只需要人点两下，其余全是自动的。**不要手改版本号，也不要手写 CHANGELOG。**
+
+### 1. 发起
+
+```bash
+gh workflow run release.yml --ref develop -f bump=patch   # patch | minor | major
+# 版本号算不准时可以直说：
+gh workflow run release.yml --ref develop -f version_override=2.0.0
+```
+
+workflow 会从 `develop`（不是 `main`——`main` 上可能还缺已集成的改动）切出
+`release/vX.Y.Z`，把 `pyproject.toml` 的 version 和 `CHANGELOG.md` 的新小节一起提交，
+推上去并对 `main` 开 PR。
+
+CHANGELOG 的分类来自 commit message 的 Conventional Commits 前缀，区间是上一个
+`v*` tag 到本次提交。所以**提交信息写规范**，发布说明才像话。
+
+**但自动生成的只是草稿。** 它给的是 `**ci**: 恢复打包 job` 这种原文，而看这个弹窗的是社员。
+发版 PR 合并前，在该节标题下补一行引用块，它会作为弹窗最上面那句话：
+
+```markdown
+## [1.1.0] - 2026-11-22
+
+> 页面底部现在能看到版本号，发版后会告诉你这次改了什么。
+
+### Added
+```
+
+`ci` / `test` / `chore` / `build` 这几类改动**不会**进给社员的那份（git log 里一条不少），
+流水线怎么排队跟社员没有关系。
+
+### 2. 看 PR
+
+`release/*` → `main` 的 PR 会跑全套：`source-guard`（来源必须是 `release/*` 或
+`hotfix/*`）+ 1 人 review + `backend` / `frontend` / `frontend-test` / `e2e`。
+
+`release/*` 是**冻结窗口**：这个分支上只修 bug，不要再把 `develop` 的新功能合进来。
+
+### 3. 合并后自动发生的事
+
+```
+合并进 main
+  ├─ release.yml  tag   → 打 vX.Y.Z、建 Release、关旧 Milestone、开下一版 Milestone
+  ├─ release.yml  back-merge → 自动开「main → develop 回流 PR」，务必合并
+  ├─ ci.yml       release → 打包 club-<sha>.tar.gz，作为资产挂到该版本的 Release
+  ├─ image.yml    image  → 构建并推 ghcr.io/nhyzcms/club-management-website:sha-<sha>
+  └─ deploy.yml   deploy → 登记「待发布」，等夜间窗口切容器
+```
+
+**回流 PR 不能忽略。** 不合回 `develop`，下一个 `release/*` 会把已修好的问题原样带回来。
+
+**发布包只发一份。** 资产挂在 Releases 页面对应版本下（`club-<sha>.tar.gz` + `.sha256`），
+不再每次提交都建一个 Release。
+
+### 4. 验证线上
+
+```bash
+curl -s https://<站点>/version/ | python3 -m json.tool
+```
+
+`channel=release` 且版本号就是刚发的那个，说明镜像已经切过去了。
+`channel=dev` 说明还在跑分支构建。
+
+### 5. 常见卡点
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `GitHub Actions is not permitted to create or approve pull requests` | 组织/仓库关了 Actions 建 PR | 设置里打开 `can_approve_pull_request_reviews`（同时也会放开 Actions 审批 PR） |
+| PR 的 CI 停在 `action_required` | `GITHUB_TOKEN` 建的 PR 触发的 workflow 要人工放行 | 在 Actions 页面点一次 Approve；通常几十秒内会自行开始 |
+| `source-guard` 红 | PR 的 head 不是 `release/*` 或 `hotfix/*` | 改动先落 `develop`，别直接对 `main` 开 PR |
+| 合并被拒 `At least 1 approving review is required` | `main` 需要 1 个 review，且不能自批 | 找另一位维护者审；不要用 admin 绕过 |
 
 ---
 

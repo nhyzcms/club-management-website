@@ -92,6 +92,22 @@ jobs:
           set -o pipefail
           uv run python manage.py test 2>&1 | tee "$RUNNER_TEMP/backend-test.log"
 
+      # 版本生成脚本自己也要被测：它坏了，只有等镜像构建（几分钟后）才会暴露，
+      # 而那是发布链路上最贵的一次等待。
+      - name: Build info generator
+        run: |
+          set -euo pipefail
+          bash scripts/gen-build-info.sh "$RUNNER_TEMP/build_info.json"
+          python3 -c "
+          import json, os, re
+          d = json.load(open(os.environ['RUNNER_TEMP'] + '/build_info.json'))
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(-dev\.[0-9]+\.g[0-9a-f]{7})?', d['version']), d['version']
+          assert d['channel'] in ('release', 'dev'), d['channel']
+          assert d['commit_short'], 'commit_short 为空'
+          assert d['built_at'].endswith('Z'), d['built_at']
+          print('build_info OK:', d['version'], d['channel'], d['commit_short'])
+          "
+
       - name: Job summary
         if: always()
         run: |

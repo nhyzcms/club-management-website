@@ -36,6 +36,10 @@ SECTIONS = OrderedDict(
 )
 
 # "feat(scope): 摘要" / "fix!: 摘要" / "feat(scope)!: 摘要"
+#: ``changelog-entry`` 的读者是社员，不是维护者。
+#: CI 怎么排队、测试怎么跑，社员不关心，而 git log 里一条不少——所以这份不写。
+PUBLIC_SKIP = {"ci", "test", "chore", "build"}
+
 SUBJECT_RE = re.compile(r"^(?P<type>[a-zA-Z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?:\s*(?P<summary>.+)$")
 BREAKING_FOOTER_RE = re.compile(r"^BREAKING[ -]CHANGE:\s*(.+)$", re.MULTILINE)
 
@@ -107,8 +111,11 @@ def render(commits: list[dict], *, version: str | None, fmt: str) -> str:
         lines.append(f"共 {len(commits)} 条变更。")
         lines.append("")
 
+    public = fmt == "changelog-entry"
     for key, title in SECTIONS.items():
         items = buckets.get(key) or []
+        if public:
+            items = [c for c in items if c["type"] not in PUBLIC_SKIP]
         if not items:
             continue
         lines.append(f"### {title}")
@@ -118,7 +125,8 @@ def render(commits: list[dict], *, version: str | None, fmt: str) -> str:
             lines.append(f"- {scope}{c['summary']} ({c['sha']})")
         lines.append("")
 
-    if not any(buckets.values()):
+    if not any(buckets.values()) or (public and not any(
+            items for key, items in buckets.items() if key not in PUBLIC_SKIP)):
         lines.append("_本次没有记录到变更。_")
 
     return "\n".join(lines).rstrip() + "\n"

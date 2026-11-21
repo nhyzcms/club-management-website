@@ -97,6 +97,17 @@ sudo -u clubdeploy /opt/club/scripts/deploy.sh now sha-<sha>
 sudo -u clubdeploy /opt/club/scripts/deploy.sh status
 ```
 
+确认线上到底是哪一版（不登录服务器也能看）：
+
+```bash
+curl -s https://<站点>/version/ | python3 -m json.tool
+# 或
+sudo docker exec club-app .venv/bin/python manage.py version
+```
+
+`channel=release` + 干净的三段版本号（如 `1.0.1`）表示这是打 tag 的发布提交；
+`channel=dev` 是分支构建，版本号带 `-dev.<距上个 tag 的提交数>.g<sha7>`。
+
 ## 预演环境（test）
 
 在合并进 `main` 之前点一遍真实页面。跑的是 `develop` 的镜像，数据面与生产隔离。

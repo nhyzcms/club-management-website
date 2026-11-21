@@ -7,7 +7,6 @@ from .models import (
     ContentPolicy,
     RateLimitPolicy,
     Tag,
-    UpdaterPolicy,
     UploadPolicy,
 )
 
@@ -56,11 +55,6 @@ class RateLimitPolicyAdmin(_SingletonPolicyAdmin):
 @admin.register(UploadPolicy)
 class UploadPolicyAdmin(_SingletonPolicyAdmin):
     """上传体积上限。"""
-
-
-@admin.register(UpdaterPolicy)
-class UpdaterPolicyAdmin(_SingletonPolicyAdmin):
-    """自动更新守护进程参数。改错会导致线上不更新。"""
 
 
 @admin.register(ContentPolicy)

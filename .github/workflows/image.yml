@@ -43,6 +43,40 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # 版本号要数「距上一个 tag 多少个提交」，并判断父提交的 pyproject 版本，
+          # 浅克隆会让这两件事都算错。
+          fetch-depth: 0
+          fetch-tags: true
+
+      # 版本号在构建前写进构建上下文，随镜像一起走。
+      # 不提交进仓库：提交就要每个分支处理冲突，而且总有人忘了改。
+      - name: Generate build info
+        run: |
+          set -euo pipefail
+          bash scripts/gen-build-info.sh build_info.json
+          python3 -c "import json;d=json.load(open('build_info.json'));print(json.dumps(d,ensure_ascii=False))"
+          VERSION=$(python3 -c "import json;print(json.load(open('build_info.json'))['version'])")
+          echo "BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "### 构建版本 \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # 更新说明也进镜像：前端「更新了什么」弹窗读它。
+      # 与版本号同源同批生成，避免「版本是 1.0.1、说明还是上一版」这种错位。
+      - name: Generate changelog
+        run: |
+          set -euo pipefail
+          python3 scripts/gen_changelog.py --output changelog.json
+          python3 -c "import json;d=json.load(open('changelog.json'));print('changelog:', 'null' if d is None else f\"{d['version']} / {len(d['sections'])} 节\")"
+
+          # 冒烟测试要知道「构建时到底写进去了什么」。
+          # 解析不出来（null）是合法的——那一版没写说明——但必须显式区分，
+          # 否则「没写说明」和「生成脚本坏了」在 CI 里长得一模一样。
+          LOG_VERSION=$(python3 -c "import json;d=json.load(open('changelog.json'));print('' if d is None else d['version'])")
+          echo "CHANGELOG_VERSION=$LOG_VERSION" >> "$GITHUB_ENV"
+          if [ -z "$LOG_VERSION" ]; then
+            echo "::warning::这一版没有发行说明（CHANGELOG.md 里没有对应小节），前端不会弹更新提示"
+          fi
+
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -117,6 +151,36 @@ jobs:
           curl -fsS --max-time 5 http://127.0.0.1:18000/ | grep -q 'id="root"' \
             || { echo "::error::SPA 入口未渲染（frontend/dist 可能没进镜像）"; exit 1; }
           echo "SPA 入口 OK"
+
+          # 版本号真的刻进镜像了吗：容器自报的版本必须等于构建前写入的那个
+          curl -fsS --max-time 5 http://127.0.0.1:18000/version/ >/tmp/version.json \
+            || { echo "::error::/version/ 不可访问"; exit 1; }
+          echo "version: $(cat /tmp/version.json)"
+          GOT=$(python3 -c "import json;print(json.load(open('/tmp/version.json'))['version'])")
+          if [ "$GOT" != "$BUILD_VERSION" ]; then
+            echo "::error::镜像内版本 ($GOT) ≠ 构建时写入的版本 ($BUILD_VERSION)"
+            exit 1
+          fi
+          echo "版本戳一致：$GOT"
+
+          # 更新说明同样要能取到：这是「这次的更新」弹窗的唯一数据源。
+          # 生产镜像里没有 CHANGELOG.md（.dockerignore 排除了 *.md），
+          # 所以 changelog.json 一旦没进去，功能就是静默死亡——没人会收到报错。
+          curl -fsS --max-time 5 http://127.0.0.1:18000/changelog/ >/tmp/changelog.json \
+            || { echo "::error::/changelog/ 不可访问"; exit 1; }
+          echo "changelog: $(cat /tmp/changelog.json)"
+          python3 - <<'PY'
+          import json, os, sys
+          d = json.load(open("/tmp/changelog.json"))
+          if not isinstance(d, dict) or not {"version", "released", "sections"} <= set(d):
+              sys.exit("::error::/changelog/ 形状不对（前端按固定形状解析）")
+          want = os.environ.get("CHANGELOG_VERSION", "")
+          if want and d["version"] != want:
+              sys.exit(f"::error::镜像内更新说明版本 ({d['version']}) ≠ 构建时写入 ({want})")
+          if want and not d["sections"]:
+              sys.exit("::error::构建时明明有更新说明，镜像里却没有条目")
+          print("更新说明 OK：", d["version"], len(d["sections"]), "节")
+          PY
 
       - name: Dump container logs
         if: failure()
