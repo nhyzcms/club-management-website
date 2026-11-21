@@ -105,11 +105,30 @@ jobs:
             sed -n '/^## \[/,$p' CHANGELOG.md | head -120
           } > /tmp/pr-body.md
 
-          gh pr create \
-            --base main \
-            --head "$BRANCH" \
-            --title "chore(release): v${VERSION}" \
-            --body-file /tmp/pr-body.md
+          # 组织策略禁止 GitHub Actions 创建 PR（实测 2026-11-21：
+          # "The organization does not allow GitHub Actions to create or approve
+          #  pull requests"）。这不是失败——分支已经推上去了，缺的只是那一次点击。
+          # 不为此去改组织级权限：那会同时允许任何 workflow 审批 PR，等于拆掉 review 闸门。
+          if gh pr create \
+               --base main \
+               --head "$BRANCH" \
+               --title "chore(release): v${VERSION}" \
+               --body-file /tmp/pr-body.md; then
+            echo "已自动创建发布 PR"
+          else
+            echo "::warning::无法自动建 PR，分支已推送，请手动开："
+            echo "https://github.com/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?expand=1"
+            {
+              echo "## 发布分支已就绪 · v${VERSION}"
+              echo
+              echo "Actions 无权创建 PR（组织策略）。点这里开 PR："
+              echo
+              echo "<https://github.com/${GITHUB_REPOSITORY}/compare/main...${BRANCH}?expand=1>"
+              echo
+              echo "分支：\`${BRANCH}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
   # ── 2. main 上版本变了 → 打 tag + 建 Release（串在所有闸门之后）────────
   tag:
@@ -268,11 +287,24 @@ jobs:
 
           git checkout -B "$BRANCH"
           git push -u origin "$BRANCH"
-          gh pr create \
+          # 同 prepare：组织策略禁止 Actions 开 PR。分支推上去即可，摘要给直链。
+          # 回流这件事不能因为点不了按钮而消失。
+          if gh pr create \
             --base develop \
             --head "$BRANCH" \
             --title "chore: v${VERSION} 回流 develop" \
             --body "release 合入 main 后自动开的回流 PR。
 
               Git Flow 里这一步不是可选项：develop 上还留着发布前的代码，不回流的
-              直接后果是下一个 release/* 把已经修好的问题原样带回来。确认 CI 绿即可合并。"
+              直接后果是下一个 release/* 把已经修好的问题原样带回来。确认 CI 绿即可合并。"; then
+            echo "已自动创建回流 PR"
+          else
+            echo "::warning::无法自动建回流 PR，分支已推送：$BRANCH"
+            {
+              echo "## 回流 PR 待人工创建 · v${VERSION}"
+              echo
+              echo "<https://github.com/${GITHUB_REPOSITORY}/compare/develop...${BRANCH}?expand=1>"
+              echo
+              echo "**这一步不能跳过**：不合回 develop，下一个 release 会把已修好的问题带回来。"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
