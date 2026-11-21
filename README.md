@@ -80,9 +80,9 @@ cd frontend && npm ci && npm run dev
 
 ## 开发约定
 
-- **改动一律走分支 + PR**（`feature/…` / `fix/…` / `docs/…`），不直推 `main`。
+- **分支用 Git Flow**：`feature/*` → `develop` → `release/*` → `main`；`main` 只接受 `release/*` 与 `hotfix/*`。详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 - **测试与构建一律交 CI**（`backend` / `frontend` / `frontend-test` / `e2e`）：生产机只有 2 核 2 GB / 3 MB 带宽，跑测试会拖垮线上。
-- **升级不要在服务器上 `git pull`**：走 GitHub Release + 更新守护进程（或 `scripts/updater.py --apply-now <sha>`），失败自动回滚。
+- **升级不要在服务器上 `git pull`**：合并 `main` 后由 CI 构建镜像、`club-deploy.timer` 在维护窗口内切容器，失败可用 `deploy.sh rollback` 回退。旧更新守护进程已于 2026-11-21 移除。
 - 更多协作细节见 [CLAUDE.md](CLAUDE.md)。
 
 ## 许可证

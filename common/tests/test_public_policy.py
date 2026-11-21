@@ -38,13 +38,6 @@ class PublicPolicySnapshotTest(TestCase):
         """运维参数（更新窗口、tus 上限、各条限流阈值）不再匿名可读。"""
         data = APIClient().get("/site-policy/").data
         for leaked in (
-            "update_window_start_hour",
-            "update_window_end_hour",
-            "auto_update_enabled",
-            "update_timezone",
-            "update_poll_interval_seconds",
-            "update_release_keep",
-            "update_db_backup_keep",
             "tus_media_max_bytes",
             "login_per_ip_per_hour",
             "login_per_username_per_hour",

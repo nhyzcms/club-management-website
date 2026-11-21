@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# start.sh — 启动生产 ASGI（Gunicorn + UvicornWorker），并拉起同生命周期的更新守护进程。
+# start.sh — 启动生产 ASGI（Gunicorn + UvicornWorker）。
 #
 # 设计：路径全部相对本脚本（仓库根），不硬编码 /srv/club。
 #   - 由 systemd unit `club.service` 的 ExecStart 调用（Type=notify）；
 #   - 也可手动 ./start.sh 前台跑（Ctrl-C 停），便于排障。
 # 用 `exec` 让 gunicorn 顶替本 shell 成为 unit 主进程，sd_notify 才工作。
-# 更新进程是 gunicorn 的兄弟（fork 后 exec）：停 club 时 systemd 清整个 cgroup，
-# 不另写 club-updater.service。Apply 时对父进程 SIGHUP，避免 restart 把自己杀掉。
 # ADR 0015/0021：InMemory 频道层不能跨进程扇出 → 未配 REDIS_URL 时保持 worker=1；
 # 配好 Redis 频道层后可用 GUNICORN_WORKERS 提高并发（默认仍 1）。
 set -euo pipefail
@@ -26,12 +24,10 @@ set -a; . ./.env; set +a
 # socket 目录（相对仓库根）；systemd unit 与 nginx 都指向这里。
 mkdir -p "$DIR/run"
 
-# 更新守护进程已于 2026-11-20 弃用：生产改为容器化 CD
+# 更新守护进程已移除（2026-11-21）：生产改为容器化 CD
 # （CI 构建镜像 → 推 ghcr.io → Deploy workflow 登记 → 窗口内 deploy.sh 切换）。
-# 不再在 web 进程旁 fork 一个会改写站点文件的守护进程——它和容器的语义直接冲突：
-# 容器跑的是镜像里的只读代码树，而旧更新器会去替换宿主机的 /opt/club 目录。
-# 旧代码（common/updater.py / scripts/updater.py）保留在仓库里作为回滚参考，
-# 但没有任何启动路径会拉起它。
+# 旧更新器会改写宿主机 /opt/club 代码树，和「容器跑只读镜像」的语义直接冲突，
+# 所以连同 common/updater.py、scripts/updater.py 与 UpdaterPolicy 表一起删掉了。
 
 exec "$DIR/.venv/bin/gunicorn" \
   -k uvicorn.workers.UvicornWorker \
