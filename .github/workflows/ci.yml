@@ -359,3 +359,78 @@ jobs:
             echo "- 失败产物: \`playwright-report\` artifact（含 trace 回放）"
             echo "- 提交: \`${GITHUB_SHA:0:7}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+
+  # ── 最后一个：把可运行的运行时树打包，供其他开发者下载 ──────────────
+  # 不再喂更新器（那条链路已经是容器 CD）。两种出口：
+  #   · 该提交正好是版本发布点（有 v* tag）→ 挂到那个 Release 的资产里
+  #   · 普通提交 → 挂成本次 workflow 的 artifact（Actions 页面直接下）
+  # 刻意不恢复「每次提交建一个 club-<sha> Release」：那会立刻把 Releases 页面
+  # 堆回几百条噪声，之前刚清理过。
+  release:
+    name: release
+    needs: [backend, frontend, frontend-test, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Pack tarball
+        run: bash scripts/pack-release.sh
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-tarball
+          path: |
+            club-*.tar.gz
+            club-*.tar.gz.sha256
+          retention-days: 90
+
+      - name: Attach to version release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 等 release.yml 的 tag job 落 tag（它跑在同一 push 上，通常更快）
+          TAG=""
+          for _ in $(seq 1 12); do
+            TAG=$(git tag --points-at HEAD --list 'v*' | sort -V | tail -1 || true)
+            [ -n "$TAG" ] && break
+            sleep 10
+          done
+          if [ -z "$TAG" ]; then
+            echo "本次提交不是版本发布点，只产出 workflow artifact"
+            exit 0
+          fi
+          echo "挂到 Release $TAG"
+          ASSETS=("club-${GITHUB_SHA}.tar.gz" "club-${GITHUB_SHA}.tar.gz.sha256")
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+          else
+            echo "::warning::Release $TAG 还不存在（release.yml 可能尚未建好），资产仅在 artifact 中"
+          fi
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Release · 可下载运行时包"
+            echo
+            echo "- **状态**: \`${{ job.status }}\`"
+            echo "- 文件: \`club-${GITHUB_SHA}.tar.gz\` + \`.sha256\`"
+            echo "- 下载: Actions 页面下方 Artifacts → \`release-tarball\`"
+            echo "- 版本发布点会同时挂到对应 Release 的资产里"
+          } >> "$GITHUB_STEP_SUMMARY"
