@@ -399,28 +399,40 @@ jobs:
             club-*.tar.gz.sha256
           retention-days: 90
 
-      - name: Attach to version release
+      - name: Publish to Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # 等 release.yml 的 tag job 落 tag（它跑在同一 push 上，通常更快）
+          # 等 release.yml 的 tag job 落 tag（跑在同一 push 上，通常更快）
           TAG=""
-          for _ in $(seq 1 12); do
+          for _ in $(seq 1 18); do
             TAG=$(git tag --points-at HEAD --list 'v*' | sort -V | tail -1 || true)
             [ -n "$TAG" ] && break
             sleep 10
           done
           if [ -z "$TAG" ]; then
-            echo "本次提交不是版本发布点，只产出 workflow artifact"
+            echo "本次提交不是版本发布点 —— 不作为发布包出口（每个版本只发一份）"
             exit 0
           fi
-          echo "挂到 Release $TAG"
+
+          # 等 release.yml 把 Release 建好，别抢在它前面建出一个没有变更说明的空壳
+          for _ in $(seq 1 18); do
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 10
+          done
+
           ASSETS=("club-${GITHUB_SHA}.tar.gz" "club-${GITHUB_SHA}.tar.gz.sha256")
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            echo "已挂到 Release $TAG"
           else
-            echo "::warning::Release $TAG 还不存在（release.yml 可能尚未建好），资产仅在 artifact 中"
+            # 兜底：Release 迟迟没建（比如 release.yml 挂了），用现有 tag 建，
+            # 保证开发者总能从 Releases 页面拿到包。
+            gh release create "$TAG" "${ASSETS[@]}" --verify-tag --generate-notes
+            echo "Release 由本 job 兜底创建"
           fi
 
       - name: Job summary
@@ -431,6 +443,5 @@ jobs:
             echo
             echo "- **状态**: \`${{ job.status }}\`"
             echo "- 文件: \`club-${GITHUB_SHA}.tar.gz\` + \`.sha256\`"
-            echo "- 下载: Actions 页面下方 Artifacts → \`release-tarball\`"
-            echo "- 版本发布点会同时挂到对应 Release 的资产里"
+            echo "- 出口: Releases 页面对应版本的资产（每个版本只发一份）"
           } >> "$GITHUB_STEP_SUMMARY"
