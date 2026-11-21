@@ -18,7 +18,7 @@
 | 数据库 | SQLite 缺省（`db.sqlite3`）；可选 PostgreSQL（`DB_ENGINE=postgresql`） | `config/settings.py` |
 | 实时推送 | Django Channels（缺省 `InMemoryChannelLayer`；配 `REDIS_URL` 用 Redis 频道层） | `config/asgi.py` |
 | 前端路由 | hash 路由（应用内 URL 形如 `/#/route`） | `frontend/src/App.tsx` |
-| 生产运行 | Nginx + Gunicorn `UvicornWorker`（worker 数由 `GUNICORN_WORKERS` 控制，默认 1；未配 `REDIS_URL` 时不得 >1） | `start.sh` |
+| 生产运行 | Nginx + Docker 容器 `club-app`（容器内 Gunicorn `UvicornWorker`，worker 数由 `GUNICORN_WORKERS` 控制，默认 1；未配 `REDIS_URL` 时不得 >1） | `Dockerfile` / `docker/entrypoint.sh` / `start.sh` |
 
 后端运行时依赖（`pyproject.toml`）：`django`、`djangorestframework`、`django-cors-headers`、`django-filter`、`channels[daphne]`、`drf-tus`、`bleach`、`pillow`、`python-dotenv`、`gunicorn`、`uvicorn[standard]`。
 前端运行时依赖（`frontend/package.json`）：`react` 19、`react-router-dom` 7、Tiptap 3、SurveyJS 3（`survey-core` / `survey-react-ui` / `survey-creator-*` / `survey-analytics`）、`chart.js`、`frappe-gantt`、`docx-preview`、`mammoth`、`lowlight`、`tus-js-client`、`l2d`。
@@ -95,6 +95,15 @@ npm run build
 | `uv run python manage.py check` | 无错误输出 |
 | `uv run python manage.py test` | 全套通过（Django runner 打印 `Ran N tests ... OK`） |
 
+## 协作流程（分支与 PR）
+
+- **`main`**：生产分支。只接受 PR，要求四道必需检查（`backend` / `frontend` / `frontend-test` / `e2e`）全绿 + 1 人 review；不能直推，也不能自己批准自己的 PR。
+- **`develop`**：集成分支。`feat/*` / `fix/*` 从 `develop` 拉出，合入 `develop` 只要求 CI 绿、不要求 review；真正的评审发生在 `develop` → `main`，一次审完全部。
+- **`fix/*` 急修**可从 `main` 拉出、直接对 `main` 开 PR——仍要过完整 CI + review（目标为 `main` 的 PR 必跑 e2e，不因「急」跳过）。
+- **不建 `test` 分支**：测试文件跟功能代码一起进 `main`；预演用容器环境（`sudo scripts/test-env.sh up sha-<sha>`，经 SSH 隧道访问，详见[部署指南](operations/deployment.md)），不要另开分支。
+- 文档改动提交到 `documentation` 分支（`main` 上出现 `docs/` 会被 `docs-guard` 拦下）；PR 预览图放 `assets/pr-previews`。
+- 合并用 merge commit（不用 squash），合并后分支自动删除；发版后把 `main` 合回 `develop`。
+
 ## 运行测试
 
 ```bash
@@ -124,16 +133,19 @@ cd frontend
 npm test            # 一次性运行（vitest run）
 npm run test:watch  # 监视模式
 ```
-CI 配置见 `.github/workflows/ci.yml`，触发条件为 push 到 `main` 或任意 PR；五个必跑 job 加一个发布 job：
+CI 配置见 `.github/workflows/`：`ci.yml`（测试）、`image.yml`（镜像）、`deploy.yml`（登记部署）、`release.yml`（SemVer 发布）。`ci.yml` 在 push 到 `main` / `develop`、以及目标为这两个分支的 PR 上运行：
 
 | Job | 触发 | 步骤 |
 |---|---|---|
-| `docs-guard` | push 到 `main` / 目标为 `main` 的 PR | 断言 `main` 不含 `docs/`——文档已迁到独立的 `documentation` 分支维护，避免每次文档提交都触发一次 release |
-| `backend` | push 到 `main` / 任意 PR | `astral-sh/setup-uv`（python 3.14）→ `uv sync --frozen` → `uv run python manage.py test` |
+| `docs-guard` | push 到 `main` / 目标为 `main` 的 PR | 断言 `main` 不含 `docs/`——文档在独立的 `documentation` 分支维护 |
+| `backend` | push main / develop、任意 PR | `astral-sh/setup-uv`（python 3.14）→ `uv sync --frozen` → `uv run python manage.py test` |
 | `frontend` | 同上 | Node 22 → `npm ci && npm run build`（工作目录 `frontend`）→ 断言 `frontend/dist/surveyjs/survey.core.min.js` 存在 → 上传 `frontend-dist` artifact（保留 1 天） |
 | `frontend-test` | 同上 | Node 22 → `npm ci` → `npm test`（Vitest 单元 / 组件测试，工作目录 `frontend`） |
-| `e2e` | 同上 | 复用 `frontend-dist` artifact + `uv sync` → `npx playwright install-deps chromium`（apt 失败仅告警，用 runner 镜像预装依赖）+ `npx playwright install chromium`（最多 3 次重试）→ `npx playwright test`（自动起独立库与服务）；上传 `playwright-report`（含 trace 回放，保留 7 天） |
-| `release` | 仅 push 到 `main` 且前四个 job 通过 | `bash scripts/pack-release.sh` 打包 → 创建 GitHub Release（标签 `club-<sha>`，资产为 tarball + `.sha256` + `install.sh`，附上一个 Release 以来的 changelog） |
+| `e2e` | 见下 | 复用 `frontend-dist` artifact + `uv sync` → 安装 chromium → `npx playwright test`（自动起独立库与服务）；上传 `playwright-report`（含 trace 回放，保留 7 天） |
+
+`e2e` 的闸门在 **step 层**（job 总会启动并报 success，避免必需检查停在 skipped）：**push 到 `main`、push 到 `develop`、PR 带 `ci:full` 标签、目标为 `main` 的 PR（发布 / 急修，无条件真跑）**。目标为 `develop` 的 PR 仅在改动涉及 `frontend/` 时真跑；改登录 / 路由 / 上传 / 审核台 / 问卷这类跨页流程时，请在 PR 上打 `ci:full`。
+
+镜像与部署是独立工作流：`image.yml` 在 push `main` / `develop` 时构建镜像并推 `ghcr.io`（develop 的镜像供预演环境拉取）；`deploy.yml` 只在 `main` 的 Image 成功后执行 `deploy.sh stage` 登记，真正的切换在夜间窗口内；版本号与 changelog 走 `release.yml`（见 `RELEASING.md`）。
 
 各 job 会把关键结果（测试统计、构建摘要等）写入运行页的 Step Summary，便于快速浏览。
 
@@ -170,7 +182,7 @@ cd frontend && npx playwright test                        # e2e job（需已装�
 | `cd frontend && npx playwright test` | 浏览器 E2E（自动起独立库与服务；详见「运行测试」） |
 | `uv run python manage.py seed_e2e` | 生成 E2E 种子数据（幂等；仅测试环境） |
 | `cd frontend && npm run copy-surveyjs` | 单独重跑 SurveyJS 静态文件拷贝（升级 survey-* / Chart.js 后需要） |
-| `./start.sh` | 前台启动生产 ASGI（Gunicorn + `UvicornWorker`，1 worker）+ 更新守护进程 |
+| `./start.sh` | 前台启动 ASGI（Gunicorn + `UvicornWorker`）；生产由容器 entrypoint 调用 |
 
 ## 目录结构速览
 
@@ -182,7 +194,7 @@ club-management-website/
 ├── activities/        # 活动（众议 / 征集 / 展示 / 调研）与问卷
 ├── events/            # 活动壳 + 形态模块（明信片互寄）
 ├── attachments/       # 统一附件与 tus 可续传上传
-├── common/            # 站点策略、维护模式、富文本清洗、更新守护进程
+├── common/            # 站点策略、维护模式、富文本清洗、公开策略视图
 ├── exam_board/        # 考试看板（批次课表 + 题目误刊广播）
 ├── messaging/         # 评论区 / 私信 / 通知 / 横幅公告
 ├── news/              # 新闻
@@ -191,11 +203,13 @@ club-management-website/
 ├── tasks/             # 任务与标签
 ├── tutorials/         # 教程
 ├── frontend/          # React SPA：src/ 源码、scripts/ 构建钩子、e2e/ 浏览器 E2E、dist/ 产物（gitignore）
-├── scripts/           # 运维脚本：install.sh / pack-release.sh / updater.py
+├── scripts/           # 运维脚本：install.sh / install-docker-host.sh / deploy.sh / test-env.sh / release_notes.py
+├── deploy/            # 容器 compose 文件 / 预演环境 / 部署说明
 ├── static/            # 静态资源（surveyjs/ 未哈希 min 文件、maintenance.html 等）
-├── docs/              # 项目文档
+├── docs/              # 项目文档（在 documentation 分支维护，main 上不存在）
 ├── manage.py          # Django 入口
-├── start.sh           # 生产启动脚本（Gunicorn ASGI）
+├── Dockerfile         # 生产镜像（多阶段构建）
+├── start.sh           # 容器内启动脚本（Gunicorn ASGI）
 ├── pyproject.toml     # Python 依赖与项目元数据
 ├── uv.lock            # uv 锁文件
 ├── .env.example       # 环境变量模板（复制为 .env）
@@ -222,7 +236,7 @@ club-management-website/
 - `uv` 的任意命令都可能重写 `uv.lock`（镜像 URL 噪音）；提交前用 `git checkout uv.lock` 还原，别把锁文件噪音混进改动。
 - 构建前端时若 webpack 报内存不足（`ERR_WORKER_OUT_OF_MEMORY`），用 `NODE_OPTIONS="--max-old-space-size=4096" npm run build` 重试——这是机器内存压力，不是代码问题。
 - **未配 Redis 时不要把生产 ASGI worker 调到 1 以上**：内存 channel layer 无法跨进程扇出（`docs/adr/0015-channels-without-redis.md`）；配置 `REDIS_URL` 后由 `GUNICORN_WORKERS` 控制（`docs/adr/0021-postgresql-redis-and-multiworker.md`）。
-- 生产升级走 GitHub Release + 更新守护进程，不要在服务器上 `git pull` 再手工构建。
+- **生产升级走容器 CD**：CI 构建镜像 → `deploy.sh stage` 登记 → 夜间窗口内切换容器。不要在服务器上 `git pull` 或手工构建。旧的「GitHub Release + 更新守护进程」已于 2026-11-20 弃用。
 - `frontend/dist/`、`media/`、`private_media/`、`data/`、`db.sqlite3`、`.env` 均不入库，全新 clone 缺这些是正常的。
 
 ## 进一步阅读（仓库内已有文档）
@@ -231,6 +245,9 @@ club-management-website/
 |---|---|
 | `CONTEXT.md` | 领域术语表（任务、活动、众议、征集、展示、调研、作品……） |
 | `CLAUDE.md` | 命令速查与访问控制原则（权限词汇、能力投影） |
+| `CONTRIBUTING.md` | 协作约定：分支模型、PR、CI、预演环境 |
+| `RELEASING.md` | SemVer 版本规则与一次发布怎么做 |
+| `deploy/README.md` | 容器化部署与预演环境（test）手册 |
 | `docs/architecture/frontend.md` | SPA 的路由表、API 客户端约定、构建与产物细节 |
 | `docs/api/` | 各 app 的接口文档 |
 | `docs/operations/admin-guide.md` | 后台使用手册 |

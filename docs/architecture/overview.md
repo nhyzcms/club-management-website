@@ -2,7 +2,7 @@
 
 > 前端内部结构见 [frontend.md](frontend.md)；环境搭建见 [快速开始](../getting-started.md)；生产部署见 [部署与运维](../operations/deployment.md)。
 
-南汇一中传媒社的社团管理系统是一个**单体 Django 应用**：同一进程对外提供 REST API（Django REST Framework）、Django Admin、WebSocket 实时推送（Django Channels）以及 React SPA 的托管与静态资源。生产形态为 Nginx + Gunicorn（ASGI / UvicornWorker）+ systemd：缺省单 worker + SQLite（[ADR-0015](../adr/0015-channels-without-redis.md)），可选 PostgreSQL + Redis 频道层并提高 worker 数（[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)）。
+南汇一中传媒社的社团管理系统是一个**单体 Django 应用**：同一进程对外提供 REST API（Django REST Framework）、Django Admin、WebSocket 实时推送（Django Channels）以及 React SPA 的托管与静态资源。生产形态为 Nginx + Docker 容器（容器内 Gunicorn ASGI / UvicornWorker）：缺省单 worker + SQLite（[ADR-0015](../adr/0015-channels-without-redis.md)），可选 PostgreSQL + Redis 频道层并提高 worker 数（[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)）。
 
 ## 技术栈
 
@@ -13,7 +13,7 @@
 | 实时 | Django Channels（缺省 InMemory 通道层；可选 Redis 频道层 + 多 worker） |
 | 数据库 | SQLite 缺省（`db.sqlite3`）；可选 PostgreSQL |
 | 前端 | React 19 · TypeScript · Webpack 5；产物 `frontend/dist/` 由 Django 托管 |
-| 部署 | Nginx（一层反向代理）· Gunicorn ASGI · systemd |
+| 部署 | Nginx（一层反向代理）· Docker 容器（Gunicorn ASGI）· `club-deploy.timer` |
 | 外部集成 | SurveyJS（问卷）· Cloudflare Turnstile（人机验证）· Tiptap（富文本）等 |
 
 ## 请求生命周期
@@ -194,7 +194,7 @@ ContentTarget(kind="news", object_id=42)   # 新闻 #42 的锚点
 
 ## 部署形态
 
-Nginx（一层代理）→ Gunicorn ASGI（worker 数由 `GUNICORN_WORKERS` 控制，缺省 1）· systemd 托管；更新与备份流程见 [部署与运维](../operations/deployment.md)。
+Nginx（一层代理）→ Docker 容器内 Gunicorn ASGI（worker 数由 `GUNICORN_WORKERS` 控制，缺省 1）；部署与升级由 `club-deploy.timer` + `deploy.sh` 驱动，更新与备份流程见 [部署与运维](../operations/deployment.md)。
 
 ## 设计记录
 

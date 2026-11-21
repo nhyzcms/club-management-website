@@ -10,7 +10,7 @@
 - **策略快照（`common/policy.py`）**：运营旋钮住五张单例领域表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`，各 `pk` 恒 1，[ADR-0046](../adr/0046-site-settings-split.md)），调用方一律经 `get_policy()` 读，**不查模型**；快照按缓存键 `common.site_policy` 缓存（`timeout=None`，任一策略表 `save()` 时失效），五张表无行 / DB 不可用时回退到代码内默认值（与字段默认值一致，行为中立）。加旋钮 = 对应领域表的新字段 + 迁移 + 快照字段，不做通用 KV 袋。
 - **密钥与基础设施**（`SECRET_KEY`、SMTP、Turnstile secret、`FRONTEND_URL`、MEDIA 路径）仍在 `config/settings.py` + `.env`，改完需重启；**secret 永不下发**。
 - **认证**：`/site-policy/` 为 `AllowAny` 且 `authentication_classes = []`——匿名 GET，不碰 session / CSRF；`/file/{path}` 亦无鉴权。
-- **写入路径**：旋钮只走 Django admin（`is_staff` + 对应领域表的 `change_*` 权限，五张单例、禁增删、changelist 直接跳表单）；无产品侧写接口。维护旗标走 `manage.py maintenance on|off` 与自动更新守护进程。
+- **写入路径**：旋钮只走 Django admin（`is_staff` + 对应领域表的 `change_*` 权限，五张单例、禁增删、changelist 直接跳表单）；无产品侧写接口。维护旗标走 `manage.py maintenance on|off`。
 
 ## 端点一览
 
@@ -97,19 +97,18 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 - 渲染不传 request（不碰 DB / session / CSRF / context processor），只用内联 CSS，不依赖 `frontend/dist`；响应带 `Cache-Control: no-store`。
 - `Retry-After`：更新进行中（`reason=update`）为 `5`，运维拦截（`reason=ops`）为 `120`。
 - 旗标文件即事实源（JSON，含 `reason` / `message` / `step` / `step_index` / `step_total` / `sha` / `resume_ops` / `ops_message`），中间件只读文件、不读策略表——避免 migrate 期间 SQLite 死锁。
-- 更新时页面按 8 步展示进度（`drain` 拦截访问 → `backup` 备份数据库 → `unpack` 解包 → `sync` 替换文件 → `deps` 同步依赖 → `migrate` 迁移 → `collectstatic` 收集静态 → `reload` 重载服务；回滚另显示「正在回滚到上一版本」，进度百分比按 `step_index / step_total` 计算）。
+- 更新时页面按 8 步展示进度（`drain` 拦截访问 → `backup` 备份数据库 → `unpack` 解包 → `sync` 替换文件 → `deps` 同步依赖 → `migrate` 迁移 → `collectstatic` 收集静态 → `reload` 重载服务；回滚另显示「正在回滚到上一版本」，进度百分比按 `step_index / step_total` 计算）。**这套进度页只属于旧更新器**；容器部署的 `deploy.sh` 不写维护旗标，切换时的不可用窗口仅几秒。
 - 运维入口：`manage.py maintenance on|off|status`。`on` 可带 `--message`（显示在维护页）；更新进行中执行 `on` 会记下 `resume_ops`，更新结束后自动恢复运维拦截；`off` 不会中止进行中的更新（只取消「结束后的运维拦截」）。
 - 影响面：维护页对**全站**（含 `/admin/`）生效，API 客户端同样收到 503 HTML（非 JSON）。
 
-### 自动更新守护进程
+### 升级与发布（容器 CD）
 
-`common/updater.py`（由 `start.sh` 随 Gunicorn 拉起，同一 systemd cgroup）按 `update_poll_interval_seconds` 轮询 GitHub Release（`UPDATE_GITHUB_REPO`，默认 `nhyzcms/club-management-website`；token 走 `UPDATE_GITHUB_TOKEN`）。
+生产升级不再由应用进程完成。`common/updater.py` 已于 2026-11-20 弃用（代码保留作参考，任何启动路径都不会拉起它；`UpdaterPolicy` 表与 `update_*` 字段保留但不再被读取）。
 
-- **预取**：下载 `club-{sha}.tar.gz` + `.sha256` 到 `backups/releases/`，支持断点续传（HTTP Range）、校验失败重下、最多 8 次指数退避重试；未完成的 `.part` 绝不参与应用。
-- **应用条件**：`auto_update_enabled=true` 且处于应用窗口 `[update_window_start_hour, update_window_end_hour)`、距窗口结束还有 `update_apply_cutoff_minutes_before_end` 分钟以上；手动 `--apply-now` 跳过窗口判断。
-- **应用流程**：写维护旗标 → 备份数据库快照（SQLite `backups/db-{时间戳}.sqlite3` / PostgreSQL `db-{时间戳}.pg.sql`，按 `update_db_backup_keep` 裁剪）→ 解包到临时 staging → 替换代码树（`.env` / `db.sqlite3` / `media` / `private_media` / `data` / `run` / `backups` / `.venv` 等排除在外）→ `uv sync --frozen` → `migrate` → `collectstatic` → 重载服务并健康检查；成功后记 `run/applied-release`、按 `update_release_keep` 裁剪发行包。
-- **失败处理**：任一步失败或窗口关闭 → 自动回滚（恢复上一发行包代码树 + 应用前的数据库快照 + 重载），回滚后服务不健康则保留维护页。
-- 手动回滚（`--rollback`，可指定 SHA / tag / 本地包）：只换代码树、**不动站点数据**——与应用失败时的回滚（含 DB 快照恢复）不同。
+- **构建**：`image.yml` 在 push `main` / `develop` 时构建镜像、跑冒烟（布局守卫 / `migrate` / `/site-policy/` 返回 JSON / SPA 入口含 `id="root"`），推 `ghcr.io/nhyzcms/club-management-website:sha-<sha>` 与 `:latest`；`release.yml` 另给镜像补 `vX.Y.Z` tag。
+- **登记**：`deploy.yml` 只在 `main` 的 Image 成功后 SSH 执行 `deploy.sh stage`——只拉镜像并写 `run/pending-release`，不切换。
+- **切换**：服务器上的 `club-deploy.timer` 每 5 分钟 tick，落窗口（默认 `[01:00, 03:00)` Asia/Shanghai，由 `.env` 的 `CLUB_DEPLOY_WINDOW_START/END` / `CLUB_DEPLOY_TZ` 控制）时 `apply`：`pg_dump`（直连 5432，不走 pgbouncer 6432）→ `migrate` → `collectstatic` → 重建容器 → 健康检查（失败自动回滚到上一 tag）。
+- **手动入口**：`deploy.sh status|now <tag>|stage <tag>|rollback|tick`；`rollback` 只换镜像、不还原数据库（详见[部署指南](../operations/deployment.md) §6）。
 
 ## 不在快照内的站点配置（`.env` / `settings.py`，改动需重启）
 
@@ -121,7 +120,7 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 | 邮件 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | 配了即切 163 SMTP（SSL 465），否则 dev 用 console 后端 |
 | 前端地址 | `FRONTEND_URL` | 用于拼认证邮件 / 重置链接（默认 `http://localhost:3000`） |
 | 媒体路径 | — | `MEDIA_ROOT`（公开）、`PRIVATE_MEDIA_ROOT`（身份证明，鉴权下载） |
-| 自动更新凭据 | `UPDATE_GITHUB_TOKEN`、`UPDATE_GITHUB_REPO` | token 为密钥；repo 默认 `nhyzcms/club-management-website` |
+| 旧更新器凭据 | `UPDATE_GITHUB_TOKEN`、`UPDATE_GITHUB_REPO` | 仅历史参考；生产升级已改容器 CD，不使用它们 |
 | 数据库 / Redis / worker | `DB_ENGINE` 等 `DB_*`、`REDIS_URL`、`GUNICORN_WORKERS` | 缺省 SQLite + 单 worker；可选 PostgreSQL + Redis 多 worker（[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)） |
 
 ## 相关实现位置
@@ -132,4 +131,5 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 | 五张单例策略表与 admin 编辑 | `common/models.py`（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`）、`common/admin.py` |
 | 公开视图 | `common/views.py`（`SitePolicyView`） |
 | 维护拦截与旗标 | `common/middleware.py`、`common/maintenance.py`、`common/management/commands/maintenance.py` |
-| 自动更新 | `common/updater.py` |
+| 升级与发布 | `.github/workflows/image.yml` / `deploy.yml` / `release.yml`、`scripts/deploy.sh` |
+| 旧更新器（已弃用） | `common/updater.py` |

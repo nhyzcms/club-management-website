@@ -12,7 +12,7 @@
 
 ## 一、环境变量（`.env.example` 全部条目）
 
-复制模板开始：`cp .env.example .env`。生产由 `scripts/install.sh` 就位（它会写 `SECRET_KEY`、`FRONTEND_URL`、`ALLOWED_HOSTS`、`DJANGO_DEBUG=0`）；`start.sh` 不再自动复制模板——`.env` 缺失时直接报错退出，避免把开发默认值带进生产。
+复制模板开始：`cp .env.example .env`。生产环境按 `.env.example` 填好后交给 `scripts/install-docker-host.sh`（它要求 `/opt/club/.env` 已存在，把属主设为 `root:clubdeploy`）；`start.sh` 不再自动复制模板——`.env` 缺失时直接报错退出，避免把开发默认值带进生产。
 
 | 变量 | 用途 | 必填 | 默认 / 示例 |
 |---|---|---|---|
@@ -24,13 +24,13 @@
 | `EMAIL_HOST_PASSWORD` | 163 邮箱的「SMTP 授权码」（不是登录密码） | 配了 `EMAIL_HOST_USER` 就必填 | 空 |
 | `TURNSTILE_SITE_KEY` | Cloudflare Turnstile 站点公钥；经 `GET /site-policy/` 下发给前端 | 否 | 空。两项都空 = 关闭人机校验；**都填了才启用**（只填一半视为关闭） |
 | `TURNSTILE_SECRET_KEY` | Turnstile 服务端密钥（保密，永不下发） | 否 | 空 |
-| `UPDATE_GITHUB_TOKEN` | GitHub PAT，需能读该仓库 Releases（自动更新守护进程用） | 生产必填 | 空 |
+| `UPDATE_GITHUB_TOKEN` | 旧更新器读 Release 用的 GitHub PAT | **已不用于生产升级**（容器 CD 不用它） | 空；ghcr 拉取凭据见部署指南 §6.5 |
 | `UPDATE_GITHUB_REPO` | 更新来源仓库，`owner/repo` | 否 | `nhyzcms/club-management-website`（留空也回退到该值） |
 | `DB_ENGINE` 等 `DB_*` | 数据库切换与连接项：`DB_ENGINE=postgresql` 时用 PostgreSQL（`DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT`）；`DB_PORT` 可指向 pgbouncer 等连接池 | 否 | 全部留空 = SQLite（缺省）；示例 `DB_ENGINE=postgresql`、`DB_NAME=club` |
 | `REDIS_URL` | 缓存 + Channels 频道层一并切到 Redis；多 worker 的前置条件 | 否 | 留空 = v1 行为（内存通道层、本地缓存、单 worker） |
 | `GUNICORN_WORKERS` | ASGI worker 进程数 | 否 | `1`；**只有配了 `REDIS_URL` 才允许 >1** |
 | `NOTIFICATIONS_DELIVERY_ASYNC` | 通知外发投递模式：默认异步（进程内队列 + 守护线程；失败退避自动重试）；`=0` 回退旧同步投递 | 否 | 留空 = 异步（默认）。示例 `NOTIFICATIONS_DELIVERY_ASYNC=0` |
-| `CLUB_UPDATER_PROXY` / `CLUB_UPDATER_NO_PROXY` | 更新器出站代理（只注入更新守护进程，加速 GitHub API/Release 下载） | 否 | 空 = 不注入；示例 `CLUB_UPDATER_PROXY=http://127.0.0.1:7891` |
+| `CLUB_UPDATER_PROXY` / `CLUB_UPDATER_NO_PROXY` | 旧更新器出站代理 | 否 | **已停用**（2026-11-20 容器 CD 取代；代码保留但无启动路径） |
 | `CLUB_DATA_DIR` | 统一数据根：媒体等持久数据的存放位置（`MEDIA_ROOT` / `PRIVATE_MEDIA_ROOT` 由它派生） | 否 | 空 = 安装目录（历史布局，行为不变）；示例 `<安装目录>/data`。见[统一数据根](operations/data-root.md) |
 
 注意事项：
@@ -49,9 +49,9 @@
 |---|---|---|
 | `DJANGO_TESTING` | `config/settings.py` | 置 `1` 时等价于「正在跑测试」，启用测试期提速设置（见下文 §2.8） |
 | `DJANGO_DB_FILE` | `config/settings.py` | 数据库文件路径覆盖；E2E 经 `scripts/e2e-server.sh` 置为独立库 `run/e2e.sqlite3`（每次重建），缺省 `db.sqlite3` |
-| `CLUB_SPAWN_UPDATER` | `start.sh` | 置 `0` 时不拉起更新守护进程（排障只起 web） |
-| `CLUB_UPDATER_SPAWNED` | `start.sh` / `common/updater.py` | 由 `start.sh` 置 `1`，标记更新进程由 web 拉起；apply 时据此对 Gunicorn 父进程发 SIGHUP 而不是 `systemctl restart` |
-| `SERVICE_NAME` | `common/updater.py` | systemd unit 名，默认 `club` |
+| `CLUB_SPAWN_UPDATER` | `start.sh` | **已弃用**：置 `0` 时不再拉起更新守护进程（2026-11-20 起 `start.sh` 本就不再拉起它） |
+| `CLUB_UPDATER_SPAWNED` | 旧更新器 | **已弃用**（容器部署无更新守护进程） |
+| `SERVICE_NAME` | 旧更新器 | **已弃用**；systemd unit 名，默认 `club` |
 | `LOGIN_CHALLENGE` | `config/settings.py` | 陌生设备二次验证开关；`=0` 关闭挑战（设备与登录事件照常记录，应急回滚用）。默认开启；`manage.py test` 下自动关闭 |
 | `IP2REGION_DB` | `config/settings.py` | 离线 IP 库路径；默认 `<项目>/data/ip2region_v4.xdb`。文件缺失 / 损坏 / 依赖缺失时静默降级为只记 IP |
 | `AMAP_KEY` | `frontend/webpack.config.js`（**构建期**） | 高德地图 JS API key；`AMAP_KEY=… npm run build` 经 `DefinePlugin` 注入。未设置时登录记录页降级为城市文字 |
@@ -208,18 +208,13 @@ B5 起 `common/models.py` 里是五张 pk 恒为 1 的单例表——`AuthPolicy
 | `sync_upload_max_bytes` | `52428800`（50MB） | 同步上传单文件上限 |
 | `tus_media_max_bytes` | `524288000`（500MB） | tus 图 / 视频上限 |
 | `survey_upload_daily_bytes` | `209715200`（200MB） | 问卷文件题上传的全局每日字节配额（24h 内台账求和；防匿名端点写满磁盘） |
-| `auto_update_enabled` | `True` | 自动更新总开关 |
-| `update_poll_interval_seconds` | `900` | 轮询间隔 |
-| `update_timezone` | `Asia/Shanghai` | IANA 时区名，不用 Django `TIME_ZONE` |
-| `update_window_start_hour` / `update_window_end_hour` | `1` / `3` | 应用窗口 `[开始, 结束)` |
-| `update_apply_cutoff_minutes_before_end` | `30` | 窗口结束前 N 分钟起不再开始应用 |
-| `update_release_keep` / `update_db_backup_keep` | `3` / `5` | 保留发行包 / DB 快照份数 |
+| `auto_update_enabled` / `update_poll_interval_seconds` / `update_timezone` / `update_window_start_hour` / `update_window_end_hour` / `update_apply_cutoff_minutes_before_end` / `update_release_keep` / `update_db_backup_keep` | 旧更新器默认值 | **已停用**：2026-11-20 起容器 CD 不读 `UpdaterPolicy`；部署窗口与保留份数改由 `.env` 的 `CLUB_DEPLOY_WINDOW_START/END` / `CLUB_DEPLOY_TZ` / `CLUB_DEPLOY_KEEP_IMAGES` / `CLUB_DEPLOY_KEEP_DUMPS` 控制 |
 | `comments_enabled` / `comment_max_depth` | `True` / `8` | 评论区开关与最大嵌套深度（1 = 仅根评论） |
 | `dms_enabled` | `True` | 私信开关 |
 
-字段归属：认证开关 / 有效期 / 注册宽限 / 自助注册与认领 → `AuthPolicy`；各类额度 → `RateLimitPolicy`；上传上限 → `UploadPolicy`；自动更新窗口与保留份数 → `UpdaterPolicy`；内容审核 / 评论 / 私信 → `ContentPolicy`。
+字段归属：认证开关 / 有效期 / 注册宽限 / 自助注册与认领 → `AuthPolicy`；各类额度 → `RateLimitPolicy`；上传上限 → `UploadPolicy`；内容审核 / 评论 / 私信 → `ContentPolicy`。`UpdaterPolicy` 字段保留但**已不驱动生产升级**（容器窗口读 `.env` 的 `CLUB_DEPLOY_*`）。
 
-维护拦截是**文件旗标**而非 DB：`run/MAINTENANCE`（由 `manage.py maintenance on|off|status` 或更新守护进程写），中间件只读文件、绝不读策略表，避免 `migrate` 时死锁 SQLite。
+维护拦截是**文件旗标**而非 DB：`run/MAINTENANCE`（由 `manage.py maintenance on|off|status` 写；旧更新器也会写，已弃用），中间件只读文件、绝不读策略表，避免 `migrate` 时死锁 SQLite。
 
 ## 四、前端构建配置
 
@@ -231,7 +226,7 @@ B5 起 `common/models.py` 里是五张 pk 恒为 1 的单例表——`AuthPolicy
 | `build` | `webpack --mode production && node scripts/copy-surveyjs.js && node scripts/assert-live2d-dist.js && node scripts/assert-surveyjs-dist.js` |
 | `copy-surveyjs` | `node scripts/copy-surveyjs.js` |
 
-`copy-surveyjs.js` 把 SurveyJS 未哈希 min 文件（survey-core / creator / analytics / chart.js / 中文 i18n 共 11 个）同时拷入仓库根 `static/surveyjs/`（本地 runserver 供 admin 模板 `{% static 'surveyjs/...' %}` 引用）与 `frontend/dist/surveyjs/`（生产 collectstatic / 发布包）。升级 `survey-*` / Chart.js 后必须重跑。
+`copy-surveyjs.js` 把 SurveyJS 未哈希 min 文件（survey-core / creator / analytics / chart.js / 中文 i18n 共 11 个）同时拷入仓库根 `static/surveyjs/`（本地 runserver 供 admin 模板 `{% static 'surveyjs/...' %}` 引用）与 `frontend/dist/surveyjs/`（镜像内 collectstatic）。升级 `survey-*` / Chart.js 后必须重跑。
 
 ### 4.2 webpack（`frontend/webpack.config.js`）
 
@@ -271,10 +266,11 @@ CI 另外断言 `frontend/dist/surveyjs/survey.core.min.js` 存在（`.github/wo
 
 | 想改什么 | 改哪里 | 生效方式 |
 |---|---|---|
-| 密钥 / 域名 / SMTP / Turnstile / 更新 token | `.env` | 重启进程（生产 `sudo systemctl restart club`） |
-| 数据库 / Redis / worker 数 | `.env`（`DB_*` / `REDIS_URL` / `GUNICORN_WORKERS`） | 重启进程；数据迁移与回滚见 deployment.md |
-| 限流额度、上传上限、评论 / 私信开关、认证有效期、更新窗口 | Django admin「认证策略 / 频控策略 / 上传策略 / 更新策略 / 内容策略」 | 即时（`save()` 失效缓存） |
-| 全站维护拦截 | `uv run python manage.py maintenance on --message "..."` | 即时（文件旗标，无需重启） |
+| 密钥 / 域名 / SMTP / Turnstile / 更新 token | `.env` | 重建容器（`deploy.sh now <当前 tag>`；`docker restart` 不够） |
+| 数据库 / Redis / worker 数 | `.env`（`DB_*` / `REDIS_URL` / `GUNICORN_WORKERS`） | 重建容器；数据迁移与回滚见 deployment.md |
+| 限流额度、上传上限、评论 / 私信开关、认证有效期 | Django admin「认证策略 / 频控策略 / 上传策略 / 内容策略」 | 即时（`save()` 失效缓存） |
+| 部署窗口 / 保留份数 | `.env`（`CLUB_DEPLOY_WINDOW_START/END` / `CLUB_DEPLOY_TZ` / `CLUB_DEPLOY_KEEP_IMAGES` / `CLUB_DEPLOY_KEEP_DUMPS`） | 下一次 `deploy.sh tick` 生效（`.env` 由脚本读取） |
+| 全站维护拦截 | `sudo docker exec club-app python manage.py maintenance on --message "..."` | 即时（文件旗标，无需重启） |
 | CORS 来源、DRF 全局配置、中间件、分页大小 | `config/settings.py` | 改代码 + 重启 |
 | 前端构建行为 | `frontend/webpack.config.js` / `package.json` / `tsconfig.json` | 重新 `npm run build` |
 

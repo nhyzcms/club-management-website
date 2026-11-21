@@ -397,10 +397,10 @@
 | 活动结束 | 该活动全部照片文件清除（登记数据保留） |
 | pending 卡死 >1h | 自动转人工复核 |
 
-兜底命令（`scripts/install.sh` 会安装每小时 systemd timer）：
+兜底命令（旧裸机安装会装每小时 systemd timer；容器化宿主机没有，需手动或自加 cron）：
 
 ```bash
-uv run python manage.py postcard_photo_gc
+sudo docker exec club-app python manage.py postcard_photo_gc
 ```
 
 输出 JSON 统计：`ended_events_purged` / `ttl_purged` / `stale_pending_to_manual`。幂等，可重复执行。

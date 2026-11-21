@@ -66,9 +66,11 @@
 
 ### 运维
 
-- [部署与运维](operations/deployment.md) —— 安装、更新、备份、回滚、排障
+- [部署与运维](operations/deployment.md) —— 容器化安装、升级（CI + 窗口切换）、预演环境、备份、回滚、排障
 - [统一数据根](operations/data-root.md) —— 数据目录结构、开目录规则与换根剧本
 - [管理后台指南](operations/admin-guide.md) —— Django Admin 使用
+- [版本与发布](https://github.com/nhyzcms/club-management-website/blob/main/RELEASING.md) —— SemVer、Milestone 与一次发布怎么做（仓库根）
+- [协作约定](https://github.com/nhyzcms/club-management-website/blob/main/CONTRIBUTING.md) —— 分支模型、PR 与 CI、预演环境（仓库根）
 
 ### 设计记录与方案
 

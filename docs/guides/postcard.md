@@ -155,7 +155,7 @@
 - 照片存**私有存储**，不进入公开 `media/`；只有复核权限或持该登记单的 6 位码才能读取；
 - 通过后立即删除文件；不通过留 24 小时 TTL；活动结束全量清除；
 - 登记数据（姓名 / 班级 / 寄达校 / 条码 / 状态）永久保留，除非管理员手动删除；
-- 服务端安装 `postcard_photo_gc` 每小时兜底（`scripts/install.sh` 自动创建 systemd timer），处理活动结束清理、失败照片 TTL、卡死 pending 转人工。
+- 服务端 `postcard_photo_gc` 兜底处理活动结束清理、失败照片 TTL、卡死 pending 转人工；旧裸机安装会配 systemd timer，容器化宿主机没有这条 timer，需要时手动执行或自加 cron（见[部署指南](../operations/deployment.md)）。
 
 ## 十、模拟环境（演练用，2026-11-09）
 

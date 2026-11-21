@@ -191,10 +191,10 @@ SurveyJS 问卷本体独立于活动：**发起活动时即可设计**，创建�
 ## 12. 后台与运维
 
 - **后台管理**：Django Admin + 自定义视图 + 前端 SPA。前端入口只对 `is_staff` 显示（`canAccessAdmin`），普通用户手输 `/admin/` 被挡回登录页。
-- **一键部署**：`scripts/install.sh`（生成 SECRET_KEY、写 FRONTEND_URL、建超管、装 systemd 单元与明信片 GC timer）。
-- **更新与回滚**：GitHub Release + 更新守护进程（维护页 / `scripts/updater.py --apply-now <sha>`），apply 前自动做 DB 快照（SQLite `backup` / PG `pg_dump`），失败回滚。
+- **容器化部署**：CI 构建镜像（`image.yml`）→ `Deploy` 登记 → 服务器 `club-deploy.timer` 在夜间窗口内重建容器；宿主机只留 nginx / PG / pgbouncer / Redis 与运行时资产。
+- **更新与回滚**：发布走 SemVer（`release.yml` + Milestone），部署走容器 CD（`deploy.sh stage/apply/now/rollback`），apply 前自动 `pg_dump`、健康检查失败自动回滚；旧「GitHub Release + 更新守护进程」已于 2026-11-20 弃用。
 - **维护模式**：`manage.py maintenance on / off / status`（写 `run/MAINTENANCE`）。
-- **运行时旋钮**：五张单例策略表（Auth / RateLimit / Upload / Updater / Content，[ADR-0046](adr/0046-site-settings-split.md)），后台可改、免重启。
+- **运行时旋钮**：五张单例策略表（Auth / RateLimit / Upload / Updater / Content，[ADR-0046](adr/0046-site-settings-split.md)），后台可改、免重启；其中 `UpdaterPolicy` 自容器 CD 起不再驱动生产升级。
 - **统一数据根**：`media/`、`private_media/`、`data/` 的布局与换根剧本见 [统一数据根](operations/data-root.md)。
 
 ---
@@ -229,7 +229,7 @@ events/       活动壳 + 形态模块 modules/postcard（通用 CRUD 已下线�
 about/        关于页五块内容
 announcements/全站弹窗公告与已读台账
 attachments/  统一附件与 tus 可续传上传
-common/       站点策略、维护模式、富文本清洗、更新守护进程
+common/       站点策略、维护模式、富文本清洗、公开策略视图
 exam_board/   考试看板（批次课表 + 误刊广播）
 messaging/    评论区 / 私信 / 通知 / 横幅
 news/         新闻
@@ -239,7 +239,7 @@ reviews/      统一审核队列（六张桌）
 tasks/        任务与标签
 tutorials/    教程
 frontend/     React SPA（src/ · e2e/ · dist/）
-scripts/      install.sh / pack-release.sh / updater.py
+scripts/      install.sh / install-docker-host.sh / deploy.sh / test-env.sh / release_notes.py
 ```
 
 更细的目录说明与开发命令见 [快速开始](getting-started.md)。
