@@ -88,7 +88,7 @@ class ChangelogView(APIView):
     authentication_classes = []
 
     def get(self, request):
-        entry = changelog_entry() or {"version": None, "released": None, "sections": []}
+        entry = changelog_entry() or {"version": None, "released": None, "summary": None, "sections": []}
         response = Response(entry)
         response["Cache-Control"] = "no-store"
         return response

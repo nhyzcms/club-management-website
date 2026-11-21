@@ -27,6 +27,9 @@ export interface ChangelogSection {
 }
 
 export interface ChangelogEntry {
+  /** 人写的一句话摘要（CHANGELOG 该节的引用块）。自动生成的部分是 commit 原文，
+   *  只有这句是「和你有什么关系」。 */
+  summary?: string | null;
   version: string | null;
   released: string | null;
   sections: ChangelogSection[];

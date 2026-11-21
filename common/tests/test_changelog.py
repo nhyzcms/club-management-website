@@ -117,3 +117,27 @@ class ChangelogEndpointTests(TestCase):
                 payload = self.client.get("/changelog/").json()
 
         self.assertEqual(payload["sections"][0]["title"], "修复")
+
+    def test_summary_blockquote_is_extracted(self):
+        """版本小节开头的引用块是给社员看的一句话，自动生成的条目替代不了它。"""
+        md = (
+            "## [1.0.0] - 2026-12-01\n\n"
+            "> 这一版加了版本号显示。\n\n"
+            "### Added\n\n- 甲\n"
+        )
+        entry = parse_entry(md, "1.0.0")
+        self.assertEqual(entry["summary"], "这一版加了版本号显示。")
+
+    def test_summary_survives_multiple_lines(self):
+        md = (
+            "## [2.0.0] - 2026-12-01\n\n"
+            "> 页面底部现在能看到版本号，\n"
+            "> 发版后会告诉你改了什么。\n\n"
+            "### Added\n\n- 甲\n"
+        )
+        entry = parse_entry(md, "2.0.0")
+        self.assertEqual(entry["summary"], "页面底部现在能看到版本号， 发版后会告诉你改了什么。")
+
+    def test_summary_key_always_present(self):
+        md = "## [2.0.1] - 2026-12-02\n\n### Fixed\n\n- 乙\n"
+        self.assertIsNone(parse_entry(md, "2.0.1")["summary"])

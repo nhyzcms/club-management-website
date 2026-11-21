@@ -69,6 +69,18 @@ export default function ChangelogModal({
         </div>
 
         <div style={{ padding: "0 24px", overflowY: "auto", flex: 1 }}>
+          {entry.summary && (
+            <p
+              style={{
+                margin: "4px 0 18px",
+                fontSize: 15,
+                lineHeight: 1.7,
+                color: "var(--fg)",
+              }}
+            >
+              {entry.summary}
+            </p>
+          )}
           {entry.sections.map((section) => (
             <section key={section.title} style={{ marginBottom: 16 }}>
               <h4
