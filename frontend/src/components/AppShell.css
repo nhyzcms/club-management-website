@@ -72,3 +72,6 @@
   border-color: oklch(1 0 0 / .32);
 }
 .footer-version-log { font-family: inherit; }
+/* 没有发行说明时版本号不可点：不能给它按钮的悬停暗示 */
+.footer-version-static { cursor: default; }
+.footer-version-static:hover { color: oklch(1 0 0 / .6); border-color: oklch(1 0 0 / .18); }
