@@ -103,12 +103,25 @@ jobs:
             echo "### 本次提交的变更"
             echo
             sed -n '/^## \[/,$p' CHANGELOG.md | head -120
+            echo
+            echo "---"
+            echo
+            echo "### 合并前请补一句人话"
+            echo
+            echo '社员看到的更新弹窗读的是 `CHANGELOG.md` 这一节的引用块。自动生成的条目是'
+            echo 'commit 原文（`**ci**: 恢复打包 job` 这种），只有人能把「改了什么」翻译成'
+            echo '「和你有什么关系」。请在本分支的 CHANGELOG 该节标题下加一行：'
+            echo
+            echo '```markdown'
+            echo '> 页面底部现在能看到版本号，发版后会告诉你这次改了什么。'
+            echo '```'
+            echo
+            echo "没有这句也不影响发版，弹窗里就只剩条目——但那就等于没写。"
           } > /tmp/pr-body.md
 
-          # 组织策略禁止 GitHub Actions 创建 PR（实测 2026-11-21：
-          # "The organization does not allow GitHub Actions to create or approve
-          #  pull requests"）。这不是失败——分支已经推上去了，缺的只是那一次点击。
-          # 不为此去改组织级权限：那会同时允许任何 workflow 审批 PR，等于拆掉 review 闸门。
+          # 建 PR 依赖组织级 can_approve_pull_request_reviews（2026-11-21 已开）。
+          # 但它随时可能被策略收回（收回时 GitHub 会拒绝创建 PR），所以这里不假设
+          # 一定成功：分支已经推上去了，最坏情况只是把那次点击交还给人。
           if gh pr create \
                --base main \
                --head "$BRANCH" \

@@ -198,6 +198,20 @@ workflow 会从 `develop`（不是 `main`——`main` 上可能还缺已集成�
 CHANGELOG 的分类来自 commit message 的 Conventional Commits 前缀，区间是上一个
 `v*` tag 到本次提交。所以**提交信息写规范**，发布说明才像话。
 
+**但自动生成的只是草稿。** 它给的是 `**ci**: 恢复打包 job` 这种原文，而看这个弹窗的是社员。
+发版 PR 合并前，在该节标题下补一行引用块，它会作为弹窗最上面那句话：
+
+```markdown
+## [1.1.0] - 2026-11-22
+
+> 页面底部现在能看到版本号，发版后会告诉你这次改了什么。
+
+### Added
+```
+
+`ci` / `test` / `chore` / `build` 这几类改动**不会**进给社员的那份（git log 里一条不少），
+流水线怎么排队跟社员没有关系。
+
 ### 2. 看 PR
 
 `release/*` → `main` 的 PR 会跑全套：`source-guard`（来源必须是 `release/*` 或

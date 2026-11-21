@@ -122,6 +122,8 @@ npx playwright test                        # Browser E2E: auto-starts Django (:8
   构建侧靠「提交是否改了 pyproject 的 version」判断 release / dev，因此不需要等 tag（tag job 是并发跑的）。
   线上版本：`curl https://<站点>/version/`，或 `docker exec club-app .venv/bin/python manage.py version`。
   `channel=dev` 的版本号形如 `1.0.1-dev.<距上个 tag 的提交数>.g<sha7>`。
+  **弹窗文案**：`CHANGELOG.md` 版本小节标题下的 `> …` 引用块会成为弹窗第一句；没写就只剩
+  自动生成的 commit 条目。`ci/test/chore/build` 类型不进弹窗（留给 git log）。
   **前端**：页脚显示版本号（`/version/`），发版后版本变化弹一次「这次的更新」——内容来自
   `/changelog/`，由 `scripts/gen_changelog.py` 把 CHANGELOG.md 的当节转成 `changelog.json` 带进镜像。
   弹窗只在 `channel=release`、且用户见过旧版本、且确有说明时才弹（首次访问只记录不打扰）。

@@ -26,6 +26,9 @@ SECTION_TITLES = {
 VERSION_RE = re.compile(r"^##\s*\[(?P<version>[^\]]+)\]\s*(?:-\s*(?P<date>.+))?$")
 SECTION_RE = re.compile(r"^###\s+(?P<title>.+?)\s*$")
 ITEM_RE = re.compile(r"^[-*]\s+(?P<text>.+)$")
+#: 版本小节开头的引用块 = 给社员看的一句话摘要。
+#: 自动生成的部分是 commit 原文，只有人能把「改了什么」翻译成「和你有什么关系」。
+SUMMARY_RE = re.compile(r"^>\s?(?P<text>.*)$")
 
 
 def clean_item(text: str) -> str:
@@ -48,11 +51,18 @@ def parse_entry(changelog: str, version: str) -> dict | None:
         return None
 
     sections: list[dict] = []
+    summary_lines: list[str] = []
     current: dict | None = None
     for line in lines[start:]:
         stripped = line.strip()
         if VERSION_RE.match(stripped):  # 走到下一个版本小节
             break
+        if current is None:
+            sm_sum = SUMMARY_RE.match(stripped)
+            if sm_sum:
+                if sm_sum.group("text").strip():
+                    summary_lines.append(clean_item(sm_sum.group("text")))
+                continue
         sm = SECTION_RE.match(stripped)
         if sm:
             title = sm.group("title")
@@ -64,4 +74,5 @@ def parse_entry(changelog: str, version: str) -> dict | None:
             current["items"].append(clean_item(im.group("text")))
 
     sections = [s for s in sections if s["items"]]
-    return {"version": version, "released": released, "sections": sections}
+    summary = " ".join(summary_lines).strip() or None
+    return {"version": version, "released": released, "summary": summary, "sections": sections}

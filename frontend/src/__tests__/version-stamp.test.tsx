@@ -31,6 +31,7 @@ const BASE: BuildInfo = {
 const ENTRY: ChangelogEntry = {
   version: "1.0.1",
   released: "2026-11-21",
+  summary: "页面底部现在能看到版本号。",
   sections: [{ title: "修复", items: ["修了一处"] }],
 };
 
@@ -140,5 +141,31 @@ describe("ChangelogHost 弹窗时机", () => {
     openChangelog();
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(OPEN_CHANGELOG_EVENT).toBe("club:open-changelog");
+  });
+});
+
+describe("更新说明的「人话摘要」", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    resetVersionCache();
+    get.mockReset();
+    changelog.mockReset();
+  });
+
+  it("摘要显示在条目之前", async () => {
+    localStorage.setItem(SEEN_VERSION_KEY, "1.0.0");
+    mount();
+    await screen.findByRole("dialog");
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("页面底部现在能看到版本号。");
+    // 摘要在第一条 section 标题之前
+    expect(text.indexOf("页面底部现在能看到版本号。")).toBeLessThan(text.indexOf("修复"));
+  });
+
+  it("没有摘要也能正常显示，不出现空段落", async () => {
+    localStorage.setItem(SEEN_VERSION_KEY, "1.0.0");
+    mount({}, { ...ENTRY, summary: null });
+    await screen.findByRole("dialog");
+    expect(document.body.textContent).toContain("修了一处");
   });
 });
