@@ -11,7 +11,7 @@ import { useTheme } from "../theme";
 import { canAccessAdmin } from "../utils/roles";
 import ThemeToggle from "./ThemeToggle";
 import ChangelogHost, { openChangelog } from "./ChangelogHost";
-import { formatVersion, useBuildInfo, versionTooltip } from "../hooks/useBuildInfo";
+import { formatVersion, useBuildInfo, useChangelog, versionTooltip } from "../hooks/useBuildInfo";
 import { ICONS } from "./icons";
 import UserMenu from "./UserMenu";
 import "./AppShell.css";
@@ -83,7 +83,10 @@ function formatBadge(n: number): string {
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const info = useBuildInfo();
+  const changelog = useChangelog();
   const version = formatVersion(info);
+  // 没有发行说明时按钮不出现：一个点了没反应的「更新日志」比没有更糟。
+  const hasChangelog = Boolean(changelog?.sections?.length);
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState<AppShellUser | null>(null);
@@ -421,17 +424,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <span>© 2026 上海市南汇第一中学 · 传媒社 · 信息组</span>
           {version && (
             <span className="footer-version">
-              <button
-                type="button"
-                className="footer-version-chip"
-                title={versionTooltip(info)}
-                onClick={openChangelog}
-              >
-                {formatVersion(info)}
-              </button>
-              <button type="button" className="footer-version-log" onClick={openChangelog}>
-                更新日志
-              </button>
+              {hasChangelog ? (
+                <button
+                  type="button"
+                  className="footer-version-chip"
+                  title={versionTooltip(info)}
+                  onClick={openChangelog}
+                >
+                  {version}
+                </button>
+              ) : (
+                <span className="footer-version-chip footer-version-static" title={versionTooltip(info)}>
+                  {version}
+                </span>
+              )}
+              {hasChangelog && (
+                <button type="button" className="footer-version-log" onClick={openChangelog}>
+                  更新日志
+                </button>
+              )}
             </span>
           )}
         </div>

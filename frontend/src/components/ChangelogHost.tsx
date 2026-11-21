@@ -45,7 +45,6 @@ export default function ChangelogHost() {
     let alive = true;
     Promise.all([loadBuildInfo(), loadChangelog()]).then(([info, log]) => {
       if (!alive) return;
-      if (!log || !log.sections?.length) return;
       setEntry(log);
 
       if (!info || info.channel !== "release") return;
@@ -53,10 +52,13 @@ export default function ChangelogHost() {
       const seen = readSeen();
       if (seen === null) {
         // 第一次来：把当前版本记下，不弹。下一次发版才是真正的「更新」。
+        // 记版本不受「这一版有没有写说明」影响——否则这一版没写说明，
+        // 等以后补上时，同一版又会对着老用户弹一次。
         writeSeen(info.version);
         return;
       }
-      if (seen !== info.version) setOpen(true);
+      // 没写说明就不弹空窗。update 按钮那边也会因此不出现。
+      if (seen !== info.version && log?.sections?.length) setOpen(true);
     });
     return () => {
       alive = false;

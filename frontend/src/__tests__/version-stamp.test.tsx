@@ -55,11 +55,13 @@ describe("版本号格式化", () => {
     expect(versionTooltip(null)).toBe("");
   });
 
-  it("悬停提示带上提交与构建时间", () => {
+  it("悬停提示带上提交与本地化的构建时间", () => {
     const tip = versionTooltip(BASE);
     expect(tip).toContain("发布版本");
     expect(tip).toContain("335d91e");
-    expect(tip).toContain("2026-11-21T04:31:20Z");
+    // 给机器看的 UTC 不该原样丢给用户 ISO 串
+    expect(tip).not.toContain("T04:31:20Z");
+    expect(tip).toMatch(/构建于 \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/);
   });
 });
 
@@ -111,6 +113,21 @@ describe("ChangelogHost 弹窗时机", () => {
     const button = await screen.findByRole("button", { name: "知道了" });
     fireEvent.click(button);
     await waitFor(() => expect(localStorage.getItem(SEEN_VERSION_KEY)).toBe("1.0.1"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("首次访问即使没有发行说明，也要记下版本", async () => {
+    mount({}, { version: null, released: null, sections: [] });
+    await waitFor(() => expect(localStorage.getItem(SEEN_VERSION_KEY)).toBe("1.0.1"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("没有发行说明时，「更新日志」点开不该弹空窗", async () => {
+    localStorage.setItem(SEEN_VERSION_KEY, "1.0.0");
+    mount({}, { version: null, released: null, sections: [] });
+    await waitFor(() => expect(changelog).toHaveBeenCalled());
+    openChangelog();
+    await waitFor(() => expect(get).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 

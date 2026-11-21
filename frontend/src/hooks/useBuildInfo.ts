@@ -35,6 +35,20 @@ export function resetVersionCache() {
   changelogPromise = null;
 }
 
+export function useChangelog(): ChangelogEntry | null {
+  const [entry, setEntry] = useState<ChangelogEntry | null>(null);
+  useEffect(() => {
+    let alive = true;
+    loadChangelog().then((v) => {
+      if (alive) setEntry(v);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return entry;
+}
+
 export function useBuildInfo(): BuildInfo | null {
   const [info, setInfo] = useState<BuildInfo | null>(null);
   useEffect(() => {
@@ -49,11 +63,19 @@ export function useBuildInfo(): BuildInfo | null {
   return info;
 }
 
-/** 页脚展示用：release 只显示版本号，dev 带上通道标记。 */
+/** 页脚展示用。dev 版本号本身就带 -dev.<n>.g<sha> 后缀，不必再加通道标记。 */
 export function formatVersion(info: BuildInfo | null): string {
-  if (!info) return "";
-  if (info.channel === "release") return `v${info.version}`;
-  return `v${info.version}`;
+  return info ? `v${info.version}` : "";
+}
+
+/** 构建时间给本地时区看。ISO 的 Z 结尾是给机器读的，页脚悬停是给人读的。 */
+function localTime(raw: string): string {
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
 }
 
 /** 悬停提示：把「哪个提交、什么时候构建的」摊开，省得再去问运维。 */
@@ -61,7 +83,7 @@ export function versionTooltip(info: BuildInfo | null): string {
   if (!info) return "";
   const parts = [info.channel === "release" ? "发布版本" : "开发版本"];
   if (info.commit_short) parts.push(`提交 ${info.commit_short}`);
-  if (info.built_at) parts.push(`构建于 ${info.built_at}`);
+  if (info.built_at) parts.push(`构建于 ${localTime(info.built_at)}`);
   if (info.source !== "build_info.json") parts.push("版本来自本地源码");
   return parts.join(" · ");
 }

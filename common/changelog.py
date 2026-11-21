@@ -6,6 +6,10 @@
    随镜像分发。生产走这条。
 2. ``CHANGELOG.md`` —— 本地开发没有构建产物，直接解析仓库里的 Markdown 兜底。
    两边用的是同一个解析函数，所以本地看到的内容和线上不会分叉。
+
+注意这条兜底**只在本地成立**：``.dockerignore`` 排除了 ``*.md``，镜像里没有
+CHANGELOG.md。生产完全依赖 ``changelog.json``——它没进去，弹窗就是静默失效，
+所以 ``image.yml`` 的冒烟测试会断言 ``/changelog/`` 的内容与构建时写入的一致。
 """
 from __future__ import annotations
 
