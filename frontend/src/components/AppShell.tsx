@@ -10,6 +10,8 @@ import type { Banner } from "../types/messaging";
 import { useTheme } from "../theme";
 import { canAccessAdmin } from "../utils/roles";
 import ThemeToggle from "./ThemeToggle";
+import ChangelogHost, { openChangelog } from "./ChangelogHost";
+import { formatVersion, useBuildInfo, versionTooltip } from "../hooks/useBuildInfo";
 import { ICONS } from "./icons";
 import UserMenu from "./UserMenu";
 import "./AppShell.css";
@@ -80,6 +82,8 @@ function formatBadge(n: number): string {
 }
 
 export default function AppShell({ children }: { children: ReactNode }) {
+  const info = useBuildInfo();
+  const version = formatVersion(info);
   const navigate = useNavigate();
   const location = useLocation();
   const [user, setUser] = useState<AppShellUser | null>(null);
@@ -368,6 +372,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
       <main className="page">{children}</main>
 
+      <ChangelogHost />
+
       {showTop && (
         <button className="back-to-top"
           type="button"
@@ -411,7 +417,24 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <a href="#" onClick={(e) => { e.preventDefault(); openLogin(); }}>登录</a>
           </div>
         </div>
-        <div className="footer-bottom tnum">© 2026 上海市南汇第一中学 · 传媒社 · 信息组</div>
+        <div className="footer-bottom tnum">
+          <span>© 2026 上海市南汇第一中学 · 传媒社 · 信息组</span>
+          {version && (
+            <span className="footer-version">
+              <button
+                type="button"
+                className="footer-version-chip"
+                title={versionTooltip(info)}
+                onClick={openChangelog}
+              >
+                {formatVersion(info)}
+              </button>
+              <button type="button" className="footer-version-log" onClick={openChangelog}>
+                更新日志
+              </button>
+            </span>
+          )}
+        </div>
       </footer>
     </div>
   );

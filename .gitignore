@@ -235,3 +235,6 @@ frontend/playwright-report/
 frontend/test-results/
 frontend/e2e/.auth/
 frontend/e2e/.member-qr.json
+
+# 版本快照：由 scripts/gen-build-info.sh 在构建时生成，不进仓库
+build_info.jsonchangelog.json

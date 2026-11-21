@@ -42,3 +42,33 @@
   color: var(--muted); font-size: 18px; line-height: 1;
 }
 .site-banner-dismiss:hover { background: var(--brand-100); color: var(--brand-800); }
+
+/* 页脚版本条：左侧版权，右侧版本号 + 更新日志入口。
+   版本号是按钮 —— 点它能重新打开「这次的更新」，而不是一个只能看不能用的装饰。 */
+.footer-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3) var(--s-5);
+}
+.footer-version { display: flex; align-items: center; gap: var(--s-2); }
+.footer-version-chip,
+.footer-version-log {
+  background: transparent;
+  border: 1px solid oklch(1 0 0 / .18);
+  border-radius: var(--r-pill);
+  color: oklch(1 0 0 / .6);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.footer-version-chip:hover,
+.footer-version-log:hover {
+  color: var(--brand-300);
+  border-color: oklch(1 0 0 / .32);
+}
+.footer-version-log { font-family: inherit; }
