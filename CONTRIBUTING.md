@@ -22,41 +22,69 @@
 格式：`<类型>/<短横线描述>`，全小写，不用中文、不用空格。
 
 ```
-feat/postcard-barcode-autofocus
-fix/login-scrim-drag
+feature/postcard-barcode-autofocus
+hotfix/login-scrim-drag
+release/v1.2.0
 chore/ci-concurrency
-docs/api-events
 ```
 
-- 类型只用：`feat` / `fix` / `chore` / `docs` / `refactor` / `test` / `ci`
 - **一个分支只做一件事。** 顺手改的无关文件请单独开分支。
-- 分支生命周期目标 ≤ 1 周。超过两周的分支要么拆、要么合，不要长期悬空。
-- 合并后分支**自动删除**（仓库已开启 `delete_branch_on_merge`）。需要保留的长期分支只有四个：`main`、`develop`、`documentation`、`assets/pr-previews`。
+- 短命分支生命周期目标 ≤ 1 周，超过两周要么拆、要么合。
+- 合并后分支**自动删除**（仓库已开启 `delete_branch_on_merge`）。
+  长期分支只有四条：`main`、`develop`、`documentation`、`assets/pr-previews`。
 
-### 分支模型
+## 分支模型（Git Flow）
 
 ```
-main        ← 生产。PR + 1 人 review + 四道必需检查，只接受 develop / fix 的合并
-develop     ← 集成。feat/* 合进来的地方，只要求 CI 绿，不要求 review
-feat/* fix/* ← 短命，从 develop 拉，合完即删
+main        ●───────────────●───────────────●      只接受 release/* 与 hotfix/*
+             ╲             ╱ ╲             ╱
+release/v1.2.0 ●───●───●        release/v1.3.0 …  冻结窗口，只修 bug
+               ╱         ╲      ╱
+develop    ●──●─────●─────●────●                   下一个版本的集成点
+            ╲    ╱   ╲    ╱
+feature/*    ●──●      ●──●                        单个功能，合完即删
 ```
 
-- **`develop` 不需要 review。** 集成分支的作用是把三个人各自的改动汇到一起，
-  让 CI 先跑一遍。真正的评审发生在 `develop` → `main`，**一次审完全部**。
-  给 `develop` 也加 review 只会让评审人变成瓶颈。
-- **`fix/*` 急用时可以从 `main` 拉**，直接对 `main` 开 PR。仍然要过完整 CI + review
-  ——"急"省掉的是绕经 develop 那一跳，不是省掉验证。**对 `main` 的 PR 一律跑全套 e2e**，
-  不因为在急修就跳过。
-- **发版后把 `main` 合回 `develop`**（`git checkout develop && git merge main`），
-  否则两条线会越走越远，最后合并时冲突集中爆发。
-- 测试文件**跟功能代码一起进 `main`**。不要为测试单独开分支：`main` 上没有测试文件时，
-  CI 会静默跑空集并报绿，这是最坏的一种失败。
+| 分支 | 从哪来 | 合到哪 | 谁可以往里写 |
+|---|---|---|---|
+| `main` | — | — | 只有 `release/*`、`hotfix/*` 的 PR |
+| `develop` | 由 `main` 初始化 | — | `feature/*` 的 PR；`release/*`、`hotfix/*` 回流 |
+| `release/*` | `develop` | `main` + `develop` | 发布负责人可直接提交（冻结期修 bug） |
+| `feature/*` | `develop` | `develop` | 作者本人 |
+| `hotfix/*` | `main` | `main` + `develop` | 值班人 |
 
-### 三个特殊分支
+### 五条硬规矩
 
-- **`documentation`** —— 文档站点。`main` 上不允许出现 `docs/` 目录，`docs-guard` 检查会拦下。改文档请对该分支开 PR。
-- **`assets/pr-previews`** —— PR 预览图床。只放图片，不放代码；不要为每个 PR 新建一条 assets 分支。
-- **`develop`** —— 集成缓冲。见上。
+1. **`main` 只认两个来源。** `release/*` 或 `hotfix/*`，其它分支的 PR 会被 `source-guard`
+   拦截。生产分支不接受「顺手改一下」——任何改动都得先落到 `develop`。
+2. **`develop` 不要求 review。** 三个人的改动先汇到一起让 CI 跑一遍，
+   真正的评审发生在合进 `main` 的那一次，一次审完全部。
+   给 `develop` 也加 review 只会让评审人变成瓶颈。
+3. **`release/*` 是冻结窗口，不是长期分支。** 切出来之后只允许修 bug，
+   不允许把 `develop` 上的新功能再合进来。发版完成当天删除。
+4. **`hotfix/*` 必须回流。** 合进 `main` 之后如果不合回 `develop`，
+   下一个 `release/*` 会把修好的 bug 原样带回来——这是 Git Flow 最常见的翻车方式。
+   回流 PR 由 Release workflow 自动开，别忽略它。
+5. **测试文件跟功能代码一起进 `main`。** 不要为测试单开分支——
+   `main` 上没有测试文件时，CI 会跑空集并报绿，这是最坏的一种失败。
+
+### 各分支的保护规则
+
+| 分支 | 保护规则 |
+|---|---|
+| `main` | PR + 1 人 review + `source-guard` + `backend`/`frontend`/`frontend-test`/`e2e`；禁强推、禁删除 |
+| `develop` | PR + `backend`/`frontend`/`frontend-test`；禁强推、禁删除（不要求 review） |
+| `release/*` | 禁强推（冻结期不许重写历史）；push 即跑 CI |
+| `hotfix/*` | 禁强推；push 即跑 CI |
+| `feature/*` | 无 |
+
+`feature/*` 不给保护是有意的：它通常一天就没了，加规则只会在删除分支时添麻烦。
+
+### 两条特例分支
+
+- **`documentation`** —— 文档站点。`main` 上不允许出现 `docs/`，`docs-guard` 会拦下。
+  改文档对该分支开 PR。禁强推、禁删除。
+- **`assets/pr-previews`** —— PR 预览图床。只放图片，不放代码。禁强推、禁删除。
 
 ### 预演环境
 

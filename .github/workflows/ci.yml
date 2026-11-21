@@ -5,7 +5,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    # release/* 与 hotfix/* 也要跑：前者是冻结窗口（发版前最后一次全量验证），
+    # 后者是线上救火，两条都可能在没有任何 PR 的情况下被直接提交。
+    branches: [main, develop, "release/**", "hotfix/**"]
   pull_request:
     branches: [main, develop]
   # 手动点火：GitHub 事件投递抽风时（实测 2026-11-13 全组织 0 条 run）
@@ -40,6 +42,34 @@ jobs:
             exit 1
           fi
           echo "OK：main 不含 docs/"
+
+  # main 只允许 release/* 与 hotfix/* 合入 —— Git Flow 的生产分支闸门。
+  # 故意不用 `if:` 跳过 job：必需检查若从未上报，PR 会永远卡在 "Expected"。
+  source-guard:
+    name: source-guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: 校验来源分支
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$EVENT" != "pull_request" ] || [ "$BASE_REF" != "main" ]; then
+            echo "非 PR→main，跳过"
+            exit 0
+          fi
+          case "$HEAD_REF" in
+            release/*|hotfix/*)
+              echo "✅ 来源分支 $HEAD_REF 允许合入 main"
+              ;;
+            *)
+              echo "::error::main 只接受 release/* 或 hotfix/*，当前来源是 $HEAD_REF"
+              echo "改动请先合到 develop，再从 develop 切 release/*；线上救火走 hotfix/*。"
+              exit 1
+              ;;
+          esac
 
   backend:
     name: backend
