@@ -3,22 +3,27 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
-<title>{% block title %}南汇一中传媒社{% endblock %}</title>
+<title>{% block title %}南汇一中 · 传媒社{% endblock %}</title>
 <link rel="stylesheet" type="text/css" href="{% static 'legacy/legacy.css' %}">
 </head>
 <body>
-<div id="legacy-wrap">
-  <div id="legacy-head">
-    <h1><a href="/legacy/">南汇一中 · 传媒社</a></h1>
-    <p class="legacy-nav"><a href="/legacy/">首页</a> | <a href="/legacy/about/">关于我们</a> | <a href="/" rel="nofollow">进入完整版</a></p>
-  </div>
-  <div id="legacy-body">
+<div class="topbar"><div class="topbar-inner">
+  <h1><a href="{% url 'legacy:home' %}">南汇一中 · 传媒社</a></h1>
+  <ul class="topbar-nav">
+    <li><a href="{% url 'legacy:home' %}">首页</a></li>
+    <li><a href="{% url 'legacy:about' %}">关于我们</a></li>
+    <li><a href="/">进入完整版</a></li>
+  </ul>
+</div></div>
+{% block hero %}{% endblock %}
+<div class="wrap">
 {% block content %}{% endblock %}
-  </div>
-  <div id="legacy-foot">
-    <p>本页为兼容性精简版，仅提供阅读；内容可能滞后，完整功能请使用现代浏览器访问<a href="/">主站</a>。</p>
-    <p>南汇一中传媒社 · 社团管理系统</p>
-  </div>
 </div>
+<div class="footer"><div class="footer-inner">
+  <p class="footer-note">
+    <strong>本页为兼容性精简版，仅提供阅读</strong>；内容可能滞后，完整功能请使用现代浏览器访问 <a href="/">主站</a>。
+    <br>南汇一中传媒社 · 社团管理系统
+  </p>
+</div></div>
 </body>
 </html>
