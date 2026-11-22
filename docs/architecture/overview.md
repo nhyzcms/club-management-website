@@ -42,7 +42,7 @@
 | 挂载 | 内容 | 文档 |
 |---|---|---|
 | `/admin/` | Django Admin 管理后台 | [管理后台指南](../operations/admin-guide.md) |
-| `/site-policy/` | 站点策略公开投影 | [common](../api/common.md) |
+| `/site-policy/` `/version/` `/changelog/` | 站点策略公开投影、运行版本与发行说明 | [common](../api/common.md) |
 | `/auth/` | 账号、登录、认证、资料 | [accounts](../api/accounts.md) |
 | `/tasks/` `/messaging/` `/activities/` `/events/` `/exam_board/` `/news/` `/reviews/` `/about/` `/tutorials/` `/recruitment/` `/attachments/` | 各业务模块 API | 各模块文档 |
 | `/uploads/` | TUS 断点续传端点 | [attachments](../api/attachments.md) |
@@ -58,7 +58,7 @@
 | App | 职责 | 关键概念 | 参考 |
 |---|---|---|---|
 | `accounts` | 账号、登录 / 会话、身份认证、社员身份编号、安全验证、账号安全中心、资料与头像 | 多端登录（3 台）、登录保护、陌生设备挑战、滚动密钥、登录事件、能力投影 `can_*` | [API](../api/accounts.md) · [访问控制](../guides/access-control.md) · [账号与安全](../guides/account-security.md) |
-| `common` | 站点策略、维护模式、跨模块公共模型 | 五张领域策略表（认证 / 频控 / 上传 / 更新 / 内容）；`Tag`（表名沿用 `tasks_tag`）；`ContentTarget` 内容锚点（评论 / 审核 / 举报 / 附件的宿主定位） | [API](../api/common.md) |
+| `common` | 站点策略、版本信息、维护模式、跨模块公共模型 | 四张领域策略表（认证 / 频控 / 上传 / 内容）、`/version/` 与 `/changelog/`；`Tag`（表名沿用 `tasks_tag`）；`ContentTarget` 内容锚点（评论 / 审核 / 举报 / 附件的宿主定位） | [API](../api/common.md) |
 | `news` | 社团新闻 | 发布审核门控 | [API](../api/news.md) |
 | `activities` | 活动（众议 / 征集 / 展示 / 调研） | 生命周期（`state.calc_state` 判定）、复审、问卷绑定 | [API](../api/activities.md) · [问卷指南](../guides/surveys.md) |
 | `events` | 活动壳 / 重大活动宿主（明信片互寄） | 惰性流转（`lifecycle.touch`）、到点自动关闭、形态模块 `module_key`；通用活动 CRUD 已下线 | [API](../api/postcard.md) |
@@ -114,13 +114,14 @@ ContentTarget(kind="news", object_id=42)   # 新闻 #42 的锚点
 
 详见 [ADR-0045](../adr/0045-content-target.md)。
 
-### 站点策略：五张 singleton
+### 站点策略：四张 singleton
 
 `SiteSettings` 原来是一张 33 字段的单例表。现在拆成 `AuthPolicy` / `RateLimitPolicy` /
-`UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`，各管一域、各自 `pk=1`。
+`UploadPolicy` / `ContentPolicy` 四张表（`UpdaterPolicy` 已随旧更新器于 2026-11-21 删除），
+各管一域、各自 `pk=1`。
 
 **读取入口没变**：`common/policy.py:get_policy()` 仍然返回同一个 `SitePolicy` dataclass，
-33 个字段一个不差。改一处配置只写那一行，不再整行覆盖。
+字段语义不变。改一处配置只写那一行，不再整行覆盖。
 详见 [ADR-0046](../adr/0046-site-settings-split.md)。
 
 ### 命名约定：事件时间字段
@@ -180,7 +181,7 @@ ContentTarget(kind="news", object_id=42)   # 新闻 #42 的锚点
 
 ### 站点策略
 
-- 注册开关、上传上限、节流速率等运行时可调策略拆在五张领域表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`，见 [ADR-0046](../adr/0046-site-settings-split.md)；运行机制见 [ADR-0010](../adr/0010-runtime-site-policy.md)），经 `get_policy()` 快照供各视图读取；公开投影为 `/site-policy/`。
+- 注册开关、上传上限、节流速率等运行时可调策略拆在四张领域表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `ContentPolicy`，见 [ADR-0046](../adr/0046-site-settings-split.md)；运行机制见 [ADR-0010](../adr/0010-runtime-site-policy.md)），经 `get_policy()` 快照供各视图读取；公开投影为 `/site-policy/`。运行版本与发行说明由 `/version/`、`/changelog/` 公开。
 
 ### 附件与文件存储
 

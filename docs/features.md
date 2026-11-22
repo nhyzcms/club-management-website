@@ -192,9 +192,10 @@ SurveyJS 问卷本体独立于活动：**发起活动时即可设计**，创建�
 
 - **后台管理**：Django Admin + 自定义视图 + 前端 SPA。前端入口只对 `is_staff` 显示（`canAccessAdmin`），普通用户手输 `/admin/` 被挡回登录页。
 - **容器化部署**：CI 构建镜像（`image.yml`）→ `Deploy` 登记 → 服务器 `club-deploy.timer` 在夜间窗口内重建容器；宿主机只留 nginx / PG / pgbouncer / Redis 与运行时资产。
-- **更新与回滚**：发布走 SemVer（`release.yml` + Milestone），部署走容器 CD（`deploy.sh stage/apply/now/rollback`），apply 前自动 `pg_dump`、健康检查失败自动回滚；旧「GitHub Release + 更新守护进程」已于 2026-11-20 弃用。
+- **更新与回滚**：发布走 SemVer（`release.yml` + Milestone），部署走容器 CD（`deploy.sh stage/apply/now/rollback`），apply 前自动 `pg_dump`、健康检查失败自动回滚；旧「GitHub Release + 更新守护进程」已于 2026-11-20 弃用，更新器代码与 `UpdaterPolicy` 表于 2026-11-21 删除。
+- **版本可见**：页脚常驻 `vX.Y.Z`（悬停看提交与构建时间）；发新版后首次访问弹一次「更新了什么」，只列社员可见改动（`ci` / `test` / `chore` / `build` 不进）。`GET /version/`、`GET /changelog/` 公开可查。
 - **维护模式**：`manage.py maintenance on / off / status`（写 `run/MAINTENANCE`）。
-- **运行时旋钮**：五张单例策略表（Auth / RateLimit / Upload / Updater / Content，[ADR-0046](adr/0046-site-settings-split.md)），后台可改、免重启；其中 `UpdaterPolicy` 自容器 CD 起不再驱动生产升级。
+- **运行时旋钮**：四张单例策略表（Auth / RateLimit / Upload / Content，[ADR-0046](adr/0046-site-settings-split.md)），后台可改、免重启。
 - **统一数据根**：`media/`、`private_media/`、`data/` 的布局与换根剧本见 [统一数据根](operations/data-root.md)。
 
 ---

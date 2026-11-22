@@ -4,9 +4,9 @@
 
 | 层 | 位置 | 生效方式 | 典型内容 |
 |---|---|---|---|
-| 进程环境变量 | `.env`（模板 `.env.example`，`.env` 已 gitignore） | 进程启动时读取，**改完必须重启** | 密钥、SMTP 授权码、Turnstile secret、域名、自动更新 token |
+| 进程环境变量 | `.env`（模板 `.env.example`，`.env` 已 gitignore） | 进程启动时读取，**改完必须重启** | 密钥、SMTP 授权码、Turnstile secret、域名、部署窗口与镜像保留策略 |
 | Django settings | `config/settings.py` | 代码内，含从环境变量派生的默认值 | 数据库、静态文件、CORS/CSRF、中间件、DRF 全局配置 |
-| 运行时站点策略 | 五张单例领域表 `AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`（Django admin 编辑），经 `GET /site-policy/` 下发 | 存 DB，改完即时生效（`save()` 失效缓存） | 限流额度、上传上限、评论/私信开关、自动更新窗口 |
+| 运行时站点策略 | 四张单例领域表 `AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `ContentPolicy`（Django admin 编辑），经 `GET /site-policy/` 下发 | 存 DB，改完即时生效（`save()` 失效缓存） | 限流额度、上传上限、评论/私信开关、内容审核 |
 
 第三层**不**是环境变量：运营旋钮走 DB，密钥与基础设施走 `.env`（设计记录 `docs/adr/0010-runtime-site-policy.md`）。下文按层展开。
 
@@ -24,13 +24,12 @@
 | `EMAIL_HOST_PASSWORD` | 163 邮箱的「SMTP 授权码」（不是登录密码） | 配了 `EMAIL_HOST_USER` 就必填 | 空 |
 | `TURNSTILE_SITE_KEY` | Cloudflare Turnstile 站点公钥；经 `GET /site-policy/` 下发给前端 | 否 | 空。两项都空 = 关闭人机校验；**都填了才启用**（只填一半视为关闭） |
 | `TURNSTILE_SECRET_KEY` | Turnstile 服务端密钥（保密，永不下发） | 否 | 空 |
-| `UPDATE_GITHUB_TOKEN` | 旧更新器读 Release 用的 GitHub PAT | **已不用于生产升级**（容器 CD 不用它） | 空；ghcr 拉取凭据见部署指南 §6.5 |
-| `UPDATE_GITHUB_REPO` | 更新来源仓库，`owner/repo` | 否 | `nhyzcms/club-management-website`（留空也回退到该值） |
+| `UPDATE_GITHUB_TOKEN` | 旧更新器凭据（更新器已删除）；仅 `scripts/install.sh` 的独立安装（拉 Release）沿用 | 否 | 空；容器部署不需要。ghcr 拉取凭据见部署指南 §6.5 |
+| `UPDATE_GITHUB_REPO` | 同上，`install.sh` 拉取仓库，`owner/repo` | 否 | `nhyzcms/club-management-website`（留空也回退到该值） |
 | `DB_ENGINE` 等 `DB_*` | 数据库切换与连接项：`DB_ENGINE=postgresql` 时用 PostgreSQL（`DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT`）；`DB_PORT` 可指向 pgbouncer 等连接池 | 否 | 全部留空 = SQLite（缺省）；示例 `DB_ENGINE=postgresql`、`DB_NAME=club` |
 | `REDIS_URL` | 缓存 + Channels 频道层一并切到 Redis；多 worker 的前置条件 | 否 | 留空 = v1 行为（内存通道层、本地缓存、单 worker） |
 | `GUNICORN_WORKERS` | ASGI worker 进程数 | 否 | `1`；**只有配了 `REDIS_URL` 才允许 >1** |
 | `NOTIFICATIONS_DELIVERY_ASYNC` | 通知外发投递模式：默认异步（进程内队列 + 守护线程；失败退避自动重试）；`=0` 回退旧同步投递 | 否 | 留空 = 异步（默认）。示例 `NOTIFICATIONS_DELIVERY_ASYNC=0` |
-| `CLUB_UPDATER_PROXY` / `CLUB_UPDATER_NO_PROXY` | 旧更新器出站代理 | 否 | **已停用**（2026-11-20 容器 CD 取代；代码保留但无启动路径） |
 | `CLUB_DATA_DIR` | 统一数据根：媒体等持久数据的存放位置（`MEDIA_ROOT` / `PRIVATE_MEDIA_ROOT` 由它派生） | 否 | 空 = 安装目录（历史布局，行为不变）；示例 `<安装目录>/data`。见[统一数据根](operations/data-root.md) |
 
 注意事项：
@@ -38,7 +37,7 @@
 - `.env` 不入库（`.gitignore` 已忽略），生产需 `chmod 600`。
 - `SECRET_KEY` 生成：`python -c "import secrets;print(secrets.token_urlsafe()"`（模板注释给的命令；`scripts/install.sh` 用 `secrets.token_urlsafe(48)`）。
 - 模板里 `SECRET_KEY=` 是**空字符串**，而 `os.environ.get` 会把「键存在但为空」当成已设置——`config/settings.py::_secret_key()` 专门处理这种情况：空 / 纯空白视为未设置，DEBUG 下回退占位、生产直接报错。`config/tests.py::SettingsHygieneTest` 有对应断言。
-- `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` 也支持 `GITHUB_TOKEN` / `GITHUB_REPO` 作为 `install.sh` 的入参别名。
+- `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` 也支持 `GITHUB_TOKEN` / `GITHUB_REPO` 作为 `install.sh` 的入参别名；它们只用于裸机安装拉取 Release，容器部署不读。
 - 新增的 `DB_*` / `REDIS_URL` / `GUNICORN_WORKERS` 遵守「缺省中性」：全部留空时行为与 v1 完全一致，开与关只动 `.env`（见 [ADR-0021](adr/0021-postgresql-redis-and-multiworker.md)）。
 - **PostgreSQL 连接池**：支持 pgbouncer 的 transaction pooling 模式——`DB_HOST` / `DB_PORT` 指向池端口即可（如 6432）。`settings.py` 已固定 `DISABLE_SERVER_SIDE_CURSORS=True` 且关闭 psycopg3 自动 prepared statements（`prepare_threshold=None`），无需额外配置。
 - `CLUB_DATA_DIR` 同样「缺省中性」：缺省 = 安装目录 → 历史布局；媒体路径全部由它派生，启用统一数据根（或换盘 / 换位置）只需改这一个键。
@@ -49,9 +48,7 @@
 |---|---|---|
 | `DJANGO_TESTING` | `config/settings.py` | 置 `1` 时等价于「正在跑测试」，启用测试期提速设置（见下文 §2.8） |
 | `DJANGO_DB_FILE` | `config/settings.py` | 数据库文件路径覆盖；E2E 经 `scripts/e2e-server.sh` 置为独立库 `run/e2e.sqlite3`（每次重建），缺省 `db.sqlite3` |
-| `CLUB_SPAWN_UPDATER` | `start.sh` | **已弃用**：置 `0` 时不再拉起更新守护进程（2026-11-20 起 `start.sh` 本就不再拉起它） |
-| `CLUB_UPDATER_SPAWNED` | 旧更新器 | **已弃用**（容器部署无更新守护进程） |
-| `SERVICE_NAME` | 旧更新器 | **已弃用**；systemd unit 名，默认 `club` |
+| `SERVICE_NAME` | `scripts/install.sh` | 裸机安装的服务名 / systemd unit 名，默认 `club`；容器部署不需要 |
 | `LOGIN_CHALLENGE` | `config/settings.py` | 陌生设备二次验证开关；`=0` 关闭挑战（设备与登录事件照常记录，应急回滚用）。默认开启；`manage.py test` 下自动关闭 |
 | `IP2REGION_DB` | `config/settings.py` | 离线 IP 库路径；默认 `<项目>/data/ip2region_v4.xdb`。文件缺失 / 损坏 / 依赖缺失时静默降级为只记 IP |
 | `AMAP_KEY` | `frontend/webpack.config.js`（**构建期**） | 高德地图 JS API key；`AMAP_KEY=… npm run build` 经 `DefinePlugin` 注入。未设置时登录记录页降级为城市文字 |
@@ -142,7 +139,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `CORS_ALLOW_HEADERS` | `corsheaders.defaults.default_headers` + `x-device-id` | `X-Device-Id` 由前端 `utils/deviceId.ts` 生成（访客问卷去重与统计） |
 | CSRF | Django 默认 `CsrfViewMiddleware` + `csrftoken` Cookie | 前端启动时显式 `GET /auth/csrf/`（`@ensure_csrf_cookie`）拉取 Cookie——dev 态 webpack 直接服务模板、不经 Django 渲染，无法依赖 `{% csrf_token %}` 下发 |
 
-### 2.6 邮件 / Turnstile / 自动更新
+### 2.6 邮件 / Turnstile / 旧更新器凭据
 
 | 设置 | 逻辑 |
 |---|---|
@@ -152,7 +149,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `DEFAULT_FROM_EMAIL` | 配了 SMTP 时为 `EMAIL_HOST_USER` |
 | `NOTIFICATIONS_DELIVERY_ASYNC` | 环境变量；默认开。异步 = 进程内队列 + 守护线程消费（`messaging/notifications/queue.py`，失败退避重试，见 [ADR-0024](adr/0024-async-notification-delivery.md)）；`=0` 回退旧同步投递。测试期默认同步（用例可 `override_settings` 开启） |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | 环境变量，默认空。两项都非空才启用（`accounts/turnstile.py::is_turnstile_enabled()`）；启用后 sitekey 经 `GET /site-policy/` 下发，secret 只留进程内 |
-| `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` | 环境变量；repo 默认 `nhyzcms/club-management-website`（空串也回退）。窗口 / 轮询等旋钮在 `UpdaterPolicy` |
+| `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` | 环境变量；repo 默认 `nhyzcms/club-management-website`（空串也回退）。仅 `scripts/install.sh` 的独立安装沿用；旧更新器（含 `UpdaterPolicy`）已删除 |
 
 ### 2.7 DRF 与 tus
 
@@ -176,9 +173,9 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `PASSWORD_HASHERS` | `["django.contrib.auth.hashers.MD5PasswordHasher"]` | 默认 PBKDF2 约 374ms/次；测试库每次清空、绝不进生产 |
 | `EMAIL_BACKEND` | `django.core.mail.backends.locmem.EmailBackend` | 注册 / 认证 / 重置路径发信不触网、不阻塞，可断言 `mail.outbox`（防御性：本地 `.env` 若配了 SMTP 也会被切回内存后端） |
 
-## 三、运行时站点策略（五张领域表）
+## 三、运行时站点策略（四张领域表）
 
-B5 起 `common/models.py` 里是五张 pk 恒为 1 的单例表——`AuthPolicy`（认证策略）/ `RateLimitPolicy`（频控策略）/ `UploadPolicy`（上传策略）/ `UpdaterPolicy`（更新策略）/ `ContentPolicy`（内容策略），各自在 Django admin 有独立页面（[ADR-0046](adr/0046-site-settings-split.md)）；任一表 `save()` 都会失效缓存键 `common.site_policy`。调用方一律经 `common/policy.py::get_policy()` 读同一个快照（字段与拆分前一一对应），**不查模型**；无行 / DB 不可用时回退代码内默认值。`GET /site-policy/` 只下发**显式 allowlist 的公开子集** + Turnstile 公开字段（审计 #274：不再是 `asdict` 全量导出，运维参数与各条限流阈值不匿名公开）。
+B5 起 `common/models.py` 里是四张 pk 恒为 1 的单例表——`AuthPolicy`（认证策略）/ `RateLimitPolicy`（频控策略）/ `UploadPolicy`（上传策略）/ `ContentPolicy`（内容策略），各自在 Django admin 有独立页面（[ADR-0046](adr/0046-site-settings-split.md)）；任一表 `save()` 都会失效缓存键 `common.site_policy`。`UpdaterPolicy` 已于 2026-11-21 随更新器删除（迁移 `common/0023`）。调用方一律经 `common/policy.py::get_policy()` 读同一个快照（字段语义不变），**不查模型**；无行 / DB 不可用时回退代码内默认值。`GET /site-policy/` 只下发**显式 allowlist 的公开子集** + Turnstile 公开字段（审计 #274：不再是 `asdict` 全量导出，运维参数与各条限流阈值不匿名公开）。
 
 | 字段 | 默认值 | 作用 |
 |---|---|---|
@@ -208,13 +205,12 @@ B5 起 `common/models.py` 里是五张 pk 恒为 1 的单例表——`AuthPolicy
 | `sync_upload_max_bytes` | `52428800`（50MB） | 同步上传单文件上限 |
 | `tus_media_max_bytes` | `524288000`（500MB） | tus 图 / 视频上限 |
 | `survey_upload_daily_bytes` | `209715200`（200MB） | 问卷文件题上传的全局每日字节配额（24h 内台账求和；防匿名端点写满磁盘） |
-| `auto_update_enabled` / `update_poll_interval_seconds` / `update_timezone` / `update_window_start_hour` / `update_window_end_hour` / `update_apply_cutoff_minutes_before_end` / `update_release_keep` / `update_db_backup_keep` | 旧更新器默认值 | **已停用**：2026-11-20 起容器 CD 不读 `UpdaterPolicy`；部署窗口与保留份数改由 `.env` 的 `CLUB_DEPLOY_WINDOW_START/END` / `CLUB_DEPLOY_TZ` / `CLUB_DEPLOY_KEEP_IMAGES` / `CLUB_DEPLOY_KEEP_DUMPS` 控制 |
 | `comments_enabled` / `comment_max_depth` | `True` / `8` | 评论区开关与最大嵌套深度（1 = 仅根评论） |
 | `dms_enabled` | `True` | 私信开关 |
 
-字段归属：认证开关 / 有效期 / 注册宽限 / 自助注册与认领 → `AuthPolicy`；各类额度 → `RateLimitPolicy`；上传上限 → `UploadPolicy`；内容审核 / 评论 / 私信 → `ContentPolicy`。`UpdaterPolicy` 字段保留但**已不驱动生产升级**（容器窗口读 `.env` 的 `CLUB_DEPLOY_*`）。
+字段归属：认证开关 / 有效期 / 注册宽限 / 自助注册与认领 → `AuthPolicy`；各类额度 → `RateLimitPolicy`；上传上限 → `UploadPolicy`；内容审核 / 评论 / 私信 → `ContentPolicy`。部署窗口与保留份数不在策略表里，读 `.env` 的 `CLUB_DEPLOY_*`。
 
-维护拦截是**文件旗标**而非 DB：`run/MAINTENANCE`（由 `manage.py maintenance on|off|status` 写；旧更新器也会写，已弃用），中间件只读文件、绝不读策略表，避免 `migrate` 时死锁 SQLite。
+维护拦截是**文件旗标**而非 DB：`run/MAINTENANCE`（由 `manage.py maintenance on|off|status` 写；旧更新器已删除，历史遗留的 `reason=update` 旗标仍可能出现），中间件只读文件、绝不读策略表，避免 `migrate` 时死锁 SQLite。
 
 ## 四、前端构建配置
 

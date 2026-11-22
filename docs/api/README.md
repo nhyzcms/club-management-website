@@ -100,6 +100,6 @@
 | 校园全景图 | [panorama](panorama.md) | 全景图库、DJI 导入、分层取片 |
 | 全站弹窗公告 | [announcements](announcements.md) | 后台发布的弹窗公告（只读）、原件、已读 |
 | 附件与上传 | [attachments](attachments.md) | 统一附件模型 + TUS 断点续传 |
-| 公共 | [common](common.md) | 站点策略等公共接口 |
+| 公共 | [common](common.md) | 站点策略、运行版本与发行说明等公共接口 |
 
 > 各模块文档中「认证」列的取值：**公开**（匿名可用）／**登录**（已登录）／**已认证**（登录且通过身份认证）／**职员**（持有相应权限）。

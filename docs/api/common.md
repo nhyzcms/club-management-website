@@ -1,22 +1,25 @@
 # 公共 API（站点策略与站点级行为）
 
-`common` app 提供的站点级公共能力：唯一的公开端点 `GET /site-policy/`（运行时策略的**公开子集** + Turnstile 公开字段）、维护模式 503 拦截、`media/file/` 固定目录的公开服务，以及旋钮的 admin 编辑路径。`common` 自身没有 `urls.py`——`site-policy` 与 `file` 均由 `config/urls.py` 直接挂载。
+`common` app 提供的站点级公共能力：运行时策略的**公开子集**（`GET /site-policy/`）、运行版本与发行说明（`GET /version/`、`GET /changelog/`）、维护模式 503 拦截、`media/file/` 固定目录的公开服务，以及旋钮的 admin 编辑路径。`common` 自身没有 `urls.py`——这几个路径均由 `config/urls.py` 直接挂载。
 
 > 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0010](../adr/0010-runtime-site-policy.md)
 
 ## 模块约定
 
-- **挂载位置**：`GET /site-policy/`（`SitePolicyView`，name=`site-policy`，无 app 前缀）；`GET /file/{path}`（`re_path` + `django.views.static.serve`，`document_root = BASE_DIR/media/file`）。
-- **策略快照（`common/policy.py`）**：运营旋钮住五张单例领域表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`，各 `pk` 恒 1，[ADR-0046](../adr/0046-site-settings-split.md)），调用方一律经 `get_policy()` 读，**不查模型**；快照按缓存键 `common.site_policy` 缓存（`timeout=None`，任一策略表 `save()` 时失效），五张表无行 / DB 不可用时回退到代码内默认值（与字段默认值一致，行为中立）。加旋钮 = 对应领域表的新字段 + 迁移 + 快照字段，不做通用 KV 袋。
+- **挂载位置**：`GET /site-policy/`（`SitePolicyView`）、`GET /version/`（`VersionView`）、`GET /changelog/`（`ChangelogView`），均无 app 前缀；`GET /file/{path}`（`re_path` + `django.views.static.serve`，`document_root = BASE_DIR/media/file`）。
+- **策略快照（`common/policy.py`）**：运营旋钮住四张单例领域表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `ContentPolicy`，各 `pk` 恒 1，[ADR-0046](../adr/0046-site-settings-split.md)），调用方一律经 `get_policy()` 读，**不查模型**；快照按缓存键 `common.site_policy` 缓存（`timeout=None`，任一策略表 `save()` 时失效），四张表无行 / DB 不可用时回退到代码内默认值（与字段默认值一致，行为中立）。加旋钮 = 对应领域表的新字段 + 迁移 + 快照字段，不做通用 KV 袋。`UpdaterPolicy` 已随旧更新器删除（2026-11-21，迁移 `common/0023`）。
+- **版本与发行说明（`common/version.py` / `common/changelog.py`）**：`build_info.json` / `changelog.json` 由 CI 在 `docker build` 前生成、随镜像分发（两者都不进仓库）；本地开发没有构建产物时，版本回落到已安装包元数据（`source="pyproject"`），发行说明回落到仓库里的 `CHANGELOG.md`。两个端点都 `AllowAny`、`Cache-Control: no-store`。
 - **密钥与基础设施**（`SECRET_KEY`、SMTP、Turnstile secret、`FRONTEND_URL`、MEDIA 路径）仍在 `config/settings.py` + `.env`，改完需重启；**secret 永不下发**。
-- **认证**：`/site-policy/` 为 `AllowAny` 且 `authentication_classes = []`——匿名 GET，不碰 session / CSRF；`/file/{path}` 亦无鉴权。
-- **写入路径**：旋钮只走 Django admin（`is_staff` + 对应领域表的 `change_*` 权限，五张单例、禁增删、changelist 直接跳表单）；无产品侧写接口。维护旗标走 `manage.py maintenance on|off`。
+- **认证**：`/site-policy/`、`/version/`、`/changelog/` 均为 `AllowAny` 且 `authentication_classes = []`——匿名 GET，不碰 session / CSRF；`/file/{path}` 亦无鉴权。
+- **写入路径**：旋钮只走 Django admin（`is_staff` + 对应领域表的 `change_*` 权限，四张单例、禁增删、changelist 直接跳表单）；无产品侧写接口。维护旗标走 `manage.py maintenance on|off`。
 
 ## 端点一览
 
 | 方法 | 路径 | 认证 | 权限 | 说明 |
 |---|---|---|---|---|
 | GET | `/site-policy/` | 公开 | — | 站点策略公开子集（allowlist）+ Turnstile 公开字段 |
+| GET | `/version/` | 公开 | — | 运行版本快照（镜像内 `build_info.json`；本地回落到源码版本） |
+| GET | `/changelog/` | 公开 | — | 当前版本的发行说明（前端更新弹窗数据源） |
 | GET | `/file/{path}` | 公开 | — | `media/file/` 目录静态服务 |
 
 ## 端点详情
@@ -45,13 +48,13 @@
 }
 ```
 
-> **这是一个显式 allowlist，不是全量快照**（审计 #274）。`common/views.py: PUBLIC_POLICY_FIELDS` 是唯一真源，`common/tests/test_public_policy.py` 冻结了字段集合——新增公开字段要三处同改。运维参数（自动更新窗口、`tus` 上限、各条 per-IP 限流阈值、内容审核开关）**不再匿名可读**，管理员在 Django 后台「频控策略 / 更新策略」里查看。
+> **这是一个显式 allowlist，不是全量快照**（审计 #274）。`common/views.py: PUBLIC_POLICY_FIELDS` 是唯一真源，`common/tests/test_public_policy.py` 冻结了字段集合——新增公开字段要三处同改。运维参数（`tus` 上限、各条 per-IP 限流阈值、内容审核开关）**不再匿名可读**，管理员在 Django 后台「认证策略 / 频控策略 / 上传策略 / 内容策略」里查看。
 
 `turnstile_enabled` / `turnstile_site_key` 来自 `.env`（`TURNSTILE_SITE_KEY` 与 `TURNSTILE_SECRET_KEY` **都非空**才启用；只配一半视为关闭），叠加在快照之上返回，**不在**任何策略表内。未启用时 sitekey 为空串。
 
 ### 公开字段（allowlist）
 
-只列 `/site-policy/` 会下发的字段。**其余运维 / 频控字段不再公开**，在 Django 后台「频控策略 / 更新策略 / 认证策略 / 内容策略」里查看与编辑（完整清单见 `docs/configuration.md`）。
+只列 `/site-policy/` 会下发的字段。**其余运维 / 频控字段不再公开**，在 Django 后台「认证策略 / 频控策略 / 上传策略 / 内容策略」里查看与编辑（完整清单见 `docs/configuration.md`）。
 
 | 字段 | 类型 | 默认 | 含义 / 消费方 |
 |---|---|---|---|
@@ -78,6 +81,52 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 
 `/site-policy/` 无缓存头、无 ETag；前端只在应用启动时拉一次，运行期以本地快照为准（旋钮改动后需刷新页面或等待下次启动）。服务端快照缓存走 Django cache 后端（缺省 `locmem` 进程内、不跨进程共享；配 `REDIS_URL` 后为 Redis、跨进程共享——[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)）——缺省后端下多 worker 时 admin 改旋钮只在当前进程即时生效，其余 worker 待缓存失效 / 重启后一致。
 
+### 版本快照
+
+`GET /version/`
+
+**认证**：公开（`AllowAny`，且显式关闭认证类）；**权限**：—。缓存头为 `Cache-Control: no-store`——版本随部署变化，缓存住会让「部署到底生效没」看起来像没生效。
+
+**响应 `200 OK`**（镜像内由 `build_info.json` 提供；字段固定，调用方不必判空）
+
+```json
+{
+  "version": "1.1.0",
+  "base_version": "1.1.0",
+  "channel": "release",
+  "tag": "v1.1.0",
+  "commit": "3e698c64a5a61a463b3cb6624f2cf02966570c3b",
+  "commit_short": "3e698c6",
+  "commits_since_tag": 0,
+  "built_at": "2026-11-21T05:25:00Z",
+  "built_by": "allenjin-login",
+  "source": "build_info.json"
+}
+```
+
+`channel` 只有两个值：`release`（tag 构建，或提交本身改了 `pyproject.toml` 的 `version`）与 `dev`（其余分支构建，版本形如 `1.1.0-dev.3.g3e698c6`）。本地源码运行时 `source` 为 `pyproject`，版本取自已安装包元数据；`/version/` 与容器内 `python manage.py version [--json]` 同源。
+
+### 发行说明
+
+`GET /changelog/`
+
+**认证**：公开；**权限**：—。数据源是镜像里的 `changelog.json`（CI 由 `CHANGELOG.md` 生成），本地开发回落到直接解析 `CHANGELOG.md`。
+
+**响应 `200 OK`**
+
+```json
+{
+  "version": "1.1.0",
+  "released": "2026-11-21",
+  "summary": "页面底部现在能看到版本号，发版后会告诉你这次改了什么。",
+  "sections": [
+    { "title": "新增", "items": ["页脚常驻版本号", "更新说明弹窗"] }
+  ]
+}
+```
+
+没有对应版本小节时返回空壳 `{"version": null, "released": null, "summary": null, "sections": []}`（不是 404 / 204，前端只需判断 `sections` 是否为空）。`summary` 取自该版本小节开头的引用块——自动生成的是 commit 原文，只有人写的这一句是「和你有什么关系」。前端只在三条同时成立时弹窗：`channel=release`、本地记录过旧版本、`sections` 非空；`ci` / `test` / `chore` / `build` 类改动不进给社员的这份。
+
 ### `media/file/` 静态服务
 
 `GET /file/{path}`
@@ -103,9 +152,11 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 
 ### 升级与发布（容器 CD）
 
-生产升级不再由应用进程完成。`common/updater.py` 已于 2026-11-20 弃用（代码保留作参考，任何启动路径都不会拉起它；`UpdaterPolicy` 表与 `update_*` 字段保留但不再被读取）。
+生产升级不再由应用进程完成。`common/updater.py` / `scripts/updater.py` 与 `UpdaterPolicy` 表已于 2026-11-21 彻底删除（迁移 `common/0023`），应用内没有任何自动更新路径。
 
-- **构建**：`image.yml` 在 push `main` / `develop` 时构建镜像、跑冒烟（布局守卫 / `migrate` / `/site-policy/` 返回 JSON / SPA 入口含 `id="root"`），推 `ghcr.io/nhyzcms/club-management-website:sha-<sha>` 与 `:latest`；`release.yml` 另给镜像补 `vX.Y.Z` tag。
+- **构建**：`image.yml` 在 push `main` / `develop` 或手动 dispatch 时构建镜像、跑冒烟（布局守卫 / `migrate` / `/site-policy/` 返回 JSON / `/changelog/` 内容一致 / SPA 入口含 `id="root"`），推 `ghcr.io/nhyzcms/club-management-website:sha-<sha>` 与 `:latest`（手动 dispatch 也推，供发布收尾补镜像）；`release.yml` 另给镜像补 `vX.Y.Z` tag。
+- **版本发布**：`release.yml` 在 `main` 上版本变化时打 tag、建 Release、滚动 Milestone；`ci.yml` 的 `release` job 在该提交带 `v*` tag 时把 `club-<sha>.tar.gz` + `.sha256` 挂到对应 Release（每个版本一份，供裸机 / 离线安装）。合并后若一条 check-run 都没有，用 `gh workflow run release.yml --ref main -f finish=1` 补收尾、再 `gh workflow run image.yml --ref main` 补镜像。
+- **版本可见性**：`/version/` 的 `channel=release` 且版本号等于刚发布的 `vX.Y.Z`，才说明生产已切到该版本；`channel=dev` 说明还在跑分支构建。
 - **登记**：`deploy.yml` 只在 `main` 的 Image 成功后 SSH 执行 `deploy.sh stage`——只拉镜像并写 `run/pending-release`，不切换。
 - **切换**：服务器上的 `club-deploy.timer` 每 5 分钟 tick，落窗口（默认 `[01:00, 03:00)` Asia/Shanghai，由 `.env` 的 `CLUB_DEPLOY_WINDOW_START/END` / `CLUB_DEPLOY_TZ` 控制）时 `apply`：`pg_dump`（直连 5432，不走 pgbouncer 6432）→ `migrate` → `collectstatic` → 重建容器 → 健康检查（失败自动回滚到上一 tag）。
 - **手动入口**：`deploy.sh status|now <tag>|stage <tag>|rollback|tick`；`rollback` 只换镜像、不还原数据库（详见[部署指南](../operations/deployment.md) §6）。
@@ -120,7 +171,7 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 | 邮件 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | 配了即切 163 SMTP（SSL 465），否则 dev 用 console 后端 |
 | 前端地址 | `FRONTEND_URL` | 用于拼认证邮件 / 重置链接（默认 `http://localhost:3000`） |
 | 媒体路径 | — | `MEDIA_ROOT`（公开）、`PRIVATE_MEDIA_ROOT`（身份证明，鉴权下载） |
-| 旧更新器凭据 | `UPDATE_GITHUB_TOKEN`、`UPDATE_GITHUB_REPO` | 仅历史参考；生产升级已改容器 CD，不使用它们 |
+| 旧更新器凭据 | `UPDATE_GITHUB_TOKEN`、`UPDATE_GITHUB_REPO` | 仅 `scripts/install.sh` 的独立安装（拉 Release）沿用；容器部署不读取 |
 | 数据库 / Redis / worker | `DB_ENGINE` 等 `DB_*`、`REDIS_URL`、`GUNICORN_WORKERS` | 缺省 SQLite + 单 worker；可选 PostgreSQL + Redis 多 worker（[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)） |
 
 ## 相关实现位置
@@ -128,8 +179,9 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 | 关注点 | 位置 |
 |---|---|
 | 快照读取与默认值 | `common/policy.py`（`get_policy` / `SitePolicy` / `invalidate_policy_cache` / `format_byte_cap`） |
-| 五张单例策略表与 admin 编辑 | `common/models.py`（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`）、`common/admin.py` |
+| 四张单例策略表与 admin 编辑 | `common/models.py`（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `ContentPolicy`）、`common/admin.py` |
 | 公开视图 | `common/views.py`（`SitePolicyView`） |
 | 维护拦截与旗标 | `common/middleware.py`、`common/maintenance.py`、`common/management/commands/maintenance.py` |
-| 升级与发布 | `.github/workflows/image.yml` / `deploy.yml` / `release.yml`、`scripts/deploy.sh` |
-| 旧更新器（已弃用） | `common/updater.py` |
+| 版本快照 | `common/version.py`、`common/management/commands/version.py`、`scripts/gen-build-info.sh` |
+| 发行说明 | `common/changelog.py` / `common/changelog_parse.py`、`scripts/gen_changelog.py` |
+| 升级与发布 | `.github/workflows/ci.yml`（`release` job）/ `image.yml` / `deploy.yml` / `release.yml`、`scripts/deploy.sh` |

@@ -142,10 +142,11 @@ CI 配置见 `.github/workflows/`：`ci.yml`（测试）、`image.yml`（镜像�
 | `frontend` | 同上 | Node 22 → `npm ci && npm run build`（工作目录 `frontend`）→ 断言 `frontend/dist/surveyjs/survey.core.min.js` 存在 → 上传 `frontend-dist` artifact（保留 1 天） |
 | `frontend-test` | 同上 | Node 22 → `npm ci` → `npm test`（Vitest 单元 / 组件测试，工作目录 `frontend`） |
 | `e2e` | 见下 | 复用 `frontend-dist` artifact + `uv sync` → 安装 chromium → `npx playwright test`（自动起独立库与服务）；上传 `playwright-report`（含 trace 回放，保留 7 天） |
+| `release` | push 到 `main` | 打包 `club-<sha>.tar.gz` + `.sha256`；仅当该提交带 `v*` tag 时作为资产挂到对应 Release（每个版本一份），否则只留 90 天 workflow artifact |
 
 `e2e` 的闸门在 **step 层**（job 总会启动并报 success，避免必需检查停在 skipped）：**push 到 `main`、push 到 `develop`、PR 带 `ci:full` 标签、目标为 `main` 的 PR（发布 / 急修，无条件真跑）**。目标为 `develop` 的 PR 仅在改动涉及 `frontend/` 时真跑；改登录 / 路由 / 上传 / 审核台 / 问卷这类跨页流程时，请在 PR 上打 `ci:full`。
 
-镜像与部署是独立工作流：`image.yml` 在 push `main` / `develop` 时构建镜像并推 `ghcr.io`（develop 的镜像供预演环境拉取）；`deploy.yml` 只在 `main` 的 Image 成功后执行 `deploy.sh stage` 登记，真正的切换在夜间窗口内；版本号与 changelog 走 `release.yml`（见 `RELEASING.md`）。
+镜像与部署是独立工作流：`image.yml` 在 push `main` / `develop` 或手动 dispatch 时构建镜像并推 `ghcr.io`（develop 的镜像供预演环境拉取；dispatch 也推，供发布收尾补镜像）；`deploy.yml` 只在 `main` 的 Image 成功后执行 `deploy.sh stage` 登记，真正的切换在夜间窗口内；版本与发行说明走 `release.yml`（`GET /version/` / `GET /changelog/`，合并后没触发 workflow 时用 `-f finish=1` 补收尾，见 `RELEASING.md`）。
 
 各 job 会把关键结果（测试统计、构建摘要等）写入运行页的 Step Summary，便于快速浏览。
 
@@ -227,7 +228,7 @@ club-management-website/
 | 新增 Django app | `uv run python manage.py startapp <name>` → 注册进 `config/settings.py` 的 `INSTALLED_APPS` → 在 `config/urls.py` 挂载前缀，并把该前缀加进 catch-all 的排除清单 |
 | 新增前端可访问的 API 前缀 | 同步两处：`config/urls.py` 的排除清单 + `frontend/webpack.config.js` 的 `devServer.proxy`（漏一处，开发态请求会被 SPA 或 dev server 吞掉） |
 | 新增前端页面 | 在 `frontend/src/App.tsx` 声明路由并 `React.lazy` 懒加载；需登录的包 `ProtectedRoute`；随后 `npm run build` 验证 |
-| 新增后端配置项 | 密钥 / 基础设施 → `.env` + `.env.example` + `config/settings.py`；运营旋钮 → `common/models.py` 的对应领域策略表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `UpdaterPolicy` / `ContentPolicy`）+ 迁移 + `common/policy.py` 快照 + 该表 admin |
+| 新增后端配置项 | 密钥 / 基础设施 → `.env` + `.env.example` + `config/settings.py`；运营旋钮 → `common/models.py` 的对应领域策略表（`AuthPolicy` / `RateLimitPolicy` / `UploadPolicy` / `ContentPolicy`）+ 迁移 + `common/policy.py` 快照 + 该表 admin |
 | 改模型字段 | `uv run python manage.py makemigrations <app>` → `uv run python manage.py migrate` |
 | 改接口 | 保持 DRF API 与前端能力一致：后端改字段名时同步 `frontend/src/api/` 与 `frontend/src/types/` |
 

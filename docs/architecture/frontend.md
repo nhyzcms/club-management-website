@@ -49,6 +49,8 @@ npm run copy-surveyjs
 
 **构建接缝校验**：`copy-surveyjs.js` 把 SurveyJS 未哈希 min 文件（survey-core、creator、analytics、chart.js、中文 i18n）同时拷入仓库根 `static/surveyjs/`（本地 runserver 供 Django admin 模板 `{% static 'surveyjs/...' %}` 引用）与 `frontend/dist/surveyjs/`（镜像内 collectstatic）；随后 `assert-live2d-dist.js` 与 `assert-surveyjs-dist.js` 逐文件断言产物齐全并校验 `catalog.json`，缺一即构建失败。前端另有单元（Vitest）/ E2E（Playwright）测试（见「已知边界」）；升级 survey-* / Chart.js 后需重跑 `npm run copy-surveyjs`。
 
+**旧浏览器降级**：`template.html` 内联 ES2020 语法探针 + 只用 ES3 语法的检测脚本；不支持现代语法的引擎（IE 全系、Chrome ≤79、关闭 JS、双核浏览器兼容模式等）会看到「浏览器过旧」的可读提示，而不是空白页。现代浏览器在检测第一行就返回，行为与改动前一致；服务端不分流 UA，差异只在浏览器端。
+
 **CSRF 初始化**：应用启动时（`App.tsx` 的 `useEffect`）显式 `api.getCsrf()` 调 `GET /auth/csrf/` 拉一次 `csrftoken` Cookie，同时 `fetchSitePolicy()` 拉取站点策略。开发态 webpack 直接服务模板、不经 Django 渲染，无法依赖 `{% csrf_token %}` 下发，故走显式端点。
 
 ## 目录结构
@@ -85,7 +87,7 @@ frontend/
 
 `components/` 分组职责（不逐个穷举）：
 
-- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`UserMenu`（顶栏头像菜单：`个人中心 / 私信 / 通知 / 待办 / 任务 / 活动 / 反馈 / 审核队列` 按能力裁剪，**「后台管理」只在 `utils/roles.ts::canAccessAdmin(role.variant)` 为真时出现**，即 `admin` / `superadmin` 两种 `is_staff` 徽章）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`、`ShellVersionGate`（App 壳版本闸门：版本码过低时提示下载新版 APK，可暂时跳过）、`AnnouncementHost`（全站弹窗公告宿主：进入站点后拉 `/announcements/active/` 逐条弹，关闭即记已读）。
+- **布局与守卫**：`AppShell`（全站顶栏/移动抽屉/用户菜单/未认证提醒/横幅公告/回顶/页脚）、`UserMenu`（顶栏头像菜单：`个人中心 / 私信 / 通知 / 待办 / 任务 / 活动 / 反馈 / 审核队列` 按能力裁剪，**「后台管理」只在 `utils/roles.ts::canAccessAdmin(role.variant)` 为真时出现**，即 `admin` / `superadmin` 两种 `is_staff` 徽章）、`PageChrome`（AppShell 的 embed 变体）、`ProtectedRoute`、`SessionGuard`、`LoginModal` + `LoginModalProvider`、`SessionSupersedeModal`、`ShellVersionGate`（App 壳版本闸门：版本码过低时提示下载新版 APK，可暂时跳过）、`AnnouncementHost`（全站弹窗公告宿主：进入站点后拉 `/announcements/active/` 逐条弹，关闭即记已读）、`ChangelogHost`（页脚版本号 + 发版更新弹窗：读 `/version/` 与 `/changelog/`，只在 `channel=release`、本地见过旧版本、且有发行说明时弹一次；页脚悬停显示提交与本地时区构建时间）。
 - **内容与活动**：`CommentSection`（评论树，含协管 UI）、`MessageThread`（私信/任务讨论线程）、`Avatar`、`ReportButton`、`AuthorReviewBanner`（作者视角审核状态横幅）、`Pagination`、`ArticleToc`（正文目录）、`ClubFeed` + `feed/FeedCards`（首页动态流）。
 - **表单与编辑器**：`RichTextEditor`（Tiptap 封装）、`DocxPreview`、`UserSearchSelect`（用户搜索选择器）、`MentionField`（@ 提及）、`CommentThreadStatusField`（评论线程开关）、`PasswordInput`、`SurveyFill`。
 - **视图部件**：`TaskGantt`（frappe-gantt 甘特）、`TaskTimeline`（任务时间线）。

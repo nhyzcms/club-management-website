@@ -27,7 +27,7 @@ Nginx
 - **worker 缺省为 1**：`CHANNEL_LAYERS` 缺省 `InMemoryChannelLayer`，不能跨进程扇出（[ADR-0015](../adr/0015-channels-without-redis.md)）。配置 `REDIS_URL`（Redis 频道层，[ADR-0021](../adr/0021-postgresql-redis-and-multiworker.md)）后可用 `GUNICORN_WORKERS` 提高；SQLite 怕多写者，生产多 worker 建议同时切 PostgreSQL。
 - WebSocket 两条：`/ws/messaging/`（须登录，推私信 / 通知 / 当前评论区）与 `/ws/exam-board/`（匿名可连，教室看板课表与题目误刊广播，[ADR-0018](../adr/0018-exam-board-batch-and-public-ws.md)）。
 - 前端 `frontend/dist/` 由 Django 的 `TEMPLATES["DIRS"]` 直接渲染，`STATICFILES_DIRS` 收集其静态资源；**没有独立的前端服务**。
-- **没有更新守护进程**。旧的 `scripts/updater.py` 已弃用（2026-11-20），生产升级改为「CI 推镜像 → 窗口内重建容器」。容器带 `restart: unless-stopped` 且 Docker 已 `enable`，重启机器后站点自动恢复。
+- **没有更新守护进程**。旧的 `scripts/updater.py` / `common/updater.py` 与 `UpdaterPolicy` 表已于 2026-11-21 删除，生产升级只有容器一条路径：「CI 推镜像 → 窗口内重建容器」。容器带 `restart: unless-stopped` 且 Docker 已 `enable`，重启机器后站点自动恢复。
 - 明信片照片清理由独立的 **`club-postcard-gc.timer`**（hourly，`Persistent=true`）驱动 `manage.py postcard_photo_gc`；它与 web 服务生命周期解耦，安装脚本自动创建并启用。
 - 维护拦截是**文件旗标** `run/MAINTENANCE`，中间件只读文件、不读数据库——保证 `migrate` 期间不会死锁 SQLite。
 
@@ -214,7 +214,7 @@ sudo ./scripts/install-docker-host.sh --yes --deploy-key-file /root/deploy.pub
 sudo ./scripts/install-docker-host.sh --yes --cutover sha-<要上线的 sha>
 ```
 
-切流会先 `stop` + `disable` 旧的 `club.service`（旧 unit 与容器抢同一个 unix socket），再拉起容器。旧的裸机安装路径（`scripts/install.sh`）仍保留在仓库里，但 Release 已不再产出 tarball（SemVer 发布不含发行包），容器化路径才是生产现行方式。
+切流会先 `stop` + `disable` 旧的 `club.service`（旧 unit 与容器抢同一个 unix socket），再拉起容器。旧的裸机安装路径（`scripts/install.sh`）仍保留在仓库里；每个版本发布时 Release 会附一份 `club-<sha>.tar.gz` + `.sha256`（供裸机 / 离线安装），但生产现行路径是容器。
 
 ### 3.2 CI 侧凭据
 
@@ -245,8 +245,7 @@ sudo -u clubdeploy /opt/club/scripts/deploy.sh now <记下的 tag>  # 用同一�
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | 163 邮箱账号与 **SMTP 授权码** | 按需；不配则邮件走 console 后端 |
 | `NOTIFICATIONS_DELIVERY_ASYNC` | 通知外发投递模式 | 默认异步（进程内队列，失败自动退避重试）；`=0` 回退同步投递（见 [ADR-0024](../adr/0024-async-notification-delivery.md)） |
 | `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile | 按需；两项都空 = 关闭，只填一半也视为关闭 |
-| `UPDATE_GITHUB_TOKEN` | 旧更新器读 Release 用的 GitHub PAT | **已不用于生产升级**（容器 CD 不用它）；ghcr 凭据见 §6.5 |
-| `UPDATE_GITHUB_REPO` | `owner/repo` | 默认 `nhyzcms/club-management-website` |
+| `UPDATE_GITHUB_TOKEN` / `UPDATE_GITHUB_REPO` | 旧更新器凭据（更新器已删除）；仅 `scripts/install.sh` 的独立安装（拉 Release）沿用 | 可留空；容器部署不读。ghcr 凭据见 §6.5 |
 | `DB_ENGINE` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | 数据库切换与连接 | 留空 = SQLite；`DB_ENGINE=postgresql` 启用 PostgreSQL；`DB_PORT` 可指向 pgbouncer（transaction pooling；服务端游标与自动 prepared statements 已在 settings 关闭） |
 | `REDIS_URL` | 缓存 + 频道层 | 留空 = v1；配置后可用 `GUNICORN_WORKERS` >1 |
 | `GUNICORN_WORKERS` | ASGI worker 数 | 默认 `1`；**须配 `REDIS_URL`** |
@@ -371,14 +370,25 @@ sudo systemctl reload nginx
 服务器上**没有代码树、没有 `.venv`、没有 `.git`**——`/opt/club` 只剩运行时资产（`.env`、
 `data/`、`staticfiles/`、`run/`、`backups/`、`docker-compose.yml`、`scripts/deploy.sh`）。
 
-> 旧的「更新器定时轮询 GitHub Release 拉 `club-<sha>.tar.gz`」已于 2026-11-20 弃用。
-> 仓库不再产出 `club-<sha>` 发行包；`common/updater.py` 仅作回滚参考保留，
-> 任何启动路径都不会拉起它。
+> 旧的「更新器定时轮询 GitHub Release 拉 `club-<sha>.tar.gz`」已于 2026-11-20 弃用；
+> 更新器代码与 `UpdaterPolicy` 表已于 2026-11-21 彻底删除（迁移 `common/0023`）。
+> 发行包只在**版本发布**时出一份：`ci.yml` 的 `release` job 把 `club-<sha>.tar.gz` +
+> `.sha256` 挂到该 `vX.Y.Z` Release，供裸机 / 离线安装；生产升级不读它。
 
 **版本与发布**：版本号遵循 SemVer（唯一真源 `pyproject.toml` 的 `version`，tag 形如 `v1.2.3`）。
 发布 = 手动 dispatch `release.yml` → 开 `release/vX.Y.Z` PR → 评审合并即发布审批 →
 `main` 上自动打 tag、建 GitHub Release、给镜像补版本 tag、滚动 Milestone。
 细则见仓库根 `RELEASING.md`。**发布不等于上线**：生产切换仍由 Deploy 登记 + 夜间窗口执行。
+
+**版本可见性**：镜像里带 CI 生成的 `build_info.json`，运行时经 `GET /version/` 暴露；
+`channel=release` 且版本号等于刚发布的那个，才说明生产已切到该版本（`channel=dev` = 还在跑分支构建）。
+`GET /changelog/` 同源给出该版本的社员版说明。排查「部署到底生效没」先看它，不必先 SSH。
+容器内也可 `python manage.py version [--json]`。
+
+**发布收尾漏跑时**：合并发布 PR 后若该提交上 **0 条 check-run**（GitHub 没收到这次 push），
+tag / Release / Milestone 都不会自动发生——用 `gh workflow run release.yml --ref main -f finish=1`
+补收尾，再 `gh workflow run image.yml --ref main` 补镜像（手动 dispatch 也会推 GHCR）。
+补完确认 Deploy 把 `sha-<sha>` 写进待发布队列。
 
 ### 6.1 全链路
 
@@ -390,6 +400,9 @@ sudo systemctl reload nginx
 2. **Image** — 多阶段构建镜像，跑冒烟（布局守卫 / `migrate` / `/site-policy/` 返回 JSON /
    SPA 入口含 `id="root"`），推 `ghcr.io/nhyzcms/club-management-website:sha-<sha>` 与 `:latest`。
 3. **Deploy** — 通过 SSH 执行 `deploy.sh stage sha-<sha>`，**只拉镜像并登记，不切换**。
+
+若这次提交正是版本发布（HEAD 带 `v*` tag），还会多一步：`ci.yml` 的 `release` job 打包
+`club-<sha>.tar.gz` + `.sha256` 并挂到该版本 Release（每个版本一份；非版本提交只留一个 90 天的 workflow artifact）。
 
 服务器上的 `club-deploy.timer` 每 5 分钟 tick 一次，只有落在窗口内才真正应用：
 
@@ -456,12 +469,13 @@ printf '%s' '<token>' | sudo -n -u clubdeploy docker login ghcr.io -u <用户名
 sudo -u clubdeploy docker pull ghcr.io/nhyzcms/club-management-website:sha-<sha>
 ```
 
-token 需要 **Packages: Read** 权限。`.env` 里的 `UPDATE_GITHUB_TOKEN` 是细粒度 token 且没有
-Packages 权限，**不能**用于这里（会得到 `manifest 403` / `pull denied`）。
+token 需要 **Packages: Read** 权限，建议单独创建一个只带该权限的凭据，不要复用 `.env` 里的其他
+token——权限不足时会得到 `manifest 403` / `pull denied`。
 
 ### 6.6 排障
 
 ```bash
+curl -s https://<站点>/version/ | python3 -m json.tool     # 线上实际版本（channel / commit）
 sudo -u clubdeploy /opt/club/scripts/deploy.sh status
 sudo docker ps                                            # club-app 是否 healthy
 sudo docker logs club-app --tail 100                       # 应用日志
@@ -629,7 +643,7 @@ set -a; . ./.env; set +a
 sudo docker exec club-app python manage.py maintenance status
 ```
 
-`reason=update` 说明有更新 / 回滚卡住（旧更新器遗留的旗标）：看 `sudo docker logs club-app --tail 200` 与 `sudo tail -100 /var/log/club-deploy.log`，确认后用 `deploy.sh now <tag>` 或 `deploy.sh rollback` 收尾；必要时 `maintenance off` 强制撤下（注意：若更新仍在进行，`off` 只取消「结束后的运维拦截」，不中止更新）。
+`reason=update` 说明有更新 / 回滚卡住（旧更新器时代遗留的旗标；容器部署不写它）：看 `sudo docker logs club-app --tail 200` 与 `sudo tail -100 /var/log/club-deploy.log`，确认后用 `deploy.sh now <tag>` 或 `deploy.sh rollback` 收尾；必要时 `maintenance off` 强制撤下（注意：若更新仍在进行，`off` 只取消「结束后的运维拦截」，不中止更新）。
 
 ## 9. 监控与巡检
 
