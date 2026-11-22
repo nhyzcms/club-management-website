@@ -46,9 +46,28 @@ describe("版本号格式化", () => {
     expect(formatVersion(BASE)).toBe("v1.0.1");
   });
 
-  it("开发版把 dev 后缀原样带出来", () => {
-    expect(formatVersion({ ...BASE, version: "1.0.1-dev.4.gabc1234", channel: "dev" }))
-      .toBe("v1.0.1-dev.4.gabc1234");
+  it("开发版显示「基准版本+第几个提交」，不把 dev 串贴脸上", () => {
+    expect(
+      formatVersion({
+        ...BASE,
+        version: "1.0.1-dev.4.gabc1234",
+        base_version: "1.0.1",
+        channel: "dev",
+        commits_since_tag: 4,
+      }),
+    ).toBe("v1.0.1+4");
+  });
+
+  it("开发版拿不到 tag 距离时退回完整版本号", () => {
+    expect(
+      formatVersion({
+        ...BASE,
+        version: "1.0.1-dev.4.gabc1234",
+        channel: "dev",
+        tag: null,
+        commits_since_tag: null,
+      }),
+    ).toBe("v1.0.1-dev.4.gabc1234");
   });
 
   it("没有数据时不显示任何字符", () => {
@@ -63,6 +82,21 @@ describe("版本号格式化", () => {
     // 给机器看的 UTC 不该原样丢给用户 ISO 串
     expect(tip).not.toContain("T04:31:20Z");
     expect(tip).toMatch(/构建于 \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/);
+  });
+
+  it("开发版的悬停提示交代离 tag 多远和完整构建版本", () => {
+    const tip = versionTooltip({
+      ...BASE,
+      version: "1.1.0-dev.3.g3e698c6",
+      channel: "dev",
+      tag: "v1.1.0",
+      commits_since_tag: 3,
+      commit_short: "3e698c6",
+    });
+    expect(tip).toContain("开发版本");
+    expect(tip).toContain("v1.1.0 之后第 3 个提交");
+    expect(tip).toContain("1.1.0-dev.3.g3e698c6");
+    expect(tip).toContain("3e698c6");
   });
 });
 
@@ -90,14 +124,22 @@ describe("ChangelogHost 弹窗时机", () => {
   it("同一版本不重复弹", async () => {
     localStorage.setItem(SEEN_VERSION_KEY, "1.0.1");
     mount();
-    await waitFor(() => expect(get).toHaveBeenCalled());
+    await waitFor(() => expect(changelog).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("开发版不打扰", async () => {
-    localStorage.setItem(SEEN_VERSION_KEY, "0.9.0");
+  it("dev 构建设有新的发行说明时也要弹（这正是修复的问题）", async () => {
+    // 线上永远是 tag 之后的 dev 构建：如果继续按 channel 卡，弹窗从不出现。
+    localStorage.setItem(SEEN_VERSION_KEY, "0.9.1");
     mount({ channel: "dev", version: "1.0.1-dev.2.gdeadbee" });
-    await waitFor(() => expect(get).toHaveBeenCalled());
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
+  it("构建版本变了但发行说明没变，不重复弹", async () => {
+    // 同一次发版会被切成多个 dev 构建，社员不该每换一个提交就被弹一次。
+    localStorage.setItem(SEEN_VERSION_KEY, "1.0.1");
+    mount({ channel: "dev", version: "1.0.1-dev.9.gfedcba9" });
+    await waitFor(() => expect(changelog).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -117,9 +159,11 @@ describe("ChangelogHost 弹窗时机", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("首次访问即使没有发行说明，也要记下版本", async () => {
+  it("没有发行说明时无从记录，也不写脏数据", async () => {
+    // 记的是「发行说明版本」；没有说明就没有版本，硬记构建号会让下一版永远判成「见过」。
     mount({}, { version: null, released: null, sections: [] });
-    await waitFor(() => expect(localStorage.getItem(SEEN_VERSION_KEY)).toBe("1.0.1"));
+    await waitFor(() => expect(changelog).toHaveBeenCalled());
+    expect(localStorage.getItem(SEEN_VERSION_KEY)).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -128,14 +172,14 @@ describe("ChangelogHost 弹窗时机", () => {
     mount({}, { version: null, released: null, sections: [] });
     await waitFor(() => expect(changelog).toHaveBeenCalled());
     openChangelog();
-    await waitFor(() => expect(get).toHaveBeenCalled());
+    await waitFor(() => expect(changelog).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("页脚「更新日志」事件能重新打开", async () => {
     localStorage.setItem(SEEN_VERSION_KEY, "1.0.1");
     mount();
-    await waitFor(() => expect(get).toHaveBeenCalled());
+    await waitFor(() => expect(changelog).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
 
     openChangelog();

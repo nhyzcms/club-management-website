@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ChangelogEntry } from "../api/version";
 import ChangelogModal from "./ChangelogModal";
-import { loadBuildInfo, loadChangelog } from "../hooks/useBuildInfo";
+import { loadChangelog } from "../hooks/useBuildInfo";
 
-/** 上次看到的版本号存在这里。清缓存不会让弹窗重来（localStorage 是持久的）。 */
+/** 上次看过的**发行说明版本**存在这里（不是构建版本号）。
+ *  清缓存不会让弹窗重来（localStorage 是持久的）。 */
 export const SEEN_VERSION_KEY = "club.seenVersion";
 
 /** 页脚「更新日志」用事件打开，省得把弹窗状态提到 AppShell。 */
@@ -32,10 +33,19 @@ function writeSeen(version: string) {
 /**
  * 版本更新提示。
  *
- * 三条规则，缺一条都会让这个功能变成骚扰：
- *   1. 只在**发布版本**上弹。开发版一天变好几次，那不是「更新」，那是我们自己在改。
- *   2. 只在**见过旧版本**时弹。首次访问的人没有「更新」可言，记下当前版本就好。
- *   3. 只在**确实有说明**时弹。CHANGELOG 里没写这一节，就别弹一个空窗。
+ * 触发条件：**发行说明的版本变了，而且这个人见过上一版**。
+ *
+ * 为什么不再按 channel 判（曾经要求 channel === "release"）：
+ * 构建脚本只有在「构建 ref 正好是 tag」或「这个提交自己改了 pyproject 版本」
+ * 时才把 channel 标成 release。而 main 在发布之后还要进 hotfix、回流，
+ * 生产实际跑的永远是 tag 之后的 dev 构建——那条规则让弹窗在线上从不出现，
+ * 功能等于没做。
+ *
+ * changelog.json 只在发版时变（它由 CHANGELOG.md 生成，开发分支不动这个文件），
+ * 所以按「发行说明版本」判，更贴近这里真正想表达的东西：
+ * 不是「这是个 tag 构建」，而是「这一版改了什么，你看过没有」。
+ *
+ * 另外两条保留：首次访问只记录不弹；没有正文不弹空窗。
  */
 export default function ChangelogHost() {
   const [entry, setEntry] = useState<ChangelogEntry | null>(null);
@@ -43,22 +53,23 @@ export default function ChangelogHost() {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([loadBuildInfo(), loadChangelog()]).then(([info, log]) => {
+    loadChangelog().then((log) => {
       if (!alive) return;
       setEntry(log);
 
-      if (!info || info.channel !== "release") return;
+      const version = log?.version;
+      if (!version) return; // 没有发行说明，就没有「更新」可讲
 
       const seen = readSeen();
       if (seen === null) {
         // 第一次来：把当前版本记下，不弹。下一次发版才是真正的「更新」。
         // 记版本不受「这一版有没有写说明」影响——否则这一版没写说明，
         // 等以后补上时，同一版又会对着老用户弹一次。
-        writeSeen(info.version);
+        writeSeen(version);
         return;
       }
-      // 没写说明就不弹空窗。update 按钮那边也会因此不出现。
-      if (seen !== info.version && log?.sections?.length) setOpen(true);
+      // 没写说明就不弹空窗。「更新日志」按钮那边也会因此不出现。
+      if (seen !== version && log.sections.length) setOpen(true);
     });
     return () => {
       alive = false;
@@ -73,10 +84,8 @@ export default function ChangelogHost() {
 
   const close = useCallback(() => {
     setOpen(false);
-    loadBuildInfo().then((info) => {
-      if (info?.channel === "release") writeSeen(info.version);
-    });
-  }, []);
+    if (entry?.version) writeSeen(entry.version);
+  }, [entry]);
 
   if (!open || !entry || !entry.sections.length) return null;
   return <ChangelogModal entry={entry} onClose={close} />;
