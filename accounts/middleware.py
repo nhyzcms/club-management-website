@@ -35,6 +35,12 @@ VALIDITY_CHECK_INTERVAL_SECONDS = 300
 _VALIDITY_CHECKED_AT_KEY = "validity_checked_at"
 
 
+# 旧浏览器只读版（/legacy/）承诺「不读 Cookie、不写 Cookie、不碰 session」：
+# 账号相关的三个闸门整段豁免，保证访客拿到的是不带任何 Cookie 的响应，
+# 响应头里也不会出现 Vary: Cookie（否则共享缓存无法命中）。
+LEGACY_READONLY_PREFIX = "/legacy/"
+
+
 def _is_admin_login_post(request):
     return request.method == "POST" and request.path.rstrip("/") == "/admin/login"
 
@@ -179,6 +185,8 @@ class MultiDeviceSessionMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        if request.path.startswith(LEGACY_READONLY_PREFIX):
+            return self.get_response(request)
         response = self._guard(request)
         if response is None:
             response = self.get_response(request)
@@ -294,6 +302,8 @@ class PasswordChangeRequiredMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        if request.path.startswith(LEGACY_READONLY_PREFIX):
+            return self.get_response(request)
         user = getattr(request, "user", None)
         if (
             user is not None
@@ -357,6 +367,8 @@ class ValidityEnforcementMiddleware:
 
     def __call__(self, request):
         response = self.get_response(request)
+        if request.path.startswith(LEGACY_READONLY_PREFIX):
+            return response
         user = getattr(request, "user", None)
         if user is not None and user.is_authenticated and self._due(request):
             try:

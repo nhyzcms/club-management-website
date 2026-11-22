@@ -1,0 +1,202 @@
+/* 旧浏览器只读版样式：只用 CSS 2.1 里 IE6+ 可用的部分。
+   约束：全 px、固定 960px 居中、float 布局；无 flex / grid / CSS 变量 /
+   圆角 / 阴影 / 渐变 / 透明度 / 媒体查询。 */
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #eef1f5;
+  color: #1f2733;
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+#legacy-wrap {
+  width: 960px;
+  margin: 0 auto;
+  background: #ffffff;
+  border-left: 1px solid #d6dce5;
+  border-right: 1px solid #d6dce5;
+}
+
+#legacy-head {
+  border-bottom: 4px solid #2f6fb3;
+  padding: 18px 24px 12px 24px;
+  background: #f5f7fa;
+}
+
+#legacy-head h1 {
+  margin: 0 0 6px 0;
+  font-size: 22px;
+  font-weight: bold;
+  color: #1f3a5f;
+}
+
+#legacy-head h1 a {
+  color: #1f3a5f;
+  text-decoration: none;
+}
+
+.legacy-nav {
+  margin: 0;
+  font-size: 13px;
+  color: #5b6673;
+}
+
+.legacy-nav a {
+  color: #2f6fb3;
+  text-decoration: none;
+}
+
+.legacy-nav a:hover {
+  text-decoration: underline;
+}
+
+#legacy-body {
+  padding: 20px 24px 8px 24px;
+}
+
+.card {
+  margin: 0 0 20px 0;
+  padding: 0 0 14px 0;
+  border-bottom: 1px solid #e3e7ee;
+}
+
+.card h2 {
+  margin: 0 0 10px 0;
+  font-size: 17px;
+  font-weight: bold;
+  color: #1f3a5f;
+  border-left: 4px solid #2f6fb3;
+  padding-left: 8px;
+}
+
+.meta {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  color: #5b6673;
+}
+
+.note {
+  margin: 10px 0 0 0;
+  padding: 8px 10px;
+  background: #fff8e6;
+  border: 1px solid #f0d9a8;
+  font-size: 13px;
+  color: #6b5320;
+}
+
+.more {
+  margin: 10px 0 0 0;
+  font-size: 13px;
+}
+
+.newslist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.newslist li {
+  margin: 0 0 12px 0;
+  padding: 0 0 12px 0;
+  border-bottom: 1px dotted #d6dce5;
+}
+
+.newslist .date {
+  display: inline;
+  margin-right: 8px;
+  font-size: 12px;
+  color: #7b8695;
+}
+
+.newslist .summary {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+#legacy-body p {
+  margin: 0 0 10px 0;
+}
+
+#legacy-body a {
+  color: #2f6fb3;
+}
+
+#legacy-body ul, #legacy-body ol {
+  margin: 0 0 10px 22px;
+  padding: 0;
+}
+
+#legacy-body li {
+  margin: 0 0 4px 0;
+}
+
+#legacy-body img {
+  border: 1px solid #d6dce5;
+  padding: 2px;
+}
+
+#legacy-body blockquote {
+  margin: 0 0 10px 0;
+  padding: 6px 12px;
+  border-left: 3px solid #c8d2e0;
+  color: #4b5563;
+}
+
+#legacy-body table {
+  border-collapse: collapse;
+  margin: 0 0 12px 0;
+  font-size: 14px;
+}
+
+#legacy-body th, #legacy-body td {
+  border: 1px solid #d6dce5;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+#legacy-body th {
+  background: #eef2f8;
+}
+
+#legacy-body pre {
+  margin: 0 0 12px 0;
+  padding: 10px;
+  background: #f5f6f8;
+  border: 1px solid #e3e7ee;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  overflow: auto;
+}
+
+#legacy-body code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+}
+
+.legacy-extimg {
+  margin: 0 0 12px 0;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border: 1px dashed #c8d2e0;
+  font-size: 13px;
+  color: #5b6673;
+  line-height: 1.7;
+}
+
+#legacy-foot {
+  margin: 10px 0 0 0;
+  padding: 14px 24px 24px 24px;
+  border-top: 1px solid #e3e7ee;
+  background: #fafbfc;
+  font-size: 12px;
+  color: #7b8695;
+}
+
+#legacy-foot p {
+  margin: 0 0 4px 0;
+}

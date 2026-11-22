@@ -46,12 +46,16 @@ urlpatterns = [
     path('attachments/', include('attachments.urls')),
     path('uploads/', include('attachments.tus_urls')),
     re_path(r'^file/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.BASE_DIR, 'media', 'file')}),
+
+    # 旧浏览器只读版：服务端直出的纯 HTML（无 JS、无 CSS 变量），不经过 SPA。
+    # 必须排在下面两条 SPA 入口之前，否则 /legacy/ 会被兜底路由吃掉。
+    path('legacy/', include('legacy.urls')),
     
     # SPA 入口**必须**不可缓存：L0 热更新（网站改完重开 App 就生效）全靠这一步。
     # index.html 只有 2.5 KB，而它引用的静态资源文件名带 contenthash，
     # 一旦 HTML 被 WebView 缓存，就会拿着旧哈希去请求已被删除的 chunk → 白屏。
     path('', never_cache(TemplateView.as_view(template_name='index.html')), name='home'),
-    re_path(r'^(?!file/|static/|admin/|auth/|tasks/|media/|messaging/|activities/|events/|news/|reviews/|site-policy/|exam_board/|tutorials/|recruitment/|attachments/|uploads/|about/|panorama/).*$',
+    re_path(r'^(?!file/|static/|admin/|auth/|tasks/|media/|messaging/|activities/|events/|news/|reviews/|site-policy/|exam_board/|tutorials/|recruitment/|attachments/|uploads/|about/|panorama/|legacy/).*$',
             never_cache(TemplateView.as_view(template_name='index.html')), name='index'),
 ]
 

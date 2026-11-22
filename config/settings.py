@@ -132,6 +132,7 @@ INSTALLED_APPS = [
     'tutorials',
     'recruitment',
     'attachments',
+    'legacy',
     'rest_framework_tus',
 ]
 

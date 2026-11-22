@@ -1,0 +1,31 @@
+{% extends "legacy/base.html" %}
+{% block title %}南汇一中传媒社 · 首页{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>社团简介</h2>
+  {% if page %}
+  <p class="meta">成立时间：{{ page.founded|default:"暂未填写" }}　指导教师：{{ page.advisor|default:"暂未填写" }}</p>
+  {% if intro_html %}{{ intro_html|safe }}{% else %}<p>简介暂未填写。</p>{% endif %}
+  {% else %}
+  <p>社团信息暂未填写。</p>
+  {% endif %}
+  <p class="more"><a href="/legacy/about/">查看关于页全文 &raquo;</a></p>
+</div>
+
+<div class="card">
+  <h2>最新消息</h2>
+  {% if news %}
+  <ul class="newslist">
+    {% for item in news %}
+    <li>
+      <span class="date">{{ item.published_at|date:"Y-m-d" }}</span>
+      <strong>{{ item.title }}</strong>
+      {% if item.summary %}<div class="summary">{{ item.summary }}</div>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>暂无公开消息。</p>
+  {% endif %}
+</div>
+{% endblock %}

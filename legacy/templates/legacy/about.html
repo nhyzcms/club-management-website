@@ -1,0 +1,19 @@
+{% extends "legacy/base.html" %}
+{% block title %}关于我们 · 南汇一中传媒社{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>{{ page.title|default:"关于我们" }}</h2>
+  <p class="meta">成立时间：{{ page.founded|default:"暂未填写" }}　指导教师：{{ page.advisor|default:"暂未填写" }}</p>
+  {% if intro_html %}{{ intro_html|safe }}{% endif %}
+  {% if external_total %}<p class="note">本页有 {{ external_total }} 张外链图片未自动加载（下方以文字链接给出原图地址）。</p>{% endif %}
+</div>
+
+{% for block in blocks %}
+<div class="card">
+  <h2>{{ block.title }}</h2>
+  {{ block.html|safe }}
+</div>
+{% empty %}
+<div class="card"><p>该页面内容暂未填写。</p></div>
+{% endfor %}
+{% endblock %}

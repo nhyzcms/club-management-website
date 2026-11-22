@@ -1,0 +1,24 @@
+{% load static %}<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="zh-CN">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>{% block title %}南汇一中传媒社{% endblock %}</title>
+<link rel="stylesheet" type="text/css" href="{% static 'legacy/legacy.css' %}">
+</head>
+<body>
+<div id="legacy-wrap">
+  <div id="legacy-head">
+    <h1><a href="/legacy/">南汇一中 · 传媒社</a></h1>
+    <p class="legacy-nav"><a href="/legacy/">首页</a> | <a href="/legacy/about/">关于我们</a> | <a href="/" rel="nofollow">进入完整版</a></p>
+  </div>
+  <div id="legacy-body">
+{% block content %}{% endblock %}
+  </div>
+  <div id="legacy-foot">
+    <p>本页为兼容性精简版，仅提供阅读；内容可能滞后，完整功能请使用现代浏览器访问<a href="/">主站</a>。</p>
+    <p>南汇一中传媒社 · 社团管理系统</p>
+  </div>
+</div>
+</body>
+</html>
