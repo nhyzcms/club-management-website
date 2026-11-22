@@ -63,9 +63,21 @@ export function useBuildInfo(): BuildInfo | null {
   return info;
 }
 
-/** 页脚展示用。dev 版本号本身就带 -dev.<n>.g<sha> 后缀，不必再加通道标记。 */
+/**
+ * 页脚展示用。
+ *
+ * 发布版就是 tag 版本；开发版写成 v1.1.0+3，意思是「1.1.0 之后第 3 个提交」。
+ *
+ * 不把 1.1.0-dev.3.g3e698c6 整个贴在页脚：那串有两层含义被挤在一起，
+ * 读者容易理解成「1.1.0 的测试版」，而实际跑的是 1.1.0 + 三个修复。
+ * 完整字符串放在悬停提示里，需要的人一眼能看到。
+ */
 export function formatVersion(info: BuildInfo | null): string {
-  return info ? `v${info.version}` : "";
+  if (!info) return "";
+  if (info.channel === "dev" && info.base_version && info.commits_since_tag) {
+    return `v${info.base_version}+${info.commits_since_tag}`;
+  }
+  return `v${info.version}`;
 }
 
 /** 构建时间给本地时区看。ISO 的 Z 结尾是给机器读的，页脚悬停是给人读的。 */
@@ -82,6 +94,13 @@ function localTime(raw: string): string {
 export function versionTooltip(info: BuildInfo | null): string {
   if (!info) return "";
   const parts = [info.channel === "release" ? "发布版本" : "开发版本"];
+  // 开发版要把「离哪个 tag 多远」说清楚：页脚只写了 +3，这里给全。
+  if (info.channel === "dev") {
+    if (info.tag && info.commits_since_tag) {
+      parts.push(`${info.tag} 之后第 ${info.commits_since_tag} 个提交`);
+    }
+    if (info.version) parts.push(`构建版本 ${info.version}`);
+  }
   if (info.commit_short) parts.push(`提交 ${info.commit_short}`);
   if (info.built_at) parts.push(`构建于 ${localTime(info.built_at)}`);
   if (info.source !== "build_info.json") parts.push("版本来自本地源码");
