@@ -107,7 +107,7 @@ class HeaderTest(LegacyTestCase):
             self.assertEqual(
                 response["Content-Security-Policy"],
                 "default-src 'none'; style-src 'self'; img-src 'self'; "
-                "base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+                "base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
             )
             self.assertEqual(response["X-Robots-Tag"], "noindex, nofollow")
             self.assertEqual(response["X-Frame-Options"], "DENY")
@@ -206,3 +206,136 @@ class SanitizeTest(TestCase):
     def test_empty_content_still_renders(self):
         body = self._about("")
         self.assertIn("我们做什么", body)
+
+class NewsListTest(LegacyTestCase):
+    def test_list_shows_only_public_items(self):
+        body = self.client.get("/legacy/news/").content.decode()
+        self.assertIn("已过审的新闻标题", body)
+        self.assertNotIn("待审核的新闻标题", body)
+        self.assertNotIn("未发布的草稿标题", body)
+
+    def test_list_ids_match_main_site_api_first_page(self):
+        ids = list(public_news().values_list("id", flat=True)[:20])
+        body = self.client.get("/legacy/news/").content.decode()
+        positions = [body.find(f"/legacy/news/{pk}/") for pk in ids]
+        self.assertTrue(all(p >= 0 for p in positions))
+        self.assertEqual(positions, sorted(positions))
+
+    def test_featured_only_on_unfiltered_first_page(self):
+        self.approved.featured = True
+        self.approved.save(update_fields=["featured"])
+        first = self.client.get("/legacy/news/").content.decode()
+        self.assertIn("头条", first)
+        # 头条在列表里只出现一次（feature 卡与列表项互斥）
+        self.assertEqual(first.count("/legacy/news/%d/" % self.approved.pk), 2)  # 卡片标题 + 缩略图/标题链接
+        searched = self.client.get("/legacy/news/", {"q": "已过审"}).content.decode()
+        self.assertNotIn("头条配图", searched)
+
+    def test_search_matches_title_and_reports_empty(self):
+        hit = self.client.get("/legacy/news/", {"q": "已过审"}).content.decode()
+        self.assertIn("已过审的新闻标题", hit)
+        miss = self.client.get("/legacy/news/", {"q": "不存在的关键词xyz"}).content.decode()
+        self.assertIn("该关键词下暂无公开内容", miss)
+        self.assertIn("清除筛选", miss)
+        # 侧栏的「热门阅读」是全局口径、不随关键词变；只有主列该为空。
+        main_col = miss.split('class="news-side"')[0]
+        self.assertNotIn("已过审的新闻标题", main_col)
+        self.assertIn("已过审的新闻标题", miss)
+
+    def test_pagination_pages_and_clamps(self):
+        for i in range(25):
+            item = News.objects.create(
+                title="分页样本 %02d" % i, author=self.author,
+                is_published=True, published_at=timezone.now(),
+            )
+            open_review(news=item, actor=self.author, force_publish=True)
+        first = self.client.get("/legacy/news/")
+        self.assertEqual(first.status_code, 200)
+        self.assertContains(first, "第 1 / 2 页")
+        second = self.client.get("/legacy/news/", {"page": 2}).content.decode()
+        self.assertIn("第 2 / 2 页", second)
+        # 非法 / 越界页码不报错：退回第 1 页，或收敛到最后一页
+        self.assertEqual(self.client.get("/legacy/news/", {"page": "abc"}).status_code, 200)
+        clamp = self.client.get("/legacy/news/", {"page": 999}).content.decode()
+        self.assertIn("第 2 / 2 页", clamp)
+
+    def test_list_headers_and_no_script(self):
+        response = self.client.get("/legacy/news/")
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
+        self.assertNotIn("Set-Cookie", response.headers)
+        self.assertNotIn("<script", response.content.decode().lower())
+
+
+class NewsDetailTest(LegacyTestCase):
+    def test_detail_renders_content(self):
+        self.approved.content = "<p>正文第一段</p><h2>小标题</h2><p>第二段</p>"
+        self.approved.save(update_fields=["content"])
+        body = self.client.get("/legacy/news/%d/" % self.approved.pk).content.decode()
+        self.assertIn("已过审的新闻标题", body)
+        self.assertIn("正文第一段", body)
+        self.assertIn("小标题", body)
+        self.assertIn("阅读", body)
+        self.assertIn("来源：传媒社", body)
+
+    def test_hidden_items_are_404(self):
+        for pk in (self.pending.pk, self.draft.pk, 999999):
+            response = self.client.get("/legacy/news/%d/" % pk)
+            self.assertEqual(response.status_code, 404, pk)
+        body = self.client.get("/legacy/news/%d/" % self.pending.pk).content.decode()
+        self.assertIn("不存在", body)
+        self.assertNotIn("待审核的新闻标题", body)
+
+    def test_detail_does_not_count_a_read(self):
+        # 只读：不写 NewsView、不 +1 阅读数（主站详情才计数）
+        before = News.objects.get(pk=self.approved.pk).views
+        self.client.get("/legacy/news/%d/" % self.approved.pk)
+        self.assertEqual(News.objects.get(pk=self.approved.pk).views, before)
+
+    def test_detail_sanitizes_and_replaces_external_images(self):
+        self.approved.content = (
+            "<p>安全段落</p><script>alert('xss')</script>"
+            '<img src="https://cdn.example.com/a.png" alt="外链">'
+            '<img src="/media/news/local.jpg" alt="站内">'
+        )
+        self.approved.save(update_fields=["content"])
+        body = self.client.get("/legacy/news/%d/" % self.approved.pk).content.decode()
+        self.assertNotIn("<script", body.lower())
+        self.assertNotIn("alert('xss')", body)
+        self.assertNotIn('src="https://cdn.example.com/a.png"', body)
+        self.assertIn("外链图片未自动加载", body)
+        self.assertIn('src="/media/news/local.jpg"', body)
+
+    def test_related_excludes_self(self):
+        body = self.client.get("/legacy/news/%d/" % self.approved.pk).content.decode()
+        self.assertNotIn("/legacy/news/%d/" % self.approved.pk + '"', body.split("相关阅读")[1] if "相关阅读" in body else "")
+
+    def test_news_views_are_read_only(self):
+        from django.test import RequestFactory
+
+        from . import views
+
+        factory = RequestFactory()
+        cases = (
+            (views.news_list, "/legacy/news/"),
+            (views.news_detail, "/legacy/news/1/"),
+        )
+        for view, path in cases:
+            for method in ("post", "put", "patch", "delete"):
+                response = view(getattr(factory, method)(path), pk=1) if view is views.news_detail else view(getattr(factory, method)(path))
+                self.assertEqual(response.status_code, 405, "%s %s" % (method.upper(), path))
+
+    def test_head_allowed(self):
+        self.assertEqual(self.client.head("/legacy/news/").status_code, 200)
+        self.assertEqual(
+            self.client.head("/legacy/news/%d/" % self.approved.pk).status_code, 200,
+        )
+
+    def test_detail_headers(self):
+        response = self.client.get("/legacy/news/%d/" % self.approved.pk)
+        self.assertEqual(response["Content-Security-Policy"], (
+            "default-src 'none'; style-src 'self'; img-src 'self'; "
+            "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        ))
+        self.assertEqual(response["X-Robots-Tag"], "noindex, nofollow")
+        self.assertNotIn("Set-Cookie", response.headers)

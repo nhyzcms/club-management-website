@@ -1,0 +1,85 @@
+{% extends "legacy/base.html" %}
+{% block title %}{{ card.title }} · 南汇一中传媒社{% endblock %}
+{% block content %}
+<div class="detail-layout">
+  <div class="article-col">
+    <div class="crumb detail-crumb"><a href="{% url 'legacy:home' %}">主页</a> / <a href="{% url 'legacy:news_list' %}">新闻</a> / <span>{{ card.title }}</span></div>
+
+    <div class="detail-article">
+      <h1>{{ card.title }}</h1>
+      <div class="article-meta">
+        <span class="author">{{ author }}</span>
+        <span class="sep">·</span>
+        <span class="date">{{ card.date|date:"Y.m.d" }}</span>
+        <span class="sep">·</span>
+        <span>阅读 {{ card.views }}</span>
+        <span class="sep">·</span>
+        <span>来源：传媒社</span>
+      </div>
+
+      {% if cover %}
+      <div class="article-hero"><img src="{{ cover }}" alt="{{ card.title }}"></div>
+      {% endif %}
+
+      {% if external_total %}
+      <p class="extnote">本页有 {{ external_total }} 张外链图片未自动加载（正文中以文字链接给出原图地址）。</p>
+      {% endif %}
+
+      <div class="prose">
+        {% if content_html %}{{ content_html|safe }}{% else %}<p>（暂无正文）</p>{% endif %}
+      </div>
+
+      {% if news.tags.all %}
+      <div class="article-tags">
+        {% for t in news.tags.all %}<span class="chip">{{ t.name }}</span>{% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="article-actions">
+        <a class="btn-mini" href="{% url 'legacy:news_list' %}">&larr; 返回列表</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="detail-side">
+    <div class="side-card">
+      <h4><span class="bar"></span>文章信息</h4>
+      <div class="meta-row"><span class="k">发布</span><span class="v">{{ card.date|date:"Y.m.d" }}</span></div>
+      <div class="meta-row"><span class="k">来源</span><span class="v">传媒社</span></div>
+      <div class="meta-row last"><span class="k">阅读</span><span class="v">{{ card.views }}</span></div>
+    </div>
+
+    {% if related %}
+    <div class="side-card">
+      <h4><span class="bar"></span>相关阅读</h4>
+      {% for r in related %}
+      <div class="rel-item{% if forloop.last %} last{% endif %}">
+        <h5><a href="{% url 'legacy:news_detail' r.id %}">{{ r.title }}</a></h5>
+        <span class="rdate">{{ r.date|date:"Y.m.d" }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if related %}
+<div class="related-block">
+  <div class="section-head"><h2><span class="bar"></span>继续阅读</h2></div>
+  <div class="related-grid">
+    {% for r in related %}
+    <div class="rel-card{% if forloop.last %} last{% endif %}">
+      <div class="rel-media">
+        {% if r.thumb %}<a href="{% url 'legacy:news_detail' r.id %}"><img src="{{ r.thumb }}" alt="{{ r.title }}"></a>
+        {% else %}<span class="ph-img">暂无配图</span>{% endif %}
+      </div>
+      <div class="rel-body">
+        <span class="date">{{ r.date|date:"Y.m.d" }}</span>
+        <h3><a href="{% url 'legacy:news_detail' r.id %}">{{ r.title }}</a></h3>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

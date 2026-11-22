@@ -26,14 +26,14 @@
   <div class="main">
     <div class="section-head">
       <h2><span class="bar"></span>最新消息</h2>
-      <p class="section-sub">来自主站新闻栏目，按发布时间倒序。</p>
+      <p class="section-sub">来自主站新闻栏目，按发布时间倒序。 <a href="{% url 'legacy:news_list' %}">查看全部 &raquo;</a></p>
     </div>
     {% if news %}
     <ul class="newslist">
       {% for item in news %}
       <li{% if forloop.last %} class="last"{% endif %}>
-        <div class="meta"><span class="date">{{ item.published_at|date:"Y-m-d" }}</span></div>
-        <h4>{{ item.title }}</h4>
+        <div class="meta"><span class="date">{{ item.date|date:"Y.m.d" }}</span></div>
+        <h4><a href="{% url 'legacy:news_detail' item.id %}">{{ item.title }}</a></h4>
         {% if item.summary %}<p>{{ item.summary }}</p>{% endif %}
       </li>
       {% endfor %}

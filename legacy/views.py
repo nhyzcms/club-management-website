@@ -14,12 +14,23 @@ from django.views.decorators.http import require_http_methods
 
 from about.models import AboutBlock, AboutPage
 
-from .queries import latest_news
+from .queries import (
+    author_name,
+    cover_url,
+    featured_news,
+    get_news,
+    hot_news,
+    latest_news,
+    news_card,
+    news_page,
+    news_tags,
+    related_news,
+)
 from .sanitize import sanitize_legacy_html
 
 LEGACY_CSP = (
     "default-src 'none'; style-src 'self'; img-src 'self'; "
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 
 
@@ -45,7 +56,7 @@ def home(request):
     return _render("legacy/home.html", {
         "page": page,
         "intro_html": intro_html,
-        "news": latest_news(limit=5),
+        "news": [news_card(n) for n in latest_news(limit=5)],
     })
 
 
@@ -64,4 +75,45 @@ def about(request):
         "intro_html": intro_html,
         "blocks": blocks,
         "external_total": external_total,
+    })
+
+
+@require_http_methods(["GET", "HEAD"])
+def news_list(request):
+    keyword = request.GET.get("q", "")
+    page = news_page(request.GET.get("page", 1), keyword=keyword)
+    items = [news_card(n) for n in page.object_list]
+    feature = None
+    # 头条只在未筛选的第一页出现，且从列表里剔除，避免同一篇出现两次。
+    if page.number == 1 and not keyword.strip():
+        top = featured_news()
+        if top is not None:
+            feature = news_card(top)
+            items = [i for i in items if i["id"] != feature["id"]]
+    return _render("legacy/news_list.html", {
+        "keyword": keyword.strip()[:80],
+        "page": page,
+        "items": items,
+        "feature": feature,
+        "hot": [news_card(n) for n in hot_news(limit=5)],
+        "tags": news_tags(limit=20),
+    })
+
+
+@require_http_methods(["GET", "HEAD"])
+def news_detail(request, pk):
+    news = get_news(pk)
+    if news is None:
+        return _render("legacy/missing.html", {
+            "what": "这篇新闻不存在，或尚未公开。",
+        }, status=404)
+    content_html, external_total = sanitize_legacy_html(news.content)
+    return _render("legacy/news_detail.html", {
+        "news": news,
+        "card": news_card(news),
+        "author": author_name(news),
+        "cover": cover_url(news),
+        "content_html": content_html,
+        "external_total": external_total,
+        "related": [news_card(n) for n in related_news(news)],
     })
