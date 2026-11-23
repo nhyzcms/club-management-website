@@ -1,0 +1,512 @@
+/* legacy.css — 兼容性精简版样式（/legacy/）
+   设计来源：frontend/src/styles/cobalt.css 的 cobalt 主题 token（钴蓝校徽）。
+   这里保留色值/字号/间距/版心宽度/信息层级，去掉 IE8 无法实现的圆角、阴影、
+   渐变、动画；布局退回 float（IE8 只认 float，不认 flex/grid）。
+   只允许 CSS 2.1 + IE8 已实现的部分。
+
+    关于 IE6/7：不单独写样式表。线上只开 TLS 1.2/1.3，IE6/7 通常所在的 XP/2003
+    默认连握手都过不去，页面根本到不了浏览器 —— 为此维护一套表格布局补丁，
+    受益人数接近于零。这里只保证「万一连上了也不至于读不了」：不用「百分比宽度 +
+    百分比内边距」（老内核里两者都按父宽算，容易顶出容器），不用 max-height、
+    position:fixed，也不靠内边距撑 inline-block 的高度。布局在 IE6/7 上退化成
+    上下堆叠是可接受的降级。 */
+
+/* ---------- 基础 ---------- */
+html, body { margin: 0; padding: 0; }
+body {
+  background: #f8fafc;
+  color: #1f2a36;
+  font: 15px/1.6 "PingFang SC", "Microsoft YaHei", "Noto Sans SC", Arial, sans-serif;
+}
+a { color: #1577d6; text-decoration: none; }
+a:hover { color: #0c63b4; text-decoration: underline; }
+img { border: 0; }
+p { margin: 0 0 14px; }
+
+/* ---------- 版心：与主站 --container 1200px 对齐 ---------- */
+.wrap { width: 96%; max-width: 1200px; margin: 0 auto; }
+
+/* ---------- 顶栏（主站 #nav 64px 白底 + 1px 分隔线） ---------- */
+.topbar { background: #ffffff; border-bottom: 1px solid #e2e8ef; }
+.topbar-inner { width: 96%; max-width: 1200px; margin: 0 auto; height: 64px; overflow: hidden; }
+.topbar h1 { float: left; margin: 0; font-size: 18px; line-height: 64px; font-weight: 700; }
+.topbar h1 a { color: #0756a2; text-decoration: none; }
+.topbar-nav { float: right; margin: 0 -14px 0 0; padding: 0; list-style: none; }
+.topbar-nav li { float: left; line-height: 64px; }
+.topbar-nav li a { display: block; padding: 0 14px; font-size: 14px; color: #6b7686; }
+.topbar-nav li a:hover { color: #0c63b4; text-decoration: none; }
+
+/* ---------- Hero（主站深蓝渐变；IE8 无渐变，退为实色 brand-900） ---------- */
+.hero { background: #052b56; color: #ffffff; }
+.hero-inner { width: 96%; max-width: 1200px; margin: 0 auto; padding: 56px 0 48px; }
+.hero-badge {
+  display: inline-block; padding: 4px 12px; border: 1px solid #3da5f3;
+  color: #d8ecfd; font-size: 12px; letter-spacing: 1px;
+}
+.hero h2 { margin: 18px 0 14px; font-size: 42px; line-height: 1.15; font-weight: 800; color: #ffffff; }
+.hero h2 .accent { color: #79c2fa; }
+.hero-sub { margin: 0 0 26px; max-width: 620px; font-size: 16px; line-height: 1.7; color: #c7d7e6; }
+.hero-actions { margin: 0; }
+.btn { display: inline-block; padding: 10px 20px; margin-right: 10px; font-size: 15px; line-height: 1.4; }
+.btn-primary { background: #ffffff; color: #0756a2; font-weight: 700; }
+.btn-primary:hover { background: #ecf5fe; color: #052b56; text-decoration: none; }
+.btn-ghost { border: 1px solid #3da5f3; color: #eaf4ff; }
+.btn-ghost:hover { background: #0c4a80; color: #ffffff; text-decoration: none; }
+
+/* ---------- 只读提示条 ---------- */
+.notice { margin: 24px 0 0; padding: 10px 14px; background: #ecf5fe; border: 1px solid #b3d9fb; font-size: 13px; color: #0756a2; }
+
+/* ---------- 首页两栏：rail 300px + main（主站 grid-template-columns: 300px 1fr） ---------- */
+.home-grid { padding: 40px 0 64px; overflow: hidden; }
+.rail { float: left; width: 25%; }
+.main { float: right; width: 72%; }
+
+/* ---------- 卡片（主站 1px line + 圆角；圆角在 IE8 不可用，保留边框与内边距） ---------- */
+.card { background: #ffffff; border: 1px solid #e2e8ef; padding: 20px; margin-bottom: 20px; }
+.card h3 { margin: 0 0 14px; font-size: 15px; font-weight: 700; color: #1f2a36; }
+.card h3 .bar { display: inline-block; width: 4px; height: 14px; background: #0c63b4; margin-right: 8px; vertical-align: -2px; }
+.card .rail-intro { font-size: 14px; line-height: 1.7; color: #6b7686; }
+.card .rail-intro p { margin: 0 0 10px; }
+
+/* 概览键值行（主站 .stat-row：虚线分隔 + 等宽数字） */
+.stat-row { padding: 8px 0; border-bottom: 1px dashed #e2e8ef; font-size: 13px; overflow: hidden; }
+.stat-row.last { border-bottom: 0; }
+.stat-row .k { float: left; color: #6b7686; }
+.stat-row .v { float: right; font-family: Consolas, "Courier New", monospace; font-weight: 700; color: #1f2a36; }
+
+/* ---------- 区块标题（主站 .section-title 22px + 4px 渐变竖条） ---------- */
+.section-head { padding: 0 0 12px; border-bottom: 1px solid #e2e8ef; margin: 0 0 4px; }
+.section-head h2 { margin: 0; font-size: 22px; font-weight: 700; color: #1f2a36; }
+.section-head h2 .bar { display: inline-block; width: 4px; height: 20px; background: #0c63b4; margin-right: 10px; vertical-align: -3px; }
+.section-sub { margin: 6px 0 0; font-size: 14px; color: #6b7686; }
+
+/* ---------- 新闻列表（主站 .news-item：日期等宽 + 18px 标题 + 14px 摘要） ---------- */
+.newslist { margin: 0; padding: 0; list-style: none; }
+.newslist li { padding: 18px 0; border-bottom: 1px solid #e2e8ef; }
+.newslist li.last { border-bottom: 0; }
+.newslist .meta { margin: 0 0 6px; font-size: 13px; color: #9aa4b2; }
+.newslist .meta .date { font-family: Consolas, "Courier New", monospace; }
+.newslist h4 { margin: 0 0 6px; font-size: 18px; line-height: 1.4; font-weight: 700; color: #1f2a36; }
+.newslist p { margin: 0; font-size: 14px; line-height: 1.65; color: #6b7686; }
+.empty { padding: 24px 0; font-size: 14px; color: #9aa4b2; }
+
+/* ---------- 页头（关于页） ---------- */
+.page-head { background: #ecf5fe; border-bottom: 1px solid #b3d9fb; padding: 30px 32px 22px; }
+.page-head h2 { margin: 0 0 8px; font-size: 30px; font-weight: 800; color: #052b56; }
+.crumb { font-size: 13px; color: #6b7686; }
+
+/* ---------- 正文（关于页文章） ---------- */
+.article { background: #ffffff; border: 1px solid #e2e8ef; padding: 32px; margin: 32px 0 56px; font-size: 15px; line-height: 1.8; }
+.article h2 { margin: 28px 0 12px; font-size: 20px; font-weight: 700; color: #1f2a36; }
+.article h2.first { margin-top: 0; }
+.article h3, .article h4 { margin: 22px 0 10px; font-size: 16px; font-weight: 700; color: #1f2a36; }
+.article ul, .article ol { margin: 0 0 14px; padding-left: 24px; }
+.article li { margin: 0 0 6px; }
+.article blockquote { margin: 0 0 14px; padding: 8px 14px; border-left: 4px solid #b3d9fb; background: #f8fafc; color: #3b4756; }
+.article table { border-collapse: collapse; width: 100%; margin: 0 0 16px; font-size: 14px; }
+.article th, .article td { border: 1px solid #d2d9e2; padding: 8px 10px; text-align: left; vertical-align: top; }
+.article th { background: #f4f7fa; font-weight: 700; }
+.article pre { margin: 0 0 16px; padding: 12px; background: #f4f7fa; border: 1px solid #e2e8ef; overflow: auto; font-family: Consolas, "Courier New", monospace; font-size: 13px; line-height: 1.6; }
+.article code { font-family: Consolas, "Courier New", monospace; font-size: 13px; background: #f4f7fa; padding: 1px 4px; }
+.article img { max-width: 100%; height: auto; }
+.article p.meta { font-size: 13px; color: #6b7686; }
+
+/* ---------- 外链图片占位（sanitize.py 生成） ---------- */
+.legacy-extimg { margin: 0 0 16px; padding: 12px 14px; max-width: 520px; background: #f4f7fa; border: 1px dashed #cfd8e3; font-size: 13px; color: #6b7686; }
+.legacy-extimg a { font-size: 13px; }
+.extnote { margin: 0 0 16px; padding: 10px 14px; background: #fff8e6; border: 1px solid #f0d9a8; font-size: 13px; color: #7a5a12; }
+
+/* ---------- 页脚（主站 .footer：brand-900 深蓝底） ---------- */
+.footer { background: #052b56; color: #c7d7e6; margin-top: 48px; }
+.footer-inner { width: 96%; max-width: 1200px; margin: 0 auto; padding: 40px 0 24px; font-size: 13px; overflow: hidden; }
+.footer a { color: #b3d9fb; }
+.footer-note { border-top: 1px solid #0c4a80; padding: 16px 0 0; margin: 0; font-size: 12px; line-height: 1.8; color: #8fa8c0; }
+.footer-note strong { color: #d8ecfd; font-weight: 700; }
+
+/* ---------- IE8 无 min-height / 无圆角，这里用 padding 兜住空状态 ---------- */
+.card, .article { zoom: 1; }
+
+/* ==================== PR2：新闻列表 / 详情 ==================== */
+/* 版心 1200：主栏 72% + 侧栏 25%，与主站 grid 1fr 300px 对齐（float 代替 grid）。 */
+
+.section-sub { margin: 6px 0 0; font-size: 13px; color: #6b7686; }
+.section-sub a { font-size: 13px; }
+
+/* ---------- 列表：两栏 ---------- */
+.news-layout { padding: 32px 0 64px; overflow: hidden; }
+.news-main { float: left; width: 72%; }
+.news-side { float: right; width: 25%; }
+
+/* 头条：媒体 50% + 文字 50%（主站 1.1fr / 1fr 的两栏卡） */
+.feature { border: 1px solid #e2e8ef; background: #ffffff; margin: 0 0 28px; overflow: hidden; }
+.feature-media { float: left; width: 50%; height: 240px; overflow: hidden; background: #eef2f7; }
+.feature-media img { display: block; width: 100%; height: 240px; }
+/* 文字列不再用「百分比宽度 + 百分比内边距」：老内核里两者都按父宽算，
+   44% + 3% + 3% 会顶到 50% 边界，IE6/7 常因此换行。改成 50% 无内边距 + 内层留白。 */
+.feature-body { float: right; width: 50%; min-height: 240px; position: relative; padding: 0; }
+/* 底部留 60px 给绝对定位的作者行，标题多两行也不会压到它 */
+.feature-inner { padding: 24px 26px 60px; }
+.feature-body h2 { margin: 10px 0 10px; font-size: 24px; line-height: 1.35; font-weight: 800; }
+.feature-body h2 a { color: #052b56; }
+.feature-body p { margin: 0 0 12px; font-size: 14px; line-height: 1.7; color: #6b7686; }
+/* 作者/日期压在卡片底部，避免文字少时右下角空一大块 */
+.feature-meta { position: absolute; left: 26px; right: 26px; bottom: 20px; font-size: 13px; color: #9aa4b2; }
+.feature-meta .date { font-family: Consolas, "Courier New", monospace; }
+.feature-meta .sep { margin: 0 6px; color: #c3ccd8; }
+.badge { display: inline-block; padding: 3px 9px; background: #ecf5fe; border: 1px solid #b3d9fb; color: #0756a2; font-size: 12px; }
+
+/* 列表项：缩略图 220px + 文字（主站 grid 220px 1fr） */
+.news-item { padding: 20px 0; border-top: 1px solid #e2e8ef; overflow: hidden; }
+.news-item .thumb { float: left; width: 220px; height: 140px; margin-right: 20px; overflow: hidden; background: #eef2f7; border: 1px solid #e2e8ef; }
+.news-item .thumb img { display: block; width: 100%; height: 140px; }
+.news-item-body { margin-left: 240px; }
+.news-item h3 { margin: 0 0 8px; font-size: 18px; line-height: 1.45; font-weight: 700; }
+.news-item h3 a { color: #1f2a36; }
+.news-item h3 a:hover { color: #0c63b4; text-decoration: none; }
+.news-item p { margin: 0 0 8px; font-size: 14px; line-height: 1.65; color: #6b7686; }
+.news-item .meta { margin-bottom: 6px; font-size: 13px; color: #9aa4b2; }
+.news-item .meta .date { font-family: Consolas, "Courier New", monospace; }
+.news-item .read { font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
+.news-empty { padding: 48px 0; text-align: center; color: #9aa4b2; }
+.filter-note { margin: 0 0 8px; font-size: 13px; color: #6b7686; }
+
+/* 图片占位（无封面时）：虚线灰块 + 说明文字 */
+.ph-img { display: block; height: 100%; padding-top: 56px; text-align: center; color: #9aa4b2; font-size: 12px; letter-spacing: 1px; background: #f8fafc; }
+.feature-media .ph-img { padding-top: 104px; }
+
+/* 分页 */
+.pager { margin: 28px 0 0; text-align: center; }
+.pager a, .pager span { display: inline-block; margin: 0 4px; padding: 6px 12px; border: 1px solid #e2e8ef; background: #ffffff; font-size: 13px; }
+.pager .disabled { color: #b6bfca; }
+.pager-info { border: 0; background: none; color: #6b7686; }
+
+/* ---------- 侧栏卡片 ---------- */
+.side-card { background: #ffffff; border: 1px solid #e2e8ef; padding: 20px; margin: 0 0 20px; }
+.side-card h4 { margin: 0 0 16px; font-size: 14px; font-weight: 700; color: #1f2a36; }
+.side-card h4 .bar { display: inline-block; width: 3px; height: 14px; margin-right: 8px; background: #0c63b4; vertical-align: -2px; }
+
+.hot-list { margin: 0; padding: 0; list-style: none; }
+.hot-list li { padding: 10px 0; border-bottom: 1px dashed #e2e8ef; overflow: hidden; }
+.hot-list li.last, .hot-list li:last-child { border-bottom: 0; }
+.hot-list .rank { float: left; width: 24px; font-family: Consolas, "Courier New", monospace; font-weight: 700; color: #3da5f3; font-size: 15px; }
+.hot-list div { margin-left: 28px; }
+.hot-list a { font-size: 14px; line-height: 1.45; color: #1f2a36; }
+.hot-list a:hover { color: #0c63b4; text-decoration: none; }
+.hot-list .hv { font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
+
+.tag-cloud { overflow: hidden; }
+.chip { display: inline-block; margin: 0 6px 6px 0; padding: 3px 10px; background: #ecf5fe; border: 1px solid #b3d9fb; color: #0756a2; font-size: 12px; }
+
+.search { overflow: hidden; }
+.search-input { float: left; width: 60%; padding: 6px 8px; border: 1px solid #d2d9e2; font-size: 13px; line-height: 1.4; }
+.btn-mini {
+  display: inline-block; float: left; margin-left: 8px; padding: 6px 12px;
+  border: 1px solid #d2d9e2; background: #ffffff; color: #0756a2;
+  font-size: 13px; font-family: inherit; cursor: pointer;
+}
+.btn-mini:hover { background: #ecf5fe; }
+
+/* ---------- 详情：正文 72%（内文限宽 760px）+ 侧栏 23% ---------- */
+.detail-layout { padding: 28px 0 8px; overflow: hidden; }
+.article-col { float: left; width: 72%; }
+.detail-side { float: right; width: 23%; }
+.detail-crumb { margin: 0 0 16px; font-size: 13px; color: #6b7686; }
+
+.detail-article {
+  max-width: 760px; padding: 28px 32px; background: #ffffff;
+  border: 1px solid #e2e8ef; font-size: 15px; line-height: 1.8;
+}
+.detail-article h1 { margin: 0 0 14px; font-size: 34px; line-height: 1.3; font-weight: 800; color: #052b56; }
+.article-meta { padding-bottom: 16px; margin-bottom: 20px; border-bottom: 1px solid #e2e8ef; font-size: 13px; color: #9aa4b2; }
+.article-meta .author { color: #1f2a36; font-weight: 600; }
+.article-meta .sep { margin: 0 6px; color: #c3ccd8; }
+.article-meta .date { font-family: Consolas, "Courier New", monospace; }
+
+.article-hero { margin: 0 0 24px; padding: 0; background: #f1f5f9; border: 1px solid #e2e8ef; text-align: center; }
+.article-hero img { display: block; max-width: 100%; margin: 0 auto; }
+
+/* 正文（对齐主站 .prose：17px/1.85、h2 24、引用块浅蓝底） */
+.prose { font-size: 17px; line-height: 1.85; color: #1f2a36; }
+.prose p { margin: 0 0 16px; }
+.prose h2 { margin: 32px 0 12px; font-size: 24px; line-height: 1.4; color: #052b56; }
+.prose h3 { margin: 24px 0 10px; font-size: 19px; line-height: 1.45; }
+.prose h4 { margin: 20px 0 8px; font-size: 16px; }
+.prose ul, .prose ol { margin: 0 0 16px; padding-left: 26px; }
+.prose li { margin: 0 0 8px; }
+.prose blockquote { margin: 24px 0; padding: 14px 20px; background: #ecf5fe; border-left: 4px solid #3da5f3; color: #052b56; }
+.prose blockquote p:last-child { margin-bottom: 0; }
+.prose img { display: block; max-width: 100%; margin: 16px 0; }
+.prose figure { margin: 20px 0; }
+.prose figcaption { margin-top: 6px; font-size: 13px; color: #9aa4b2; text-align: center; }
+.prose table { border-collapse: collapse; width: 100%; margin: 0 0 16px; font-size: 14px; }
+.prose th, .prose td { border: 1px solid #d2d9e2; padding: 8px 10px; text-align: left; vertical-align: top; }
+.prose pre { margin: 0 0 16px; padding: 12px; background: #f5f6f8; border: 1px solid #e2e8ef; overflow: auto; font-size: 13px; }
+.prose code { padding: 1px 4px; background: #f5f6f8; font-size: 13px; }
+.prose pre code { padding: 0; background: none; }
+.prose a { text-decoration: underline; }
+
+.article-tags { margin-top: 24px; padding-top: 18px; border-top: 1px solid #e2e8ef; }
+/* 「返回列表」是普通链接：.btn-mini 在搜索框里是靠左浮动，这里必须收回浮动，
+   否则按钮会飘出卡片底边，看起来像错位的一块。 */
+.article-actions { margin-top: 20px; }
+.article-actions .btn-mini { float: none; margin-left: 0; }
+
+.meta-row { padding: 6px 0; border-bottom: 1px dashed #e2e8ef; font-size: 13px; overflow: hidden; }
+.meta-row .k { float: left; color: #6b7686; }
+.meta-row .v { float: right; color: #1f2a36; font-family: Consolas, "Courier New", monospace; }
+.meta-row.last { border-bottom: 0; }
+
+.rel-item { padding: 10px 0; border-bottom: 1px dashed #e2e8ef; }
+.rel-item.last { border-bottom: 0; }
+.rel-item h5 { margin: 0 0 4px; font-size: 14px; line-height: 1.45; font-weight: 600; }
+.rel-item h5 a { color: #1f2a36; }
+.rel-item h5 a:hover { color: #0c63b4; text-decoration: none; }
+.rdate { font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
+
+/* 底部三栏推荐：31% × 3 + 3.5% × 2 = 100% */
+.related-block { padding: 8px 0 56px; }
+.related-grid { margin-top: 20px; overflow: hidden; }
+.rel-card { float: left; width: 31%; margin-right: 3.5%; background: #ffffff; border: 1px solid #e2e8ef; }
+.rel-card.last { margin-right: 0; }
+.rel-media { height: 150px; overflow: hidden; background: #eef2f7; }
+.rel-media img { display: block; width: 100%; height: 150px; }
+.rel-body { padding: 14px 16px 18px; }
+.rel-body .date { font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
+.rel-body h3 { margin: 8px 0 0; font-size: 15px; line-height: 1.45; }
+.rel-body h3 a { color: #1f2a36; }
+.rel-body h3 a:hover { color: #0c63b4; text-decoration: none; }
+
+.article-plain { max-width: 760px; }
+
+/* ==================== PR3：活动 / 教程 ==================== */
+/* 全部沿用前面的写法约束：float 布局、百分比宽度不叠内边距、无圆角/阴影/渐变/
+   变量/媒体查询，状态与徽章一律用「实色底 + 1px 边」表达层级。 */
+
+.list-wrap { padding: 32px 0 64px; }
+.section-gap { margin-top: 44px; }
+.notice-inline { margin: 20px 0; }
+.notice-inline a { margin: 0 4px; }
+
+/* ---------- 状态徽章（主站 .act-medal：进行中绿 / 待开始蓝 / 已结束灰） ---------- */
+.st { display: inline-block; padding: 3px 9px; margin-right: 6px; border: 1px solid #cfd8e3; background: #f4f7fa; color: #52606d; font-size: 12px; }
+.st-open, .st-collecting { border-color: #a7d7b5; background: #edf9f1; color: #1d6b39; }
+.st-scheduled { border-color: #b3d9fb; background: #ecf5fe; color: #0756a2; }
+.st-reviewing { border-color: #f0d9a8; background: #fff8e6; color: #7a5a12; }
+.st-closed, .st-archived { border-color: #dfe4ea; background: #f4f6f8; color: #7a838f; }
+
+/* ---------- 类型切换（主站 .seg 分段控件：等宽按钮 + 选中实底） ---------- */
+.type-tabs { margin: 0 0 4px; overflow: hidden; border-bottom: 1px solid #e2e8ef; }
+.type-tab {
+  float: left; margin: 0 -1px -1px 0; padding: 8px 18px;
+  border: 1px solid #e2e8ef; background: #ffffff;
+  font-size: 14px; color: #6b7686;
+}
+.type-tab:hover { color: #0c63b4; text-decoration: none; background: #f8fafc; }
+.type-tab.active { background: #0756a2; border-color: #0756a2; color: #ffffff; font-weight: 700; }
+.type-tab.active:hover { color: #ffffff; }
+
+/* ---------- 活动卡片（主站 .prop-card：标题 + 一行徽章，整卡可点） ---------- */
+.prop-card { padding: 18px 20px; border: 1px solid #e2e8ef; border-top: 0; background: #ffffff; }
+.prop-card.last { border-bottom: 1px solid #e2e8ef; }
+.prop-card h3 { margin: 0 0 10px; font-size: 18px; line-height: 1.45; font-weight: 700; }
+.prop-card h3 a { color: #1f2a36; }
+.prop-card h3 a:hover { color: #0c63b4; text-decoration: none; }
+.pc-meta { font-size: 13px; color: #6b7686; overflow: hidden; line-height: 22px; }
+.pc-meta .badge { margin-right: 6px; }
+.pc-right { float: right; font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
+
+/* 首页「近期活动」紧凑列表 */
+.actlist { margin: 0; padding: 0; list-style: none; }
+.actlist li { padding: 16px 0; border-bottom: 1px solid #e2e8ef; }
+.actlist li.last { border-bottom: 0; }
+.actlist h4 { margin: 0 0 8px; font-size: 17px; line-height: 1.45; font-weight: 700; }
+.actlist h4 a { color: #1f2a36; }
+.actlist h4 a:hover { color: #0c63b4; text-decoration: none; }
+.act-line { font-size: 12px; color: #9aa4b2; }
+.act-when { font-family: Consolas, "Courier New", monospace; }
+
+/* ---------- 详情内的小节（投票结果 / 参展作品） ---------- */
+.when-row { padding: 8px 0; margin: 0 0 18px; border-bottom: 1px solid #e2e8ef; font-size: 13px; overflow: hidden; }
+.when-row .k { float: left; color: #6b7686; }
+.when-row .v { float: right; color: #1f2a36; }
+
+.sub-block { margin: 32px 0 0; padding-top: 20px; border-top: 1px solid #e2e8ef; }
+.sub-title { margin: 0 0 14px; font-size: 20px; line-height: 1.4; font-weight: 700; color: #052b56; }
+.sub-note { margin: 8px 0 0; font-size: 13px; color: #6b7686; }
+.sub-note a { margin: 0 2px; }
+
+.opt-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.opt-table th, .opt-table td { border: 1px solid #d2d9e2; padding: 8px 10px; text-align: left; vertical-align: top; }
+.opt-table th { background: #f4f7fa; font-weight: 700; color: #1f2a36; }
+.opt-table .num { text-align: right; font-family: Consolas, "Courier New", monospace; white-space: nowrap; }
+
+/* 展品两栏：48.5% × 2 + 3% 间距 = 100% */
+.exhibit-grid { margin-top: 4px; overflow: hidden; }
+.exhibit-card { float: left; width: 48.5%; margin: 0 3% 18px 0; background: #ffffff; border: 1px solid #e2e8ef; }
+.exhibit-card.last { margin-right: 0; }
+.exhibit-media { height: 180px; overflow: hidden; background: #eef2f7; border-bottom: 1px solid #e2e8ef; }
+.exhibit-media img { display: block; width: 100%; height: auto; }
+.exhibit-media .ph-img { padding-top: 78px; }
+.exhibit-body { padding: 12px 14px 14px; }
+.exhibit-body h4 { margin: 0 0 6px; font-size: 15px; line-height: 1.45; font-weight: 600; color: #1f2a36; }
+.exhibit-votes { font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
+
+/* ---------- 教程卡片网格：31.3% × 3 + 3% × 2 = 100% ---------- */
+.tgrid { margin: 0 -1.5%; overflow: hidden; }
+.tcard { float: left; width: 30.3%; margin: 0 1.5% 22px; background: #ffffff; border: 1px solid #e2e8ef; }
+.tcard-cover { height: 170px; overflow: hidden; background: #eef2f7; border-bottom: 1px solid #e2e8ef; text-align: center; }
+.tcard-cover img { display: block; width: 100%; height: auto; }
+.tcard-ph { display: block; padding-top: 62px; font-size: 34px; color: #9aa4b2; }
+.tcard-body { padding: 14px 16px 16px; }
+.tcard-body h3 { margin: 0 0 10px; font-size: 15px; line-height: 1.45; font-weight: 700; }
+.tcard-body h3 a { color: #1f2a36; }
+.tcard-body h3 a:hover { color: #0c63b4; text-decoration: none; }
+.tcard-foot { font-size: 12px; color: #9aa4b2; }
+.tcard-foot .badge { margin-right: 6px; }
+.tnum { font-family: Consolas, "Courier New", monospace; margin-right: 10px; }
+
+/* ---------- 教程详情：主栏 72% + 侧栏 23% ---------- */
+.tutorial-layout { overflow: hidden; }
+.tutorial-main { float: left; width: 72%; }
+.detail-h2 { margin: 0 0 8px; font-size: 30px; line-height: 1.35; font-weight: 800; color: #052b56; }
+.media-box {
+  padding: 0; background: #eef2f7; border: 1px solid #e2e8ef;
+  text-align: center; overflow: hidden;
+}
+.media-box img { display: block; max-width: 100%; margin: 0 auto; }
+.media-ph { display: block; padding: 70px 0; font-size: 16px; color: #6b7686; }
+.media-note { margin: 12px 0 0; font-size: 13px; line-height: 1.7; color: #6b7686; }
+.media-actions { margin: 16px 0 0; }
+.tutorial-desc { max-width: none; margin: 28px 0 0; }
+.tutorial-desc p { margin: 0 0 12px; font-size: 15px; line-height: 1.8; color: #1f2a36; }
+
+/* ---------- 关于页：左侧锚点目录 22% + 主栏 75% ---------- */
+.about-layout { padding: 28px 0 48px; overflow: hidden; }
+.about-nav { float: left; width: 22%; }
+.about-nav-inner { background: #ffffff; border: 1px solid #e2e8ef; padding: 16px 18px; }
+.about-nav h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #052b56; }
+.about-nav ul { list-style: none; margin: 0; padding: 0; }
+.about-nav li { padding: 7px 0; border-bottom: 1px dashed #eef2f7; font-size: 13px; line-height: 1.5; }
+.about-nav li.last { border-bottom: 0; }
+.about-nav li a { color: #1f2a36; text-decoration: none; }
+.about-nav li a:hover { color: #0c63b4; text-decoration: underline; }
+.about-main { float: right; width: 75%; }
+.about-main .article { margin-top: 0; }
+.about-block { margin: 26px 0 0; }
+.pano-note { margin: 12px 0 0; padding: 14px 16px; background: #ecf5fe; border: 1px solid #b3d9fb; font-size: 14px; line-height: 1.8; color: #1f2a36; }
+.doc-line { margin: 14px 0 0; padding-top: 12px; border-top: 1px dashed #e2e8ef; font-size: 14px; line-height: 1.8; }
+
+/* ==================== 手机窄屏适配（实验性） ====================
+   用户要求：窄屏（手机）上不要把 1200px 版心等比缩小，改成单栏。
+   写法约束：整块用 @media only screen and (...)。
+   「only」关键字是 CSS2 里专门给老浏览器用的：不认识媒体查询的浏览器
+   （IE6/7/8、旧 Android 2）会把整块当非法媒体类型丢弃，不会误用里面的
+   覆盖规则 —— 所以桌面 IE8 的渲染结果一个字都不会变。
+   这份适配没有做过严谨测试：只在代码层推演过断点，没有跨机型真机矩阵，
+   也没有覆盖横竖屏切换、超长标题、超大表格等边界。 */
+
+@media only screen and (max-width: 720px) {
+  /* ---------- 版心：留白收窄 ---------- */
+  .wrap, .topbar-inner, .hero-inner, .footer-inner { width: 92%; }
+
+  /* ---------- 顶栏：取消 64px 定高。overflow:hidden 此时不再是「裁切」而是
+     建立 BFC，让容器包住换行后的浮动导航（定高才是原来裁掉导航的原因）。 ---------- */
+  .topbar-inner { height: auto; overflow: hidden; padding: 12px 0 10px; }
+  .topbar h1 { float: none; font-size: 17px; line-height: 1.5; }
+  .topbar-nav { float: none; margin: 8px 0 0; overflow: hidden; }
+  .topbar-nav li { line-height: 2; }
+  .topbar-nav li a { padding: 0 14px 0 0; font-size: 13px; }
+
+  /* ---------- Hero：字号降一档，避免一行只剩两三个字 ---------- */
+  .hero-inner { padding: 34px 0 30px; }
+  .hero h2 { margin: 14px 0 12px; font-size: 28px; line-height: 1.25; }
+  .hero-sub { margin: 0 0 22px; font-size: 15px; }
+  .btn { padding: 9px 16px; font-size: 14px; }
+
+  /* ---------- 首页 / 列表 / 详情 / 关于：全部两栏变一栏 ---------- */
+  .home-grid { padding: 24px 0 40px; }
+  .rail, .main,
+  .news-main, .news-side,
+  .article-col, .detail-side,
+  .tutorial-main, .detail-side,
+  .about-nav, .about-main { float: none; width: 100%; }
+  .rail { margin: 0 0 20px; }
+  .news-side { margin: 24px 0 0; }
+  .detail-side { margin: 24px 0 0; }
+  .about-nav { margin: 0 0 16px; }
+  .about-nav ul { overflow: hidden; }
+  .about-nav li { float: left; width: 50%; padding: 4px 0; border-bottom: 0; }
+
+  /* ---------- 页头 / 卡片：内边距收窄 ---------- */
+  .page-head { padding: 22px 16px 16px; }
+  .page-head h2 { font-size: 24px; }
+  .article { padding: 20px 16px; margin: 20px 0 32px; }
+  .article h2 { font-size: 19px; }
+  .card, .side-card { padding: 16px; }
+
+  /* ---------- 头条卡：图在上、字在下，作者行不再绝对定位 ---------- */
+  .feature-media { float: none; width: 100%; height: auto; }
+  .feature-media img { height: auto; }
+  .feature-media .ph-img { padding-top: 40px; }
+  .feature-body { float: none; width: 100%; min-height: 0; }
+  .feature-inner { padding: 16px 16px 0; }
+  .feature-body h2 { font-size: 19px; }
+  .feature-meta { position: static; left: auto; right: auto; bottom: auto; margin: 0; padding: 0 16px 16px; }
+
+  /* ---------- 列表项：缩略图撑满一行 ---------- */
+  .news-item .thumb { float: none; width: 100%; height: auto; margin: 0 0 12px; }
+  .news-item .thumb img { height: auto; }
+  .news-item-body { margin-left: 0; }
+  .news-item h3 { font-size: 17px; }
+  .ph-img { padding-top: 34px; }
+
+  /* ---------- 详情正文 ---------- */
+  .detail-layout { padding: 20px 0 8px; }
+  .detail-article { max-width: none; padding: 20px 16px; }
+  .detail-article h1 { font-size: 24px; }
+  .detail-h2 { font-size: 22px; }
+  .prose { font-size: 16px; line-height: 1.8; }
+  .prose h2 { font-size: 20px; margin: 26px 0 10px; }
+  .prose h3 { font-size: 17px; }
+
+  /* 表格横向撑不下时允许单独滚动，别把整页顶宽 */
+  .prose table, .article table, .opt-table { display: block; overflow-x: auto; }
+
+  /* ---------- 底部三栏推荐：竖排 ---------- */
+  .rel-card { float: none; width: 100%; margin: 0 0 16px; }
+  .rel-media { height: auto; }
+  .rel-media img { height: auto; }
+
+  /* ---------- 活动：类型切换与卡片 ---------- */
+  .type-tab { padding: 8px 12px; font-size: 13px; }
+  .prop-card { padding: 16px; }
+  .pc-right { float: none; display: block; margin: 4px 0 0; }
+  .exhibit-card { float: none; width: 100%; margin: 0 0 16px; }
+  .exhibit-media { height: auto; }
+  .exhibit-media .ph-img { padding-top: 42px; }
+
+  /* ---------- 教程：三栏网格改单列 ---------- */
+  .tgrid { margin: 0; }
+  .tcard { float: none; width: 100%; margin: 0 0 16px; }
+  .tcard-cover { height: auto; }
+  .tcard-ph { padding: 34px 0; }
+  .media-ph { padding: 44px 0; }
+
+  /* ---------- 其它 ---------- */
+  .search-input { width: 62%; }
+  .legacy-extimg { max-width: none; }
+  .pager a, .pager span { margin: 0 2px; padding: 5px 9px; }
+  .notice { font-size: 13px; }
+  .footer { margin-top: 32px; }
+  .footer-inner { padding: 28px 0 20px; }
+}
+
+/* 更窄（约 4.7 寸竖屏）再收一档字号 */
+@media only screen and (max-width: 420px) {
+  .hero h2 { font-size: 24px; }
+  .detail-article h1 { font-size: 21px; }
+  .feature-body h2 { font-size: 17px; }
+  .news-item h3 { font-size: 16px; }
+  .type-tab { padding: 7px 9px; }
+  .about-nav li { width: 100%; }
+}

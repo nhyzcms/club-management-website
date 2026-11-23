@@ -1,0 +1,12 @@
+{% extends "legacy/base.html" %}
+{% block title %}内容不存在 · 南汇一中传媒社{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumb"><a href="{% url 'legacy:home' %}">主页</a> / 内容不存在</div>
+  <h2>内容不存在</h2>
+</div>
+<div class="article article-plain">
+  <p>{{ what|default:"这个页面不存在，可能已被撤下。" }}</p>
+  <p>你可以返回 <a href="{% url 'legacy:news_list' %}">新闻列表</a>，或回到 <a href="{% url 'legacy:home' %}">首页</a>。</p>
+</div>
+{% endblock %}

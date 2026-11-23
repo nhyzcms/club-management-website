@@ -1,0 +1,42 @@
+{% extends "legacy/base.html" %}
+{% block title %}教程集锦 · 南汇一中传媒社{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumb"><a href="{% url 'legacy:home' %}">主页</a> / 教程集锦</div>
+  <h2>常用教程集锦</h2>
+  <p class="section-sub">视频与文档条目。精简版只提供查看与下载，不含收藏与评论。</p>
+</div>
+
+<div class="list-wrap">
+  <div class="tgrid">
+    {% for item in items %}
+    <div class="tcard{% if forloop.counter|divisibleby:3 %} last{% endif %}">
+      <div class="tcard-cover">
+        {% if item.cover %}<img src="{{ item.cover }}" alt="{{ item.title }}">
+        {% else %}<span class="tcard-ph">{% if item.type_key == "video" %}&#9654;{% else %}&#9636;{% endif %}</span>{% endif %}
+      </div>
+      <div class="tcard-body">
+        <h3><a href="{% url 'legacy:tutorial_detail' item.id %}">{{ item.title }}</a></h3>
+        <div class="tcard-foot">
+          <span class="badge">{{ item.type }}</span>
+          <span class="tnum">{{ item.views }} 播放</span>
+          <span class="tnum">{{ item.favorites }} 收藏</span>
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <p class="news-empty">暂无公开教程。</p>
+    {% endfor %}
+  </div>
+
+  {% if page.paginator.num_pages > 1 %}
+  <div class="pager">
+    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">&laquo; 上一页</a>
+    {% else %}<span class="disabled">&laquo; 上一页</span>{% endif %}
+    <span class="pager-info">第 {{ page.number }} / {{ page.paginator.num_pages }} 页</span>
+    {% if page.has_next %}<a href="?page={{ page.next_page_number }}">下一页 &raquo;</a>
+    {% else %}<span class="disabled">下一页 &raquo;</span>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

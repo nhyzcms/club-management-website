@@ -1,0 +1,12 @@
+{% extends "legacy/base.html" %}
+{% block title %}{{ heading }} · 南汇一中传媒社{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumb"><a href="{% url 'legacy:home' %}">主页</a> / {{ heading }}</div>
+  <h2>{{ heading }}</h2>
+</div>
+<div class="article article-plain">
+  <p>{{ message }}</p>
+  <p>你可以稍后刷新本页，或回到 <a href="{% url 'legacy:home' %}">首页</a>。</p>
+</div>
+{% endblock %}
