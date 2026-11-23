@@ -2,18 +2,40 @@
 {% block title %}关于我们 · 南汇一中传媒社{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h2>{{ page.title|default:"关于我们" }}</h2>
+  <h2 id="top">{{ page.title|default:"关于我们" }}</h2>
   <div class="crumb"><a href="{% url 'legacy:home' %}">首页</a> &rsaquo; 关于我们</div>
 </div>
-<div class="article">
-  <p class="meta">成立时间：{{ page.founded|default:"暂未填写" }}　指导教师：{{ page.advisor|default:"暂未填写" }}</p>
-  {% if external_total %}<p class="extnote">本页有 {{ external_total }} 张外链图片未自动加载（下方以文字链接给出原图地址）。</p>{% endif %}
-  {% if intro_html %}{{ intro_html|safe }}{% endif %}
-  {% for block in blocks %}
-  <h2{% if forloop.first %} class="first"{% endif %}>{{ block.title }}</h2>
-  {{ block.html|safe }}
-  {% empty %}
-  <p>该页面内容暂未填写。</p>
-  {% endfor %}
+<div class="about-layout">
+  <div class="about-nav">
+    <div class="about-nav-inner">
+      <h3>目录</h3>
+      <ul>
+        <li><a href="#intro">社团概览</a></li>
+        {% for block in blocks %}<li><a href="#block-{{ block.key }}">{{ block.title }}</a></li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="about-main">
+    <div class="article">
+      <p class="meta">成立时间：{{ page.founded|default:"暂未填写" }}　指导教师：{{ page.advisor|default:"暂未填写" }}</p>
+      {% if external_total %}<p class="extnote">本页有 {{ external_total }} 张外链图片未自动加载（下方以文字链接给出原图地址）。</p>{% endif %}
+      <div id="intro">{% if intro_html %}{{ intro_html|safe }}{% endif %}</div>
+      {% for block in blocks %}
+      <div class="about-block" id="block-{{ block.key }}">
+        <h2>{{ block.title }}</h2>
+        {% if block.is_panorama %}
+        <p class="pano-note">校园全景图需要支持 WebGL 的浏览器，请用现代浏览器访问完整版查看。</p>
+        {% else %}
+        {{ block.html|safe }}
+        {% endif %}
+        {% if block.doc %}
+        <p class="doc-line">附件：<a href="{{ block.doc.url }}">{{ block.doc.name }}</a>（{{ block.doc.size }}）</p>
+        {% endif %}
+      </div>
+      {% empty %}
+      <p>该页面内容暂未填写。</p>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 {% endblock %}

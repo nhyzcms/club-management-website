@@ -41,6 +41,27 @@
     {% else %}
     <p class="empty">暂无公开消息。</p>
     {% endif %}
+
+    <div class="section-head section-gap">
+      <h2><span class="bar"></span>近期活动</h2>
+      <p class="section-sub">只显示对游客公开的活动。 <a href="{% url 'legacy:activities_list' %}">查看全部 &raquo;</a></p>
+    </div>
+    {% if activities %}
+    <ul class="actlist">
+      {% for item in activities %}
+      <li{% if forloop.last %} class="last"{% endif %}>
+        <h4><a href="{% url 'legacy:activity_detail' item.id %}">{{ item.title }}</a></h4>
+        <div class="act-line">
+          <span class="st st-{{ item.state }}">{{ item.state_label }}</span>
+          <span class="badge">{{ item.type }}</span>
+          <span class="act-when">{% if item.permanent %}长期有效{% elif item.end %}截止 {{ item.end|date:"Y.m.d" }}{% else %}不限{% endif %}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">暂无公开活动。</p>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

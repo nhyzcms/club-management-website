@@ -259,6 +259,20 @@ class NewsListTest(LegacyTestCase):
         clamp = self.client.get("/legacy/news/", {"page": 999}).content.decode()
         self.assertIn("第 2 / 2 页", clamp)
 
+    def test_search_keeps_keyword_across_pages(self):
+        for i in range(23):
+            item = News.objects.create(
+                title="搜索样本 %02d" % i, author=self.author,
+                is_published=True, published_at=timezone.now(),
+            )
+            open_review(news=item, actor=self.author, force_publish=True)
+        body = self.client.get("/legacy/news/", {"q": "搜索样本"}).content.decode()
+        self.assertIn("第 1 / 2 页", body)
+        self.assertIn("q=%E6%90%9C%E7%B4%A2%E6%A0%B7%E6%9C%AC", body)
+        second = self.client.get("/legacy/news/", {"q": "搜索样本", "page": 2}).content.decode()
+        self.assertIn("第 2 / 2 页", second)
+        self.assertNotIn("已过审的新闻标题", second)
+
     def test_list_headers_and_no_script(self):
         response = self.client.get("/legacy/news/")
         self.assertEqual(response["X-Frame-Options"], "DENY")
@@ -339,3 +353,348 @@ class NewsDetailTest(LegacyTestCase):
         ))
         self.assertEqual(response["X-Robots-Tag"], "noindex, nofollow")
         self.assertNotIn("Set-Cookie", response.headers)
+
+
+# ==================== PR3：活动 / 教程 ====================
+
+
+class _ReviewFixtureMixin:
+    """造「已过审」/「待审」对象：open_review 之后按需走一次 APPROVE。
+
+    不能自己批自己（reviews/lifecycle 的 L-10 限制），所以另建一个持
+    reviews.moderate 的审核员来执行 APPROVE。
+    """
+
+    def _make_moderator(self):
+        from django.contrib.auth.models import Permission
+
+        user = User.objects.create_user("legacy_mod", password="x")
+        user.user_permissions.add(
+            Permission.objects.get(content_type__app_label="reviews", codename="moderate"),
+        )
+        return User.objects.get(pk=user.pk)
+
+    def _approve(self, review):
+        from reviews.lifecycle import APPROVE, apply
+        from reviews.models import Review
+
+        if review is not None and review.status != Review.STATUS_APPROVED:
+            apply(APPROVE, review, self.mod)
+        return review
+
+
+class ActivitiesTest(_ReviewFixtureMixin, LegacyTestCase):
+    def setUp(self):
+        super().setUp()
+        from activities.models import Activity
+        from reviews.lifecycle import open_review
+
+        self.mod = self._make_moderator()
+        now = timezone.now()
+        common = {
+            "creator": self.author,
+            "status": "open",
+            "body": "<p>活动正文</p>",
+            "start_at": now - timedelta(hours=1),
+            "end_at": now + timedelta(days=3),
+        }
+        self.delib = Activity.objects.create(
+            type="deliberation", audience="public", title="公开众议标题", **common,
+        )
+        self._approve(open_review(activity=self.delib, actor=self.author))
+        self.exhibition = Activity.objects.create(
+            type="exhibition", audience="public", title="公开展示标题", **common,
+        )
+        self._approve(open_review(activity=self.exhibition, actor=self.author))
+        self.survey = Activity.objects.create(
+            type="survey", audience="public", title="公开调研标题", **common,
+        )
+        self._approve(open_review(activity=self.survey, actor=self.author))
+        self.members_only = Activity.objects.create(
+            type="deliberation", audience="members", title="仅成员可见标题", **common,
+        )
+        self._approve(open_review(activity=self.members_only, actor=self.author))
+        self.pending = Activity.objects.create(
+            type="deliberation", audience="public", title="待审活动标题", **common,
+        )
+        open_review(activity=self.pending, actor=self.author)
+        self.collection = Activity.objects.create(
+            type="collection", audience="public", title="征集活动标题", **common,
+        )
+        self._approve(open_review(activity=self.collection, actor=self.author))
+
+    def test_list_shows_only_public_and_reviewed(self):
+        body = self.client.get("/legacy/activities/").content.decode()
+        for title in ("公开众议标题", "公开展示标题", "公开调研标题"):
+            self.assertIn(title, body)
+        # 反证：受众条件、审核条件、类型白名单任一漏掉，下面三行都会露出来。
+        self.assertNotIn("仅成员可见标题", body)
+        self.assertNotIn("待审活动标题", body)
+        self.assertNotIn("征集活动标题", body)
+
+    def test_list_ids_match_main_site_api(self):
+        from .queries import public_activities
+
+        api = self.client.get("/activities/activities/")
+        self.assertEqual(api.status_code, 200)
+        payload = api.json()
+        rows = payload["results"] if isinstance(payload, dict) else payload
+        self.assertEqual(
+            sorted(public_activities().values_list("id", flat=True)),
+            sorted(row["id"] for row in rows),
+        )
+
+    def test_type_tab_filters(self):
+        body = self.client.get("/legacy/activities/", {"type": "survey"}).content.decode()
+        self.assertIn("公开调研标题", body)
+        self.assertNotIn("公开众议标题", body)
+
+    def test_unknown_type_falls_back_to_all(self):
+        body = self.client.get("/legacy/activities/", {"type": "bogus"}).content.decode()
+        self.assertIn("公开众议标题", body)
+
+    def test_detail_shows_vote_aggregate(self):
+        from activities.models import Ballot, BallotSelection, VoteOption
+
+        option_a = VoteOption.objects.create(activity=self.delib, text="选项甲", order=1)
+        VoteOption.objects.create(activity=self.delib, text="选项乙", order=2)
+        ballot = Ballot.objects.create(activity=self.delib, voter=self.author)
+        BallotSelection.objects.create(ballot=ballot, option=option_a)
+
+        body = self.client.get(f"/legacy/activities/{self.delib.pk}/").content.decode()
+        self.assertIn("选项甲", body)
+        self.assertIn("选项乙", body)
+        # 1 票 / 1 票合计 = 100%，全在模板里算好，页面不跑脚本。
+        self.assertIn("100%", body)
+
+    def test_secret_ballot_does_not_leak_voter(self):
+        from activities.models import Ballot
+
+        self.delib.is_secret_ballot = True
+        self.delib.save(update_fields=["is_secret_ballot"])
+        voter = User.objects.create_user("secret_voter", password="x")
+        Ballot.objects.create(activity=self.delib, voter=voter)
+        body = self.client.get(f"/legacy/activities/{self.delib.pk}/").content.decode()
+        # 秘密投票：连投票人是谁都不能出现在页面上。
+        self.assertNotIn("secret_voter", body)
+
+    def test_members_only_detail_is_404(self):
+        response = self.client.get(f"/legacy/activities/{self.members_only.pk}/")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("这个活动不存在", response.content.decode())
+
+    def test_pending_detail_is_404(self):
+        self.assertEqual(
+            self.client.get(f"/legacy/activities/{self.pending.pk}/").status_code, 404,
+        )
+
+    def test_collection_detail_is_404(self):
+        self.assertEqual(
+            self.client.get(f"/legacy/activities/{self.collection.pk}/").status_code, 404,
+        )
+
+    def test_exhibition_shows_same_origin_cover_only(self):
+        from activities.models import Exhibit
+        from attachments.models import Attachment
+        from common.models import ContentTarget
+
+        with_cover = Exhibit.objects.create(activity=self.exhibition, title="有封面的展品")
+        without = Exhibit.objects.create(activity=self.exhibition, title="没封面的展品")
+        target = ContentTarget.objects.create(kind="exhibit", object_id=with_cover.pk)
+        Attachment.objects.create(
+            uploaded_by=self.author,
+            target=target,
+            file="attachments/demo.jpg",
+            file_type="image",
+            file_name="demo.jpg",
+            file_size=1024,
+        )
+        body = self.client.get(f"/legacy/activities/{self.exhibition.pk}/").content.decode()
+        self.assertIn("有封面的展品", body)
+        self.assertIn("没封面的展品", body)
+        self.assertIn('src="/media/attachments/demo.jpg"', body)
+        self.assertIn("暂无配图", body)
+
+    def test_survey_detail_does_not_render_questionnaire(self):
+        body = self.client.get(f"/legacy/activities/{self.survey.pk}/").content.decode()
+        self.assertIn("不显示问卷", body)
+        # 调研表单一个输入控件都不许出现：旧浏览器提交不了，页面也绝不接收。
+        for tag in ("<form", "<input", "<textarea", "<select"):
+            self.assertNotIn(tag, body)
+
+    def test_activity_body_is_sanitized(self):
+        self.delib.body = '<p>正常段落</p><script>alert("x")</script>'
+        self.delib.save(update_fields=["body"])
+        body = self.client.get(f"/legacy/activities/{self.delib.pk}/").content.decode()
+        self.assertIn("正常段落", body)
+        self.assertNotIn('alert("x")', body)
+
+    def test_home_lists_public_activities_only(self):
+        body = self.client.get("/legacy/").content.decode()
+        self.assertIn("近期活动", body)
+        self.assertIn("公开众议标题", body)
+        self.assertNotIn("仅成员可见标题", body)
+
+    def test_detail_headers_and_no_cookie(self):
+        response = self.client.get(f"/legacy/activities/{self.delib.pk}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertEqual(response["X-Robots-Tag"], "noindex, nofollow")
+        self.assertTrue(response["Content-Security-Policy"].startswith("default-src 'none'"))
+        self.assertEqual(response.cookies, {})
+
+    def test_activity_views_reject_write_methods(self):
+        from django.test import RequestFactory
+
+        from . import views
+
+        factory = RequestFactory()
+        for view, path in (
+            (views.activities_list, "/legacy/activities/"),
+            (views.activity_detail, f"/legacy/activities/{self.delib.pk}/"),
+        ):
+            for method in ("post", "put", "patch", "delete"):
+                response = view(getattr(factory, method)(path), pk=self.delib.pk) if "detail" in view.__name__ else view(getattr(factory, method)(path))
+                self.assertEqual(response.status_code, 405, f"{method.upper()} {path}")
+
+
+class TutorialsTest(_ReviewFixtureMixin, LegacyTestCase):
+    def setUp(self):
+        super().setUp()
+        from reviews.lifecycle import open_review
+        from tutorials.models import Tutorial
+
+        self.mod = self._make_moderator()
+        self.video = Tutorial.objects.create(
+            title="视频教程标题",
+            description="教程简介文字",
+            file="tutorials/demo.mp4",
+            file_type="video",
+            file_name="demo.mp4",
+            file_size=1048576,
+            uploader=self.author,
+        )
+        self._approve(open_review(tutorial=self.video, actor=self.author))
+        self.document = Tutorial.objects.create(
+            title="文档教程标题",
+            file="tutorials/demo.pdf",
+            file_type="document",
+            file_name="demo.pdf",
+            file_size=2048,
+            uploader=self.author,
+        )
+        self._approve(open_review(tutorial=self.document, actor=self.author))
+        self.pending = Tutorial.objects.create(
+            title="待审教程标题",
+            file="tutorials/pending.mp4",
+            file_type="video",
+            file_name="pending.mp4",
+            file_size=1024,
+            uploader=self.author,
+        )
+        open_review(tutorial=self.pending, actor=self.author)
+
+    def test_list_shows_only_approved(self):
+        body = self.client.get("/legacy/tutorials/").content.decode()
+        self.assertIn("视频教程标题", body)
+        self.assertIn("文档教程标题", body)
+        self.assertNotIn("待审教程标题", body)
+
+    def test_list_ids_match_main_site_api(self):
+        from .queries import public_tutorials
+
+        api = self.client.get("/tutorials/tutorials/")
+        self.assertEqual(api.status_code, 200)
+        payload = api.json()
+        rows = payload["results"] if isinstance(payload, dict) else payload
+        self.assertEqual(
+            sorted(public_tutorials().values_list("id", flat=True)),
+            sorted(row["id"] for row in rows),
+        )
+
+    def test_detail_gives_download_link_not_embed(self):
+        body = self.client.get(f"/legacy/tutorials/{self.video.pk}/").content.decode()
+        self.assertIn("/media/tutorials/demo.mp4", body)
+        self.assertIn("demo.mp4", body)
+        # 旧浏览器不吃 <video>：页面里绝不能出现内嵌播放器。
+        self.assertNotIn("<video", body)
+        self.assertNotIn("<iframe", body)
+        self.assertNotIn("<script", body)
+        self.assertIn("不内嵌视频", body)
+
+    def test_detail_renders_description(self):
+        body = self.client.get(f"/legacy/tutorials/{self.video.pk}/").content.decode()
+        self.assertIn("教程简介文字", body)
+
+    def test_pending_detail_is_404(self):
+        self.assertEqual(
+            self.client.get(f"/legacy/tutorials/{self.pending.pk}/").status_code, 404,
+        )
+
+    def test_detail_headers(self):
+        response = self.client.get(f"/legacy/tutorials/{self.video.pk}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["X-Frame-Options"], "DENY")
+        self.assertEqual(response.cookies, {})
+
+    def test_tutorial_views_reject_write_methods(self):
+        from django.test import RequestFactory
+
+        from . import views
+
+        factory = RequestFactory()
+        self.assertEqual(views.tutorials_list(factory.post("/legacy/tutorials/")).status_code, 405)
+        self.assertEqual(
+            views.tutorial_detail(factory.delete("/x/"), pk=self.video.pk).status_code, 405,
+        )
+
+class AboutBlocksTest(TestCase):
+    """关于页的区块级行为：全景说明、附件下载、锚点目录。"""
+
+    def setUp(self):
+        # 迁移里已经种了默认区块，这里按键覆盖而不是新建。
+        AboutPage.objects.update_or_create(
+            pk=1, defaults={
+                "title": "关于南汇一中传媒社", "founded": "2026.03",
+                "advisor": "信息组", "intro": "<p>简介正文</p>",
+            },
+        )
+        AboutBlock.objects.update_or_create(
+            key="campus-overview", defaults={
+                "title": "校园全景", "order": 3,
+                "content": '<iframe src="https://pano.example/view"></iframe><p>全景说明</p>',
+            },
+        )
+        doc, _ = AboutBlock.objects.update_or_create(
+            key="support", defaults={
+                "title": "支持我们", "order": 4, "content": "<p>支持正文</p>",
+            },
+        )
+        # 不落盘：只赋值文件名，url 可用、size 取不到时走「未知大小」分支。
+        doc.document = "about_documents/support.pdf"
+        doc.save(update_fields=["document"])
+
+    def _body(self):
+        return self.client.get("/legacy/about/").content.decode()
+
+    def test_campus_panorama_block_only_shows_note(self):
+        body = self._body()
+        self.assertIn("校园全景图需要支持 WebGL 的浏览器", body)
+        # 正文与 iframe 整块不输出，只保留说明。
+        self.assertNotIn("全景说明", body)
+        self.assertNotIn("pano.example", body)
+        self.assertNotIn("<iframe", body.lower())
+
+    def test_attachment_becomes_download_link(self):
+        body = self._body()
+        self.assertIn('href="/media/about_documents/support.pdf"', body)
+        self.assertIn("support.pdf", body)
+        self.assertIn("附件：", body)
+
+    def test_toc_links_to_every_block(self):
+        body = self._body()
+        self.assertIn('href="#intro"', body)
+        self.assertIn('href="#block-campus-overview"', body)
+        self.assertIn('href="#block-support"', body)
+        self.assertIn('id="block-campus-overview"', body)
+        self.assertIn('id="block-support"', body)

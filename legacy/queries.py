@@ -6,16 +6,29 @@ legacy 不复制数据、不建缓存表：每个请求都直接查主站同一�
 """
 
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 
+from activities.lifecycle import order_activities
+from activities.models import Activity, Exhibit, VoteOption
+from activities.state import calc_state
+from attachments.models import Attachment
 from common.models import Tag
 from news.models import News
 from reviews.visibility import public_q
+from tutorials.models import Tutorial
 
 # 保守分页：旧浏览器一次请求过多条目容易超时，也给数据库留余量。
 NEWS_PAGE_SIZE = 20
+ACTIVITY_PAGE_SIZE = 20
+TUTORIAL_PAGE_SIZE = 20
 # 深分页上限：爬虫顺着 ?page= 往上加时不要把数据库拖死。
 MAX_PAGE = 200
+
+# 匿名可见的活动类型：征集（collection）匿名永远看不到（见 activities/views.py:132），
+# 所以 legacy 的类型筛选也只提供这三类。
+PUBLIC_ACTIVITY_TYPES = ("deliberation", "exhibition", "survey")
+_STATUS_LABELS = dict(Activity.STATUS_CHOICES)
+_ENDED_STATES = frozenset({"closed", "archived"})
 
 
 def public_news():
@@ -64,15 +77,19 @@ def search_news(keyword="", qs=None):
     )
 
 
-def news_page(number=1, keyword=""):
-    """分页对象。页码越界交给 Paginator 收敛，非法值退回第 1 页。"""
+def _page_number(number):
+    """页码收敛：非法值退回第 1 页，超过 MAX_PAGE 截断，再交给 Paginator。"""
     try:
         wanted = int(number)
     except (TypeError, ValueError):
         wanted = 1
-    wanted = min(max(wanted, 1), MAX_PAGE)
+    return min(max(wanted, 1), MAX_PAGE)
+
+
+def news_page(number=1, keyword=""):
+    """分页对象。页码越界交给 Paginator 收敛，非法值退回第 1 页。"""
     paginator = Paginator(search_news(keyword), NEWS_PAGE_SIZE)
-    return paginator.get_page(wanted)
+    return paginator.get_page(_page_number(number))
 
 
 def get_news(pk):
@@ -127,3 +144,201 @@ def news_card(news):
         "author": author_name(news),
         "featured": news.featured,
     }
+
+# ==================== 活动（activities） ====================
+
+
+def public_activities():
+    """匿名可看的活动：审核已通过 + 受众公开 + 限定类型。
+
+    与主站 activities/views.py:132 的匿名口径等价（那边写的是
+    `Q(type="survey", audience="public") | Q(type__in=("deliberation","exhibition"), audience="public")`）。
+    受众默认是 members，所以这里**宁少不扩大**：只放 explicitly public 的活动。
+    """
+    return order_activities(
+        Activity.objects.filter(public_q("activity"))
+        .filter(audience="public", type__in=PUBLIC_ACTIVITY_TYPES)
+        .select_related("creator", "creator__profile")
+    )
+
+
+def activity_card(activity):
+    """模板用的活动摘要。状态取 calc_state（纯函数），不读落库快照。
+
+    legacy 绝不写库：不调用 transition_due_starts / transition_overdue，
+    所以库里 status 可能滞后；展示层用 calc_state 现算即可与主站一致。
+    """
+    state = calc_state(activity)
+    return {
+        "id": activity.pk,
+        "title": activity.title,
+        "type": activity.get_type_display(),
+        "type_key": activity.type,
+        "state": state,
+        "state_label": _STATUS_LABELS.get(state, state),
+        "ended": state in _ENDED_STATES,
+        "audience": activity.get_audience_display(),
+        "creator": display_name(activity.creator),
+        "created": activity.created_at,
+        "start": activity.start_at,
+        "end": activity.end_at,
+        "permanent": activity.is_permanent,
+    }
+
+
+def activities_page(number=1, type_filter=""):
+    """活动列表分页。type_filter 只接受白名单里的类型，其它值当「全部」。"""
+    qs = public_activities()
+    if type_filter in PUBLIC_ACTIVITY_TYPES:
+        qs = qs.filter(type=type_filter)
+    return Paginator(qs, ACTIVITY_PAGE_SIZE).get_page(_page_number(number))
+
+
+def latest_activities(limit=3):
+    """首页「近期活动」：先列未结束的，已结束的沉底（与主站列表同一顺序）。"""
+    return list(public_activities()[:limit])
+
+
+def get_activity(pk):
+    """单个公开活动；不存在 / 未过审 / 仅成员受众一律 None（交给视图回 404）。"""
+    return (
+        public_activities()
+        .filter(pk=pk)
+        .prefetch_related(
+            Prefetch(
+                "options",
+                queryset=VoteOption.objects.annotate(votes=Count("selections")).order_by("order", "id"),
+            ),
+            Prefetch(
+                "exhibits",
+                queryset=Exhibit.objects.annotate(votes=Count("vote_option__selections")).order_by("created_at"),
+            ),
+        )
+        .first()
+    )
+
+
+def vote_options(activity):
+    """众议选项 + 票数 + 占比（只给聚合数字；秘密投票也只暴露聚合，与主站一致）。"""
+    rows = [
+        {"id": option.pk, "text": option.text, "votes": option.votes}
+        for option in activity.options.all()
+    ]
+    total = sum(row["votes"] for row in rows)
+    for row in rows:
+        row["percent"] = int(row["votes"] * 100 / total) if total else 0
+    return rows
+
+
+def exhibit_cards(activity):
+    """展示活动的展品 + 首张图片 + 票数。图片只取同源附件（外链一律不加载）。"""
+    exhibits = list(activity.exhibits.all())
+    if not exhibits:
+        return []
+    covers = {}
+    ids = [exhibit.pk for exhibit in exhibits]
+    rows = (
+        Attachment.objects.filter(
+            target__kind="exhibit", target__object_id__in=ids, file_type="image",
+        )
+        .select_related("target")
+        .order_by("uploaded_at")
+    )
+    for attachment in rows:
+        object_id = attachment.target.object_id if attachment.target else None
+        if object_id is None or object_id in covers:
+            continue
+        covers[object_id] = _file_url(attachment.file)
+    return [
+        {
+            "id": exhibit.pk,
+            "title": exhibit.title or "（未命名展品）",
+            "cover": covers.get(exhibit.pk, ""),
+            "votes": exhibit.votes,
+        }
+        for exhibit in exhibits
+    ]
+
+
+def related_activities(activity, limit=4):
+    """其它活动：最新公开活动，排除自身。"""
+    return list(public_activities().exclude(pk=activity.pk)[:limit])
+
+
+# ==================== 教程（tutorials） ====================
+
+
+def public_tutorials():
+    """公开教程：审核已通过。匿名列表与主站 visible_queryset(..., "tutorial") 等价。"""
+    return (
+        Tutorial.objects.filter(public_q("tutorial"))
+        .select_related("uploader", "uploader__profile")
+        .annotate(favorite_count=Count("favorites", distinct=True))
+        .order_by("-created_at")
+    )
+
+
+def tutorial_card(tutorial):
+    return {
+        "id": tutorial.pk,
+        "title": tutorial.title,
+        "desc": tutorial.description,
+        "type": tutorial.get_file_type_display(),
+        "type_key": tutorial.file_type,
+        "cover": _file_url(tutorial.cover),
+        "views": tutorial.views,
+        "favorites": tutorial.favorite_count,
+        "uploader": display_name(tutorial.uploader),
+        "date": tutorial.created_at,
+        "file_url": _file_url(tutorial.file),
+        "file_name": tutorial.file_name,
+        "file_size": human_size(tutorial.file_size),
+    }
+
+
+def tutorials_page(number=1):
+    return Paginator(public_tutorials(), TUTORIAL_PAGE_SIZE).get_page(_page_number(number))
+
+
+def get_tutorial(pk):
+    return public_tutorials().filter(pk=pk).first()
+
+
+# ==================== 小工具 ====================
+
+
+def display_name(user):
+    """用户显示名：昵称优先，退回用户名；没有用户返回空串。"""
+    if user is None:
+        return ""
+    profile = getattr(user, "profile", None)
+    nickname = (getattr(profile, "nickname", "") or "").strip()
+    return nickname or user.get_username()
+
+
+def _file_url(field_file):
+    """FileField → 站内 URL；外链存储或缺失一律返回空串（CSP 只放行同源图片）。"""
+    if not field_file:
+        return ""
+    try:
+        url = field_file.url
+    except (ValueError, AttributeError):
+        return ""
+    return url if isinstance(url, str) and url.startswith("/") else ""
+
+
+def human_size(size):
+    """字节数 → 可读字符串（模板里不做算术）。"""
+    try:
+        value = float(size or 0)
+    except (TypeError, ValueError):
+        return ""
+    if value <= 0:
+        return "未知大小"
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            if unit == "B":
+                return "%d B" % value
+            return "%.1f %s" % (value, unit)
+        value /= 1024.0
+    return ""

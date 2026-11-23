@@ -277,3 +277,121 @@ p { margin: 0 0 14px; }
 .rel-body h3 a:hover { color: #0c63b4; text-decoration: none; }
 
 .article-plain { max-width: 760px; }
+
+/* ==================== PR3：活动 / 教程 ==================== */
+/* 全部沿用前面的写法约束：float 布局、百分比宽度不叠内边距、无圆角/阴影/渐变/
+   变量/媒体查询，状态与徽章一律用「实色底 + 1px 边」表达层级。 */
+
+.list-wrap { padding: 32px 0 64px; }
+.section-gap { margin-top: 44px; }
+.notice-inline { margin: 20px 0; }
+.notice-inline a { margin: 0 4px; }
+
+/* ---------- 状态徽章（主站 .act-medal：进行中绿 / 待开始蓝 / 已结束灰） ---------- */
+.st { display: inline-block; padding: 3px 9px; margin-right: 6px; border: 1px solid #cfd8e3; background: #f4f7fa; color: #52606d; font-size: 12px; }
+.st-open, .st-collecting { border-color: #a7d7b5; background: #edf9f1; color: #1d6b39; }
+.st-scheduled { border-color: #b3d9fb; background: #ecf5fe; color: #0756a2; }
+.st-reviewing { border-color: #f0d9a8; background: #fff8e6; color: #7a5a12; }
+.st-closed, .st-archived { border-color: #dfe4ea; background: #f4f6f8; color: #7a838f; }
+
+/* ---------- 类型切换（主站 .seg 分段控件：等宽按钮 + 选中实底） ---------- */
+.type-tabs { margin: 0 0 4px; overflow: hidden; border-bottom: 1px solid #e2e8ef; }
+.type-tab {
+  float: left; margin: 0 -1px -1px 0; padding: 8px 18px;
+  border: 1px solid #e2e8ef; background: #ffffff;
+  font-size: 14px; color: #6b7686;
+}
+.type-tab:hover { color: #0c63b4; text-decoration: none; background: #f8fafc; }
+.type-tab.active { background: #0756a2; border-color: #0756a2; color: #ffffff; font-weight: 700; }
+.type-tab.active:hover { color: #ffffff; }
+
+/* ---------- 活动卡片（主站 .prop-card：标题 + 一行徽章，整卡可点） ---------- */
+.prop-card { padding: 18px 20px; border: 1px solid #e2e8ef; border-top: 0; background: #ffffff; }
+.prop-card.last { border-bottom: 1px solid #e2e8ef; }
+.prop-card h3 { margin: 0 0 10px; font-size: 18px; line-height: 1.45; font-weight: 700; }
+.prop-card h3 a { color: #1f2a36; }
+.prop-card h3 a:hover { color: #0c63b4; text-decoration: none; }
+.pc-meta { font-size: 13px; color: #6b7686; overflow: hidden; line-height: 22px; }
+.pc-meta .badge { margin-right: 6px; }
+.pc-right { float: right; font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
+
+/* 首页「近期活动」紧凑列表 */
+.actlist { margin: 0; padding: 0; list-style: none; }
+.actlist li { padding: 16px 0; border-bottom: 1px solid #e2e8ef; }
+.actlist li.last { border-bottom: 0; }
+.actlist h4 { margin: 0 0 8px; font-size: 17px; line-height: 1.45; font-weight: 700; }
+.actlist h4 a { color: #1f2a36; }
+.actlist h4 a:hover { color: #0c63b4; text-decoration: none; }
+.act-line { font-size: 12px; color: #9aa4b2; }
+.act-when { font-family: Consolas, "Courier New", monospace; }
+
+/* ---------- 详情内的小节（投票结果 / 参展作品） ---------- */
+.when-row { padding: 8px 0; margin: 0 0 18px; border-bottom: 1px solid #e2e8ef; font-size: 13px; overflow: hidden; }
+.when-row .k { float: left; color: #6b7686; }
+.when-row .v { float: right; color: #1f2a36; }
+
+.sub-block { margin: 32px 0 0; padding-top: 20px; border-top: 1px solid #e2e8ef; }
+.sub-title { margin: 0 0 14px; font-size: 20px; line-height: 1.4; font-weight: 700; color: #052b56; }
+.sub-note { margin: 8px 0 0; font-size: 13px; color: #6b7686; }
+.sub-note a { margin: 0 2px; }
+
+.opt-table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.opt-table th, .opt-table td { border: 1px solid #d2d9e2; padding: 8px 10px; text-align: left; vertical-align: top; }
+.opt-table th { background: #f4f7fa; font-weight: 700; color: #1f2a36; }
+.opt-table .num { text-align: right; font-family: Consolas, "Courier New", monospace; white-space: nowrap; }
+
+/* 展品两栏：48.5% × 2 + 3% 间距 = 100% */
+.exhibit-grid { margin-top: 4px; overflow: hidden; }
+.exhibit-card { float: left; width: 48.5%; margin: 0 3% 18px 0; background: #ffffff; border: 1px solid #e2e8ef; }
+.exhibit-card.last { margin-right: 0; }
+.exhibit-media { height: 180px; overflow: hidden; background: #eef2f7; border-bottom: 1px solid #e2e8ef; }
+.exhibit-media img { display: block; width: 100%; height: auto; }
+.exhibit-media .ph-img { padding-top: 78px; }
+.exhibit-body { padding: 12px 14px 14px; }
+.exhibit-body h4 { margin: 0 0 6px; font-size: 15px; line-height: 1.45; font-weight: 600; color: #1f2a36; }
+.exhibit-votes { font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
+
+/* ---------- 教程卡片网格：31.3% × 3 + 3% × 2 = 100% ---------- */
+.tgrid { margin: 0 -1.5%; overflow: hidden; }
+.tcard { float: left; width: 30.3%; margin: 0 1.5% 22px; background: #ffffff; border: 1px solid #e2e8ef; }
+.tcard-cover { height: 170px; overflow: hidden; background: #eef2f7; border-bottom: 1px solid #e2e8ef; text-align: center; }
+.tcard-cover img { display: block; width: 100%; height: auto; }
+.tcard-ph { display: block; padding-top: 62px; font-size: 34px; color: #9aa4b2; }
+.tcard-body { padding: 14px 16px 16px; }
+.tcard-body h3 { margin: 0 0 10px; font-size: 15px; line-height: 1.45; font-weight: 700; }
+.tcard-body h3 a { color: #1f2a36; }
+.tcard-body h3 a:hover { color: #0c63b4; text-decoration: none; }
+.tcard-foot { font-size: 12px; color: #9aa4b2; }
+.tcard-foot .badge { margin-right: 6px; }
+.tnum { font-family: Consolas, "Courier New", monospace; margin-right: 10px; }
+
+/* ---------- 教程详情：主栏 72% + 侧栏 23% ---------- */
+.tutorial-layout { overflow: hidden; }
+.tutorial-main { float: left; width: 72%; }
+.detail-h2 { margin: 0 0 8px; font-size: 30px; line-height: 1.35; font-weight: 800; color: #052b56; }
+.media-box {
+  padding: 0; background: #eef2f7; border: 1px solid #e2e8ef;
+  text-align: center; overflow: hidden;
+}
+.media-box img { display: block; max-width: 100%; margin: 0 auto; }
+.media-ph { display: block; padding: 70px 0; font-size: 16px; color: #6b7686; }
+.media-note { margin: 12px 0 0; font-size: 13px; line-height: 1.7; color: #6b7686; }
+.media-actions { margin: 16px 0 0; }
+.tutorial-desc { max-width: none; margin: 28px 0 0; }
+.tutorial-desc p { margin: 0 0 12px; font-size: 15px; line-height: 1.8; color: #1f2a36; }
+
+/* ---------- 关于页：左侧锚点目录 22% + 主栏 75% ---------- */
+.about-layout { padding: 28px 0 48px; overflow: hidden; }
+.about-nav { float: left; width: 22%; }
+.about-nav-inner { background: #ffffff; border: 1px solid #e2e8ef; padding: 16px 18px; }
+.about-nav h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #052b56; }
+.about-nav ul { list-style: none; margin: 0; padding: 0; }
+.about-nav li { padding: 7px 0; border-bottom: 1px dashed #eef2f7; font-size: 13px; line-height: 1.5; }
+.about-nav li.last { border-bottom: 0; }
+.about-nav li a { color: #1f2a36; text-decoration: none; }
+.about-nav li a:hover { color: #0c63b4; text-decoration: underline; }
+.about-main { float: right; width: 75%; }
+.about-main .article { margin-top: 0; }
+.about-block { margin: 26px 0 0; }
+.pano-note { margin: 12px 0 0; padding: 14px 16px; background: #ecf5fe; border: 1px solid #b3d9fb; font-size: 14px; line-height: 1.8; color: #1f2a36; }
+.doc-line { margin: 14px 0 0; padding-top: 12px; border-top: 1px dashed #e2e8ef; font-size: 14px; line-height: 1.8; }
