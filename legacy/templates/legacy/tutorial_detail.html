@@ -1,0 +1,55 @@
+{% extends "legacy/base.html" %}
+{% block title %}{{ card.title }} · 教程集锦{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumb"><a href="{% url 'legacy:home' %}">主页</a> / <a href="{% url 'legacy:tutorials_list' %}">教程集锦</a> / <span>{{ card.title }}</span></div>
+  <h2 class="detail-h2">{{ card.title }}</h2>
+  <p class="section-sub">{{ card.uploader }} · {{ card.views }} 播放 · {{ card.favorites }} 收藏 · {{ card.date|date:"Y.m.d" }}</p>
+</div>
+
+<div class="list-wrap">
+  <div class="tutorial-layout">
+    <div class="tutorial-main">
+      <div class="media-box">
+        {% if card.cover %}
+        <img src="{{ card.cover }}" alt="{{ card.title }}">
+        {% else %}
+        <span class="media-ph">{% if card.type_key == "video" %}&#9654; 视频教程{% else %}&#9636; 文档教程{% endif %}</span>
+        {% endif %}
+      </div>
+
+      {% if card.type_key == "video" %}
+      <p class="media-note">旧浏览器不支持网页内嵌播放，本页不内嵌视频；可用下面的链接下载或在新窗口打开原件。</p>
+      {% endif %}
+
+      {% if card.file_url %}
+      <p class="media-actions"><a class="btn btn-primary" href="{{ card.file_url }}">打开 / 下载原件（{{ card.file_size }}）</a></p>
+      <p class="media-note">文件名：{{ card.file_name }}</p>
+      {% else %}
+      <p class="media-note">原件暂不可用。</p>
+      {% endif %}
+
+      <div class="article-actions">
+        <a class="btn-mini" href="{% url 'legacy:tutorials_list' %}">&larr; 返回教程列表</a>
+      </div>
+    </div>
+
+    <div class="detail-side">
+      <div class="side-card">
+        <h4><span class="bar"></span>条目信息</h4>
+        <div class="meta-row"><span class="k">类型</span><span class="v">{{ card.type }}</span></div>
+        <div class="meta-row"><span class="k">播放</span><span class="v">{{ card.views }}</span></div>
+        <div class="meta-row"><span class="k">收藏</span><span class="v">{{ card.favorites }}</span></div>
+        <div class="meta-row last"><span class="k">上传</span><span class="v">{{ card.date|date:"Y.m.d" }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  {% if card.desc %}
+  <div class="article tutorial-desc">
+    <h2 class="first">简介</h2>
+    {{ card.desc|linebreaks }}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

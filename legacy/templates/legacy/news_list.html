@@ -1,0 +1,103 @@
+{% extends "legacy/base.html" %}
+{% block title %}新闻 · 南汇一中传媒社{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumb"><a href="{% url 'legacy:home' %}">主页</a> / 新闻</div>
+  <h2>新闻</h2>
+  <p class="section-sub">社团公告、回顾与通知。</p>
+</div>
+
+<div class="news-layout">
+  <div class="news-main">
+    {% if feature %}
+    <div class="feature">
+      <div class="feature-media">
+        {% if feature.thumb %}<a href="{% url 'legacy:news_detail' feature.id %}"><img src="{{ feature.thumb }}" alt="{{ feature.title }}"></a>
+        {% else %}<span class="ph-img">暂无封面</span>{% endif %}
+      </div>
+      <div class="feature-body">
+        <div class="feature-inner">
+          <span class="badge">头条</span>
+          <h2><a href="{% url 'legacy:news_detail' feature.id %}">{{ feature.title }}</a></h2>
+          {% if feature.summary %}<p>{{ feature.summary }}</p>{% endif %}
+        </div>
+        <div class="feature-meta">
+          <span class="date">{{ feature.date|date:"Y.m.d" }}</span>
+          <span class="sep">·</span>
+          <span>{{ feature.author }}</span>
+          <span class="sep">·</span>
+          <span>阅读 {{ feature.views }}</span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if keyword %}
+    <p class="filter-note">关键词「{{ keyword }}」的结果；<a href="{% url 'legacy:news_list' %}">清除筛选</a></p>
+    {% endif %}
+
+    {% for item in items %}
+    <div class="news-item{% if forloop.last %} last{% endif %}">
+      <div class="thumb">
+        {% if item.thumb %}<a href="{% url 'legacy:news_detail' item.id %}"><img src="{{ item.thumb }}" alt="{{ item.title }}"></a>
+        {% else %}<span class="ph-img">暂无配图</span>{% endif %}
+      </div>
+      <div class="news-item-body">
+        <div class="meta"><span class="date">{{ item.date|date:"Y.m.d" }}</span></div>
+        <h3><a href="{% url 'legacy:news_detail' item.id %}">{{ item.title }}</a></h3>
+        {% if item.summary %}<p>{{ item.summary }}</p>{% endif %}
+        <span class="read">阅读 {{ item.views }}</span>
+      </div>
+    </div>
+    {% empty %}
+    <p class="news-empty">{% if keyword %}该关键词下暂无公开内容。{% else %}暂无公开新闻。{% endif %}</p>
+    {% endfor %}
+
+    {% if page.paginator.num_pages > 1 %}
+    <div class="pager">
+      {% if page.has_previous %}
+      <a href="?page={{ page.previous_page_number }}{% if keyword %}&amp;q={{ keyword|urlencode }}{% endif %}">&laquo; 上一页</a>
+      {% else %}<span class="disabled">&laquo; 上一页</span>{% endif %}
+      <span class="pager-info">第 {{ page.number }} / {{ page.paginator.num_pages }} 页</span>
+      {% if page.has_next %}
+      <a href="?page={{ page.next_page_number }}{% if keyword %}&amp;q={{ keyword|urlencode }}{% endif %}">下一页 &raquo;</a>
+      {% else %}<span class="disabled">下一页 &raquo;</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="news-side">
+    <div class="side-card">
+      <h4><span class="bar"></span>搜索新闻</h4>
+      <form class="search" method="get" action="{% url 'legacy:news_list' %}">
+        <input class="search-input" type="text" name="q" value="{{ keyword }}" maxlength="40" title="搜索新闻">
+        <button class="btn-mini" type="submit">搜索</button>
+      </form>
+    </div>
+
+    <div class="side-card">
+      <h4><span class="bar"></span>热门阅读</h4>
+      <ol class="hot-list">
+        {% for n in hot %}
+        <li{% if forloop.last %} class="last"{% endif %}>
+          <span class="rank">{{ forloop.counter|stringformat:"02d" }}</span>
+          <div>
+            <a href="{% url 'legacy:news_detail' n.id %}">{{ n.title }}</a>
+            <div class="hv">阅读 {{ n.views }}</div>
+          </div>
+        </li>
+        {% empty %}
+        <li><span class="rank">·</span><div class="hv">暂无数据</div></li>
+        {% endfor %}
+      </ol>
+    </div>
+
+    <div class="side-card">
+      <h4><span class="bar"></span>标签</h4>
+      <div class="tag-cloud">
+        {% for t in tags %}<span class="chip">{{ t.name }} · {{ t.cnt }}</span>{% empty %}<span class="chip">暂无标签</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

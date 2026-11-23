@@ -1,0 +1,67 @@
+{% extends "legacy/base.html" %}
+{% block title %}南汇一中 · 传媒社{% endblock %}
+{% block hero %}
+<div class="hero"><div class="hero-inner">
+  <span class="hero-badge">上海市南汇第一中学 · 传媒社</span>
+  <h2>用镜头记录青春<br><span class="accent">以创新展望未来</span></h2>
+  <p class="hero-sub">校园影像、新媒体作品的策展窗口；加入社团、社团动态与活动，一站式直达。</p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="{% url 'legacy:about' %}">了解社团</a>
+    <a class="btn btn-ghost" href="/">进入完整版</a>
+  </div>
+</div></div>
+{% endblock %}
+{% block content %}
+<div class="notice">你正在浏览只读精简版：内容与主站同源，但不含登录、评论、投稿等交互功能。</div>
+<div class="home-grid">
+  <div class="rail">
+    <div class="card">
+      <h3><span class="bar"></span>社团概览</h3>
+      <div class="stat-row"><span class="k">成立时间</span><span class="v">{{ page.founded|default:"—" }}</span></div>
+      <div class="stat-row last"><span class="k">指导教师</span><span class="v">{{ page.advisor|default:"—" }}</span></div>
+      {% if intro_html %}<div class="rail-intro">{{ intro_html|safe }}</div>{% endif %}
+      <p><a href="{% url 'legacy:about' %}">查看关于页全文 &raquo;</a></p>
+    </div>
+  </div>
+  <div class="main">
+    <div class="section-head">
+      <h2><span class="bar"></span>最新消息</h2>
+      <p class="section-sub">来自主站新闻栏目，按发布时间倒序。 <a href="{% url 'legacy:news_list' %}">查看全部 &raquo;</a></p>
+    </div>
+    {% if news %}
+    <ul class="newslist">
+      {% for item in news %}
+      <li{% if forloop.last %} class="last"{% endif %}>
+        <div class="meta"><span class="date">{{ item.date|date:"Y.m.d" }}</span></div>
+        <h4><a href="{% url 'legacy:news_detail' item.id %}">{{ item.title }}</a></h4>
+        {% if item.summary %}<p>{{ item.summary }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">暂无公开消息。</p>
+    {% endif %}
+
+    <div class="section-head section-gap">
+      <h2><span class="bar"></span>近期活动</h2>
+      <p class="section-sub">只显示对游客公开的活动。 <a href="{% url 'legacy:activities_list' %}">查看全部 &raquo;</a></p>
+    </div>
+    {% if activities %}
+    <ul class="actlist">
+      {% for item in activities %}
+      <li{% if forloop.last %} class="last"{% endif %}>
+        <h4><a href="{% url 'legacy:activity_detail' item.id %}">{{ item.title }}</a></h4>
+        <div class="act-line">
+          <span class="st st-{{ item.state }}">{{ item.state_label }}</span>
+          <span class="badge">{{ item.type }}</span>
+          <span class="act-when">{% if item.permanent %}长期有效{% elif item.end %}截止 {{ item.end|date:"Y.m.d" }}{% else %}不限{% endif %}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">暂无公开活动。</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

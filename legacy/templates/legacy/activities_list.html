@@ -1,0 +1,48 @@
+{% extends "legacy/base.html" %}
+{% block title %}活动 · 南汇一中传媒社{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="crumb"><a href="{% url 'legacy:home' %}">主页</a> / 活动</div>
+  <h2>活动</h2>
+  <p class="section-sub">众议、展示、调研。精简版只列出面向游客公开的部分。</p>
+</div>
+
+<div class="list-wrap">
+  <div class="type-tabs">
+    <a class="type-tab{% if not type_key %} active{% endif %}" href="{% url 'legacy:activities_list' %}">全部</a>
+    {% for t in type_tabs %}
+    <a class="type-tab{% if type_key == t.key %} active{% endif %}" href="{% url 'legacy:activities_list' %}?type={{ t.key }}">{{ t.label }}</a>
+    {% endfor %}
+  </div>
+
+  <p class="notice notice-inline">本页只读：可以看内容与结果，投票、投稿、作答请使用<a href="/">完整版</a>。</p>
+
+  {% for item in items %}
+  <div class="prop-card{% if forloop.last %} last{% endif %}">
+    <h3><a href="{% url 'legacy:activity_detail' item.id %}">{{ item.title }}</a></h3>
+    <div class="pc-meta">
+      <span class="st st-{{ item.state }}">{{ item.state_label }}</span>
+      <span class="badge">{{ item.type }}</span>
+      <span class="pc-right">
+        {% if item.creator %}{{ item.creator }} · {% endif %}
+        {% if item.permanent %}长期有效{% elif item.end %}截止 {{ item.end|date:"Y.m.d" }}{% else %}不限{% endif %}
+      </span>
+    </div>
+  </div>
+  {% empty %}
+  <p class="news-empty">暂无公开活动。</p>
+  {% endfor %}
+
+  {% if page.paginator.num_pages > 1 %}
+  <div class="pager">
+    {% if page.has_previous %}
+    <a href="?page={{ page.previous_page_number }}{% if type_key %}&amp;type={{ type_key }}{% endif %}">&laquo; 上一页</a>
+    {% else %}<span class="disabled">&laquo; 上一页</span>{% endif %}
+    <span class="pager-info">第 {{ page.number }} / {{ page.paginator.num_pages }} 页</span>
+    {% if page.has_next %}
+    <a href="?page={{ page.next_page_number }}{% if type_key %}&amp;type={{ type_key }}{% endif %}">下一页 &raquo;</a>
+    {% else %}<span class="disabled">下一页 &raquo;</span>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
