@@ -773,3 +773,32 @@ class RateLimitTest(TestCase):
             resp = self.client.get("/legacy/about/")
         self.assertEqual(resp.status_code, 429)
         self.assertNotIn("关于南汇一中传媒社", resp.content.decode())
+
+
+class MobileLayoutTest(TestCase):
+    """手机窄屏适配（实验性）：只验证开关存在，不验证具体断点效果。
+
+    真机矩阵没有做，也没打算做——这里能守住的是两件会「悄悄变坏」的事：
+    一是 viewport 声明被删掉（手机又回到 980px 虚拟宽度），
+    二是媒体查询被写成不带 only 的形式（老浏览器就可能误用覆盖规则）。
+    """
+
+    def test_viewport_meta_declared(self):
+        body = self.client.get("/legacy/").content.decode()
+        self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', body)
+
+    def test_every_media_query_is_hidden_from_old_browsers(self):
+        from django.contrib.staticfiles import finders
+
+        path = finders.find("legacy/legacy.css")
+        self.assertTrue(path, "找不到 legacy/legacy.css")
+        with open(path, encoding="utf-8") as fh:
+            css = fh.read()
+        queries = re.findall(r"@media[^{]*", css)
+        self.assertGreaterEqual(len(queries), 2, "手机适配的媒体查询不见了")
+        for query in queries:
+            self.assertTrue(
+                query.replace("@media", "").strip().startswith("only screen"),
+                query,
+            )
+        self.assertIn("@media only screen and (max-width: 720px)", css)

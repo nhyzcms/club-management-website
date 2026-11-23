@@ -38,3 +38,6 @@ SECRET_KEY=dev DJANGO_DEBUG=1 python manage.py test legacy
 - **CSS 改了没生效**：链接带内容指纹 `?v=<md5 前 8 位>`（nginx 对 `/static/` 给 7 天缓存）；
   指纹由 `views._asset_version()` 在进程启动时算一次 —— 改了 CSS 要**重启进程**才换指纹（发版天然满足）。
 - **`/legacy/` 下任何没匹配上的路径**：走 `urls.py` 末尾的兜底路由，回 legacy 自己的中文 404 页。
+- **手机窄屏样式**：只写在 `legacy.css` 末尾的 `@media only screen and (...)` 里。必须带 `only`：
+  不认识媒体查询的老浏览器会把整块丢掉，桌面 IE8 的渲染因此完全不受影响（`MobileLayoutTest` 守着这条）。
+  窄屏适配是实验性的，没有真机矩阵，别把它当"已验证支持手机"。
