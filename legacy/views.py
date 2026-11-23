@@ -8,11 +8,17 @@
 - 独立响应头：CSP 默认全禁，只放行同源样式与图片。
 """
 
+import hashlib
+from functools import wraps
+from pathlib import Path
+
+from django.conf import settings
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_http_methods
 
 from about.models import AboutBlock, AboutPage
+from common.throttles import PublicReadThrottle
 
 from .queries import (
     _file_url,
@@ -40,6 +46,28 @@ from .queries import (
 )
 from .sanitize import sanitize_legacy_html
 
+def _asset_version():
+    """静态资源指纹：取 legacy.css 内容的 MD5 前 8 位。
+
+    nginx 对 /static/ 下非哈希文件给 7 天缓存（scripts/install.sh:298-301），
+    样式改了但 URL 不变，老访客最多 7 天看不到新样式；带上这个参数后，
+    CSS 一变 URL 就变，浏览器必然重取。取内容哈希而不是手写版本号，
+    是为了避免"改了 CSS 忘了改版本号"。
+    """
+    for path in (
+        Path(settings.STATIC_ROOT) / "legacy" / "legacy.css",
+        Path(settings.BASE_DIR) / "static" / "legacy" / "legacy.css",
+    ):
+        try:
+            if path.is_file():
+                return hashlib.md5(path.read_bytes()).hexdigest()[:8]
+        except OSError:
+            continue
+    return "0"
+
+
+LEGACY_ASSET_VERSION = _asset_version()
+
 LEGACY_CSP = (
     "default-src 'none'; style-src 'self'; img-src 'self'; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
@@ -47,6 +75,7 @@ LEGACY_CSP = (
 
 
 def _render(template_name, context, status=200):
+    context.setdefault("asset_version", LEGACY_ASSET_VERSION)
     body = render_to_string(template_name, context)
     response = HttpResponse(
         body, content_type="text/html; charset=utf-8", status=status,
@@ -61,6 +90,49 @@ def _render(template_name, context, status=200):
     return response
 
 
+def _too_many_requests(request):
+    """公开读限流：与 /about/、/panorama/ 共用同一份 IP 额度（300/min）。
+
+    复用主站那段审计过的基类（common/throttles.PublicReadThrottle），
+    不再自己发明一套计数逻辑：阈值、NAT 场景的取舍、缓存后端都跟随主站。
+    """
+    throttle = PublicReadThrottle()
+    if throttle.allow_request(request, None):
+        return None
+    wait = max(1, int(throttle.wait() or 60))
+    response = _render("legacy/notice.html", {
+        "heading": "请求太频繁",
+        "message": "这个页面被请求得太频繁，请等 %d 秒后再刷新。" % wait,
+    }, status=429)
+    response["Retry-After"] = str(wait)
+    return response
+
+
+def readonly(view):
+    """legacy 所有页面共用的入口：先限流，再交给视图。"""
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        limited = _too_many_requests(request)
+        if limited is not None:
+            return limited
+        return view(request, *args, **kwargs)
+    return wrapper
+
+
+@readonly
+@require_http_methods(["GET", "HEAD"])
+def not_found(request, *args, **kwargs):
+    """兜住 /legacy/ 下所有没匹配上的路径。
+
+    不兜的话 Django 会回默认 404（英文纯文本页、无样式），旧浏览器上反而
+    比主站还难看，也丢掉了「入口在哪」的指路。这里统一给中文的 legacy 404。
+    """
+    return _render("legacy/missing.html", {
+        "what": "这个页面不存在，可能是地址写错了，或内容已经下线。",
+    }, status=404)
+
+
+@readonly
 @require_http_methods(["GET", "HEAD"])
 def home(request):
     page = AboutPage.objects.first()
@@ -92,6 +164,7 @@ def _about_document(block):
     }
 
 
+@readonly
 @require_http_methods(["GET", "HEAD"])
 def about(request):
     page = AboutPage.objects.first()
@@ -122,6 +195,7 @@ def about(request):
     })
 
 
+@readonly
 @require_http_methods(["GET", "HEAD"])
 def news_list(request):
     keyword = request.GET.get("q", "")
@@ -144,6 +218,7 @@ def news_list(request):
     })
 
 
+@readonly
 @require_http_methods(["GET", "HEAD"])
 def news_detail(request, pk):
     news = get_news(pk)
@@ -163,6 +238,7 @@ def news_detail(request, pk):
     })
 
 
+@readonly
 @require_http_methods(["GET", "HEAD"])
 def activities_list(request):
     type_key = (request.GET.get("type") or "").strip()
@@ -179,6 +255,7 @@ def activities_list(request):
     })
 
 
+@readonly
 @require_http_methods(["GET", "HEAD"])
 def activity_detail(request, pk):
     activity = get_activity(pk)
@@ -199,6 +276,7 @@ def activity_detail(request, pk):
     })
 
 
+@readonly
 @require_http_methods(["GET", "HEAD"])
 def tutorials_list(request):
     page = tutorials_page(request.GET.get("page", 1))
@@ -208,6 +286,7 @@ def tutorials_list(request):
     })
 
 
+@readonly
 @require_http_methods(["GET", "HEAD"])
 def tutorial_detail(request, pk):
     tutorial = get_tutorial(pk)

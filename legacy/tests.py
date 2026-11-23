@@ -4,17 +4,36 @@
 Playwright 没有 IE 引擎，旧浏览器只能用「给定 UA → 断言 HTML 片段」的方式验收。
 """
 
+import re
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
 from about.models import AboutBlock, AboutPage
+from common.throttles import PublicReadThrottle
 from news.models import News
 from reviews.lifecycle import open_review
 
 from .queries import public_news
+
+#: 用例共用 127.0.0.1 这一个 IP，真实阈值（300/min）会让彼此干扰；限流本身另有专测。
+_TEST_RATE = "100000/min"
+_original_rate = None
+
+
+def setUpModule():
+    global _original_rate
+    _original_rate = PublicReadThrottle.RATE
+    PublicReadThrottle.RATE = _TEST_RATE
+
+
+def tearDownModule():
+    PublicReadThrottle.RATE = _original_rate
+
 
 IE8_UA = "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.1; Trident/4.0)"
 IE6_UA = "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)"
@@ -691,6 +710,11 @@ class AboutBlocksTest(TestCase):
         self.assertIn("support.pdf", body)
         self.assertIn("附件：", body)
 
+    def test_asset_url_carries_content_hash(self):
+        """CSS 链接带内容指纹：nginx 给 /static/ 7 天缓存，没有指纹就会看到旧样式。"""
+        body = self._body()
+        self.assertRegex(body, r'legacy\.css\?v=[0-9a-f]{8}"')
+
     def test_toc_links_to_every_block(self):
         body = self._body()
         self.assertIn('href="#intro"', body)
@@ -698,3 +722,54 @@ class AboutBlocksTest(TestCase):
         self.assertIn('href="#block-support"', body)
         self.assertIn('id="block-campus-overview"', body)
         self.assertIn('id="block-support"', body)
+
+class RoutingTest(TestCase):
+    def test_missing_trailing_slash_redirects_to_legacy_home(self):
+        """少写斜杠不能掉进 SPA 兜底——那正是旧浏览器看到白屏的老路。"""
+        resp = self.client.get("/legacy")
+        self.assertEqual(resp.status_code, 301)
+        self.assertEqual(resp["Location"], "/legacy/")
+
+
+class UnknownPathTest(TestCase):
+    def test_unknown_legacy_path_uses_legacy_404_page(self):
+        """兜底路由：不能让旧浏览器吃 Django 默认的英文纯文本 404。"""
+        for path in ("/legacy/nope/", "/legacy/news/abc/"):
+            resp = self.client.get(path)
+            self.assertEqual(resp.status_code, 404, path)
+            body = resp.content.decode()
+            self.assertIn("这个页面不存在", body, path)
+            self.assertIn("兼容性精简版", body, path)
+            self.assertNotIn("Page not found", body, path)
+
+
+class RateLimitTest(TestCase):
+    """公开读限流：阈值临时调低，验证第 3 次请求 429 且页面仍可读、头仍齐全。"""
+
+    def setUp(self):
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_third_request_is_throttled_but_still_readable(self):
+        with mock.patch.object(PublicReadThrottle, "RATE", "2/min"):
+            cache.clear()
+            self.assertEqual(self.client.get("/legacy/").status_code, 200)
+            self.assertEqual(self.client.get("/legacy/").status_code, 200)
+            resp = self.client.get("/legacy/")
+        self.assertEqual(resp.status_code, 429)
+        self.assertIn("请求太频繁", resp.content.decode())
+        self.assertGreaterEqual(int(resp["Retry-After"]), 1)
+        # 限流页同样是 legacy 页面：安全头一个不少，也不种 Cookie。
+        self.assertEqual(resp["X-Frame-Options"], "DENY")
+        self.assertIn("default-src 'none'", resp["Content-Security-Policy"])
+        self.assertEqual(list(resp.cookies.keys()), [])
+
+    def test_blocked_requests_do_not_leak_other_pages(self):
+        with mock.patch.object(PublicReadThrottle, "RATE", "1/min"):
+            cache.clear()
+            self.assertEqual(self.client.get("/legacy/news/").status_code, 200)
+            resp = self.client.get("/legacy/about/")
+        self.assertEqual(resp.status_code, 429)
+        self.assertNotIn("关于南汇一中传媒社", resp.content.decode())

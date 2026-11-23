@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, re_path
 
 from . import views
 
@@ -13,4 +13,7 @@ urlpatterns = [
     path("activities/<int:pk>/", views.activity_detail, name="activity_detail"),
     path("tutorials/", views.tutorials_list, name="tutorials_list"),
     path("tutorials/<int:pk>/", views.tutorial_detail, name="tutorial_detail"),
+    # 兜底：/legacy/ 下任何没匹配上的路径都回 legacy 自己的 404 页，
+    # 而不是 Django 默认的英文纯文本页。
+    re_path(r"^.*$", views.not_found),
 ]
