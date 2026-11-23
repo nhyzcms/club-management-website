@@ -380,9 +380,11 @@ sudo systemctl reload nginx
 `main` 上自动打 tag、建 GitHub Release、给镜像补版本 tag、滚动 Milestone。
 细则见仓库根 `RELEASING.md`。**发布不等于上线**：生产切换仍由 Deploy 登记 + 夜间窗口执行。
 
-**版本可见性**：镜像里带 CI 生成的 `build_info.json`，运行时经 `GET /version/` 暴露；
-`channel=release` 且版本号等于刚发布的那个，才说明生产已切到该版本（`channel=dev` = 还在跑分支构建）。
-`GET /changelog/` 同源给出该版本的社员版说明。排查「部署到底生效没」先看它，不必先 SSH。
+**版本可见性**：镜像里带 CI 生成的 `build_info.json`，运行时经 `GET /version/` 暴露。
+判断「部署到底生效没」看 `base_version` 是否等于刚发布的 `vX.Y.Z`（`commits_since_tag` = 发布之后又进了几个提交）：
+`channel=release` 只表示这次构建的正是 tag 或改版本号的那次提交；发布之后 `main` 上还有 hotfix / 回流，
+所以**线上常见 `channel=dev`**，它不是「还没切」的证据。
+`GET /changelog/` 同源给出该版本的社员版说明。排查先看这两个端点，不必先 SSH。
 容器内也可 `python manage.py version [--json]`。
 
 **发布收尾漏跑时**：合并发布 PR 后若该提交上 **0 条 check-run**（GitHub 没收到这次 push），

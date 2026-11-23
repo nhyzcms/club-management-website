@@ -125,7 +125,7 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 }
 ```
 
-没有对应版本小节时返回空壳 `{"version": null, "released": null, "summary": null, "sections": []}`（不是 404 / 204，前端只需判断 `sections` 是否为空）。`summary` 取自该版本小节开头的引用块——自动生成的是 commit 原文，只有人写的这一句是「和你有什么关系」。前端只在三条同时成立时弹窗：`channel=release`、本地记录过旧版本、`sections` 非空；`ci` / `test` / `chore` / `build` 类改动不进给社员的这份。
+没有对应版本小节时返回空壳 `{"version": null, "released": null, "summary": null, "sections": []}`（不是 404 / 204，前端只需判断 `sections` 是否为空）。`summary` 取自该版本小节开头的引用块——自动生成的是 commit 原文，只有人写的这一句是「和你有什么关系」。前端按**发行说明版本**判弹窗（不看 `/version/` 的 `channel`）：本地记录的上次版本与这里的 `version` 不同、且 `sections` 非空才弹；首次访问只记录不弹，同一版的多个 dev 构建之间不会重复弹。`changelog.json` 只在发版时变，而生产通常跑 tag 之后的 dev 构建——按 `channel=release` 判会让弹窗在线上永不出现（2026-11-22 修复）。`ci` / `test` / `chore` / `build` 类改动不进给社员的这份。
 
 ### `media/file/` 静态服务
 
@@ -156,7 +156,7 @@ curl -I http://localhost:8000/file/ClassIsland快速使用指南.pdf
 
 - **构建**：`image.yml` 在 push `main` / `develop` 或手动 dispatch 时构建镜像、跑冒烟（布局守卫 / `migrate` / `/site-policy/` 返回 JSON / `/changelog/` 内容一致 / SPA 入口含 `id="root"`），推 `ghcr.io/nhyzcms/club-management-website:sha-<sha>` 与 `:latest`（手动 dispatch 也推，供发布收尾补镜像）；`release.yml` 另给镜像补 `vX.Y.Z` tag。
 - **版本发布**：`release.yml` 在 `main` 上版本变化时打 tag、建 Release、滚动 Milestone；`ci.yml` 的 `release` job 在该提交带 `v*` tag 时把 `club-<sha>.tar.gz` + `.sha256` 挂到对应 Release（每个版本一份，供裸机 / 离线安装）。合并后若一条 check-run 都没有，用 `gh workflow run release.yml --ref main -f finish=1` 补收尾、再 `gh workflow run image.yml --ref main` 补镜像。
-- **版本可见性**：`/version/` 的 `channel=release` 且版本号等于刚发布的 `vX.Y.Z`，才说明生产已切到该版本；`channel=dev` 说明还在跑分支构建。
+- **版本可见性**：判断「部署到底生效没」看 `/version/` 的 `base_version` 是否等于刚发布的 `vX.Y.Z`（`commits_since_tag` = 发布之后又进了几个提交）。`channel=release` 只表示这次构建的正是 tag 或改版本号的那次提交；发布之后 `main` 上还有 hotfix / 回流提交，所以**线上常见 `channel=dev`**，不能拿它当「还没切」的判据。
 - **登记**：`deploy.yml` 只在 `main` 的 Image 成功后 SSH 执行 `deploy.sh stage`——只拉镜像并写 `run/pending-release`，不切换。
 - **切换**：服务器上的 `club-deploy.timer` 每 5 分钟 tick，落窗口（默认 `[01:00, 03:00)` Asia/Shanghai，由 `.env` 的 `CLUB_DEPLOY_WINDOW_START/END` / `CLUB_DEPLOY_TZ` 控制）时 `apply`：`pg_dump`（直连 5432，不走 pgbouncer 6432）→ `migrate` → `collectstatic` → 重建容器 → 健康检查（失败自动回滚到上一 tag）。
 - **手动入口**：`deploy.sh status|now <tag>|stage <tag>|rollback|tick`；`rollback` 只换镜像、不还原数据库（详见[部署指南](../operations/deployment.md) §6）。
