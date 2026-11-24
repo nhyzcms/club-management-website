@@ -12,10 +12,11 @@ from activities.lifecycle import order_activities
 from activities.models import Activity, Exhibit, VoteOption
 from activities.state import calc_state
 from attachments.models import Attachment
-from common.models import Tag
 from news.models import News
 from reviews.visibility import public_q
 from tutorials.models import Tutorial
+
+from .images import UNSUPPORTED_EXTS, fallback_url, needs_fallback, source_type
 
 # 保守分页：旧浏览器一次请求过多条目容易超时，也给数据库留余量。
 NEWS_PAGE_SIZE = 20
@@ -24,9 +25,9 @@ TUTORIAL_PAGE_SIZE = 20
 # 深分页上限：爬虫顺着 ?page= 往上加时不要把数据库拖死。
 MAX_PAGE = 200
 
-# IE8 及更早版本解不了的图片格式。硬塞 <img> 只会显示破图标，
-# 所以这类图只给一句说明（与 legacy/sanitize.py 的判断保持一致）。
-UNSUPPORTED_IMAGE_EXTS = (".webp", ".avif", ".svg", ".heic", ".heif")
+# IE8 及更早版本解不了的图片格式。这类图不直接给 <img>，而是用
+# <picture>（能解的浏览器看原图，解不了的落到 JPEG 兜底），见 legacy/images.py。
+UNSUPPORTED_IMAGE_EXTS = UNSUPPORTED_EXTS
 
 # 匿名可见的活动类型：征集（collection）匿名永远看不到（见 activities/views.py:132），
 # 所以 legacy 的类型筛选也只提供这三类。
@@ -59,13 +60,25 @@ def hot_news(limit=5):
 
 
 def news_tags(limit=20):
-    """标签云：只统计公开新闻，计数也只算公开稿。"""
-    return list(
-        Tag.objects.filter(news__in=public_news())
-        .annotate(cnt=Count("news", filter=Q(news__is_published=True) & public_q("news")))
-        .filter(cnt__gt=0)
-        .order_by("-cnt", "name")[:limit]
+    """标签云：只统计公开新闻，计数也只算公开稿。
+
+    必须从 News 侧聚合：public_q("news") 的形状是 Q(pk__in=…)，挂在 Tag 的
+    queryset 上时 pk 会被解析成 Tag.pk，计数恒为 0——v1.2.0 起标签云一直是空的
+    （审计 2026-11）。从 News 出发，pk 就是 News 的 pk，口径与列表页逐字一致：
+    同一个 public_news()，同一次可见性判定，不另写一份「什么算公开」。
+    """
+    rows = (
+        public_news()
+        .order_by()
+        .filter(tags__isnull=False)
+        .values("tags__id", "tags__name")
+        .annotate(cnt=Count("pk", distinct=True))
+        .order_by("-cnt", "tags__name")[:limit]
     )
+    return [
+        {"id": row["tags__id"], "name": row["tags__name"], "cnt": row["cnt"]}
+        for row in rows
+    ]
 
 
 def search_news(keyword="", qs=None):
@@ -125,19 +138,29 @@ def author_name(news):
 
 
 def image_box(field_file):
-    """图片字段 → {"url": 站内地址, "note": 给旧浏览器看的说明}。
+    """图片字段 → {"url", "fallback", "note"}。
 
-    地址只认站内相对路径（CSP 只放行同源图片）；WebP / AVIF / SVG 这类
-    旧浏览器解不了的格式不返回地址，改在 note 里写清楚原因。
+    - url：站内原图地址（只认同源相对路径，CSP 只放行本站图片）；
+    - fallback：原图是 WebP / AVIF 时，另生成的 JPEG 兜底图地址，
+      模板用 <picture> 让现代浏览器看原图、旧浏览器看兜底；
+    - note：两样都给不了时给旧浏览器看的一句话（例如 SVG）。
+
+    不直接写死「WebP 一律不显示」：能显示 WebP 的浏览器（Chrome / Edge /
+    Firefox / Safari 14+）不该被一起降级。
     """
     url = _file_url(field_file)
     if not url:
-        return {"url": "", "note": ""}
-    name = (getattr(field_file, "name", "") or "").lower()
-    for ext in UNSUPPORTED_IMAGE_EXTS:
-        if name.endswith(ext):
-            return {"url": "", "note": "此图为 %s 格式，旧版浏览器无法显示" % ext[1:].upper()}
-    return {"url": url, "note": ""}
+        return {"url": "", "fallback": "", "mime": "", "note": ""}
+    if needs_fallback(url):
+        fallback = fallback_url(url)
+        if fallback:
+            return {"url": url, "fallback": fallback, "mime": source_type(url), "note": ""}
+        ext = url.split("?", 1)[0].rsplit(".", 1)[-1].upper()
+        return {
+            "url": "", "fallback": "", "mime": "",
+            "note": "此图为 %s 格式，旧版浏览器无法直接显示" % ext,
+        }
+    return {"url": url, "fallback": "", "mime": source_type(url), "note": ""}
 
 
 def cover_box(news):
@@ -148,7 +171,7 @@ def cover_box(news):
             box = image_box(image)
             if box["url"] or box["note"]:
                 return box
-    return {"url": "", "note": ""}
+    return {"url": "", "fallback": "", "mime": "", "note": ""}
 
 
 def cover_url(news):
@@ -166,6 +189,8 @@ def news_card(news):
         "date": news.published_at or news.created_at,
         "views": news.views,
         "thumb": box["url"],
+        "thumb_fallback": box["fallback"],
+        "thumb_mime": box["mime"],
         "thumb_note": box["note"],
         "author": author_name(news),
         "featured": news.featured,
@@ -280,6 +305,8 @@ def exhibit_cards(activity):
             "id": exhibit.pk,
             "title": exhibit.title or "（未命名展品）",
             "cover": covers.get(exhibit.pk, {}).get("url", ""),
+            "cover_fallback": covers.get(exhibit.pk, {}).get("fallback", ""),
+            "cover_mime": covers.get(exhibit.pk, {}).get("mime", ""),
             "cover_note": covers.get(exhibit.pk, {}).get("note", ""),
             "votes": exhibit.votes,
         }
@@ -314,6 +341,8 @@ def tutorial_card(tutorial):
         "type": tutorial.get_file_type_display(),
         "type_key": tutorial.file_type,
         "cover": box["url"],
+        "cover_fallback": box["fallback"],
+        "cover_mime": box["mime"],
         "cover_note": box["note"],
         "views": tutorial.views,
         "favorites": tutorial.favorite_count,

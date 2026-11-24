@@ -9,12 +9,13 @@
 """
 
 import hashlib
+import re
 from functools import wraps
 from pathlib import Path
 
 from django.conf import settings
 from django.core.exceptions import DisallowedHost
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_http_methods
 
@@ -45,6 +46,7 @@ from .queries import (
     tutorials_page,
     vote_options,
 )
+from .images import fallback_file
 from .sanitize import bare_host, sanitize_legacy_html
 
 
@@ -120,9 +122,20 @@ def _render(template_name, context, status=200):
     response["X-Frame-Options"] = "DENY"
     response["X-Content-Type-Options"] = "nosniff"
     response["Referrer-Policy"] = "no-referrer"
-    # 允许反代短缓存；内容层是活的，60 秒足够削峰又不至于让撤稿停留太久。
-    response["Cache-Control"] = "public, max-age=60"
+    if status in (200, 404):
+        # 允许反代短缓存；内容层是活的，60 秒足够削峰又不至于让撤稿停留太久。
+        # 404 也缓存：扫目录的脚本一晚上能打出上万次未命中，缓存后只打一次。
+        response["Cache-Control"] = "public, max-age=60"
+    else:
+        # 429 / 400 是按「这个请求」的状态生成的：缓存 60 秒会让别的访客
+        # 直接领到限流页或错误页（审计 2026-11）。
+        response["Cache-Control"] = "no-store"
     return response
+
+
+# 控制字符（含 NUL）。PostgreSQL 的文本字段不接受 \x00，直接拿去 ILIKE 会抛
+# ValueError → 500（审计 2026-11：GET /legacy/news/?q=%00 匿名可打 500）。
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def _too_many_requests(request):
@@ -141,6 +154,18 @@ def _too_many_requests(request):
     }, status=429)
     response["Retry-After"] = str(wait)
     return response
+
+
+class LegacyImageThrottle(PublicReadThrottle):
+    """WebP 兜底图按独立额度计数。
+
+    一个列表页就可能带十几张兜底图，若与页面共用 300/min，正常翻两页
+    就会撞上限；但完全不限流（v1.2.1 的状态）等于对外开了一个无上限的
+    磁盘读 + 首次同步转码入口。1200/min 足够一屏十几张图的人看几十屏。
+    """
+
+    scope = "legacy_image"
+    RATE = "1200/min"
 
 
 def readonly(view):
@@ -238,6 +263,13 @@ def about(request):
 @require_http_methods(["GET", "HEAD"])
 def news_list(request):
     keyword = request.GET.get("q", "")
+    if _CONTROL_CHARS.search(keyword):
+        # 不把控制字符送进 ILIKE：线上 PG 对 \x00 直接抛 ValueError，
+        # 匿名访客拼一个 %00 就能换一个 500。给 400 + 可读提示。
+        return _render("legacy/notice.html", {
+            "heading": "无法搜索",
+            "message": "搜索词里含有无法处理的字符，请换一个关键词再试。",
+        }, status=400)
     page = news_page(request.GET.get("page", 1), keyword=keyword)
     items = [news_card(n) for n in page.object_list]
     feature = None
@@ -274,12 +306,67 @@ def news_detail(request, pk):
         "card": news_card(news),
         "author": author_name(news),
         "cover": cover["url"],
+        "cover_fallback": cover["fallback"],
+        "cover_mime": cover["mime"],
         "cover_note": cover["note"],
         "content_html": content_html,
         "external_total": external_total,
         "unsupported_total": unsupported_total,
         "related": [news_card(n) for n in related_news(news)],
     })
+
+
+def _image_missing():
+    """兜底图不存在的统一响应。
+
+    未命中不缓存：token 是内容哈希，命中即命中，不必让反代记住 404；
+    顺手带上 noindex，避免被当成可索引的图片地址。
+    """
+    response = HttpResponse(status=404)
+    response["Cache-Control"] = "no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    response["X-Robots-Tag"] = "noindex"
+    return response
+
+
+@require_http_methods(["GET", "HEAD"])
+def image(request, token):
+    """WebP 的 JPEG 兜底图（见 legacy/images.py）。
+
+    单独的静态文件，按自己的额度限流（LegacyImageThrottle，1200/min）：
+    一个列表页就可能带十几张图，与页面共用 300/min 会把正常浏览打成 429，
+    但完全不限流等于对外开了无上限的磁盘读 + 首次同步转码入口。
+    token 是内容哈希，只能命中本进程生成过的文件，不能用来越权读
+    MEDIA_ROOT 里的其它东西。
+    """
+    throttle = LegacyImageThrottle()
+    if not throttle.allow_request(request, None):
+        response = HttpResponse(status=429)
+        response["Retry-After"] = str(max(1, int(throttle.wait() or 60)))
+        response["Cache-Control"] = "no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+    path = fallback_file(token)
+    if path is None:
+        return _image_missing()
+    headers = {
+        "Cache-Control": "public, max-age=604800",
+        "X-Content-Type-Options": "nosniff",
+        "X-Robots-Tag": "noindex",
+    }
+    if request.method == "HEAD":
+        response = HttpResponse(content_type="image/jpeg")
+    else:
+        try:
+            handle = path.open("rb")
+        except OSError:
+            # fallback_file() 判完 is_file() 到这里之间，另一个请求可能刚好
+            # 被 _prune() 清掉了这张图：按 404 处理，别把 FileNotFoundError 冒成 500。
+            return _image_missing()
+        response = FileResponse(handle, content_type="image/jpeg")
+    for key, value in headers.items():
+        response[key] = value
+    return response
 
 
 @readonly

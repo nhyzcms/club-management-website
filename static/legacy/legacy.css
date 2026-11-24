@@ -115,6 +115,8 @@ p { margin: 0 0 14px; }
 .legacy-extimg { margin: 0 0 16px; padding: 12px 14px; max-width: 520px; background: #f4f7fa; border: 1px dashed #cfd8e3; font-size: 13px; color: #6b7686; }
 .legacy-extimg a { font-size: 13px; }
 .extnote { margin: 0 0 16px; padding: 10px 14px; background: #fff8e6; border: 1px solid #f0d9a8; font-size: 13px; color: #7a5a12; }
+/* 正文超过 sanitize.MAX_HTML_CHARS 时截断，末尾补这一行说明（IE8 也认的选择器） */
+.legacy-truncated { margin: 0 0 16px; font-size: 13px; color: #6b7686; font-style: italic; }
 
 /* ---------- 页脚（主站 .footer：brand-900 深蓝底） ---------- */
 .footer { background: #052b56; color: #c7d7e6; margin-top: 48px; }
@@ -190,7 +192,11 @@ p { margin: 0 0 14px; }
 
 .hot-list { margin: 0; padding: 0; list-style: none; }
 .hot-list li { padding: 10px 0; border-bottom: 1px dashed #e2e8ef; overflow: hidden; }
-.hot-list li.last, .hot-list li:last-child { border-bottom: 0; }
+/* IE8 不认 :last-child，而选择器列表里只要有一个不合法，整条规则就作废——
+   .last 兜底会跟着一起失效（MS CSS 兼容表 + css-sel3：IE7/8 只支持 ~ 和 [attr^=] 这类）。
+   两条分开写，老浏览器至少还吃得到 .last 那条。 */
+.hot-list li.last { border-bottom: 0; }
+.hot-list li:last-child { border-bottom: 0; }
 .hot-list .rank { float: left; width: 24px; font-family: Consolas, "Courier New", monospace; font-weight: 700; color: #3da5f3; font-size: 15px; }
 .hot-list div { margin-left: 28px; }
 .hot-list a { font-size: 14px; line-height: 1.45; color: #1f2a36; }
@@ -239,8 +245,10 @@ p { margin: 0 0 14px; }
 .prose blockquote { margin: 24px 0; padding: 14px 20px; background: #ecf5fe; border-left: 4px solid #3da5f3; color: #052b56; }
 .prose blockquote p:last-child { margin-bottom: 0; }
 .prose img { display: block; max-width: 100%; margin: 16px 0; }
-.prose figure { margin: 20px 0; }
-.prose figcaption { margin-top: 6px; font-size: 13px; color: #9aa4b2; text-align: center; }
+/* IE8 把 <figure>/<figcaption> 当未知元素（caniuse html5semantic：IE8 是 partial，
+   缺的只是默认 display），不显式给块级，图注会挤到图片右边。现代浏览器本来就是块级。 */
+.prose figure { display: block; margin: 20px 0; }
+.prose figcaption { display: block; margin-top: 6px; font-size: 13px; color: #9aa4b2; text-align: center; }
 .prose table { border-collapse: collapse; width: 100%; margin: 0 0 16px; font-size: 14px; }
 .prose th, .prose td { border: 1px solid #d2d9e2; padding: 8px 10px; text-align: left; vertical-align: top; }
 .prose pre { margin: 0 0 16px; padding: 12px; background: #f5f6f8; border: 1px solid #e2e8ef; overflow: auto; font-size: 13px; }

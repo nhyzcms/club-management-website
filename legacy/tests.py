@@ -5,20 +5,28 @@ Playwright 没有 IE 引擎，旧浏览器只能用「给定 UA → 断言 HTML 
 """
 
 import re
+import shutil
 from datetime import timedelta
+from html.parser import HTMLParser
+from pathlib import Path
 from unittest import mock
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
+from PIL import Image
 
 from about.models import AboutBlock, AboutPage
+from common.models import Tag
 from common.throttles import PublicReadThrottle
 from news.models import News
 from reviews.lifecycle import open_review
 
 from .queries import image_box, public_news
+from .sanitize import MAX_HTML_CHARS, sanitize_legacy_html
+from .views import LegacyImageThrottle
 
 #: 用例共用 127.0.0.1 这一个 IP，真实阈值（300/min）会让彼此干扰；限流本身另有专测。
 _TEST_RATE = "100000/min"
@@ -37,6 +45,32 @@ def tearDownModule():
 
 IE8_UA = "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.1; Trident/4.0)"
 IE6_UA = "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1)"
+
+
+class _AttrNameCollector(HTMLParser):
+    """收集整页出现过的属性名（小写、去重）。
+
+    用来断言「渲染结果里不存在 on* 事件属性」：只看字符串会出现
+    'onerror=alert(1)' 恰好在 title 文本里的误报，按属性解析才分得清
+    「是属性」和「是属性值里的一段字」。
+    """
+
+    def __init__(self):
+        HTMLParser.__init__(self, convert_charrefs=True)
+        self.names = set()
+
+    def handle_starttag(self, tag, attrs):
+        for name, _value in attrs:
+            self.names.add((name or "").lower())
+
+    handle_startendtag = handle_starttag
+
+
+def attribute_names(html):
+    collector = _AttrNameCollector()
+    collector.feed(html)
+    collector.close()
+    return collector.names
 
 
 class LegacyTestCase(TestCase):
@@ -164,7 +198,10 @@ class SanitizeTest(TestCase):
         )
 
     def _about(self, content):
-        AboutBlock.objects.create(key="story", title="我们做什么", content=content, order=1)
+        AboutBlock.objects.update_or_create(
+            key="story",
+            defaults={"title": "我们做什么", "content": content, "order": 1},
+        )
         return self.client.get("/legacy/about/").content.decode()
 
     def test_blocks_render(self):
@@ -270,6 +307,108 @@ class SanitizeTest(TestCase):
         body = self._about("")
         self.assertIn("我们做什么", body)
 
+    def test_src_inside_title_does_not_become_attributes(self):
+        # 审计 2026-11：旧实现按 <img[^>]*> 取整段、再取第一个 src= 拼回去。
+        # title 里写 "src=… onerror=… 就会提前闭合 title 属性，
+        # onerror 从「一段文字」变成真事件属性（存进正文即可匿名触发）。
+        body = self._about(
+            '<p><img title="x src=http://testserver/media/a.png onerror=alert(1) z"'
+            ' src="/media/nope.png"></p>'
+        )
+        self.assertIn('src="/media/nope.png"', body)
+        # 原样保留：title 值一个字节都没被改动。
+        self.assertIn('title="x src=http://testserver/media/a.png onerror=alert(1) z"', body)
+        names = attribute_names(body)
+        self.assertEqual(sorted(n for n in names if n.startswith("on")), [])
+
+    def test_escaped_quote_inside_title_does_not_become_attributes(self):
+        body = self._about(
+            '<p><img title="x &quot; src=http://testserver/media/a.png onerror=alert(1) z"'
+            ' src="/media/nope.png"></p>'
+        )
+        self.assertIn('src="/media/nope.png"', body)
+        names = attribute_names(body)
+        self.assertEqual(sorted(n for n in names if n.startswith("on")), [])
+
+    def test_gt_inside_alt_does_not_leak_external_image(self):
+        # 审计 2026-11：<img\b[^>]*> 在引号里的 '>' 处截断，整段原样透出，
+        # 外链图既没被拦、计数还是 0。
+        body = self._about('<p><img alt="x>y" src="https://cdn.example.com/a.png"></p>')
+        self.assertIn("1 张外链图片未自动加载", body)
+        self.assertNotIn('src="https://cdn.example.com/a.png"', body)
+
+    def test_absolute_own_host_with_backslash_is_unsafe(self):
+        # 审计 2026-11：绝对地址走 netloc 分支时没查反斜杠，
+        # 'http://<本站>/\evil.example/a.png' 会被改写成 '/\evil.example/a.png'，
+        # 浏览器（WHATWG 解析）会去 evil.example 取图。
+        body = self._about(r'<p><img src="http://testserver/\evil.example/a.png" alt="怪"></p>')
+        self.assertNotIn("<img", body)
+        self.assertIn("外链图片未自动加载", body)
+        self.assertIn("无法识别的地址", body)
+        self.assertNotIn("evil.example", body)
+
+    def test_absolute_own_host_with_control_char_is_unsafe(self):
+        # urlsplit 会吞掉 \t / \r，netloc 看起来仍是本站，归一化后却成了 //host。
+        body = self._about(
+            '<p><img src="http://testserver/\tevil.example/a.png" alt="怪"></p>'
+        )
+        self.assertNotIn("<img", body)
+        self.assertIn("外链图片未自动加载", body)
+        self.assertNotIn("evil.example", body)
+
+    # 2026-11 二审向量：审计方要求逐条覆盖（见 artex 报告 §7）。
+    def test_title_payload_with_extra_spaces(self):
+        body = self._about(
+            '<p><img title="a  src=http://testserver/media/a.png onerror=alert(1) z"'
+            ' src="/media/nope.png"></p>'
+        )
+        self.assertEqual(sorted(n for n in attribute_names(body) if n.startswith("on")), [])
+
+    def test_title_payload_with_tab_and_newline(self):
+        for sep in ("\t", "\n"):
+            body = self._about(
+                '<p><img title="a%ssrc=http://testserver/media/a.png onerror=alert(1) z"'
+                ' src="/media/nope.png"></p>' % sep
+            )
+            self.assertEqual(
+                sorted(n for n in attribute_names(body) if n.startswith("on")), [], sep,
+            )
+
+    def test_alt_payload_does_not_become_attributes(self):
+        body = self._about(
+            '<p><img alt="x src=http://testserver/media/a.png onerror=alert(1) z"'
+            ' src="/media/nope.png"></p>'
+        )
+        self.assertEqual(sorted(n for n in attribute_names(body) if n.startswith("on")), [])
+
+    def test_own_host_with_double_slash_is_external(self):
+        # http://<本站>//evil.example/a.png 归一化后是 //evil.example/a.png，
+        # 浏览器会当成协议相对地址去 evil.example 取图（IE8 不执行 CSP）。
+        for src in (
+            "http://testserver//evil.example/a.png",
+            "//testserver//evil.example/a.png",
+            "http://evil.com@testserver//evil.example/a.png",
+        ):
+            body = self._about('<p><img src="%s" alt="怪"></p>' % src)
+            self.assertNotIn("<img", body, src)
+            self.assertNotIn('src="//evil.example', body, src)
+            self.assertIn("外链图片未自动加载", body, src)
+            self.assertIn("1 张外链图片未自动加载", body, src)
+
+    def test_overlong_content_is_clipped(self):
+        # 清洗是纯 CPU 的，超长正文在入口截断：生产单 worker，一篇 1MB 的
+        # 稿件每个读者都要付好几秒，够把整站拖住。
+        body = self._about("<p>%s</p>" % ("长" * (MAX_HTML_CHARS + 4096)))
+        self.assertIn("legacy-truncated", body)
+        self.assertLess(len(body), MAX_HTML_CHARS * 4)
+
+    def test_same_content_hits_cache(self):
+        html = "<p>%s</p>" % ("缓存" * 6000)
+        first = sanitize_legacy_html(html, ["testserver"])
+        second = sanitize_legacy_html(html, ["testserver"])
+        self.assertEqual(first, second)
+        self.assertEqual(first[0], second[0])
+
 
 class ImageBoxTest(TestCase):
     """封面 / 展品 / 教程封面共用同一套「旧浏览器能不能显示」的判断。"""
@@ -291,10 +430,12 @@ class ImageBoxTest(TestCase):
         for name in ("news/a.webp", "news/b.AVIF", "news/c.svg", "news/d.heic"):
             box = image_box(self._FakeImage(name))
             self.assertEqual(box["url"], "", name)
-            self.assertIn("旧版浏览器无法显示", box["note"], name)
+            self.assertIn("旧版浏览器无法直接显示", box["note"], name)
 
     def test_missing_file_returns_empty_box(self):
-        self.assertEqual(image_box(None), {"url": "", "note": ""})
+        self.assertEqual(
+            image_box(None), {"url": "", "fallback": "", "mime": "", "note": ""},
+        )
 
 class NewsListTest(LegacyTestCase):
     def test_list_shows_only_public_items(self):
@@ -368,6 +509,31 @@ class NewsListTest(LegacyTestCase):
         self.assertEqual(response["Referrer-Policy"], "no-referrer")
         self.assertNotIn("Set-Cookie", response.headers)
         self.assertNotIn("<script", response.content.decode().lower())
+
+    def test_tag_cloud_counts_only_public_news(self):
+        """审计 2026-11：标签云计数恒 0（把 Q(pk__in=…) 挂到 Tag 上，pk 解析成 Tag.pk），
+        cnt__gt=0 又把空计数全滤掉，页面上的标签云从 v1.2.0 起一直是空的。"""
+        public_tag = Tag.objects.create(name="公开标签", color="#3a7")
+        pending_tag = Tag.objects.create(name="待审标签", color="#a37")
+        self.approved.tags.add(public_tag)
+        self.pending.tags.add(pending_tag)
+        body = self.client.get("/legacy/news/").content.decode()
+        self.assertIn("公开标签 · 1", body)
+        # 待审稿件既不该出现在列表里，也不该借标签名泄露出来。
+        self.assertNotIn("待审标签", body)
+
+    def test_control_characters_in_query_return_400(self):
+        """审计 2026-11：?q=%00 在线上 PG 上直接 500（文本字段不收 NUL）。"""
+        response = self.client.get("/legacy/news/", {"q": "\x00"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("无法搜索", response.content.decode())
+        # 错误页也别让缓存叼走：换个关键词的人不该拿到上一个 400。
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+    def test_control_characters_never_reach_the_database(self):
+        for value in ("\x00", "公开\x07标签", "\x1f", "\x7f"):
+            response = self.client.get("/legacy/news/", {"q": value})
+            self.assertEqual(response.status_code, 400, repr(value))
 
 
 class NewsDetailTest(LegacyTestCase):
@@ -810,6 +976,13 @@ class RoutingTest(TestCase):
         self.assertEqual(resp.status_code, 301)
         self.assertEqual(resp["Location"], "/legacy/")
 
+    def test_redirect_writes_no_cookie_and_no_cookie_vary(self):
+        """审计 2026-11 观察①：前缀只写 "/legacy/" 时，"/legacy" 这一跳没被豁免，
+        响应会种设备 Cookie、Vary 里带 Cookie，共享缓存从此永不命中。"""
+        resp = self.client.get("/legacy")
+        self.assertEqual(list(resp.cookies.keys()), [])
+        self.assertNotIn("cookie", (resp.headers.get("Vary") or "").lower())
+
 
 class UnknownPathTest(TestCase):
     def test_unknown_legacy_path_uses_legacy_404_page(self):
@@ -845,6 +1018,21 @@ class RateLimitTest(TestCase):
         self.assertEqual(resp["X-Frame-Options"], "DENY")
         self.assertIn("default-src 'none'", resp["Content-Security-Policy"])
         self.assertEqual(list(resp.cookies.keys()), [])
+        # 429 是按「这个请求」的状态生成的，被缓存 60 秒会分发给别的访客。
+        self.assertEqual(resp["Cache-Control"], "no-store")
+
+    def test_image_endpoint_has_its_own_budget(self):
+        """审计 2026-11：image() 此前完全没有限流，脚本可以无限打磁盘读 + 同步转码。
+        现在按自己的额度计数，且用完了不把 429 缓存出去。"""
+        url = "/legacy/img/" + "0" * 40 + ".jpg"
+        with mock.patch.object(LegacyImageThrottle, "RATE", "2/min"):
+            cache.clear()
+            self.assertEqual(self.client.get(url).status_code, 404)
+            self.assertEqual(self.client.get(url).status_code, 404)
+            resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(resp["Cache-Control"], "no-store")
+        self.assertGreaterEqual(int(resp["Retry-After"]), 1)
 
     def test_blocked_requests_do_not_leak_other_pages(self):
         with mock.patch.object(PublicReadThrottle, "RATE", "1/min"):
@@ -882,3 +1070,131 @@ class MobileLayoutTest(TestCase):
                 query,
             )
         self.assertIn("@media only screen and (max-width: 720px)", css)
+
+
+class WebpFallbackTest(LegacyTestCase):
+    """WebP 分层：能解 WebP 的浏览器看原图，解不了的（IE 全系）看 JPEG 兜底。
+
+    这一版之前的做法是一律换成文字说明，结果现代浏览器也被一起降级了
+    （用户报「你是直接把 WebP 拦截导致所有浏览器都看不了」）。
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tmp = Path(settings.BASE_DIR) / ".tmp-legacy-webp"
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        self.media = self.tmp / "media"
+        thumbs = self.media / "news_covers" / "thumbs"
+        thumbs.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.overridden = override_settings(MEDIA_ROOT=self.media, DATA_DIR=self.tmp)
+        self.overridden.enable()
+        self.addCleanup(self.overridden.disable)
+        Image.new("RGB", (900, 600), (10, 80, 160)).save(thumbs / "sample.webp", "WEBP")
+        self.approved.cover_image.name = "news_covers/thumbs/sample.webp"
+        self.approved.save(update_fields=["cover_image"])
+
+    def _detail(self):
+        return self.client.get("/legacy/news/%d/" % self.approved.pk).content.decode()
+
+    def _fallback_urls(self, body):
+        return sorted(set(re.findall(r"/legacy/img/[0-9a-f]{40}\.jpg", body)))
+
+    def test_detail_wraps_webp_in_picture(self):
+        body = self._detail()
+        self.assertIn("<picture>", body)
+        self.assertIn('type="image/webp"', body)
+        self.assertIn('srcset="/media/news_covers/thumbs/sample.webp"', body)
+        # 原图没被藏起来：能解 WebP 的浏览器照样看到它。
+        self.assertNotIn("WEBP 格式", body)
+
+    def test_fallback_url_serves_jpeg(self):
+        urls = self._fallback_urls(self._detail())
+        self.assertEqual(len(urls), 1)
+        response = self.client.get(urls[0])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/jpeg")
+        body = b"".join(response.streaming_content)
+        self.assertTrue(body.startswith(b"\xff\xd8"), "不是 JPEG")
+        self.assertIn("max-age=604800", response["Cache-Control"])
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(list(response.cookies.keys()), [])
+
+    def test_fallback_head_has_no_body(self):
+        url = self._fallback_urls(self._detail())[0]
+        response = self.client.head(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"")
+
+    def test_missing_fallback_token_is_not_cacheable(self):
+        missing = "/legacy/img/" + "0" * 40 + ".jpg"
+        response = self.client.get(missing)
+        self.assertEqual(response.status_code, 404)
+        # 内容哈希命中即命中：不存在的 token 不必让反代记住。
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(response["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response["X-Robots-Tag"], "noindex")
+
+    def test_fallback_token_is_not_a_file_browser(self):
+        missing = "/legacy/img/" + "0" * 40 + ".jpg"
+        self.assertEqual(self.client.get(missing).status_code, 404)
+        # 目录穿越 / 乱写的 token 落进 legacy 自己的 404 页，读不到别的文件。
+        for bad in ("/legacy/img/..%2f..%2fmanage.py", "/legacy/img/nope.jpg"):
+            response = self.client.get(bad)
+            self.assertEqual(response.status_code, 404, bad)
+            self.assertIn("这个页面不存在", response.content.decode())
+
+    def test_no_user_agent_branching(self):
+        # <picture> 让浏览器自己选图，服务端不对 UA 分流：两种 UA 拿到一模一样
+        # 的字节，缓存与 Vary 都不用特殊处理。
+        modern = self.client.get("/legacy/news/%d/" % self.approved.pk).content
+        old = self.client.get(
+            "/legacy/news/%d/" % self.approved.pk, HTTP_USER_AGENT=IE8_UA,
+        ).content
+        self.assertEqual(modern, old)
+
+    def test_svg_still_gets_text_note(self):
+        svg = self.media / "news_covers" / "thumbs" / "logo.svg"
+        svg.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>',
+            encoding="utf-8",
+        )
+        self.approved.cover_image.name = "news_covers/thumbs/logo.svg"
+        self.approved.save(update_fields=["cover_image"])
+        body = self._detail()
+        self.assertNotIn("<picture>", body)
+        self.assertIn("SVG 格式", body)
+
+    def test_query_token_changes_when_source_changes(self):
+        first = self._fallback_urls(self._detail())[0]
+        Image.new("RGB", (900, 600), (200, 10, 10)).save(
+            self.media / "news_covers" / "thumbs" / "sample.webp", "WEBP",
+        )
+        second = self._fallback_urls(self._detail())[0]
+        self.assertNotEqual(first, second, "源图换了，兜底图 URL 也要换")
+
+    def test_oversized_source_is_not_converted(self):
+        # 字节数小不代表不吃内存：12000x12000 的 WebP 只有几百 KB，
+        # 解码却要 ~2.3GB。转码发生在请求线程、生产单 worker，
+        # 所以按像素先拦（阈值与 news.thumbnails.MAX_COVER_PIXELS 对齐）。
+        with mock.patch("legacy.images.MAX_PIXELS", 1000):
+            body = self._detail()
+        self.assertNotIn("/legacy/img/", body)
+        self.assertIn("WEBP 格式", body)
+
+    def test_vanished_fallback_file_is_404(self):
+        # fallback_file() 判完 is_file() 到这里之间，图可能被 _prune() 清掉。
+        gone = self.tmp / "legacy-cache" / "gone.jpg"
+        with mock.patch("legacy.views.fallback_file", return_value=gone):
+            response = self.client.get("/legacy/img/" + "a" * 40 + ".jpg")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+    def test_prose_webp_also_gets_fallback(self):
+        self.approved.content = '<p>图：</p><img src="/media/news_covers/thumbs/sample.webp" alt="正文图">'
+        self.approved.save(update_fields=["content"])
+        body = self._detail()
+        self.assertIn("<picture>", body)
+        self.assertIn('alt="正文图"', body)
+        self.assertNotIn("旧版浏览器无法直接显示", body)
+
