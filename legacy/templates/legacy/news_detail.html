@@ -19,10 +19,15 @@
 
       {% if cover %}
       <div class="article-hero"><img src="{{ cover }}" alt="{{ card.title }}"></div>
+      {% elif cover_note %}
+      <p class="extnote">{{ cover_note }}，因此这里不显示封面。</p>
       {% endif %}
 
       {% if external_total %}
       <p class="extnote">本页有 {{ external_total }} 张外链图片未自动加载（正文中以文字链接给出原图地址）。</p>
+      {% endif %}
+      {% if unsupported_total %}
+      <p class="extnote">本页有 {{ unsupported_total }} 张图片是 WebP 等新格式，旧版浏览器无法显示，已改为文字说明。</p>
       {% endif %}
 
       <div class="prose">
@@ -71,7 +76,7 @@
     <div class="rel-card{% if forloop.last %} last{% endif %}">
       <div class="rel-media">
         {% if r.thumb %}<a href="{% url 'legacy:news_detail' r.id %}"><img src="{{ r.thumb }}" alt="{{ r.title }}"></a>
-        {% else %}<span class="ph-img">暂无配图</span>{% endif %}
+        {% else %}<span class="ph-img">{{ r.thumb_note|default:"暂无配图" }}</span>{% endif %}
       </div>
       <div class="rel-body">
         <span class="date">{{ r.date|date:"Y.m.d" }}</span>

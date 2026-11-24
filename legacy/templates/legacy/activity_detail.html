@@ -26,6 +26,9 @@
       {% if external_total %}
       <p class="extnote">本页有 {{ external_total }} 张外链图片未自动加载（正文中以文字链接给出原图地址）。</p>
       {% endif %}
+      {% if unsupported_total %}
+      <p class="extnote">本页有 {{ unsupported_total }} 张图片是 WebP 等新格式，旧版浏览器无法显示，已改为文字说明。</p>
+      {% endif %}
 
       <div class="prose">
         {% if body_html %}{{ body_html|safe }}{% else %}<p>（暂无正文）</p>{% endif %}
@@ -53,7 +56,7 @@
           {% for e in exhibits %}
           <div class="exhibit-card{% if forloop.counter|divisibleby:2 %} last{% endif %}">
             <div class="exhibit-media">
-              {% if e.cover %}<img src="{{ e.cover }}" alt="{{ e.title }}">{% else %}<span class="ph-img">暂无配图</span>{% endif %}
+              {% if e.cover %}<img src="{{ e.cover }}" alt="{{ e.title }}">{% else %}<span class="ph-img">{{ e.cover_note|default:"暂无配图" }}</span>{% endif %}
             </div>
             <div class="exhibit-body">
               <h4>{{ e.title }}</h4>

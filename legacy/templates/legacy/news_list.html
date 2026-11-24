@@ -13,7 +13,7 @@
     <div class="feature">
       <div class="feature-media">
         {% if feature.thumb %}<a href="{% url 'legacy:news_detail' feature.id %}"><img src="{{ feature.thumb }}" alt="{{ feature.title }}"></a>
-        {% else %}<span class="ph-img">暂无封面</span>{% endif %}
+        {% else %}<span class="ph-img">{{ feature.thumb_note|default:"暂无封面" }}</span>{% endif %}
       </div>
       <div class="feature-body">
         <div class="feature-inner">
@@ -40,7 +40,7 @@
     <div class="news-item{% if forloop.last %} last{% endif %}">
       <div class="thumb">
         {% if item.thumb %}<a href="{% url 'legacy:news_detail' item.id %}"><img src="{{ item.thumb }}" alt="{{ item.title }}"></a>
-        {% else %}<span class="ph-img">暂无配图</span>{% endif %}
+        {% else %}<span class="ph-img">{{ item.thumb_note|default:"暂无配图" }}</span>{% endif %}
       </div>
       <div class="news-item-body">
         <div class="meta"><span class="date">{{ item.date|date:"Y.m.d" }}</span></div>

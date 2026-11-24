@@ -13,6 +13,7 @@
     <div class="tcard{% if forloop.counter|divisibleby:3 %} last{% endif %}">
       <div class="tcard-cover">
         {% if item.cover %}<img src="{{ item.cover }}" alt="{{ item.title }}">
+        {% elif item.cover_note %}<span class="ph-note">{{ item.cover_note }}</span>
         {% else %}<span class="tcard-ph">{% if item.type_key == "video" %}&#9654;{% else %}&#9636;{% endif %}</span>{% endif %}
       </div>
       <div class="tcard-body">

@@ -139,8 +139,10 @@ p { margin: 0 0 14px; }
 
 /* 头条：媒体 50% + 文字 50%（主站 1.1fr / 1fr 的两栏卡） */
 .feature { border: 1px solid #e2e8ef; background: #ffffff; margin: 0 0 28px; overflow: hidden; }
-.feature-media { float: left; width: 50%; height: 240px; overflow: hidden; background: #eef2f7; }
-.feature-media img { display: block; width: 100%; height: 240px; }
+.feature-media { float: left; width: 50%; height: 240px; overflow: hidden; background: #eef2f7; text-align: center; line-height: 240px; }
+/* 图片只按最大边界缩放，宽高都不定死：IE8 没有 object-fit，
+   写死 width+height 会把不合比例的图压扁（曾把 4:3 的封面压成 2:1）。 */
+.feature-media img { width: auto; height: auto; max-width: 100%; max-height: 240px; vertical-align: middle; }
 /* 文字列不再用「百分比宽度 + 百分比内边距」：老内核里两者都按父宽算，
    44% + 3% + 3% 会顶到 50% 边界，IE6/7 常因此换行。改成 50% 无内边距 + 内层留白。 */
 .feature-body { float: right; width: 50%; min-height: 240px; position: relative; padding: 0; }
@@ -157,8 +159,8 @@ p { margin: 0 0 14px; }
 
 /* 列表项：缩略图 220px + 文字（主站 grid 220px 1fr） */
 .news-item { padding: 20px 0; border-top: 1px solid #e2e8ef; overflow: hidden; }
-.news-item .thumb { float: left; width: 220px; height: 140px; margin-right: 20px; overflow: hidden; background: #eef2f7; border: 1px solid #e2e8ef; }
-.news-item .thumb img { display: block; width: 100%; height: 140px; }
+.news-item .thumb { float: left; width: 220px; height: 140px; margin-right: 20px; overflow: hidden; background: #eef2f7; border: 1px solid #e2e8ef; text-align: center; line-height: 140px; }
+.news-item .thumb img { width: auto; height: auto; max-width: 100%; max-height: 140px; vertical-align: middle; }
 .news-item-body { margin-left: 240px; }
 .news-item h3 { margin: 0 0 8px; font-size: 18px; line-height: 1.45; font-weight: 700; }
 .news-item h3 a { color: #1f2a36; }
@@ -171,7 +173,8 @@ p { margin: 0 0 14px; }
 .filter-note { margin: 0 0 8px; font-size: 13px; color: #6b7686; }
 
 /* 图片占位（无封面时）：虚线灰块 + 说明文字 */
-.ph-img { display: block; height: 100%; padding-top: 56px; text-align: center; color: #9aa4b2; font-size: 12px; letter-spacing: 1px; background: #f8fafc; }
+.ph-img { display: block; height: 100%; padding-top: 56px; text-align: center; color: #9aa4b2; font-size: 12px; line-height: 1.6; letter-spacing: 1px; background: #f8fafc; }
+.ph-note { display: block; padding: 54px 16px 0; color: #9aa4b2; font-size: 12px; line-height: 1.6; text-align: center; }
 .feature-media .ph-img { padding-top: 104px; }
 
 /* 分页 */
@@ -268,8 +271,8 @@ p { margin: 0 0 14px; }
 .related-grid { margin-top: 20px; overflow: hidden; }
 .rel-card { float: left; width: 31%; margin-right: 3.5%; background: #ffffff; border: 1px solid #e2e8ef; }
 .rel-card.last { margin-right: 0; }
-.rel-media { height: 150px; overflow: hidden; background: #eef2f7; }
-.rel-media img { display: block; width: 100%; height: 150px; }
+.rel-media { height: 150px; overflow: hidden; background: #eef2f7; text-align: center; line-height: 150px; }
+.rel-media img { width: auto; height: auto; max-width: 100%; max-height: 150px; vertical-align: middle; }
 .rel-body { padding: 14px 16px 18px; }
 .rel-body .date { font-size: 12px; color: #9aa4b2; font-family: Consolas, "Courier New", monospace; }
 .rel-body h3 { margin: 8px 0 0; font-size: 15px; line-height: 1.45; }
@@ -344,8 +347,8 @@ p { margin: 0 0 14px; }
 .exhibit-grid { margin-top: 4px; overflow: hidden; }
 .exhibit-card { float: left; width: 48.5%; margin: 0 3% 18px 0; background: #ffffff; border: 1px solid #e2e8ef; }
 .exhibit-card.last { margin-right: 0; }
-.exhibit-media { height: 180px; overflow: hidden; background: #eef2f7; border-bottom: 1px solid #e2e8ef; }
-.exhibit-media img { display: block; width: 100%; height: auto; }
+.exhibit-media { height: 180px; overflow: hidden; background: #eef2f7; border-bottom: 1px solid #e2e8ef; text-align: center; line-height: 180px; }
+.exhibit-media img { width: auto; height: auto; max-width: 100%; max-height: 180px; vertical-align: middle; }
 .exhibit-media .ph-img { padding-top: 78px; }
 .exhibit-body { padding: 12px 14px 14px; }
 .exhibit-body h4 { margin: 0 0 6px; font-size: 15px; line-height: 1.45; font-weight: 600; color: #1f2a36; }
@@ -354,8 +357,8 @@ p { margin: 0 0 14px; }
 /* ---------- 教程卡片网格：31.3% × 3 + 3% × 2 = 100% ---------- */
 .tgrid { margin: 0 -1.5%; overflow: hidden; }
 .tcard { float: left; width: 30.3%; margin: 0 1.5% 22px; background: #ffffff; border: 1px solid #e2e8ef; }
-.tcard-cover { height: 170px; overflow: hidden; background: #eef2f7; border-bottom: 1px solid #e2e8ef; text-align: center; }
-.tcard-cover img { display: block; width: 100%; height: auto; }
+.tcard-cover { height: 170px; overflow: hidden; background: #eef2f7; border-bottom: 1px solid #e2e8ef; text-align: center; line-height: 170px; }
+.tcard-cover img { width: auto; height: auto; max-width: 100%; max-height: 170px; vertical-align: middle; }
 .tcard-ph { display: block; padding-top: 62px; font-size: 34px; color: #9aa4b2; }
 .tcard-body { padding: 14px 16px 16px; }
 .tcard-body h3 { margin: 0 0 10px; font-size: 15px; line-height: 1.45; font-weight: 700; }
@@ -445,8 +448,8 @@ p { margin: 0 0 14px; }
   .card, .side-card { padding: 16px; }
 
   /* ---------- 头条卡：图在上、字在下，作者行不再绝对定位 ---------- */
-  .feature-media { float: none; width: 100%; height: auto; }
-  .feature-media img { height: auto; }
+  .feature-media { float: none; width: 100%; height: auto; line-height: normal; }
+  .feature-media img { width: 100%; height: auto; max-height: none; }
   .feature-media .ph-img { padding-top: 40px; }
   .feature-body { float: none; width: 100%; min-height: 0; }
   .feature-inner { padding: 16px 16px 0; }
@@ -454,8 +457,8 @@ p { margin: 0 0 14px; }
   .feature-meta { position: static; left: auto; right: auto; bottom: auto; margin: 0; padding: 0 16px 16px; }
 
   /* ---------- 列表项：缩略图撑满一行 ---------- */
-  .news-item .thumb { float: none; width: 100%; height: auto; margin: 0 0 12px; }
-  .news-item .thumb img { height: auto; }
+  .news-item .thumb { float: none; width: 100%; height: auto; margin: 0 0 12px; line-height: normal; }
+  .news-item .thumb img { width: 100%; height: auto; max-height: none; }
   .news-item-body { margin-left: 0; }
   .news-item h3 { font-size: 17px; }
   .ph-img { padding-top: 34px; }
@@ -474,21 +477,23 @@ p { margin: 0 0 14px; }
 
   /* ---------- 底部三栏推荐：竖排 ---------- */
   .rel-card { float: none; width: 100%; margin: 0 0 16px; }
-  .rel-media { height: auto; }
-  .rel-media img { height: auto; }
+  .rel-media { height: auto; line-height: normal; }
+  .rel-media img { width: 100%; height: auto; max-height: none; }
 
   /* ---------- 活动：类型切换与卡片 ---------- */
   .type-tab { padding: 8px 12px; font-size: 13px; }
   .prop-card { padding: 16px; }
   .pc-right { float: none; display: block; margin: 4px 0 0; }
   .exhibit-card { float: none; width: 100%; margin: 0 0 16px; }
-  .exhibit-media { height: auto; }
+  .exhibit-media { height: auto; line-height: normal; }
+  .exhibit-media img { width: 100%; max-height: none; }
   .exhibit-media .ph-img { padding-top: 42px; }
 
   /* ---------- 教程：三栏网格改单列 ---------- */
   .tgrid { margin: 0; }
   .tcard { float: none; width: 100%; margin: 0 0 16px; }
-  .tcard-cover { height: auto; }
+  .tcard-cover { height: auto; line-height: normal; }
+  .tcard-cover img { width: 100%; max-height: none; }
   .tcard-ph { padding: 34px 0; }
   .media-ph { padding: 44px 0; }
 
