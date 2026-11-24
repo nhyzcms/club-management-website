@@ -63,6 +63,7 @@
 - [审核系统](guides/moderation.md) —— 六张桌与处理流程
 - [问卷系统](guides/surveys.md) —— SurveyJS 问卷与作答规则
 - [明信片互寄](guides/postcard.md) —— 登记 / 登记码 / AI 审核 / 复核 / 签收 / 多届
+- [旧浏览器精简版](guides/legacy-readonly.md) —— `/legacy/` 只读页面的范围、响应头与维护约束
 
 ### 运维
 

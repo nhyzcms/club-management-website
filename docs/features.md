@@ -188,7 +188,16 @@ SurveyJS 问卷本体独立于活动：**发起活动时即可设计**，创建�
 
 ---
 
-## 12. 后台与运维
+## 12. 旧浏览器精简版（`/legacy/`，2026-11）
+
+- **入口**：主站 SPA 在旧浏览器上显示「请更换浏览器」提示，提示下方新增「仍然进入精简版（只读，排版从简）」链接；也可直接访问 `/legacy/`（少尾斜杠 301 到带斜杠）。
+- **范围**：服务端直出纯 HTML 的首页 / 关于 / 新闻 / 活动 / 教程（列表与详情），零脚本、无现代 CSS；只读，不登录、不写 Cookie。
+- **同源内容**：直接查主站同一数据库，可见性复用公开过滤（已发布 + 已过审；活动限公开受众且不含征集），不做二次发布。
+- **响应策略**：60 秒共享缓存（不随 Cookie / UA 变化）、按 IP 公开读限流 300 次/分、`noindex`；行为与改动约束见 [旧浏览器精简版](guides/legacy-readonly.md)。
+
+---
+
+## 13. 后台与运维
 
 - **后台管理**：Django Admin + 自定义视图 + 前端 SPA。前端入口只对 `is_staff` 显示（`canAccessAdmin`），普通用户手输 `/admin/` 被挡回登录页。
 - **容器化部署**：CI 构建镜像（`image.yml`）→ `Deploy` 登记 → 服务器 `club-deploy.timer` 在夜间窗口内重建容器；宿主机只留 nginx / PG / pgbouncer / Redis 与运行时资产。
@@ -220,6 +229,7 @@ SurveyJS 问卷本体独立于活动：**发起活动时即可设计**，创建�
 | `/site-policy/` | 站点策略快照 |
 | `/ws/messaging/` · `/ws/exam-board/` | WebSocket |
 | `/#/m` | 手机版入口 |
+| `/legacy/` | 旧浏览器只读版（服务端直出 HTML） |
 
 ## 附 B：代码落点
 
@@ -232,6 +242,7 @@ announcements/全站弹窗公告与已读台账
 attachments/  统一附件与 tus 可续传上传
 common/       站点策略、维护模式、富文本清洗、公开策略视图
 exam_board/   考试看板（批次课表 + 误刊广播）
+legacy/       旧浏览器只读版（服务端直出 HTML，GET / HEAD）
 messaging/    评论区 / 私信 / 通知 / 横幅
 news/         新闻
 panorama/     校园全景图（瓦片化）

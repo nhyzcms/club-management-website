@@ -35,6 +35,8 @@
 5. `LoginThrottleMiddleware` —— 登录保护与节流
 6. `TusMiddleware` —— TUS 可续传上传的请求头解析
 
+`/legacy/` 前缀整段跳过 `MultiDeviceSessionMiddleware`、`PasswordChangeRequiredMiddleware`、`ValidityEnforcementMiddleware`：旧浏览器只读版承诺「不读 Cookie、不写 Cookie、不碰 session」，响应不带 `Set-Cookie`，共享缓存才可能命中（见 [旧浏览器精简版](../guides/legacy-readonly.md)）。
+
 （实现见 `accounts/middleware.py`、`common/middleware.py`。）
 
 ### URL 挂载点
@@ -46,6 +48,7 @@
 | `/auth/` | 账号、登录、认证、资料 | [accounts](../api/accounts.md) |
 | `/tasks/` `/messaging/` `/activities/` `/events/` `/exam_board/` `/news/` `/reviews/` `/about/` `/tutorials/` `/recruitment/` `/attachments/` | 各业务模块 API | 各模块文档 |
 | `/uploads/` | TUS 断点续传端点 | [attachments](../api/attachments.md) |
+| `/legacy/` | 旧浏览器只读版（服务端模板直出的纯 HTML，不经过 SPA） | [旧浏览器精简版](../guides/legacy-readonly.md) |
 | `/file/…` | 公开媒体文件服务 | — |
 | 未匹配路径（除已知前缀） | 回落 SPA 入口 `index.html` | [frontend](frontend.md) |
 
@@ -72,6 +75,7 @@
 | `attachments` | 统一附件与上传 | TUS、私有媒体 | [API](../api/attachments.md) |
 | `panorama` | 校园全景图库 | DJI 导入、分层切片、多级浏览 | [API](../api/panorama.md) · [ADR-0022](../adr/0022-campus-panorama-library.md) |
 | `announcements` | 全站弹窗公告 | 原件保真渲染（PDF / .docx）、受众、已读台账 | [API](../api/announcements.md) · [ADR-0042](../adr/0042-site-wide-popup-announcement.md) |
+| `legacy` | 旧浏览器只读版 | 服务端模板直出（GET / HEAD）、无 Cookie、复用公开可见性 | [指南](../guides/legacy-readonly.md) |
 
 ## 数据模型
 

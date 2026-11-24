@@ -197,6 +197,7 @@ club-management-website/
 ├── attachments/       # 统一附件与 tus 可续传上传
 ├── common/            # 站点策略、维护模式、富文本清洗、公开策略视图
 ├── exam_board/        # 考试看板（批次课表 + 题目误刊广播）
+├── legacy/            # 旧浏览器只读版（服务端直出 HTML，不依赖前端产物）
 ├── messaging/         # 评论区 / 私信 / 通知 / 横幅公告
 ├── news/              # 新闻
 ├── recruitment/       # 招聘（自我介绍问卷）
@@ -219,7 +220,7 @@ club-management-website/
 └── README.md
 ```
 
-后端 URL 前缀（`config/urls.py`）：`/admin/`、`/site-policy/`、`/auth/`、`/tasks/`、`/messaging/`、`/activities/`、`/exam_board/`、`/news/`、`/reviews/`、`/about/`、`/tutorials/`、`/recruitment/`、`/attachments/`、`/uploads/`，其余路径统一回落到 SPA 入口 `index.html`。
+后端 URL 前缀（`config/urls.py`）：`/admin/`、`/site-policy/`、`/auth/`、`/tasks/`、`/messaging/`、`/activities/`、`/events/`、`/exam_board/`、`/news/`、`/reviews/`、`/about/`、`/tutorials/`、`/recruitment/`、`/attachments/`、`/uploads/`、`/announcements/`、`/panorama/`；`/legacy/` 由 Django 模板直出旧浏览器只读版 HTML（见 [旧浏览器精简版](guides/legacy-readonly.md)），其余路径统一回落到 SPA 入口 `index.html`。
 
 ## 常见改动怎么做
 
