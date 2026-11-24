@@ -18,7 +18,7 @@ from common.throttles import PublicReadThrottle
 from news.models import News
 from reviews.lifecycle import open_review
 
-from .queries import public_news
+from .queries import image_box, public_news
 
 #: 用例共用 127.0.0.1 这一个 IP，真实阈值（300/min）会让彼此干扰；限流本身另有专测。
 _TEST_RATE = "100000/min"
@@ -222,9 +222,79 @@ class SanitizeTest(TestCase):
         self.assertIn("1 张外链图片未自动加载", body)
         self.assertIn('rel="nofollow noopener noreferrer"', body)
 
+    def test_absolute_url_on_own_host_is_inlined(self):
+        # 主站编辑常把图片写成 http://<本站>/media/… 的绝对地址；那是站内图，
+        # 不该被当成外链拦掉，也不该把主机名留在页面里。
+        body = self._about(
+            '<p><img src="http://testserver/media/news/local.jpg" alt="站内"></p>'
+        )
+        self.assertNotIn("外链图片未自动加载", body)
+        self.assertIn('src="/media/news/local.jpg"', body)
+        self.assertNotIn("http://testserver", body)
+
+    def test_protocol_relative_external_image_blocked(self):
+        body = self._about('<p><img src="//cdn.example.com/a.png" alt="外链"></p>')
+        self.assertIn("外链图片未自动加载", body)
+        self.assertIn("cdn.example.com", body)
+        self.assertNotIn('src="//cdn.example.com', body)
+
+    def test_query_string_not_double_escaped(self):
+        # bleach 已把 & 转成 &amp;，写回属性时不能再转一次（否则参数变成 a=1&amp;amp;b=2）。
+        body = self._about(
+            '<p><img src="https://cdn.example.com/pic.png?a=1&b=2" alt="外链"></p>'
+        )
+        self.assertIn("a=1&amp;b=2", body)
+        self.assertNotIn("&amp;amp;", body)
+
+    def test_same_origin_absolute_with_query_rewritten_once(self):
+        body = self._about(
+            '<p><img src="http://testserver/media/a.jpg?w=1&amp;h=2" alt="站内"></p>'
+        )
+        self.assertIn('src="/media/a.jpg?w=1&amp;h=2"', body)
+        self.assertNotIn("&amp;amp;", body)
+
+    def test_backslash_path_not_treated_as_own(self):
+        # 老浏览器把 \\ 当 /，'/\\evil.example/x.png' 会变成协议相对地址去外站取图。
+        body = self._about('<p><img src="/\\evil.example/x.png" alt="怪地址"></p>')
+        self.assertNotIn("<img", body)
+        self.assertIn("外链图片未自动加载", body)
+        self.assertNotIn("href=\"/\\evil.example", body)
+    def test_webp_image_replaced_by_format_note(self):
+        # IE8 解不了 WebP：硬塞 <img> 只会显示破图标，不如直接写清楚。
+        body = self._about('<p><img src="/media/news/cover.webp" alt="封面"></p>')
+        self.assertNotIn('src="/media/news/cover.webp"', body)
+        self.assertIn("WEBP 格式", body)
+        self.assertIn("旧版浏览器无法直接显示", body)
+
     def test_empty_content_still_renders(self):
         body = self._about("")
         self.assertIn("我们做什么", body)
+
+
+class ImageBoxTest(TestCase):
+    """封面 / 展品 / 教程封面共用同一套「旧浏览器能不能显示」的判断。"""
+
+    class _FakeImage:
+        def __init__(self, name):
+            self.name = name
+
+        @property
+        def url(self):
+            return "/media/" + self.name
+
+    def test_supported_format_returns_url(self):
+        box = image_box(self._FakeImage("news/a.jpg"))
+        self.assertEqual(box["url"], "/media/news/a.jpg")
+        self.assertEqual(box["note"], "")
+
+    def test_unsupported_formats_return_note_instead_of_url(self):
+        for name in ("news/a.webp", "news/b.AVIF", "news/c.svg", "news/d.heic"):
+            box = image_box(self._FakeImage(name))
+            self.assertEqual(box["url"], "", name)
+            self.assertIn("旧版浏览器无法显示", box["note"], name)
+
+    def test_missing_file_returns_empty_box(self):
+        self.assertEqual(image_box(None), {"url": "", "note": ""})
 
 class NewsListTest(LegacyTestCase):
     def test_list_shows_only_public_items(self):
@@ -338,6 +408,16 @@ class NewsDetailTest(LegacyTestCase):
         self.assertNotIn('src="https://cdn.example.com/a.png"', body)
         self.assertIn("外链图片未自动加载", body)
         self.assertIn('src="/media/news/local.jpg"', body)
+
+    def test_webp_cover_hidden_with_note(self):
+        # 线上确有 WebP 缩略图（旧编辑器上传），IE8 打开是破图标。
+        self.approved.cover_image.name = "news_covers/thumbs/1000013849.webp"
+        self.approved.save(update_fields=["cover_image"])
+        body = self.client.get("/legacy/news/%d/" % self.approved.pk).content.decode()
+        self.assertNotIn("1000013849.webp", body)
+        self.assertIn("WEBP 格式", body)
+        listed = self.client.get("/legacy/news/").content.decode()
+        self.assertNotIn("1000013849.webp", listed)
 
     def test_related_excludes_self(self):
         body = self.client.get("/legacy/news/%d/" % self.approved.pk).content.decode()

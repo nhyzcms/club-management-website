@@ -13,6 +13,7 @@ from functools import wraps
 from pathlib import Path
 
 from django.conf import settings
+from django.core.exceptions import DisallowedHost
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_http_methods
@@ -25,7 +26,7 @@ from .queries import (
     activities_page,
     activity_card,
     author_name,
-    cover_url,
+    cover_box,
     exhibit_cards,
     featured_news,
     get_activity,
@@ -44,7 +45,41 @@ from .queries import (
     tutorials_page,
     vote_options,
 )
-from .sanitize import sanitize_legacy_html
+from .sanitize import bare_host, sanitize_legacy_html
+
+
+def _own_hosts(request):
+    """本站认可的主机名集合：用来判断正文里的绝对地址是不是「自己的图」。
+
+    取三处：当前请求的 Host、settings.ALLOWED_HOSTS（跳过 * 与 .example.com
+    这类通配）、FRONTEND_URL 的主机。比较前统一去端口、去 www.（bare_host）。
+    主站编辑把图片写成 http://8.153.145.175/media/… 这种绝对地址很常见，
+    没有这一步就会被当成外链拦掉。
+    """
+    hosts = set()
+
+    def add(value):
+        text = str(value or "").strip()
+        if not text:
+            return
+        if "://" in text:
+            text = text.split("://", 1)[1]
+        text = text.split("/", 1)[0]
+        if text.startswith("*") or text.startswith("."):
+            return
+        host = bare_host(text)
+        if host:
+            hosts.add(host)
+
+    try:
+        add(request.get_host())
+    except DisallowedHost:
+        pass
+    for item in getattr(settings, "ALLOWED_HOSTS", None) or []:
+        add(item)
+    add(getattr(settings, "FRONTEND_URL", ""))
+    return hosts
+
 
 def _asset_version():
     """静态资源指纹：取 legacy.css 内容的 MD5 前 8 位。
@@ -136,7 +171,7 @@ def not_found(request, *args, **kwargs):
 @require_http_methods(["GET", "HEAD"])
 def home(request):
     page = AboutPage.objects.first()
-    intro_html, _ = sanitize_legacy_html(page.intro if page else "")
+    intro_html, _, _ = sanitize_legacy_html(page.intro if page else "", _own_hosts(request))
     return _render("legacy/home.html", {
         "page": page,
         "intro_html": intro_html,
@@ -168,9 +203,11 @@ def _about_document(block):
 @require_http_methods(["GET", "HEAD"])
 def about(request):
     page = AboutPage.objects.first()
-    intro_html, _ = sanitize_legacy_html(page.intro if page else "")
+    hosts = _own_hosts(request)
+    intro_html, _, _ = sanitize_legacy_html(page.intro if page else "", hosts)
     blocks = []
     external_total = 0
+    unsupported_total = 0
     for block in AboutBlock.objects.all():
         # 校园全景靠 WebGL（Marzipano）渲染，旧浏览器无解：整块不输出正文，
         # 只在原位置换成一句可读说明，避免“标题下面一块空白”。
@@ -178,8 +215,9 @@ def about(request):
         if is_panorama:
             html = ""
         else:
-            html, external = sanitize_legacy_html(block.content)
+            html, external, unsupported = sanitize_legacy_html(block.content, hosts)
             external_total += external
+            unsupported_total += unsupported
         blocks.append({
             "key": block.key,
             "title": block.title,
@@ -192,6 +230,7 @@ def about(request):
         "intro_html": intro_html,
         "blocks": blocks,
         "external_total": external_total,
+        "unsupported_total": unsupported_total,
     })
 
 
@@ -226,14 +265,19 @@ def news_detail(request, pk):
         return _render("legacy/missing.html", {
             "what": "这篇新闻不存在，或尚未公开。",
         }, status=404)
-    content_html, external_total = sanitize_legacy_html(news.content)
+    content_html, external_total, unsupported_total = sanitize_legacy_html(
+        news.content, _own_hosts(request),
+    )
+    cover = cover_box(news)
     return _render("legacy/news_detail.html", {
         "news": news,
         "card": news_card(news),
         "author": author_name(news),
-        "cover": cover_url(news),
+        "cover": cover["url"],
+        "cover_note": cover["note"],
         "content_html": content_html,
         "external_total": external_total,
+        "unsupported_total": unsupported_total,
         "related": [news_card(n) for n in related_news(news)],
     })
 
@@ -263,13 +307,16 @@ def activity_detail(request, pk):
         return _render("legacy/missing.html", {
             "what": "这个活动不存在，或没有对游客公开。",
         }, status=404)
-    body_html, external_total = sanitize_legacy_html(activity.body)
+    body_html, external_total, unsupported_total = sanitize_legacy_html(
+        activity.body, _own_hosts(request),
+    )
     options = vote_options(activity) if activity.type == "deliberation" else []
     exhibits = exhibit_cards(activity) if activity.type == "exhibition" else []
     return _render("legacy/activity_detail.html", {
         "card": activity_card(activity),
         "body_html": body_html,
         "external_total": external_total,
+        "unsupported_total": unsupported_total,
         "options": options,
         "exhibits": exhibits,
         "related": [activity_card(a) for a in related_activities(activity)],

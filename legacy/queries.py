@@ -24,6 +24,10 @@ TUTORIAL_PAGE_SIZE = 20
 # 深分页上限：爬虫顺着 ?page= 往上加时不要把数据库拖死。
 MAX_PAGE = 200
 
+# IE8 及更早版本解不了的图片格式。硬塞 <img> 只会显示破图标，
+# 所以这类图只给一句说明（与 legacy/sanitize.py 的判断保持一致）。
+UNSUPPORTED_IMAGE_EXTS = (".webp", ".avif", ".svg", ".heic", ".heif")
+
 # 匿名可见的活动类型：征集（collection）匿名永远看不到（见 activities/views.py:132），
 # 所以 legacy 的类型筛选也只提供这三类。
 PUBLIC_ACTIVITY_TYPES = ("deliberation", "exhibition", "survey")
@@ -120,27 +124,49 @@ def author_name(news):
     return nickname.strip() or news.author.get_username()
 
 
-def cover_url(news):
-    """封面：缩略图优先，退回原图；都没有返回空串。"""
+def image_box(field_file):
+    """图片字段 → {"url": 站内地址, "note": 给旧浏览器看的说明}。
+
+    地址只认站内相对路径（CSP 只放行同源图片）；WebP / AVIF / SVG 这类
+    旧浏览器解不了的格式不返回地址，改在 note 里写清楚原因。
+    """
+    url = _file_url(field_file)
+    if not url:
+        return {"url": "", "note": ""}
+    name = (getattr(field_file, "name", "") or "").lower()
+    for ext in UNSUPPORTED_IMAGE_EXTS:
+        if name.endswith(ext):
+            return {"url": "", "note": "此图为 %s 格式，旧版浏览器无法显示" % ext[1:].upper()}
+    return {"url": url, "note": ""}
+
+
+def cover_box(news):
+    """封面：缩略图优先，退回原图；都没有返回空结构。"""
     for field in ("cover_thumbnail", "cover_image"):
         image = getattr(news, field, None)
         if image:
-            try:
-                return image.url
-            except ValueError:
-                continue
-    return ""
+            box = image_box(image)
+            if box["url"] or box["note"]:
+                return box
+    return {"url": "", "note": ""}
+
+
+def cover_url(news):
+    """封面地址（旧浏览器能显示时才有值，其余情况返回空串）。"""
+    return cover_box(news)["url"]
 
 
 def news_card(news):
     """模板用的轻量结构（避免模板里做逻辑，也让序列化口径集中在一处）。"""
+    box = cover_box(news)
     return {
         "id": news.pk,
         "title": news.title,
         "summary": news.summary,
         "date": news.published_at or news.created_at,
         "views": news.views,
-        "thumb": cover_url(news),
+        "thumb": box["url"],
+        "thumb_note": box["note"],
         "author": author_name(news),
         "featured": news.featured,
     }
@@ -248,12 +274,13 @@ def exhibit_cards(activity):
         object_id = attachment.target.object_id if attachment.target else None
         if object_id is None or object_id in covers:
             continue
-        covers[object_id] = _file_url(attachment.file)
+        covers[object_id] = image_box(attachment.file)
     return [
         {
             "id": exhibit.pk,
             "title": exhibit.title or "（未命名展品）",
-            "cover": covers.get(exhibit.pk, ""),
+            "cover": covers.get(exhibit.pk, {}).get("url", ""),
+            "cover_note": covers.get(exhibit.pk, {}).get("note", ""),
             "votes": exhibit.votes,
         }
         for exhibit in exhibits
@@ -279,13 +306,15 @@ def public_tutorials():
 
 
 def tutorial_card(tutorial):
+    box = image_box(tutorial.cover)
     return {
         "id": tutorial.pk,
         "title": tutorial.title,
         "desc": tutorial.description,
         "type": tutorial.get_file_type_display(),
         "type_key": tutorial.file_type,
-        "cover": _file_url(tutorial.cover),
+        "cover": box["url"],
+        "cover_note": box["note"],
         "views": tutorial.views,
         "favorites": tutorial.favorite_count,
         "uploader": display_name(tutorial.uploader),

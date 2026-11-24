@@ -14,7 +14,11 @@
    双冒号伪元素，HTML 4.01 Transitional，全 px。改样式先看 `static/legacy/legacy.css` 头注释。
 4. **富文本走 `legacy/sanitize.py`**，不要用 `common/rich_text.sanitize_html()`
    （那个白名单放行 iframe/video/style，旧浏览器用不上还扩大攻击面）。
-5. **外链图片不自动加载**：清洗时换成"未自动加载 + 新窗口打开"的占位块；服务端不代理图片。
+5. **图片按三种情况处理**（见 `legacy/sanitize.py`）：同源（含写成
+   `http://<本站>/media/…` 的绝对地址，会改写成路径）原样内嵌；跨域换成
+   "未自动加载 + 新窗口打开"的占位块，服务端不代理；同源但旧浏览器解不了的
+   格式（WebP/AVIF/SVG/HEIC）换成文字说明，不输出破图标。
+   封面/展品/教程封面同样走 `queries.image_box()`，判断口径只有这一份。
 
 ## 新增一个页面（4 步）
 
@@ -38,6 +42,10 @@ SECRET_KEY=dev DJANGO_DEBUG=1 python manage.py test legacy
 - **CSS 改了没生效**：链接带内容指纹 `?v=<md5 前 8 位>`（nginx 对 `/static/` 给 7 天缓存）；
   指纹由 `views._asset_version()` 在进程启动时算一次 —— 改了 CSS 要**重启进程**才换指纹（发版天然满足）。
 - **`/legacy/` 下任何没匹配上的路径**：走 `urls.py` 末尾的兜底路由，回 legacy 自己的中文 404 页。
+- **图片被压扁**：容器给了固定高度时，图片只能用 `width/height:auto + max-width/max-height`
+  （IE8 没有 `object-fit`，同时写死宽高必然变形），垂直居中靠容器的 `line-height` + `vertical-align:middle`。
+- **把站内图判成外链**：`_own_hosts()` 决定哪些主机名算自己（请求 Host / ALLOWED_HOSTS /
+  FRONTEND_URL）；换域名或改用 IP 访问时，新主机名要能被这三处之一覆盖，否则正文里的绝对地址会被拦。
 - **手机窄屏样式**：只写在 `legacy.css` 末尾的 `@media only screen and (...)` 里。必须带 `only`：
   不认识媒体查询的老浏览器会把整块丢掉，桌面 IE8 的渲染因此完全不受影响（`MobileLayoutTest` 守着这条）。
   窄屏适配是实验性的，没有真机矩阵，别把它当"已验证支持手机"。

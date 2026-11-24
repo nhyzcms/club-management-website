@@ -13,6 +13,8 @@
       <div class="media-box">
         {% if card.cover %}
         <img src="{{ card.cover }}" alt="{{ card.title }}">
+        {% elif card.cover_note %}
+        <span class="ph-note">{{ card.cover_note }}</span>
         {% else %}
         <span class="media-ph">{% if card.type_key == "video" %}&#9654; 视频教程{% else %}&#9636; 文档教程{% endif %}</span>
         {% endif %}
