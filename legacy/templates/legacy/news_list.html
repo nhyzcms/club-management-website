@@ -12,7 +12,8 @@
     {% if feature %}
     <div class="feature">
       <div class="feature-media">
-        {% if feature.thumb %}<a href="{% url 'legacy:news_detail' feature.id %}"><img src="{{ feature.thumb }}" alt="{{ feature.title }}"></a>
+        {% if feature.thumb_fallback %}<a href="{% url 'legacy:news_detail' feature.id %}"><picture><source type="{{ feature.thumb_mime }}" srcset="{{ feature.thumb }}"><img src="{{ feature.thumb_fallback }}" alt="{{ feature.title }}"></picture></a>
+        {% elif feature.thumb %}<a href="{% url 'legacy:news_detail' feature.id %}"><img src="{{ feature.thumb }}" alt="{{ feature.title }}"></a>
         {% else %}<span class="ph-img">{{ feature.thumb_note|default:"暂无封面" }}</span>{% endif %}
       </div>
       <div class="feature-body">
@@ -39,7 +40,8 @@
     {% for item in items %}
     <div class="news-item{% if forloop.last %} last{% endif %}">
       <div class="thumb">
-        {% if item.thumb %}<a href="{% url 'legacy:news_detail' item.id %}"><img src="{{ item.thumb }}" alt="{{ item.title }}"></a>
+        {% if item.thumb_fallback %}<a href="{% url 'legacy:news_detail' item.id %}"><picture><source type="{{ item.thumb_mime }}" srcset="{{ item.thumb }}"><img src="{{ item.thumb_fallback }}" alt="{{ item.title }}"></picture></a>
+        {% elif item.thumb %}<a href="{% url 'legacy:news_detail' item.id %}"><img src="{{ item.thumb }}" alt="{{ item.title }}"></a>
         {% else %}<span class="ph-img">{{ item.thumb_note|default:"暂无配图" }}</span>{% endif %}
       </div>
       <div class="news-item-body">

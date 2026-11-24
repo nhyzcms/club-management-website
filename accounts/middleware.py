@@ -41,6 +41,16 @@ _VALIDITY_CHECKED_AT_KEY = "validity_checked_at"
 LEGACY_READONLY_PREFIX = "/legacy/"
 
 
+def is_legacy_readonly_path(path):
+    """/legacy 与 /legacy/** 都算旧浏览器只读版。
+
+    只匹配前缀会漏掉 "/legacy" 本身（301 跳到 /legacy/ 的那一跳同样会穿过
+    这三个中间件），结果首页跳转的响应里带着设备 Cookie 和 Vary: Cookie，
+    共享缓存从此再也命中不了这一跳（审计 2026-11）。
+    """
+    return path == "/legacy" or path.startswith(LEGACY_READONLY_PREFIX)
+
+
 def _is_admin_login_post(request):
     return request.method == "POST" and request.path.rstrip("/") == "/admin/login"
 
@@ -185,7 +195,7 @@ class MultiDeviceSessionMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.path.startswith(LEGACY_READONLY_PREFIX):
+        if is_legacy_readonly_path(request.path):
             return self.get_response(request)
         response = self._guard(request)
         if response is None:
@@ -302,7 +312,7 @@ class PasswordChangeRequiredMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.path.startswith(LEGACY_READONLY_PREFIX):
+        if is_legacy_readonly_path(request.path):
             return self.get_response(request)
         user = getattr(request, "user", None)
         if (
@@ -367,7 +377,7 @@ class ValidityEnforcementMiddleware:
 
     def __call__(self, request):
         response = self.get_response(request)
-        if request.path.startswith(LEGACY_READONLY_PREFIX):
+        if is_legacy_readonly_path(request.path):
             return response
         user = getattr(request, "user", None)
         if user is not None and user.is_authenticated and self._due(request):

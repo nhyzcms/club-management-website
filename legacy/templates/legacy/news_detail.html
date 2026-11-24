@@ -17,7 +17,9 @@
         <span>来源：传媒社</span>
       </div>
 
-      {% if cover %}
+      {% if cover_fallback %}
+      <div class="article-hero"><picture><source type="{{ cover_mime }}" srcset="{{ cover }}"><img src="{{ cover_fallback }}" alt="{{ card.title }}"></picture></div>
+      {% elif cover %}
       <div class="article-hero"><img src="{{ cover }}" alt="{{ card.title }}"></div>
       {% elif cover_note %}
       <p class="extnote">{{ cover_note }}，因此这里不显示封面。</p>
@@ -27,7 +29,7 @@
       <p class="extnote">本页有 {{ external_total }} 张外链图片未自动加载（正文中以文字链接给出原图地址）。</p>
       {% endif %}
       {% if unsupported_total %}
-      <p class="extnote">本页有 {{ unsupported_total }} 张图片是 WebP 等新格式，旧版浏览器无法显示，已改为文字说明。</p>
+      <p class="extnote">本页有 {{ unsupported_total }} 张图片的格式无法转换（如 SVG），旧版浏览器打不开，已改为文字说明。</p>
       {% endif %}
 
       <div class="prose">
@@ -75,7 +77,8 @@
     {% for r in related %}
     <div class="rel-card{% if forloop.last %} last{% endif %}">
       <div class="rel-media">
-        {% if r.thumb %}<a href="{% url 'legacy:news_detail' r.id %}"><img src="{{ r.thumb }}" alt="{{ r.title }}"></a>
+        {% if r.thumb_fallback %}<a href="{% url 'legacy:news_detail' r.id %}"><picture><source type="{{ r.thumb_mime }}" srcset="{{ r.thumb }}"><img src="{{ r.thumb_fallback }}" alt="{{ r.title }}"></picture></a>
+        {% elif r.thumb %}<a href="{% url 'legacy:news_detail' r.id %}"><img src="{{ r.thumb }}" alt="{{ r.title }}"></a>
         {% else %}<span class="ph-img">{{ r.thumb_note|default:"暂无配图" }}</span>{% endif %}
       </div>
       <div class="rel-body">
