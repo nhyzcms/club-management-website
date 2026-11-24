@@ -11,7 +11,9 @@
   <div class="tutorial-layout">
     <div class="tutorial-main">
       <div class="media-box">
-        {% if card.cover %}
+        {% if card.cover_fallback %}
+        <picture><source type="{{ card.cover_mime }}" srcset="{{ card.cover }}"><img src="{{ card.cover_fallback }}" alt="{{ card.title }}"></picture>
+        {% elif card.cover %}
         <img src="{{ card.cover }}" alt="{{ card.title }}">
         {% elif card.cover_note %}
         <span class="ph-note">{{ card.cover_note }}</span>
