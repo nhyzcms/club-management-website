@@ -35,7 +35,7 @@
 5. `LoginThrottleMiddleware` —— 登录保护与节流
 6. `TusMiddleware` —— TUS 可续传上传的请求头解析
 
-`/legacy/` 前缀整段跳过 `MultiDeviceSessionMiddleware`、`PasswordChangeRequiredMiddleware`、`ValidityEnforcementMiddleware`：旧浏览器只读版承诺「不读 Cookie、不写 Cookie、不碰 session」，响应不带 `Set-Cookie`，共享缓存才可能命中（见 [旧浏览器精简版](../guides/legacy-readonly.md)）。
+`/legacy` 与 `/legacy/**`（`accounts/middleware.py:is_legacy_readonly_path()`，含无尾斜杠 301 的那一跳）整段跳过 `MultiDeviceSessionMiddleware`、`PasswordChangeRequiredMiddleware`、`ValidityEnforcementMiddleware`：旧浏览器只读版承诺「不读 Cookie、不写 Cookie、不碰 session」，响应不带 `Set-Cookie`，共享缓存才可能命中（见 [旧浏览器精简版](../guides/legacy-readonly.md)）。
 
 （实现见 `accounts/middleware.py`、`common/middleware.py`。）
 

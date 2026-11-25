@@ -35,6 +35,9 @@
 | `media/` | 头像、新闻图、活动图、教程、附件、问卷附件、全景图等 | nginx `/media/` | 是 |
 | `private_media/` | 身份证明（IdentityProof） | 鉴权视图（不进 nginx） | 是 |
 | `app-update/` | App 分发（manifest.json / latest.apk） | nginx `/app-update/` | 是 |
+| `legacy-cache/` | 旧浏览器精简版的 WebP / AVIF → JPEG 兜底图缓存（运行期生成，可随时删除重建） | 内部视图读取（不经 nginx） | 否（可重建缓存；整根备份会顺带包含） |
+
+> `legacy-cache/` 是可重建的运行期缓存：容器只挂载数据根，缓存只能落在根内；它不属于「持久数据」，删掉只会让下次访问重新转码，不影响任何内容。
 
 ### 开新目录 5 步
 
