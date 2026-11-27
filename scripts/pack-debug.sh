@@ -27,6 +27,11 @@ mkdir -p "$OUT/$NAME"
 
 echo "== 写入 $TAG 的源码 =="
 git archive "$TAG" | tar -x -C "$OUT/$NAME"
+# 仓库里被跟踪的运行期数据不进调试包：media 是线上上传物（本站 ~66MB），
+# staticfiles / data / db 是构建或运行产物，留着只会把包撑大。
+rm -rf "$OUT/$NAME/media" "$OUT/$NAME/private_media" "$OUT/$NAME/data" \
+       "$OUT/$NAME/staticfiles" "$OUT/$NAME/backups" "$OUT/$NAME/run" \
+       "$OUT/$NAME/db.sqlite3" "$OUT/$NAME/pgdata"
 
 echo "== 从 $TEST_BRANCH 取 test 环境文件 =="
 mkdir -p "$OUT/$NAME/deploy/test"
