@@ -1,0 +1,71 @@
+# 便携调试栈：在任意装了 Docker 的机器上起一份完整的 test 环境。
+#
+# 用法（从仓库根目录 / 调试包根目录执行）：
+#   cp deploy/test/.env.example .env       # 至少改 SECRET_KEY 与两个 Basic 凭据
+#   docker compose -f deploy/test/docker-compose.debug.yml run --rm web migrate
+#   docker compose -f deploy/test/docker-compose.debug.yml run --rm web collectstatic
+#   docker compose -f deploy/test/docker-compose.debug.yml up -d --build
+#   # 打开 http://127.0.0.1:8080/
+#
+# 数据落在仓库根目录的 data/ staticfiles/ pgdata/，与机器上其他站点无关。
+# 端口被占用时改下面的 "8080:8000" 左侧。
+
+name: club-test-debug
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-club_test}
+      POSTGRES_USER: ${DB_USER:-club}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 未设置：检查根目录 .env}
+    volumes:
+      - ../../pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-club} -d ${DB_NAME:-club_test}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: club-test-debug:local
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      DJANGO_DEBUG: "1"
+      PORT: "8000"
+      BIND: "0.0.0.0"
+    command: ["web-tcp"]
+    ports:
+      - "8080:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../../data:/app/data
+      - ../../staticfiles:/app/staticfiles
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    stop_grace_period: 20s

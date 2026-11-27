@@ -1,0 +1,94 @@
+# test 环境（测试服务器）：整栈容器化，与生产零共享。
+#
+# 这个文件由 test-env 分支维护，由 .github/workflows/test-env.yml 用
+# `ssh ... sync` 覆盖到 /opt/club-test/docker-compose.yml，再 `deploy <tag>`。
+#
+# 与生产 deploy/docker-compose.yml 的差别是刻意的：
+#   - 应用 / PostgreSQL / Redis 全在这一个 compose project 里，独立 bridge 网络；
+#     不碰宿主机的 club 库、pgbouncer、redis，也不需要 network_mode: host。
+#   - 不经过 nginx：web 直接把 8080 发布到公网，Django 以 DEBUG=1 运行
+#     （错误页要能看见 traceback）。访问权限由应用层 HTTP Basic 闸门兜住。
+#   - PG / Redis 不 publish 端口，只在 compose 网络内可见。
+#
+# 数据目录（/opt/club-test/*）与生产（/opt/club/*）完全分开；
+# 停掉、重建、删目录都不会影响线上。
+
+name: club-test
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    # Docker Hub 在本机不可达（12s 超时）；DaoCloud 镜像实测可拉。
+    image: docker.m.daocloud.io/library/postgres:17-alpine
+    container_name: club-test-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-club_test}
+      POSTGRES_USER: ${DB_USER:-club}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD 未设置：检查 /opt/club-test/.env}
+    volumes:
+      - /opt/club-test/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-club} -d ${DB_NAME:-club_test}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 320m
+    <<: *default-logging
+
+  redis:
+    image: docker.m.daocloud.io/library/redis:7-alpine
+    container_name: club-test-redis
+    restart: unless-stopped
+    # 纯缓存 + 频道层：不落盘，容器重建即清空（test 环境不需要持久化）。
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    mem_limit: 96m
+    <<: *default-logging
+
+  web:
+    image: ${CLUB_TEST_IMAGE:-ghcr.io/nhyzcms/club-management-website:test}
+    container_name: club-test-web
+    restart: unless-stopped
+    env_file:
+      - /opt/club-test/.env
+    environment:
+      # 覆盖 .env 里的同名值：test 环境必须能看见报错。
+      DJANGO_DEBUG: "1"
+      PORT: "8000"
+      BIND: "0.0.0.0"
+    command: ["web-tcp"]
+    ports:
+      # 唯一下沉的端口。安全组只放行 22/80/8080/9119，8080 是既有开口。
+      - "0.0.0.0:8080:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # media / private_media 落在独立目录（.env 里 CLUB_DATA_DIR=/app/data）
+      - /opt/club-test/data:/app/data
+      # collectstatic 输出；DEBUG 下由 Django 的 static() 路由直接服务（无 nginx）
+      - /opt/club-test/staticfiles:/app/staticfiles
+    healthcheck:
+      # /healthz/ 在 Basic 闸门里豁免；探活命令拿不到用户密码。
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    mem_limit: 450m
+    stop_grace_period: 20s
+    <<: *default-logging
