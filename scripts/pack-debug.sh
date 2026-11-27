@@ -27,6 +27,11 @@ mkdir -p "$OUT/$NAME"
 
 echo "== 写入 $TAG 的源码 =="
 git archive "$TAG" | tar -x -C "$OUT/$NAME"
+# 仓库里被跟踪的运行期数据不进调试包：media 是线上上传物（本站 ~66MB），
+# staticfiles / data / db 是构建或运行产物，留着只会把包撑大。
+rm -rf "$OUT/$NAME/media" "$OUT/$NAME/private_media" "$OUT/$NAME/data" \
+       "$OUT/$NAME/staticfiles" "$OUT/$NAME/backups" "$OUT/$NAME/run" \
+       "$OUT/$NAME/db.sqlite3" "$OUT/$NAME/pgdata"
 
 echo "== 从 $TEST_BRANCH 取 test 环境文件 =="
 mkdir -p "$OUT/$NAME/deploy/test"
@@ -45,7 +50,11 @@ ${TAG} 的完整源码，外加一套「开箱即用」的 test 环境编排：D
 
 \`\`\`bash
 cp deploy/test/.env.example .env    # 至少改 SECRET_KEY / 两个 Basic 凭据
-docker compose -f deploy/test/docker-compose.debug.yml up -d --build
+# --env-file 不能省：compose 默认只在 compose 文件所在目录找 .env，
+# 而这份编排放在 deploy/test/，变量插值要显式指向仓库根目录的 .env。
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web migrate
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web collectstatic
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml up -d --build
 \`\`\`
 
 首次构建要联网装 npm / Python 依赖，约 3–5 分钟。启动后打开
