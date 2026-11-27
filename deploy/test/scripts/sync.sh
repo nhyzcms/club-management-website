@@ -19,9 +19,9 @@ size=$(stat -c%s "$ARCHIVE")
 
 # 白名单：逐项精确匹配，拒绝绝对路径 / .. / 额外文件（tar 里的路径就是字符串）。
 LIST="$(tar -tf "$ARCHIVE")"
-if printf '%s\n' "$LIST" | grep -qvE '^(docker-compose\.yml|scripts/(deploy\.sh|deploy-wrapper\.sh|sync\.sh))$'; then
+if printf '%s\n' "$LIST" | grep -qvE '^(docker-compose\.yml|scripts/|scripts/(deploy\.sh|deploy-wrapper\.sh|sync\.sh))$'; then
   echo "同步包里有非法路径：" >&2
-  printf '%s\n' "$LIST" | grep -vE '^(docker-compose\.yml|scripts/(deploy\.sh|deploy-wrapper\.sh|sync\.sh))$' >&2
+  printf '%s\n' "$LIST" | grep -vE '^(docker-compose\.yml|scripts/|scripts/(deploy\.sh|deploy-wrapper\.sh|sync\.sh))$' >&2
   exit 1
 fi
 tar -xf "$ARCHIVE" -C "$STAGE" --no-same-owner
