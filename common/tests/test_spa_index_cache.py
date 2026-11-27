@@ -39,6 +39,15 @@ class SpaIndexNoCacheTest(SimpleTestCase):
     def test_home_is_never_cached(self):
         self._assert_no_cache("/")
 
-    def test_spa_catch_all_is_never_cached(self):
-        """`/m/me`、`/#/news` 之类的深链接都落到同一条兜底路由。"""
-        self._assert_no_cache("/m/me")
+    def test_legacy_index_paths_redirect_home(self):
+        """/index 与 /index.html 是历史入口，统一 302 回 `/`（不进缓存）。"""
+        for path in ("/index", "/index.html"):
+            with self.subTest(path=path):
+                resp = self.client.get(path)
+                self.assertRedirects(resp, "/", status_code=302, fetch_redirect_response=False)
+
+    def test_unknown_paths_are_404(self):
+        """catch-all 已移除：非入口路径必须是 404，不能再 200 + 首页（软 404）。"""
+        for path in ("/m/me", "/not-a-page", "/newsroom/2026", "/index/"):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 404)

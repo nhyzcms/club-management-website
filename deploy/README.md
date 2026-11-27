@@ -111,7 +111,7 @@ sudo docker exec club-app .venv/bin/python manage.py version
 ## test 环境
 
 在合并进 `main` 之前点一遍真实页面。它**自动跟 `develop`**，整套栈（应用 + PostgreSQL +
-Redis）独立在容器里，不经过 nginx，直接挂 <http://8.153.145.175:8080/> 并用 HTTP Basic 登录。
+Redis）独立在容器里，不经过 nginx，直接挂 <http://8.153.145.175:52603/> 并用 HTTP Basic 登录。
 
 ```bash
 # 看状态 / 跟日志（服务器上）
