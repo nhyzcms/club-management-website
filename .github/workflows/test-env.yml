@@ -1,0 +1,166 @@
+name: Test Env
+
+# test 环境的唯一自动化入口：develop → test-env（长期分支）→ 构建镜像 → 部署。
+#
+# 设计要点：
+#   1. 合并动作也由 Actions 完成：test-env 是「部署分支」，不承载开发工作，
+#      只负责保存 test 环境相关文件（deploy/test/），并自动吸收 develop。
+#   2. 因为 push 用的是 GITHUB_TOKEN（不会触发下游 workflow），构建与部署
+#      必须在这同一个 run 里做完，不能拆成「sync workflow + build workflow」。
+#   3. 默认关闭（仓库变量 TEST_ENV_ENABLED != true 时整个 job 跳过）。
+#      这样合并本 workflow 的那一刻不会用一份还没上线的镜像去部署——
+#      实测顺序：先合并代码 → 建 test-env 分支 → 配好服务器 → 再打开开关。
+#   4. 部署走独立的受限 SSH key：只允许 sync（覆盖 compose）与 deploy <tag>，
+#      与生产 deploy key 分开，一把钥匙丢了不影响另一套环境。
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: test-env
+  # 不取消进行中的部署：中途打断 pull / up 会把 test 栈留在半更新状态。
+  # 新推送排队即可——下一次 run 开头的 merge 会带上最新的 develop。
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+  issues: write
+
+env:
+  IMAGE: ghcr.io/nhyzcms/club-management-website
+  TEST_BRANCH: test-env
+
+jobs:
+  sync-build-deploy:
+    name: sync-build-deploy
+    if: github.event_name == 'workflow_dispatch' || vars.TEST_ENV_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Merge develop into test-env
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name  "Echo"
+          git config user.email "echo@hermes.local"
+
+          if ! git fetch origin "$TEST_BRANCH" develop --tags; then
+            echo "::error::分支 $TEST_BRANCH 不存在：先按 deploy/test/README.md 建分支"
+            exit 1
+          fi
+          git checkout -B "$TEST_BRANCH" "origin/$TEST_BRANCH"
+
+          # 已有改动才合并；避免每次 push 都制造一个空 merge commit
+          if ! git merge --no-edit "origin/develop"; then
+            git merge --abort || true
+            echo "::error::test-env 合并 develop 冲突。解法见 deploy/test/README.md「冲突处理」"
+            exit 1
+          fi
+
+          if [ -n "$(git log "origin/$TEST_BRANCH"..HEAD --oneline)" ]; then
+            git push origin "$TEST_BRANCH"
+            echo "已推送 test-env"
+          else
+            echo "test-env 已包含 develop，无需推送"
+          fi
+
+          echo "sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "full_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Report merge conflict
+        if: failure() && steps.merge.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="test-env 同步 develop 冲突"
+          if gh issue list --state open --search "$TITLE in:title" --json number --jq 'length' | grep -qv '^0$'; then
+            echo "已有未关闭的冲突 issue，跳过"
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body-file .github/test-env-conflict.md
+
+      # 版本号 / 更新说明进镜像：test 环境也要能回答「现在是哪个提交」。
+      - name: Generate build info
+        run: |
+          set -euo pipefail
+          bash scripts/gen-build-info.sh build_info.json
+          python3 -c "import json;print(json.dumps(json.load(open('build_info.json')),ensure_ascii=False))"
+          python3 scripts/gen_changelog.py --output changelog.json || true
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push test image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:test-${{ steps.merge.outputs.sha }}
+            ${{ env.IMAGE }}:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.merge.outputs.full_sha }}
+
+      - name: Install deploy key
+        env:
+          TEST_SSH_KEY: ${{ secrets.TEST_SSH_KEY }}
+          TEST_SSH_KNOWN_HOSTS: ${{ secrets.TEST_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$TEST_SSH_KEY" > ~/.ssh/test_env_deploy
+          chmod 600 ~/.ssh/test_env_deploy
+          printf '%s\n' "$TEST_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Sync test compose
+        env:
+          TEST_SSH_HOST: ${{ secrets.TEST_SSH_HOST }}
+          TEST_SSH_PORT: ${{ secrets.TEST_SSH_PORT }}
+          TEST_SSH_USER: ${{ secrets.TEST_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/test_env_deploy -p "$TEST_SSH_PORT" \
+              -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              "$TEST_SSH_USER@$TEST_SSH_HOST" sync < deploy/test/docker-compose.yml
+
+      - name: Deploy
+        env:
+          TEST_SSH_HOST: ${{ secrets.TEST_SSH_HOST }}
+          TEST_SSH_PORT: ${{ secrets.TEST_SSH_PORT }}
+          TEST_SSH_USER: ${{ secrets.TEST_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/test_env_deploy -p "$TEST_SSH_PORT" \
+              -o BatchMode=yes -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 \
+              "$TEST_SSH_USER@$TEST_SSH_HOST" "deploy test-${{ steps.merge.outputs.sha }}"
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Test Env"
+            echo
+            echo "- **状态**: \`${{ job.status }}\`"
+            echo "- **提交**: \`${{ steps.merge.outputs.sha }}\`"
+            echo "- **镜像**: \`${IMAGE}:test-${{ steps.merge.outputs.sha }}\`"
+            echo "- **入口**: http://8.153.145.175:8080/ （HTTP Basic）"
+          } >> "$GITHUB_STEP_SUMMARY"

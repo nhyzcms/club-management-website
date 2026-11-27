@@ -22,8 +22,6 @@ concurrency:
 
 permissions:
   contents: read
-  # e2e 闸门要读 PR 改了哪些文件（/pulls/{n}/files），需要 pull-requests: read
-  pull-requests: read
 
 jobs:
   source-guard:
@@ -227,19 +225,17 @@ jobs:
     timeout-minutes: 45
     steps:
       # ── 触发闸门 ──────────────────────────────────────────────────────
-      # e2e 在四种情况真正执行：
-      #   1. push 到 main     —— 发布前的完整验证
-      #   2. push 到 develop  —— 集成分支每次合入都跑一遍
-      #   3. PR 打了 ci:full  —— 手动强制全套
-      #   4. PR 到 develop 且改动涉及 frontend/  —— 前端改动本来就该跑浏览器测试
+      # e2e 只在「合入 main」这条链上真跑：
+      #   1. PR → main  —— 合并前的最后一道闸（发布 PR / 急修 PR）
+      #   2. push main  —— 合并后的完整验证
+      # develop 的集成验证交给 test 环境（test-env 分支 + Release 调试包），
+      # 不再每次推 develop 都烧一遍浏览器全量。
       # 其余走 no-op —— 但 job 本身照常启动并报 success。
       # 这是刻意的：job-level `if:` 会让检查停在 skipped，而 skipped 不会被
       # 分支保护认作通过，PR 就永远合不进去。所以闸门放在 step 层。
       - name: Decide whether to run
         id: gate
         env:
-          HAS_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:full') }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_REF: ${{ github.base_ref }}
           EVENT: ${{ github.event_name }}
@@ -251,27 +247,15 @@ jobs:
 
           if [ "$EVENT" = "push" ]; then
             case "$REF" in
-              refs/heads/main)    run=true; reason="push 到 main" ;;
-              refs/heads/develop) run=true; reason="push 到 develop（集成验证）" ;;
-              *)                  reason="push 到非集成分支" ;;
+              refs/heads/main) run=true; reason="push 到 main" ;;
+              *)               reason="push 到非 main 分支" ;;
             esac
-          elif [ "$HAS_FULL_LABEL" = "true" ]; then
-            run=true; reason="PR 带 ci:full 标签"
           elif [ "$BASE_REF" = "main" ] && [ -n "$PR_NUMBER" ]; then
-            # 发布 PR（develop→main）和急修 PR（fix/*→main）是最后一道闸，
+            # 发布 PR（release→main）和急修 PR（hotfix→main）是最后一道闸，
             # 这里省掉的每一分钟都要用一次线上事故去还。
             run=true; reason="PR→main（发布/急修，必跑）"
-          elif [ "$BASE_REF" = "develop" ] && [ -n "$PR_NUMBER" ]; then
-            # 只在前端相关改动时跑：省掉纯后端/文档 PR 的 5 分钟
-            CHANGED=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
-                        --paginate --jq '.[].filename' 2>/dev/null || true)
-            if printf '%s\n' "$CHANGED" | grep -qE '^frontend/'; then
-              run=true; reason="PR→develop 且改动涉及 frontend/"
-            else
-              reason="PR→develop，改动未触及 frontend/"
-            fi
           else
-            reason="PR 指向 ${BASE_REF:-未知}，默认不跑"
+            reason="PR 指向 ${BASE_REF:-未知}，非 main 不跑"
           fi
 
           echo "run=$run" >> "$GITHUB_OUTPUT"
@@ -285,8 +269,8 @@ jobs:
             echo "## E2E · 已跳过"
             echo
             echo "- **状态**: 跳过（原因：${{ steps.gate.outputs.reason }}）"
-            echo "- 需要全套验证：给本 PR 打 \`ci:full\` 标签，再 re-run 本 workflow。"
-            echo "- push 到 \`develop\` / \`main\` 会完整跑 e2e。"
+            echo "- e2e 只在合入 \`main\` 时运行（PR→main / push main）。"
+            echo "- develop 的集成验证走 test 环境：\`test-env\` 分支自动合并 develop 并部署。"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice::e2e 跳过：${{ steps.gate.outputs.reason }}"
 

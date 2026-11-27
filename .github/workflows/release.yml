@@ -222,6 +222,24 @@ jobs:
             --title "$TAG" \
             --notes-file /tmp/release-body.md
 
+      # ── 调试包：源码 + test 环境编排，挂到同一个 Release ────────────────
+      # 为什么是 Release 资产而不是 Actions artifact：artifact 默认 90 天过期
+      # 且需要登录下载；调试包是给「想在自己机器上复现这个版本」的人用的，
+      # 应该和版本一起长期存在。
+      - name: Upload debug package
+        if: steps.v.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.new }}
+        run: |
+          set -euo pipefail
+          bash scripts/pack-debug.sh "$VERSION" "$RUNNER_TEMP/debug"
+          gh release upload "v${VERSION}" \
+            "$RUNNER_TEMP/debug/club-${VERSION}-debug.tar.gz" \
+            "$RUNNER_TEMP/debug/club-${VERSION}-debug.tar.gz.sha256" --clobber
+          echo "::notice::调试包已上传：club-${VERSION}-debug.tar.gz"
+
       # ── 镜像也打版本 tag，回滚时是人可读的名字而不是一串 sha ──────────
       - name: Tag container image with version
         if: steps.v.outputs.skip != 'true'
@@ -268,6 +286,7 @@ jobs:
             echo "- 版本: \`v${{ steps.v.outputs.new }}\`"
             echo "- 上一个: \`v${{ steps.v.outputs.latest }}\`"
             echo "- 跳过: \`${{ steps.v.outputs.skip }}\`"
+            echo "- 调试包: \`club-${{ steps.v.outputs.new }}-debug.tar.gz\`（失败时为 continue-on-error，看该步骤日志）"
             echo "- 状态: \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
