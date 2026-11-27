@@ -50,7 +50,11 @@ ${TAG} 的完整源码，外加一套「开箱即用」的 test 环境编排：D
 
 \`\`\`bash
 cp deploy/test/.env.example .env    # 至少改 SECRET_KEY / 两个 Basic 凭据
-docker compose -f deploy/test/docker-compose.debug.yml up -d --build
+# --env-file 不能省：compose 默认只在 compose 文件所在目录找 .env，
+# 而这份编排放在 deploy/test/，变量插值要显式指向仓库根目录的 .env。
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web migrate
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web collectstatic
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml up -d --build
 \`\`\`
 
 首次构建要联网装 npm / Python 依赖，约 3–5 分钟。启动后打开
