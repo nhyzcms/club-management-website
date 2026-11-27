@@ -131,16 +131,19 @@ jobs:
           printf '%s\n' "$TEST_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Sync test compose
+      - name: Sync test environment files
         env:
           TEST_SSH_HOST: ${{ secrets.TEST_SSH_HOST }}
           TEST_SSH_PORT: ${{ secrets.TEST_SSH_PORT }}
           TEST_SSH_USER: ${{ secrets.TEST_SSH_USER }}
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/test_env_deploy -p "$TEST_SSH_PORT" \
-              -o BatchMode=yes -o StrictHostKeyChecking=yes \
-              "$TEST_SSH_USER@$TEST_SSH_HOST" sync < deploy/test/docker-compose.yml
+          # compose 与 scripts/ 一起下发：test-env 分支是这套环境的唯一真源，
+          # 只同步 compose 会让部署脚本在服务器上悄悄漂移。
+          tar -C deploy/test -cf - docker-compose.yml scripts \
+            | ssh -i ~/.ssh/test_env_deploy -p "$TEST_SSH_PORT" \
+                -o BatchMode=yes -o StrictHostKeyChecking=yes \
+                "$TEST_SSH_USER@$TEST_SSH_HOST" sync
 
       - name: Deploy
         env:
