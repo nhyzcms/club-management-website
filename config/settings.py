@@ -97,6 +97,9 @@ def _secret_key(raw, *, debug):
 # 密钥 / 调试 / 允许主机全部走环境变量（模板见 .env.example）。DEBUG 缺省 False：
 # 生产漏配 .env 时拒绝以调试模式启动；本地开发在 .env 里显式写 DJANGO_DEBUG=1。
 DEBUG = _parse_debug(os.environ.get("DJANGO_DEBUG"))
+# 运行环境标识（production / test）：test 环境由前端显示醒目横幅，页脚给出
+# 返回生产的入口。由 test compose 显式设 SITE_ENV=test；未设置一律按生产。
+SITE_ENV = os.environ.get("SITE_ENV", "production").strip().lower() or "production"
 # 测试运行没有 .env 也要能起：仅测试期允许公开占位密钥（测试库每次清空）。
 SECRET_KEY = _secret_key(os.environ.get("SECRET_KEY"), debug=DEBUG or TESTING)
 

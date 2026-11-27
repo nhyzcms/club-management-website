@@ -19,6 +19,8 @@ export interface BuildInfo {
   built_at: string;
   built_by: string;
   source: string;
+  /** 运行环境：production / test。test 时前端显示横幅；旧后端没有这个字段。 */
+  environment?: string;
 }
 
 export interface ChangelogSection {

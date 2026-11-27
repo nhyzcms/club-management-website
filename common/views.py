@@ -13,6 +13,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.conf import settings
 from django.http import JsonResponse
 
 from accounts.turnstile import public_turnstile_fields
@@ -79,7 +80,11 @@ class VersionView(APIView):
     authentication_classes = []
 
     def get(self, request):
-        response = Response(build_info())
+        data = build_info()
+        # 运行环境随部署变化（同镜像跑生产与 test），不能写进 build_info.json，
+        # 只能运行时从 settings 取。前端靠它决定是否显示 TEST 横幅。
+        data["environment"] = settings.SITE_ENV
+        response = Response(data)
         # 版本随部署才变，但缓存住会让「部署到底生效没」这件事看起来像没生效
         response["Cache-Control"] = "no-store"
         return response

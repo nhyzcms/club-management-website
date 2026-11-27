@@ -75,3 +75,20 @@
 /* 没有发行说明时版本号不可点：不能给它按钮的悬停暗示 */
 .footer-version-static { cursor: default; }
 .footer-version-static:hover { color: oklch(1 0 0 / .6); border-color: oklch(1 0 0 / .18); }
+
+/* 测试环境入口：挂在页脚版本条，虚线胶囊表明「这不是正式站的一部分」。
+   只在 /version/ 明确返回 production 时出现；test 环境里由顶部横幅负责回生产。 */
+.footer .footer-test-env {
+  display: inline-flex;
+  align-items: center;
+  border: 1px dashed oklch(1 0 0 / .3);
+  border-radius: var(--r-pill);
+  padding: 4px 10px;
+  color: oklch(1 0 0 / .6);
+  font-size: 11px;
+  line-height: 1;
+}
+.footer .footer-test-env:hover {
+  color: var(--brand-300);
+  border-color: oklch(1 0 0 / .45);
+}
