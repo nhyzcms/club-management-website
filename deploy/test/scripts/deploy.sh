@@ -54,8 +54,14 @@ cmd_deploy() {
   log "部署 $CLUB_TEST_IMAGE（上一版：${prev:-无}）"
 
   log "拉取镜像（GHCR 可能较慢；实测首次 472MB 约 12 分钟，上限给 30 分钟）"
-  # 注意：compose 是 shell 函数，timeout 不能直接执行函数——必须写全 docker compose。
-  timeout 1800 docker compose -f "$COMPOSE" pull web
+  if [ "${SKIP_PULL:-0}" = "1" ]; then
+    # 应急通道：Docker 的 GHCR 代理隧道不稳时，先用 crane/skopeo 把镜像落到
+    # 本地，再 SKIP_PULL=1 重跑。正常 CI 路径不设这个变量，行为不变。
+    log "SKIP_PULL=1：跳过拉取，使用本地已有镜像"
+  else
+    # 注意：compose 是 shell 函数，timeout 不能直接执行函数——必须写全 docker compose。
+    timeout 1800 docker compose -f "$COMPOSE" pull web
+  fi
 
   log "数据库迁移"
   compose run --rm web migrate
