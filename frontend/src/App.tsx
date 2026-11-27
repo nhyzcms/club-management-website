@@ -12,6 +12,8 @@ import { useEmbedMode } from "./embed";
 import { api } from "./api/client";
 import { fetchSitePolicy } from "./api/sitePolicy";
 import PostcardSimHost from "./postcardSim/SimHost";
+import TestEnvBanner from "./components/TestEnvBanner";
+import { useBuildInfo } from "./hooks/useBuildInfo";
 import { isAppShell, isMobileDevice } from "./utils/device";
 
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
@@ -112,6 +114,13 @@ function TaskDetailRoute() {
   return <TaskDetailPage />;
 }
 
+/** test 环境横幅：环境由 /version/ 运行时下发；embed（后台 iframe）里隐藏。 */
+function TestEnvBannerHost() {
+  const info = useBuildInfo();
+  const embed = useEmbedMode();
+  return <TestEnvBanner environment={info?.environment} hidden={embed} />;
+}
+
 export default function App() {
   // 启动时拉取一次 CSRF cookie。开发态 webpack 直接服务模板、不经 Django 渲染，
   // 无法靠 {% csrf_token %} 下发 cookie，故显式请求该端点，避免匿名 POST 被 403。
@@ -122,6 +131,7 @@ export default function App() {
 
   return (
     <HashRouter>
+      <TestEnvBannerHost />
       <PostcardSimHost />
       <LoginModalProvider>
       <SessionGuard>

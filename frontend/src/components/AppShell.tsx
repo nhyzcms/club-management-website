@@ -12,6 +12,7 @@ import { canAccessAdmin } from "../utils/roles";
 import ThemeToggle from "./ThemeToggle";
 import ChangelogHost, { openChangelog } from "./ChangelogHost";
 import { formatVersion, useBuildInfo, useChangelog, versionTooltip } from "../hooks/useBuildInfo";
+import { TEST_ENV_URL } from "../constants";
 import { ICONS } from "./icons";
 import UserMenu from "./UserMenu";
 import "./AppShell.css";
@@ -422,6 +423,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
         <div className="footer-bottom tnum">
           <span>© 2026 上海市南汇第一中学 · 传媒社 · 信息组</span>
+          {info?.environment === "production" && (
+            <a
+              className="footer-test-env"
+              href={TEST_ENV_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="内部测试环境，需要 HTTP Basic 登录"
+            >
+              测试环境
+            </a>
+          )}
           {version && (
             <span className="footer-version">
               {hasChangelog ? (

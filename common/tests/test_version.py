@@ -111,6 +111,17 @@ class VersionEndpointTests(TestCase):
         self.assertEqual(response["Cache-Control"], "no-store")
         self.assertIn("version", response.json())
 
+    def test_reports_site_environment(self):
+        with override_settings(SITE_ENV="test"):
+            response = self.client.get("/version/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["environment"], "test")
+
+    def test_defaults_to_production_environment(self):
+        with override_settings(SITE_ENV="production"):
+            payload = self.client.get("/version/").json()
+        self.assertEqual(payload["environment"], "production")
+
     def test_endpoint_shape_is_stable(self):
         payload = self.client.get("/version/").json()
         self.assertEqual(
@@ -126,5 +137,6 @@ class VersionEndpointTests(TestCase):
                 "built_at",
                 "built_by",
                 "source",
+                "environment",
             },
         )
