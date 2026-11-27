@@ -112,7 +112,7 @@ GET /version/               ← 程序自报：version / channel / commit / 构�
 
 合并进 `main` 之前，用测试服务器点真实页面：
 
-- 地址：<http://8.153.145.175:8080/>（HTTP Basic；账号密码在服务器 `/opt/club-test/.env`）
+- 地址：<http://8.153.145.175:52603/>（HTTP Basic；账号密码在服务器 `/opt/club-test/.env`）
 - 它自动跟 `develop`：合并进 develop 后，Actions「Test Env」会更新 `test-env` 分支、
   构建镜像并部署。**不用再手动起环境，也不用开 SSH 隧道。**
 - 结构、运维命令、冲突处理：[deploy/test/README.md](https://github.com/nhyzcms/club-management-website/blob/test-env/deploy/test/README.md)（文件由 `test-env` 分支维护）。
