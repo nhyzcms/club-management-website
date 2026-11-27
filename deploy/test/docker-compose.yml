@@ -6,7 +6,7 @@
 # 与生产 deploy/docker-compose.yml 的差别是刻意的：
 #   - 应用 / PostgreSQL / Redis 全在这一个 compose project 里，独立 bridge 网络；
 #     不碰宿主机的 club 库、pgbouncer、redis，也不需要 network_mode: host。
-#   - 不经过 nginx：web 直接把 8080 发布到公网，Django 以 DEBUG=1 运行
+#   - 不经过 nginx：web 直接把 52603 发布到公网，Django 以 DEBUG=1 运行
 #     （错误页要能看见 traceback）。访问权限由应用层 HTTP Basic 闸门兜住。
 #   - PG / Redis 不 publish 端口，只在 compose 网络内可见。
 #
@@ -70,8 +70,9 @@ services:
       BIND: "0.0.0.0"
     command: ["web-tcp"]
     ports:
-      # 唯一下沉的端口。安全组只放行 22/80/8080/9119，8080 是既有开口。
-      - "0.0.0.0:8080:8000"
+      # 唯一下沉的端口。52603 在安全组已放行（2026-11-27 实测：外部连接立即被拒
+      # = 放行但无监听）；8080 留给其他用途，不再占用。
+      - "0.0.0.0:52603:8000"
     depends_on:
       db:
         condition: service_healthy

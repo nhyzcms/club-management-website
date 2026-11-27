@@ -1,16 +1,16 @@
 # test 环境（测试服务器）
 
 一条独立的长期分支 `test-env` 维护的完整测试栈：**应用 + PostgreSQL + Redis 全部在容器里**，
-不经过 nginx，直接把 `8080` 发布到公网，Django 以 `DEBUG=1` 运行，整站套一层 HTTP Basic 登录。
+不经过 nginx，直接把 `52603` 发布到公网，Django 以 `DEBUG=1` 运行，整站套一层 HTTP Basic 登录。
 
 用于在合并进 `main` 之前点真实页面、看真实报错。`develop` 每次前进，CI 会自动把
 `test-env` 更新并部署到这套环境（`.github/workflows/test-env.yml`）。
 
 ## 访问
 
-- 地址：<http://8.153.145.175:8080/>
+- 地址：<http://8.153.145.175:52603/>
 - 账号密码：服务器 `/opt/club-test/.env` 里的 `TEST_BASIC_AUTH_USER` / `TEST_BASIC_AUTH_PASSWORD`
-- 探活：<http://8.153.145.175:8080/healthz/>（豁免 Basic，只回 `{"status": "ok"}`）
+- 探活：<http://8.153.145.175:52603/healthz/>（豁免 Basic，只回 `{"status": "ok"}`）
 
 > `DEBUG=1` 的错误页会带 traceback、局部变量与 settings 片段。Basic 认证只负责
 > 「谁能看」，**不加密传输**（明文 HTTP）。别在里面填真实敏感数据，凭据也要定期换。
@@ -41,7 +41,7 @@ develop ──push──► Actions「Test Env」
 | 资源 | 生产 | test |
 |---|---|---|
 | compose project | `club` | `club-test` |
-| 应用 | `club-app`（host 网络，nginx 反代 unix socket） | `club-test-web`（bridge，直发 8080） |
+| 应用 | `club-app`（host 网络，nginx 反代 unix socket） | `club-test-web`（bridge，直发 52603） |
 | 数据库 | 宿主机 PG `club`（经 pgbouncer 6432） | 容器内 PG `club_test`（直连 5432） |
 | Redis | 宿主机 `127.0.0.1:6379/0` | 容器内 `redis:6379/0` |
 | 媒体 / 静态 | `/opt/club/*` | `/opt/club-test/*` |
@@ -117,14 +117,15 @@ sudo -u clubdeploy /opt/club-test/scripts/deploy.sh down
    gh variable set TEST_ENV_ENABLED --body true    # 最后一步：打开自动部署
    ```
 
-5. **停掉旧的 nginx 测试站点**（8080 让给容器；旧配置指向 127.0.0.1:18080）：
+5. **停掉旧的 nginx 测试站点**（旧配置监听 127.0.0.1:8080 并反代到 18080，已废弃；
+   新版不经过 nginx，摘掉它避免端口与维护状态混淆）：
 
    ```bash
    sudo rm /etc/nginx/conf.d/club-test.conf
    sudo nginx -t && sudo systemctl reload nginx
    ```
 
-6. **确认安全组放行 8080**（阿里云控制台；已放行则跳过）。
+6. **确认安全组放行 52603**（阿里云控制台；已放行则跳过）。
 
 ## 冲突处理
 
@@ -151,7 +152,7 @@ cp deploy/test/.env.example .env    # 改 SECRET_KEY / DB_PASSWORD / Basic 凭�
 docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web migrate
 docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web collectstatic
 docker compose --env-file .env -f deploy/test/docker-compose.debug.yml up -d --build
-# http://127.0.0.1:8080/
+# http://127.0.0.1:52603/
 ```
 
 数据落在解压目录的 `data/`、`staticfiles/`、`pgdata/`。`docker-compose.yml`（不带 `.debug`）

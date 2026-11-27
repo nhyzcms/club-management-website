@@ -15,7 +15,7 @@ COMPOSE="$ROOT/docker-compose.yml"
 ENV_FILE="$ROOT/.env"
 LAST_GOOD="$ROOT/.last-good"
 IMAGE_REPO="${IMAGE_REPO:-ghcr.io/nhyzcms/club-management-website}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/healthz/}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:52603/healthz/}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
@@ -69,7 +69,7 @@ cmd_deploy() {
   if wait_health; then
     printf '%s\n' "$tag" > "$LAST_GOOD"
     log "✅ 部署成功：$tag"
-    log "   入口：http://<公网 IP>:8080/（HTTP Basic）"
+    log "   入口：http://<公网 IP>:52603/（HTTP Basic）"
     return 0
   fi
 
