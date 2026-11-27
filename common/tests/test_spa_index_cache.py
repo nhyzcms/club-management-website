@@ -46,8 +46,28 @@ class SpaIndexNoCacheTest(SimpleTestCase):
                 resp = self.client.get(path)
                 self.assertRedirects(resp, "/", status_code=302, fetch_redirect_response=False)
 
+    def test_clean_deep_links_redirect_to_hash_routes(self):
+        """干净链接翻译成 hash 路由：/news/123 → /#/news/123（query 保留）。"""
+        cases = {
+            "/news/123": "/#/news/123",
+            "/news/123?from=share": "/#/news/123?from=share",
+            "/m/me": "/#/m/me",
+            "/m/news/9/": "/#/m/news/9",
+            "/v/26020542": "/#/v/26020542",
+            "/postcard/receive": "/#/postcard/receive",
+        }
+        for path, target in cases.items():
+            with self.subTest(path=path):
+                resp = self.client.get(path)
+                self.assertRedirects(resp, target, status_code=302, fetch_redirect_response=False)
+
     def test_unknown_paths_are_404(self):
-        """catch-all 已移除：非入口路径必须是 404，不能再 200 + 首页（软 404）。"""
-        for path in ("/m/me", "/not-a-page", "/newsroom/2026", "/index/"):
+        """白名单之外仍然 404，不能回到「200 + 首页」的软 404。"""
+        for path in ("/not-a-page", "/newsroom/2026", "/new/123", "/index/", "/static/app.css"):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 404)
+
+    def test_admin_without_slash_still_append_slash(self):
+        """白名单正则不能接住 /admin，否则 APPEND_SLASH 失效。"""
+        resp = self.client.get("/admin")
+        self.assertRedirects(resp, "/admin/", status_code=301, fetch_redirect_response=False)

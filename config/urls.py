@@ -15,15 +15,69 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 import os
+import re
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.http import HttpResponseRedirect
 from django.urls import path, include, re_path
 from django.views.decorators.cache import never_cache
 from django.views.generic import RedirectView, TemplateView
 from django.views.static import serve
 
 from common.views import ChangelogView, SitePolicyView, VersionView, healthz
+
+#: 站内一级路由（HashRouter 里 `#` 后的第一段）。
+#:
+#: 服务端的职责只是「把干净链接翻译成 hash 链接」：`/news/123` → `/#/news/123`。
+#: 只有这些前缀会被翻译，其余未知路径仍然是 404——不恢复 catch-all，
+#: 否则拼错的 URL 又会变成 200 + 首页（软 404）。
+#: 新增站内一级页面时，这里和 `frontend/src/App.tsx` 的 Route 一起加。
+SPA_PATH_PREFIXES = frozenset({
+    "forgot-password",
+    "change-password-required",
+    "reset-password",
+    "register",
+    "verify-email",
+    "verify-email-pending",
+    "v",
+    "verify",
+    "security",
+    "profile",
+    "u",
+    "tasks",
+    "messages",
+    "notifications",
+    "announcements",
+    "activity",
+    "inbox",
+    "feedback",
+    "news",
+    "reviews",
+    "about",
+    "panorama",
+    "exam",
+    "postcard",
+    "schedule",
+    "tutorials",
+    "join",
+    "m",
+})
+
+
+def spa_deep_link(request, path):
+    """把干净链接 302 到 HashRouter 的等价地址（query 原样保留）。
+
+    `/news/123?from=share` → `/#/news/123?from=share`
+    路由层已经用白名单正则限定了前缀，不会接住 `/admin` 这类路径——它们仍走
+    Django 的 APPEND_SLASH / 404，不受深链接翻译影响。
+    """
+    clean = path.rstrip("/")
+    target = "/#/" + clean
+    query = request.META.get("QUERY_STRING", "")
+    if query:
+        target += "?" + query
+    return HttpResponseRedirect(target)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -74,4 +128,12 @@ urlpatterns = [
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# 深链接翻译必须排在 static()/media() 之后：否则 `/static/...` 会先撞到这里，
+# 被当成「未知路径」404，DEBUG 下连页面都加载不出来。
+# 正则只匹配白名单前缀——`/admin` 这类路径不匹配，仍能走 APPEND_SLASH。
+_SPA_PREFIX_PATTERN = "|".join(re.escape(p) for p in sorted(SPA_PATH_PREFIXES))
+urlpatterns += [
+    re_path(rf"^(?P<path>(?:{_SPA_PREFIX_PATTERN})(?:/.*)?)$", spa_deep_link),
+]
  
