@@ -11,6 +11,8 @@
 - 地址：<http://8.153.145.175:52603/>
 - 账号密码：服务器 `/opt/club-test/.env` 里的 `TEST_BASIC_AUTH_USER` / `TEST_BASIC_AUTH_PASSWORD`
 - 探活：<http://8.153.145.175:52603/healthz/>（豁免 Basic，只回 `{"status": "ok"}`）
+- 环境提示：页面顶部常驻 **TEST 横幅**（compose 里 `SITE_ENV=test`，由 `/version/`
+  的 `environment` 字段驱动）；生产站页脚有「测试环境」入口
 
 > `DEBUG=1` 的错误页会带 traceback、局部变量与 settings 片段。Basic 认证只负责
 > 「谁能看」，**不加密传输**（明文 HTTP）。别在里面填真实敏感数据，凭据也要定期换。

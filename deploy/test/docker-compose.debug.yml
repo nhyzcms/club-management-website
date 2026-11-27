@@ -53,6 +53,8 @@ services:
       - ../../.env
     environment:
       DJANGO_DEBUG: "1"
+      # 便携调试栈同样打 TEST 横幅（与 /opt/club-test 一致）。
+      SITE_ENV: "test"
       PORT: "8000"
       BIND: "0.0.0.0"
     command: ["web-tcp"]

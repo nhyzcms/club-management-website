@@ -66,6 +66,8 @@ services:
     environment:
       # 覆盖 .env 里的同名值：test 环境必须能看见报错。
       DJANGO_DEBUG: "1"
+      # 前端据此显示顶部 TEST 横幅（/version/ 的 environment 字段）。
+      SITE_ENV: "test"
       PORT: "8000"
       BIND: "0.0.0.0"
     command: ["web-tcp"]
