@@ -137,6 +137,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # test 环境 HTTP Basic 闸门：仅在 TEST_BASIC_AUTH_USER/PASSWORD 都配置时生效，
+    # 生产是 no-op。放在最前，连维护页 / 静态 / 媒体一起挡。
+    'common.middleware.BasicAuthGateMiddleware',
     # 维护旗标 run/MAINTENANCE：503 HTML，不碰 DB / session（须先于 Session/CSRF/Tus）。
     'common.middleware.MaintenanceModeMiddleware',
     'django.middleware.security.SecurityMiddleware',

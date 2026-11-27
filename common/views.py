@@ -13,6 +13,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.http import JsonResponse
+
 from accounts.turnstile import public_turnstile_fields
 
 from .changelog import changelog_entry
@@ -41,6 +43,15 @@ def public_policy_snapshot(policy=None) -> dict:
     """把策略快照裁成公开子集。"""
     policy = policy or get_policy()
     return {name: getattr(policy, name) for name in PUBLIC_POLICY_FIELDS}
+
+
+def healthz(request):
+    """容器 / 反代探活：不查库、不读 session，进程能响应即 200。
+
+    只回报「活着」，不暴露版本、依赖状态或任何配置——所以它在 test 环境的
+    Basic 闸门里是豁免路径（healthcheck 命令拿不到用户密码）。
+    """
+    return JsonResponse({"status": "ok"})
 
 
 class SitePolicyView(APIView):

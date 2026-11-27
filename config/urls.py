@@ -23,10 +23,11 @@ from django.views.decorators.cache import never_cache
 from django.views.generic import RedirectView, TemplateView
 from django.views.static import serve
 
-from common.views import ChangelogView, SitePolicyView, VersionView
+from common.views import ChangelogView, SitePolicyView, VersionView, healthz
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('healthz/', healthz, name='healthz'),
     path('site-policy/', SitePolicyView.as_view(), name='site-policy'),
     path('version/', VersionView.as_view(), name='version'),
     path('changelog/', ChangelogView.as_view(), name='changelog'),

@@ -98,25 +98,28 @@ GET /version/               ← 程序自报：version / channel / commit / 构�
 
 `feature/*` 不给保护是有意的：它通常一天就没了，加规则只会在删除分支时添麻烦。
 
-### 两条特例分支
+### 三条特例分支
 
 - **`documentation`** —— 文档站点。`main` 上不允许出现 `docs/`，`docs-guard` 会拦下。
   改文档对该分支开 PR。禁强推、禁删除。
 - **`assets/pr-previews`** —— PR 预览图床。只放图片，不放代码。禁强推、禁删除。
+- **`test-env`** —— test 服务器的部署分支。只放 `deploy/test/`（compose / 部署脚本 / 说明），
+  其余内容由 Actions 自动从 `develop` 合并进来。**不要在这里写功能代码**，也不要对它开功能 PR；
+  改 test 环境本身时直接提交到该分支（冲突处理见
+  [deploy/test/README.md](https://github.com/nhyzcms/club-management-website/blob/test-env/deploy/test/README.md)）。
 
-### 预演环境
+### test 环境
 
-想在合并进 `main` 之前点一遍真实页面，用**容器化预演环境**，不要另开分支：
+合并进 `main` 之前，用测试服务器点真实页面：
 
-```bash
-sudo scripts/test-env.sh up sha-<develop 的提交>
-ssh -N -L 8080:127.0.0.1:8080 nhyz-prod     # 另开一个终端
-# 浏览器 http://127.0.0.1:8080/
-sudo scripts/test-env.sh down                # 验完就关
-```
+- 地址：<http://8.153.145.175:8080/>（HTTP Basic；账号密码在服务器 `/opt/club-test/.env`）
+- 它自动跟 `develop`：合并进 develop 后，Actions「Test Env」会更新 `test-env` 分支、
+  构建镜像并部署。**不用再手动起环境，也不用开 SSH 隧道。**
+- 结构、运维命令、冲突处理：[deploy/test/README.md](https://github.com/nhyzcms/club-management-website/blob/test-env/deploy/test/README.md)（文件由 `test-env` 分支维护）。
 
-它跑的是 `develop` 的镜像，但数据库（`club_test`）、媒体目录、静态目录、Redis db 序号
-全部独立，停掉或清空都碰不到生产。不需要开安全组、不需要域名证书。
+它跑的是 `develop`，但应用、PostgreSQL、Redis 全部独立成一套 compose（`club-test`），
+媒体 / 静态 / 数据库目录都在 `/opt/club-test`，停掉或清空都碰不到生产。
+因为是 `DEBUG=1`，错误页能看到 traceback——所以整站套了 Basic 登录，密码别外传。
 
 ---
 
@@ -138,10 +141,11 @@ sudo scripts/test-env.sh down                # 验完就关
 
 ### 必须满足
 
-1. **base 是 `main`**（文档改动 base 是 `documentation`）。
-2. **CI 必须绿**：`backend` / `frontend` / `frontend-test` / `e2e` 四个检查。
-   - `e2e` 在 PR 上默认是**跳过**的（省 5–20 分钟）。跳过也报 success，不阻塞合并。
-   - 改了登录、路由、上传、审核台、问卷这类跨页流程时，给 PR 打 **`ci:full`** 标签，re-run workflow 跑全套浏览器测试。
+1. **base 是 `develop`**（文档改动 base 是 `documentation`；`release/*` / `hotfix/*` 才直接对 `main`）。
+2. **CI 必须绿**：`backend` / `frontend` / `frontend-test` 三个检查（`e2e` 见下）。
+   - `e2e` **只在合入 `main` 时真跑**（PR→main / push main）。`develop` 的集成验证走 test 环境，
+     不再每次推都烧一遍浏览器全量；跳过时也报 success，不阻塞合并。
+   - 改了登录、路由、上传、审核台、问卷这类跨页流程时，先在 test 环境点一遍。
 3. **至少 1 人 review 通过。** 不能自己批自己——你的 PR 必须由另一个人点 Approve。
 4. **分支与 `main` 无冲突。** 冲突自行 rebase，不要用 merge commit 把 `main` 拉进功能分支。
 
