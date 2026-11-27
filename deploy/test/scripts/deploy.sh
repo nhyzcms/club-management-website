@@ -54,7 +54,8 @@ cmd_deploy() {
   log "部署 $CLUB_TEST_IMAGE（上一版：${prev:-无}）"
 
   log "拉取镜像（GHCR 可能较慢，最长等 15 分钟）"
-  timeout 900 compose pull web
+  # 注意：compose 是 shell 函数，timeout 不能直接执行函数——必须写全 docker compose。
+  timeout 900 docker compose -f "$COMPOSE" pull web
 
   log "数据库迁移"
   compose run --rm web migrate

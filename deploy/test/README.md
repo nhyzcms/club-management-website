@@ -21,7 +21,7 @@
 develop ──push──► Actions「Test Env」
                    │ 1. merge develop → test-env（长期分支）并 push
                    │ 2. 构建镜像 :test-<sha12> + :test
-                   │ 3. ssh sync  ← deploy/test/docker-compose.yml
+                   │ 3. ssh sync  ← deploy/test/docker-compose.yml + scripts/
                    │ 4. ssh deploy test-<sha12>
                    ▼
              /opt/club-test（服务器）
@@ -30,7 +30,7 @@ develop ──push──► Actions「Test Env」
                ├── data/                ← media / private_media
                ├── staticfiles/         ← collectstatic 输出
                ├── pgdata/              ← PostgreSQL 数据
-               └── scripts/{deploy.sh,deploy-wrapper.sh,sync-compose.sh}
+               └── scripts/{deploy.sh,deploy-wrapper.sh,sync.sh}
 ```
 
 `test-env` 分支只放这套环境的东西（`deploy/test/`），业务代码一律从 `develop` 合并进来。
@@ -86,10 +86,15 @@ sudo -u clubdeploy /opt/club-test/scripts/deploy.sh down
    ```bash
    sudo mkdir -p /opt/club-test/{data,staticfiles,pgdata,scripts}
    sudo chown -R clubdeploy:clubdeploy /opt/club-test
+   # CI 的 sync 会覆盖 compose 与 scripts/，所以这两个位置必须让 clubdeploy 可写；
+   # data / staticfiles / pgdata 保持 root（应用容器以 root 写，pgdata 归 uid 70）。
+   sudo chown root:root /opt/club-test/data /opt/club-test/staticfiles /opt/club-test/pgdata
+   sudo chown -R 70:70 /opt/club-test/pgdata
    # .env 由 clubdeploy 持有，600；模板见 deploy/test/.env.example
    sudo -u clubdeploy install -m 600 /dev/null /opt/club-test/.env
    sudo -u clubdeploy vim /opt/club-test/.env      # 填 SECRET_KEY / DB_PASSWORD / Basic 凭据
    sudo install -m 755 deploy/test/scripts/*.sh /opt/club-test/scripts/
+   sudo chown clubdeploy:clubdeploy /opt/club-test/scripts/*.sh
    ```
 
 3. **受限 SSH key**（CI 用，与生产 key 分开）：

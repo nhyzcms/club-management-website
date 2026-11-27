@@ -9,7 +9,7 @@ set -euo pipefail
 
 cmd="${SSH_ORIGINAL_COMMAND:-status}"
 case "$cmd" in
-  sync)       exec /opt/club-test/scripts/sync-compose.sh ;;
+  sync)       exec /opt/club-test/scripts/sync.sh ;;
   "deploy "*) exec /opt/club-test/scripts/deploy.sh deploy "${cmd#deploy }" ;;
   status)     exec /opt/club-test/scripts/deploy.sh status ;;
   *)
