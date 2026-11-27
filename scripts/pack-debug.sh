@@ -58,7 +58,7 @@ docker compose --env-file .env -f deploy/test/docker-compose.debug.yml up -d --b
 \`\`\`
 
 首次构建要联网装 npm / Python 依赖，约 3–5 分钟。启动后打开
-<http://127.0.0.1:8080/>，浏览器会弹 Basic 登录框（账号密码在 \`.env\` 里）。
+<http://127.0.0.1:52603/>，浏览器会弹 Basic 登录框（账号密码在 \`.env\` 里）。
 
 数据落在仓库根目录的 \`data/\`、\`staticfiles/\`、\`pgdata/\`，不会碰你机器上
 其他站点；清空重来就是删掉这三个目录再 \`down\`。

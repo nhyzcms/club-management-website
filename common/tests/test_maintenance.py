@@ -106,7 +106,7 @@ class MaintenanceFlagOnTest(_FlagMixin, SimpleTestCase):
 
 
 class MaintenanceFlagOffTest(_FlagMixin, TestCase):
-    """No flag → home / index still render the SPA shell (index.html)."""
+    """No flag → home renders the SPA shell; unknown paths are 404 (no catch-all)."""
 
     def setUp(self):
         super().setUp()
@@ -132,14 +132,11 @@ class MaintenanceFlagOffTest(_FlagMixin, TestCase):
         self.assertIn(SPA_MOUNT, body)
         self.assertNotIn(MAINTENANCE_HEADING, body)
 
-    def test_index_catch_all_serves_spa_not_maintenance(self):
+    def test_unknown_path_is_404_not_maintenance(self):
+        """catch-all 已移除：未知路径走 Django 404，而不是维护页或 SPA 壳。"""
         resp = self.client.get("/login/")
-        self.assertEqual(resp.status_code, 200)
-        self.assertTemplateUsed(resp, "index.html")
+        self.assertEqual(resp.status_code, 404)
         self.assertTemplateNotUsed(resp, "maintenance.html")
-        body = resp.content.decode()
-        self.assertIn(SPA_MOUNT, body)
-        self.assertNotIn(MAINTENANCE_HEADING, body)
 
 
 class MaintenanceStaticFallbackTest(SimpleTestCase):

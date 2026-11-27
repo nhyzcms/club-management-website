@@ -165,5 +165,5 @@ jobs:
             echo "- **状态**: \`${{ job.status }}\`"
             echo "- **提交**: \`${{ steps.merge.outputs.sha }}\`"
             echo "- **镜像**: \`${IMAGE}:test-${{ steps.merge.outputs.sha }}\`"
-            echo "- **入口**: http://8.153.145.175:8080/ （HTTP Basic）"
+            echo "- **入口**: http://8.153.145.175:52603/ （HTTP Basic）"
           } >> "$GITHUB_STEP_SUMMARY"
