@@ -1,11 +1,15 @@
 # 便携调试栈：在任意装了 Docker 的机器上起一份完整的 test 环境。
 #
-# 用法（从仓库根目录 / 调试包根目录执行）：
+# 用法（从仓库根目录 / 调试包根目录执行；--env-file 不能省，见下）：
 #   cp deploy/test/.env.example .env       # 至少改 SECRET_KEY 与两个 Basic 凭据
-#   docker compose -f deploy/test/docker-compose.debug.yml run --rm web migrate
-#   docker compose -f deploy/test/docker-compose.debug.yml run --rm web collectstatic
-#   docker compose -f deploy/test/docker-compose.debug.yml up -d --build
+#   docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web migrate
+#   docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web collectstatic
+#   docker compose --env-file .env -f deploy/test/docker-compose.debug.yml up -d --build
 #   # 打开 http://127.0.0.1:8080/
+#
+# 为什么要 --env-file：compose 默认只在 compose 文件所在目录（deploy/test/）找 .env，
+# 而这份编排刻意放在子目录、.env 在仓库根目录。不给 --env-file，变量插值会报
+# DB_PASSWORD 未设置（本机实测）。--env-file 的路径相对当前工作目录。
 #
 # 数据落在仓库根目录的 data/ staticfiles/ pgdata/，与机器上其他站点无关。
 # 端口被占用时改下面的 "8080:8000" 左侧。

@@ -147,9 +147,10 @@ git push origin test-env
 
 ```bash
 cp deploy/test/.env.example .env    # 改 SECRET_KEY / DB_PASSWORD / Basic 凭据
-docker compose -f deploy/test/docker-compose.debug.yml run --rm web migrate
-docker compose -f deploy/test/docker-compose.debug.yml run --rm web collectstatic
-docker compose -f deploy/test/docker-compose.debug.yml up -d --build
+# --env-file 不能省：compose 默认只在 deploy/test/ 找 .env，变量插值会失败（实测）。
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web migrate
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml run --rm web collectstatic
+docker compose --env-file .env -f deploy/test/docker-compose.debug.yml up -d --build
 # http://127.0.0.1:8080/
 ```
 
