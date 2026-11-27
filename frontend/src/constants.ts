@@ -17,3 +17,12 @@ export const PANORAMA_PAGE_URL = "/#/panorama";
  * scripts/check_panorama_static.py 纳入发布完整性校验。
  */
 export const PANORAMA_RENDERER_URL = "/static/panorama/marzipano.js";
+
+/**
+ * 生产站与 test 环境入口（单部署，地址固定）。
+ *
+ * test 环境走 52603、套 HTTP Basic；前端只负责给链接，不在客户端做任何鉴权。
+ * 生产页脚用它给出「测试环境」入口；test 横幅用它「返回生产」。
+ */
+export const PRODUCTION_URL = "https://8.153.145.175/";
+export const TEST_ENV_URL = "http://8.153.145.175:52603/";
